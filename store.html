@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="storeTitle">Store - ServeNow</title>
+    <link rel="stylesheet" href="style/main.css?v=3">
+    <link rel="stylesheet" href="style/responsive.css?v=3">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            background: var(--light-bg);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .main-container {
+            background-color: #ffffff;
+            padding: 2rem;
+            flex-grow: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .store-header {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .store-info-content {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .store-logo {
+            width: 100px;
+            height: 100px;
+            border-radius: 12px;
+            object-fit: cover;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .store-details h2 {
+            margin: 0 0 0.5rem 0;
+            font-size: 2rem;
+            color: #2d3748;
+        }
+
+        .store-details p {
+            margin: 0.25rem 0;
+            color: #4a5568;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .store-details i {
+            color: #667eea;
+            width: 18px;
+            text-align: center;
+        }
+
+        .store-products {
+            margin-top: 2rem;
+        }
+
+        .store-products h3 {
+            font-size: 1.75rem;
+            margin-bottom: 1.5rem;
+            color: #2d3748;
+        }
+
+        #storeProducts {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            max-width: 100%;
+        }
+
+        .product-card {
+            display: flex !important;
+            flex-direction: row !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            margin-top: 0 !important;
+            padding: 1rem;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .product-card .product-image {
+            width: 120px !important;
+            height: 120px !important;
+            flex-shrink: 0;
+            border-bottom: none !important;
+        }
+
+        .product-card .product-card-content {
+            flex: 1;
+            padding: 0 !important;
+            display: flex;
+            flex-direction: row !important;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .product-info-left {
+            flex: 1;
+        }
+
+        .product-controls-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-shrink: 0;
+        }
+
+        .store-details h2 {
+            font-size: 1.5rem;
+        }
+
+        .variant-selector {
+            margin: 0.5rem 0;
+        }
+
+        .variant-options {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .add-to-cart {
+            width: auto !important;
+            padding: 0.6rem 1.2rem !important;
+        }
+
+        @media (max-width: 768px) {
+            .product-card {
+                flex-direction: column !important;
+                align-items: flex-start;
+            }
+            .product-card .product-card-content {
+                flex-direction: column !important;
+                align-items: flex-start;
+                width: 100%;
+            }
+            .product-controls-right {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .main-container {
+                padding: 1rem;
+            }
+
+            .store-header {
+                padding: 1rem;
+            }
+
+            .store-info-content {
+                flex-direction: column;
+                text-align: center;
+                gap: 1rem;
+            }
+
+            .store-logo {
+                width: 80px;
+                height: 80px;
+            }
+
+            .store-details p {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="toastContainer" class="toast-container"></div>
+    <header>
+        <nav>
+            <div class="logo">
+                <h1>ServeNow</h1>
+            </div>
+            <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation menu" onclick="toggleMobileMenu()">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <ul id="navMenu">
+                <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
+                <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+                <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount">0</span></a></li>
+                <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
+                <li><a href="login.html"><i class="fas fa-sign-in-alt"></i> Login</a></li>
+                <li><a href="register.html"><i class="fas fa-user-plus"></i> Register</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <div class="main-container">
+        <main>
+            <section class="store-header">
+                <div id="storeInfo">
+                    <!-- Store info will be loaded dynamically -->
+                </div>
+            </section>
+
+            <section class="store-products">
+                <h3>Available Products</h3>
+                <div class="product-grid" id="storeProducts">
+                    <!-- Products will be loaded dynamically -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <footer>
+        <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
+    </footer>
+
+    <script src="js/app.js?v=7"></script>
+    <script src="js/store.js"></script>
+    <script>
+        const menuToggle = document.getElementById('menuToggle');
+        const navMenu = document.getElementById('navMenu');
+
+        menuToggle.addEventListener('click', function(event) {
+            event.stopPropagation();
+        });
+
+        document.addEventListener('click', function(event) {
+            if (!navMenu.contains(event.target) && !menuToggle.contains(event.target)) {
+                navMenu.classList.remove('active');
+                menuToggle.classList.remove('active');
+            }
+        });
+
+        const navLinks = navMenu.querySelectorAll('a');
+        navLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                navMenu.classList.remove('active');
+                menuToggle.classList.remove('active');
+            });
+        });
+    </script>
+</body>
+</html>
