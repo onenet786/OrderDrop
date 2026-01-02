@@ -650,6 +650,17 @@ router.get('/rider/deliveries', authenticateToken, async (req, res) => {
             ORDER BY o.created_at DESC
         `, [req.user.id]);
 
+        // Fetch items for each delivery
+        for (let delivery of deliveries) {
+            const [items] = await req.db.execute(`
+                SELECT oi.*, p.name as product_name, p.image_url
+                FROM order_items oi
+                LEFT JOIN products p ON oi.product_id = p.id
+                WHERE oi.order_id = ?
+            `, [delivery.id]);
+            delivery.items = items;
+        }
+
         res.json({
             success: true,
             deliveries

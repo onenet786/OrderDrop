@@ -143,6 +143,24 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    if (_token == null) throw Exception('Not authenticated');
+    
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await ApiService.changePassword(_token!, currentPassword, newPassword);
+      if (response['success'] != true) {
+        throw Exception(response['message'] ?? 'Failed to change password');
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> tryAutoLogin() async {
     final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey('token')) return;

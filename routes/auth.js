@@ -116,57 +116,6 @@ router.post('/login', [
         const { email, password } = req.body;
         console.log('[auth] Login attempt for:', email);
 
-        // Development shortcut: allow the default admin credentials even if user row is missing
-        if (process.env.NODE_ENV === 'development' && email && email.toLowerCase() === 'admin@servenow.com' && password === 'admin123') {
-            const adminEmail = 'admin@servenow.com';
-            const [existingUsers] = await req.db.execute(
-                'SELECT id, first_name, last_name, email, user_type FROM users WHERE email = ? LIMIT 1',
-                [adminEmail]
-            );
-
-            let adminUser = existingUsers && existingUsers[0] ? existingUsers[0] : null;
-
-            if (!adminUser) {
-                const saltRounds = 10;
-                const hashedPassword = await bcrypt.hash(password, saltRounds);
-                const [insertResult] = await req.db.execute(
-                    `INSERT INTO users (first_name, last_name, email, password, user_type, is_verified, is_active)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    ['Dev', 'Admin', adminEmail, hashedPassword, 'admin', true, true]
-                );
-                adminUser = { id: insertResult.insertId, first_name: 'Dev', last_name: 'Admin', email: adminEmail, user_type: 'admin' };
-            } else {
-                await req.db.execute(
-                    'UPDATE users SET user_type = ?, is_verified = ?, is_active = ? WHERE id = ?',
-                    ['admin', true, true, adminUser.id]
-                );
-            }
-
-            const token = jwt.sign(
-                {
-                    id: adminUser.id,
-                    email: adminEmail,
-                    user_type: 'admin',
-                    first_name: adminUser.first_name || 'Dev',
-                    last_name: adminUser.last_name || 'Admin'
-                },
-                process.env.JWT_SECRET,
-                { expiresIn: process.env.JWT_EXPIRE }
-            );
-
-            try {
-                const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-                await req.db.execute('INSERT INTO login_logs (user_id, user_type, ip_address) VALUES (?, ?, ?)', [adminUser.id, 'admin', ip]);
-            } catch (e) { console.error('Login log error:', e); }
-
-            return res.json({
-                success: true,
-                message: 'Dev admin login',
-                token,
-                user: { id: adminUser.id, first_name: adminUser.first_name || 'Dev', last_name: adminUser.last_name || 'Admin', email: adminEmail, user_type: 'admin' }
-            });
-        }
-
         // Find user
         const [users] = await req.db.execute(
             'SELECT * FROM users WHERE email = ? AND is_active = true',
@@ -235,19 +184,14 @@ router.post('/login', [
 
         // Check password
         let isPasswordValid = false;
-        if (email === 'admin@servenow.com' && password === 'admin123') {
-            isPasswordValid = true;
-            if (process.env.NODE_ENV === 'development') console.log('[auth] Dev admin shortcut used, password accepted');
-        } else {
-            if (process.env.NODE_ENV === 'development') console.log('[auth] Comparing provided password with stored hash');
-            try {
-                isPasswordValid = await bcrypt.compare(password, user.password);
-            } catch (e) {
-                console.error('[auth] bcrypt.compare error:', e && e.message ? e.message : e);
-                isPasswordValid = false;
-            }
-            if (process.env.NODE_ENV === 'development') console.log(`[auth] Password comparison result: ${isPasswordValid}`);
+        if (process.env.NODE_ENV === 'development') console.log('[auth] Comparing provided password with stored hash');
+        try {
+            isPasswordValid = await bcrypt.compare(password, user.password);
+        } catch (e) {
+            console.error('[auth] bcrypt.compare error:', e && e.message ? e.message : e);
+            isPasswordValid = false;
         }
+        if (process.env.NODE_ENV === 'development') console.log(`[auth] Password comparison result: ${isPasswordValid}`);
 
         if (!isPasswordValid) {
             // Check if it's a rider login
@@ -390,6 +334,91 @@ router.get('/me', authenticateToken, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch profile',
+            error: error.message
+        });
+    }
+});
+
+// Change password
+router.post('/change-password', authenticateToken, [
+    body('currentPassword').notEmpty().withMessage('Current password is required'),
+    body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: errors.array()
+            });
+        }
+
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user.id;
+        const userType = req.user.user_type;
+
+        let table = 'users';
+        if (userType === 'rider') {
+            table = 'riders';
+        }
+
+        // Get user/rider from database
+        const [rows] = await req.db.execute(
+            `SELECT * FROM ${table} WHERE id = ?`,
+            [userId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const user = rows[0];
+
+        // Verify current password
+        let isPasswordValid = false;
+        
+        if (userType === 'rider') {
+            // Check both plain and hashed for riders (transitioning to hashed)
+            if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
+                isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+            } else {
+                isPasswordValid = (user.password === currentPassword);
+            }
+        } else {
+            isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+        }
+
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid current password'
+            });
+        }
+
+        // Hash new password
+        const saltRounds = 10;
+        const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+
+        // Update password
+        await req.db.execute(
+            `UPDATE ${table} SET password = ? WHERE id = ?`,
+            [hashedNewPassword, userId]
+        );
+
+        res.json({
+            success: true,
+            message: 'Password changed successfully'
+        });
+
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to change password',
             error: error.message
         });
     }

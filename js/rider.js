@@ -237,6 +237,17 @@ async function displayRiderDeliveries(status = 'assigned') {
                         <p><strong>Delivery Address:</strong> ${delivery.delivery_address}</p>
                         <p><strong>Phone:</strong> ${delivery.phone || 'N/A'}</p>
                         <p><strong>Payment Status:</strong> <span class="payment-status">${delivery.payment_status}</span></p>
+                        <div class="order-items-summary" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
+                            <p><strong>Items:</strong></p>
+                            <ul style="list-style: none; padding-left: 0;">
+                                ${delivery.items && delivery.items.length > 0 ? delivery.items.map(item => `
+                                    <li style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                        <span>${item.quantity}x ${item.product_name || 'Unknown Product'} ${item.variant_name ? `(${item.variant_name})` : ''}</span>
+                                        <span>PKR ${item.price * item.quantity}</span>
+                                    </li>
+                                `).join('') : '<li>No items found</li>'}
+                            </ul>
+                        </div>
                         ${delivery.rider_location ? `<p><strong>My Location:</strong> ${delivery.rider_location}</p>` : ''}
                         ${delivery.estimated_delivery_time ? `<p><strong>Estimated Delivery:</strong> ${new Date(delivery.estimated_delivery_time).toLocaleString()}</p>` : ''}
                     </div>
@@ -388,6 +399,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadRiderInfo();
     displayRiderDeliveries('assigned');
 
+    /* Location tracking disabled
     // Try to get initial location
     getCurrentLocation()
         .then((location) => {
@@ -410,6 +422,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Auto-update location every 2 minutes
     setInterval(autoUpdateLocation, 120000); // 2 minutes
+    */
 
     // Tab switching
     document.getElementById('assignedTab').addEventListener('click', function() {
@@ -425,5 +438,5 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Cleanup on page unload
-    window.addEventListener('beforeunload', stopLocationTracking);
+    // window.addEventListener('beforeunload', stopLocationTracking);
 });

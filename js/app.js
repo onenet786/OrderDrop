@@ -193,7 +193,11 @@ async function loadHeaderWalletBalance() {
     if (!navUl) return;
 
     try {
-        const response = await fetch(`${API_BASE}/api/wallet/balance`);
+        const response = await fetch(`${API_BASE}/api/wallet/balance`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
         const data = await response.json();
 
         if (data.success && data.wallet) {
@@ -1036,6 +1040,93 @@ function logout() {
     window.location.href = 'login.html';
 }
 
+async function changePassword(currentPassword, newPassword) {
+    try {
+        const token = localStorage.getItem('serveNowToken');
+        const response = await fetch(`${API_BASE}/api/auth/change-password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ currentPassword, newPassword })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Password changed successfully!');
+            hideChangePasswordModal();
+        } else {
+            showError('Error', data.message || 'Failed to change password');
+        }
+    } catch (error) {
+        console.error('Change password error:', error);
+        showError('Error', 'An error occurred while changing password');
+    }
+}
+
+function showChangePasswordModal() {
+    let modal = document.getElementById('changePasswordModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'changePasswordModal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <span class="close" onclick="hideChangePasswordModal()">&times;</span>
+                <h3>Change Password</h3>
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">Current Password</label>
+                        <input type="password" id="currentPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">New Password</label>
+                        <input type="password" id="newPassword" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmNewPassword">Confirm New Password</label>
+                        <input type="password" id="confirmNewPassword" required minlength="6">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary">Update Password</button>
+                        <button type="button" class="btn btn-secondary" onclick="hideChangePasswordModal()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        document.getElementById('changePasswordForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const currentPwd = document.getElementById('currentPassword').value;
+            const newPwd = document.getElementById('newPassword').value;
+            const confirmPwd = document.getElementById('confirmNewPassword').value;
+
+            if (newPwd !== confirmPwd) {
+                showWarning('Validation Error', 'New passwords do not match');
+                return;
+            }
+
+            changePassword(currentPwd, newPwd);
+        });
+    }
+    modal.style.display = 'block';
+    setTimeout(() => modal.classList.add('show'), 10);
+}
+
+function hideChangePasswordModal() {
+    const modal = document.getElementById('changePasswordModal');
+    if (modal) {
+        modal.classList.remove('show');
+        setTimeout(() => {
+            modal.style.display = 'none';
+            const form = document.getElementById('changePasswordForm');
+            if (form) form.reset();
+        }, 300);
+    }
+}
+
 // Initialize the app
 document.addEventListener('DOMContentLoaded', function() {
     // Mobile menu toggle (available on pages with menuToggle/navMenu)
@@ -1113,8 +1204,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (userData) {
             try {
                 const user = JSON.parse(userData);
-                // Only update navigation for customers, not for riders or admins
-                if (user.user_type === 'customer') {
+                // Update navigation for customers and store owners
+                if (user.user_type === 'customer' || user.user_type === 'store_owner') {
                     const navUl = document.querySelector('nav ul');
                     if (navUl) {
                         navUl.innerHTML = `
@@ -1124,6 +1215,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount">0</span></a></li>
                             <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
                             <li>Welcome ${user.first_name}</li>
+                            <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
                             <li><a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                         `;
                     }

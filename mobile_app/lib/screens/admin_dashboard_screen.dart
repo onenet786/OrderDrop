@@ -307,6 +307,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               Navigator.of(context).pushNamed('/inventory-report');
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.key),
+            title: const Text('Change Password'),
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).pushNamed('/change-password');
+            },
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),

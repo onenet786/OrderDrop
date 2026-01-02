@@ -110,6 +110,27 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> changePassword(
+    String token,
+    String currentPassword,
+    String newPassword,
+  ) async {
+    final uri = Uri.parse('$baseUrl/api/auth/change-password');
+    _logger.d('ApiService: POST $uri');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+      }),
+    );
+    return _handleResponse(response);
+  }
+
   static Future<Map<String, dynamic>> getProfile(String token) async {
     final uri = Uri.parse('$baseUrl/api/auth/me');
     _logger.d('ApiService: GET $uri');

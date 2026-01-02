@@ -25,9 +25,9 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
         const hasFullName = await hasColumn(req.db, 'riders', 'full_name');
         let sql;
         if (hasFullName) {
-            sql = 'SELECT id, full_name, email, phone, vehicle_type, license_number, is_available, is_active, created_at FROM riders ORDER BY full_name ASC';
+            sql = 'SELECT id, full_name, email, phone, vehicle_type, license_number, is_available, is_active, father_name, image_url, id_card_url, id_card_num, created_at FROM riders ORDER BY full_name ASC';
         } else {
-            sql = 'SELECT id, first_name, last_name, email, phone, vehicle_type, license_number, is_available, is_active, created_at FROM riders ORDER BY first_name ASC';
+            sql = 'SELECT id, first_name, last_name, email, phone, vehicle_type, license_number, is_available, is_active, father_name, image_url, id_card_url, id_card_num, created_at FROM riders ORDER BY first_name ASC';
         }
         const [riders] = await req.db.execute(sql);
 

@@ -16,6 +16,7 @@ import 'screens/manage_products_screen.dart';
 import 'screens/manage_users_screen.dart';
 import 'screens/manage_riders_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/change_password_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -68,6 +69,7 @@ class MyApp extends StatelessWidget {
           '/manage-products': (context) => const ManageProductsScreen(),
           '/manage-users': (context) => const ManageUsersScreen(),
           '/manage-riders': (context) => const ManageRidersScreen(),
+          '/change-password': (context) => const ChangePasswordScreen(),
         },
       ),
     );

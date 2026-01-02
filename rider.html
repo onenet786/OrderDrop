@@ -20,6 +20,7 @@
                 <span></span>
             </button>
             <ul>
+                <li><a href="#" onclick="showChangePasswordModal(); return false;">Change Password</a></li>
                 <li><a href="#" onclick="logout()">Logout</a></li>
             </ul>
         </nav>
@@ -32,9 +33,11 @@
             <div class="rider-info">
                 <h3>Welcome, <span id="riderName"></span></h3>
                 <p>Vehicle: <span id="riderVehicle"></span></p>
-                <p>Current Location: <span id="currentLocation">Getting location...</span>
-                    <button onclick="refreshLocation()" class="btn btn-small btn-primary" style="margin-left: 10px;">Refresh</button>
-                </p>
+                <div style="display:none">
+                    <p>Current Location: <span id="currentLocation">Location tracking disabled</span>
+                        <button onclick="refreshLocation()" class="btn btn-small btn-primary" style="margin-left: 10px;">Refresh</button>
+                    </p>
+                </div>
             </div>
 
             <div class="rider-tabs">

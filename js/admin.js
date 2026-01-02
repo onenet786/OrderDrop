@@ -3,9 +3,7 @@
 // Expose a diagnostics object early so console helpers are always available
 window._adminDiag = window._adminDiag || {};
 
-const API_BASE = window.location.protocol + '//' + window.location.host;
-let currentUser = null;
-let authToken = null;
+// API_BASE, currentUser, and authToken are provided by app.js (loaded in admin.html)
 let currentOrders = [];
 let currentProducts = [];
 let currentAccounts = [];
@@ -3900,39 +3898,6 @@ try { window.editCategory = editCategory; } catch (e) {}
 
 
 // Riders Management Functions
-function loadRiders() {
-    fetch(`${API_BASE}/api/riders`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-    })
-    .then(response => response.json())
-    .then(data => {
-        const tbody = document.getElementById('ridersTableBody');
-        tbody.innerHTML = '';
-
-        data.riders.forEach(rider => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${rider.id}</td>
-                <td>${rider.full_name || [rider.first_name || '', rider.last_name || ''].filter(Boolean).join(' ')}</td>
-                <td>${rider.email}</td>
-                <td>${rider.phone}</td>
-                <td>${rider.vehicle_type}</td>
-                <td>${rider.license_number}</td>
-                <td><span class="status-${rider.is_available ? 'active' : 'inactive'}">${rider.is_available ? 'Available' : 'Unavailable'}</span></td>
-                <td><span class="status-${rider.is_active ? 'active' : 'inactive'}">${rider.is_active ? 'Active' : 'Inactive'}</span></td>
-                <td>
-                    <button class="btn btn-small btn-edit" onclick="editRider(${rider.id})">Edit</button>
-                    <button class="btn btn-small btn-secondary" onclick="toggleRiderStatus(${rider.id}, ${rider.is_active})">
-                        ${rider.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-    })
-    .catch(error => console.error('Error loading riders:', error));
-}
-
 // --- Rider Fuel History Client Functions ---
 function loadRidersForFuelSelect() {
     return fetch(`${API_BASE}/api/riders`, { headers: { 'Authorization': `Bearer ${authToken}` } })

@@ -234,6 +234,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         title: const Text('Rider Dashboard'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAllData),
+          IconButton(
+            icon: const Icon(Icons.key),
+            onPressed: () => Navigator.of(context).pushNamed('/change-password'),
+            tooltip: 'Change Password',
+          ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
       ),
@@ -390,6 +395,36 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ? Colors.green
                   : Colors.orange,
             ),
+
+            const Divider(),
+            const Text(
+              'Items:',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+            ),
+            const SizedBox(height: 4),
+            if (delivery['items'] != null && (delivery['items'] as List).isNotEmpty)
+              ...(delivery['items'] as List).map((item) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${item['quantity']}x ${item['product_name'] ?? 'Unknown Product'}${item['variant_name'] != null ? ' (${item['variant_name']})' : ''}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      Text(
+                        'PKR ${((item['price'] ?? 0) * (item['quantity'] ?? 1))}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                );
+              })
+            else
+              const Text('No items found', style: TextStyle(fontSize: 13, color: Colors.grey)),
 
             if (delivery['rider_location'] != null)
               _buildDetailRow('My Location', '${delivery['rider_location']}'),
