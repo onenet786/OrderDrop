@@ -4,7 +4,6 @@ import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
 import '../models/user.dart';
 import 'store_screen.dart';
-import 'change_password_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -120,6 +119,11 @@ class _HomeScreenState extends State<HomeScreen> {
         appBar: AppBar(
           title: const Text('ServeNow'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.shopping_bag),
+              onPressed: () => Navigator.of(context).pushNamed('/orders'),
+              tooltip: 'My Orders',
+            ),
             IconButton(
               icon: const Icon(Icons.logout),
               onPressed: () {

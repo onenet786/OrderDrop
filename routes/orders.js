@@ -40,9 +40,11 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
     try {
         await ensureOrderItemsVariantColumns(req.db);
         const [orders] = await req.db.execute(`
-            SELECT o.*, s.name as store_name, s.location as store_location
+            SELECT o.*, s.name as store_name, s.location as store_location,
+                   r.first_name as rider_first_name, r.last_name as rider_last_name, r.phone as rider_phone
             FROM orders o
             JOIN stores s ON o.store_id = s.id
+            LEFT JOIN riders r ON o.rider_id = r.id
             WHERE o.user_id = ?
             ORDER BY o.created_at DESC
         `, [req.user.id]);

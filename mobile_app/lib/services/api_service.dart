@@ -179,6 +179,17 @@ class ApiService {
     return data['orders'] ?? [];
   }
 
+  static Future<List<dynamic>> getMyOrders(String token) async {
+    final uri = Uri.parse('$baseUrl/api/orders/my-orders');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final data = _handleResponse(response);
+    return data['orders'] ?? [];
+  }
+
   static Future<Map<String, dynamic>> createOrder(
     String token, {
     required int storeId,

@@ -15,6 +15,7 @@ import 'screens/manage_stores_screen.dart';
 import 'screens/manage_products_screen.dart';
 import 'screens/manage_users_screen.dart';
 import 'screens/manage_riders_screen.dart';
+import 'screens/orders_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/change_password_screen.dart';
 
@@ -61,6 +62,7 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const HomeScreen(),
           '/admin': (context) => const AdminDashboardScreen(),
           '/rider': (context) => const RiderDashboardScreen(),
+          '/orders': (context) => const OrdersScreen(),
           '/cart': (context) => const CartScreen(),
           '/checkout': (context) => const CheckoutScreen(),
           '/wallet': (context) => const HomeScreen(), // Redirect to home

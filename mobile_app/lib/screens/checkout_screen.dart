@@ -204,12 +204,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           content: const Text('Your order has been successfully placed.'),
           actions: [
             TextButton(
-              child: const Text('OK'),
+              child: const Text('View Orders'),
               onPressed: () {
                 Navigator.of(ctx).pop(); // Close dialog
                 Navigator.of(
                   context,
-                ).pushNamedAndRemoveUntil('/home', (route) => false);
+                ).pushNamedAndRemoveUntil('/orders', (route) => false);
               },
             ),
           ],

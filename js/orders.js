@@ -4,7 +4,19 @@ async function displayOrders(status = 'pending') {
     if (!ordersContainer) return;
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders?status=${status}`, {
+        const userData = localStorage.getItem('serveNowUser');
+        const user = userData ? JSON.parse(userData) : null;
+        const isAdmin = user && user.user_type === 'admin';
+
+        let url = `${API_BASE}/api/orders?status=${status}`;
+        if (!isAdmin) {
+            url = `${API_BASE}/api/orders/my-orders`;
+            // Hide tabs for non-admin
+            const tabs = document.querySelector('.orders-tabs');
+            if (tabs) tabs.style.display = 'none';
+        }
+
+        const response = await fetch(url, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             }
@@ -22,22 +34,45 @@ async function displayOrders(status = 'pending') {
             data.orders.forEach(order => {
                 const orderCard = document.createElement('div');
                 orderCard.className = 'order-card';
+                
+                let contactRiderHtml = '';
+                if (order.rider_phone) {
+                    const cleanPhone = order.rider_phone.replace(/[^0-9]/g, '');
+                    contactRiderHtml = `
+                        <div class="rider-contact" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee;">
+                            <p style="margin-bottom: 10px;"><strong>Rider:</strong> ${order.rider_first_name} ${order.rider_last_name}</p>
+                            <div class="contact-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                <a href="tel:${order.rider_phone}" class="btn btn-sm" style="background: #2196F3; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 14px;">
+                                    <i class="fas fa-phone"></i> Call
+                                </a>
+                                <a href="sms:${order.rider_phone}" class="btn btn-sm" style="background: #FF9800; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 14px;">
+                                    <i class="fas fa-sms"></i> SMS
+                                </a>
+                                <a href="https://wa.me/${cleanPhone}" target="_blank" class="btn btn-sm" style="background: #4CAF50; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 14px;">
+                                    <i class="fab fa-whatsapp"></i> WhatsApp
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 orderCard.innerHTML = `
                     <div class="order-header">
                         <h3>Order #${order.order_number}</h3>
                         <span class="order-status status-${order.status}">${order.status}</span>
                     </div>
                     <div class="order-details">
-                        <p><strong>Customer:</strong> ${order.first_name} ${order.last_name}</p>
+                        <p><strong>Customer:</strong> ${order.first_name || (user ? user.first_name : '')} ${order.last_name || (user ? user.last_name : '')}</p>
                         <p><strong>Store:</strong> ${order.store_name}</p>
                         <p><strong>Total:</strong> PKR ${order.total_amount}</p>
                         <p><strong>Delivery Address:</strong> ${order.delivery_address}</p>
-                        <p><strong>Items:</strong> ${order.items_count || 0} items</p>
+                        <p><strong>Items:</strong> ${order.items_count || (order.items ? order.items.length : 0)} items</p>
                         ${order.rider_location ? `<p><strong>Rider Location:</strong> ${order.rider_location}</p>` : ''}
                         ${order.estimated_delivery_time ? `<p><strong>Estimated Delivery:</strong> ${new Date(order.estimated_delivery_time).toLocaleString()}</p>` : ''}
+                        ${contactRiderHtml}
                     </div>
                     <div class="order-actions">
-                        ${status === 'pending' ? `
+                        ${isAdmin ? (status === 'pending' ? `
                             <button onclick="updateOrderStatus(${order.id}, 'confirmed')" class="btn btn-primary">Confirm Order</button>
                             <button onclick="assignRider(${order.id})" class="btn btn-secondary">Assign Rider</button>
                             <button onclick="updateOrderStatus(${order.id}, 'cancelled')" class="btn btn-danger">Cancel Order</button>
@@ -46,13 +81,15 @@ async function displayOrders(status = 'pending') {
                             <button onclick="markAsDelivered(${order.id})" class="btn btn-success">Mark as Delivered</button>
                         ` : `
                             <button onclick="viewOrderDetails(${order.id})" class="btn btn-primary">View Details</button>
+                        `) : `
+                            <button onclick="viewOrderDetails(${order.id})" class="btn btn-primary">View Details</button>
                         `}
                     </div>
                 `;
                 ordersContainer.appendChild(orderCard);
             });
         } else {
-            ordersContainer.innerHTML = '<p>Failed to load orders.</p>';
+            ordersContainer.innerHTML = `<p>${data.message || 'Failed to load orders.'}</p>`;
         }
     } catch (error) {
         console.error('Error loading orders:', error);
@@ -239,33 +276,31 @@ function viewOrderDetails(orderId) {
 
 // Initialize orders page
 document.addEventListener('DOMContentLoaded', function() {
-    // Check if user is admin
+    // Check if user is logged in
     const userData = localStorage.getItem('serveNowUser');
-    if (userData) {
-        const user = JSON.parse(userData);
-        if (user.user_type !== 'admin') {
-            alert('Access denied. Admin access required.');
-            window.location.href = 'index.html';
-            return;
-        }
-    } else {
-        alert('Please login as admin first.');
+    if (!userData) {
+        alert('Please login first.');
         window.location.href = 'login.html';
         return;
     }
 
-    displayOrders('pending');
+    const user = JSON.parse(userData);
+    const isAdmin = user.user_type === 'admin';
 
-    // Tab switching
-    document.getElementById('pendingTab').addEventListener('click', function() {
-        document.getElementById('pendingTab').classList.add('active');
-        document.getElementById('allTab').classList.remove('active');
-        displayOrders('pending');
-    });
+    displayOrders(isAdmin ? 'pending' : 'all');
 
-    document.getElementById('allTab').addEventListener('click', function() {
-        document.getElementById('allTab').classList.add('active');
-        document.getElementById('pendingTab').classList.remove('active');
-        displayOrders('all');
-    });
+    if (isAdmin) {
+        // Tab switching
+        document.getElementById('pendingTab').addEventListener('click', function() {
+            document.getElementById('pendingTab').classList.add('active');
+            document.getElementById('allTab').classList.remove('active');
+            displayOrders('pending');
+        });
+
+        document.getElementById('allTab').addEventListener('click', function() {
+            document.getElementById('allTab').classList.add('active');
+            document.getElementById('pendingTab').classList.remove('active');
+            displayOrders('all');
+        });
+    }
 });
