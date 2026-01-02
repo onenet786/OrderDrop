@@ -15,14 +15,54 @@ class RiderDashboardScreen extends StatefulWidget {
 }
 
 class _RiderDashboardScreenState extends State<RiderDashboardScreen>
-    with SingleTickerProviderStateMixin {
-  final Logger _logger = Logger();
-  late TabController _tabController;
-  bool _isLoading = true;
-  Map<String, dynamic>? _riderProfile;
-  List<dynamic> _assignedDeliveries = [];
-  List<dynamic> _completedDeliveries = [];
-  String _currentLocation = 'Getting location...';
+with SingleTickerProviderStateMixin {
+final Logger _logger = Logger();
+late TabController _tabController;
+bool _isLoading = true;
+Map<String, dynamic>? _riderProfile;
+List<dynamic> _assignedDeliveries = [];
+List<dynamic> _completedDeliveries = [];
+String _currentLocation = 'Getting location...';
+
+Future<void> _makeCall(String phoneNumber) async {
+final uri = Uri(scheme: 'tel', path: phoneNumber);
+if (await canLaunchUrl(uri)) {
+await launchUrl(uri);
+} else {
+if (mounted) {
+ScaffoldMessenger.of(context).showSnackBar(
+const SnackBar(content: Text('Could not launch dialer')),
+);
+}
+}
+}
+
+Future<void> _sendSms(String phoneNumber) async {
+final uri = Uri(scheme: 'sms', path: phoneNumber);
+if (await canLaunchUrl(uri)) {
+await launchUrl(uri);
+} else {
+if (mounted) {
+ScaffoldMessenger.of(context).showSnackBar(
+const SnackBar(content: Text('Could not launch SMS app')),
+);
+}
+}
+}
+
+Future<void> _openWhatsApp(String phoneNumber) async {
+final cleanPhone = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+final uri = Uri.parse('https://wa.me/$cleanPhone');
+if (await canLaunchUrl(uri)) {
+await launchUrl(uri, mode: LaunchMode.externalApplication);
+} else {
+if (mounted) {
+ScaffoldMessenger.of(context).showSnackBar(
+const SnackBar(content: Text('Could not launch WhatsApp')),
+);
+}
+}
+}
 
   @override
   void initState() {
@@ -329,8 +369,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 
   Widget _buildDeliveryCard(Map<String, dynamic> delivery, bool isAssigned) {
-    final status = delivery['status'] ?? 'unknown';
-    final paymentStatus = delivery['payment_status'] ?? 'pending';
+  final status = delivery['status'] ?? 'unknown';
+  final paymentStatus = delivery['payment_status'] ?? 'pending';
+  final customerPhone = (delivery['phone'] ?? '').toString();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -388,12 +429,39 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             _buildDetailRow('Total', 'PKR ${delivery['total_amount']}'),
             _buildDetailRow('Address', '${delivery['delivery_address']}'),
             _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
+            if (customerPhone.isNotEmpty)
+            Padding(
+            padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+            child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+            _contactAction(
+            icon: Icons.phone,
+            color: Colors.blue,
+            label: 'Call',
+            onTap: () => _makeCall(customerPhone),
+            ),
+            _contactAction(
+            icon: Icons.message,
+            color: Colors.orange,
+            label: 'SMS',
+            onTap: () => _sendSms(customerPhone),
+            ),
+            _contactAction(
+            icon: Icons.chat,
+            color: Colors.green,
+            label: 'WhatsApp',
+            onTap: () => _openWhatsApp(customerPhone),
+            ),
+            ],
+            ),
+            ),
             _buildDetailRow(
-              'Payment',
-              paymentStatus,
-              valueColor: paymentStatus == 'paid'
-                  ? Colors.green
-                  : Colors.orange,
+            'Payment',
+            paymentStatus,
+            valueColor: paymentStatus == 'paid'
+            ? Colors.green
+            : Colors.orange,
             ),
 
             const Divider(),
@@ -522,19 +590,45 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'delivered':
-        return Colors.green;
-      case 'cancelled':
-        return Colors.red;
-      case 'out_for_delivery':
-        return Colors.blue;
-      case 'preparing':
-        return Colors.orange;
-      case 'pending':
-        return Colors.amber;
-      default:
-        return Colors.grey;
-    }
+  switch (status.toLowerCase()) {
+  case 'delivered':
+  return Colors.green;
+  case 'cancelled':
+  return Colors.red;
+  case 'out_for_delivery':
+  return Colors.blue;
+  case 'preparing':
+  return Colors.orange;
+  case 'pending':
+  return Colors.amber;
+  default:
+  return Colors.grey;
   }
-}
+  }
+  
+  Widget _contactAction({
+  required IconData icon,
+  required Color color,
+  required String label,
+  required VoidCallback onTap,
+  }) {
+  return InkWell(
+  onTap: onTap,
+  child: Column(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+  Icon(icon, color: color),
+  const SizedBox(height: 4),
+  Text(
+  label,
+  style: TextStyle(
+  color: color,
+  fontWeight: FontWeight.bold,
+  fontSize: 12,
+  ),
+  ),
+  ],
+  ),
+  );
+  }
+  }
