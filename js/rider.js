@@ -236,6 +236,13 @@ async function displayRiderDeliveries(status = 'assigned') {
                         <p><strong>Total:</strong> PKR ${delivery.total_amount}</p>
                         <p><strong>Delivery Address:</strong> ${delivery.delivery_address}</p>
                         <p><strong>Phone:</strong> ${delivery.phone || 'N/A'}</p>
+                        ${delivery.phone ? `
+                        <div class="contact-actions" style="margin: 8px 0; display: flex; gap: 8px; flex-wrap: wrap;">
+                            <a class="btn btn-small" style="background:#2563eb;color:#fff;" href="tel:${delivery.phone}"><i class="fa fa-phone"></i> Call</a>
+                            <a class="btn btn-small" style="background:#16a34a;color:#fff;" href="https://wa.me/${(delivery.phone || '').replace(/[^0-9]/g, '')}" target="_blank" rel="noopener"><i class="fa fa-whatsapp"></i> WhatsApp</a>
+                            <a class="btn btn-small" style="background:#f59e0b;color:#fff;" href="sms:${delivery.phone}"><i class="fa fa-sms"></i> SMS</a>
+                        </div>
+                        ` : ''}
                         <p><strong>Payment Status:</strong> <span class="payment-status">${delivery.payment_status}</span></p>
                         <div class="order-items-summary" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd;">
                             <p><strong>Items:</strong></p>

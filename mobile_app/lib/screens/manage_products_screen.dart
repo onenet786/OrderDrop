@@ -206,7 +206,7 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
       ),
       child: imageUrl != null && imageUrl.isNotEmpty
           ? Image.network(
-              imageUrl,
+              ApiService.getImageUrl(imageUrl),
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) {
                 return const Icon(Icons.image_not_supported);

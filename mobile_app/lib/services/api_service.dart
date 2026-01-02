@@ -24,6 +24,7 @@ class ApiService {
   static String getImageUrl(String? url) {
     if (url == null || url.isEmpty) return '';
     if (url.startsWith('http')) return url;
+    if (url.startsWith('//')) return 'https:$url';
     if (url.startsWith('/')) return '$baseUrl$url';
     return '$baseUrl/$url';
   }
