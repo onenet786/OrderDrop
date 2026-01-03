@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:logger/logger.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import 'login_screen.dart';
@@ -25,29 +26,56 @@ List<dynamic> _completedDeliveries = [];
 String _currentLocation = 'Getting location...';
 
 Future<void> _makeCall(String phoneNumber) async {
-final uri = Uri(scheme: 'tel', path: phoneNumber);
-if (await canLaunchUrl(uri)) {
-await launchUrl(uri);
-} else {
-if (mounted) {
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(content: Text('Could not launch dialer')),
-);
-}
-}
+  final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
+  if (cleaned.isEmpty) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No valid phone number')),
+      );
+    }
+    return;
+  }
+  final uri = Uri(scheme: 'tel', path: cleaned);
+  if (await canLaunchUrl(uri)) {
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not launch dialer')),
+      );
+    }
+  } else if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Dialer app not available')),
+    );
+  }
 }
 
 Future<void> _sendSms(String phoneNumber) async {
-final uri = Uri(scheme: 'sms', path: phoneNumber);
-if (await canLaunchUrl(uri)) {
-await launchUrl(uri);
-} else {
-if (mounted) {
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(content: Text('Could not launch SMS app')),
-);
-}
-}
+  final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
+  if (cleaned.isEmpty) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No valid phone number')),
+      );
+    }
+    return;
+  }
+  // Try 'sms:' first, then fall back to 'smsto:' for wider compatibility
+  final smsUri = Uri(scheme: 'sms', path: cleaned);
+  final smstoUri = Uri(scheme: 'smsto', path: cleaned);
+
+  bool launched = false;
+  if (await canLaunchUrl(smsUri)) {
+    launched = await launchUrl(smsUri, mode: LaunchMode.externalApplication);
+  } else if (await canLaunchUrl(smstoUri)) {
+    launched = await launchUrl(smstoUri, mode: LaunchMode.externalApplication);
+  }
+
+  if (!launched && mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('SMS app not available')),
+    );
+  }
 }
 
 Future<void> _openWhatsApp(String phoneNumber) async {
@@ -316,36 +344,89 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   }
 
   Widget _buildRiderInfoCard() {
+    final name = _riderProfile == null
+        ? 'Rider'
+        : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'.trim().isEmpty
+            ? (_riderProfile?['first_name'] ?? 'Rider')
+            : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'.trim();
+    final vehicle = _riderProfile?['vehicle_type'] ?? 'N/A';
+
     return Card(
       margin: const EdgeInsets.all(16),
-      elevation: 4,
-      child: Padding(
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            colors: [Colors.blue.shade600, Colors.indigo.shade600],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              'Welcome, ${_riderProfile?['first_name'] ?? 'Rider'}',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: Colors.white.withValues(alpha: 0.2),
+              child: const Icon(Icons.pedal_bike, color: Colors.white, size: 28),
             ),
-            const SizedBox(height: 8),
-            Text('Vehicle: ${_riderProfile?['vehicle_type'] ?? 'N/A'}'),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.location_on, color: Colors.blue, size: 20),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    _currentLocation,
-                    style: const TextStyle(fontWeight: FontWeight.w500),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Welcome, $name',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
-                TextButton(
-                  onPressed: _refreshLocation,
-                  child: const Text('Refresh'),
-                ),
-              ],
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.directions_bike, color: Colors.white.withValues(alpha: 0.9), size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Vehicle: $vehicle',
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.9)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.location_on, color: Colors.white.withValues(alpha: 0.9), size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _currentLocation,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.blue.shade700,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: _refreshLocation,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Refresh'),
             ),
           ],
         ),
@@ -375,8 +456,8 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -607,28 +688,27 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   }
   
   Widget _contactAction({
-  required IconData icon,
-  required Color color,
-  required String label,
-  required VoidCallback onTap,
+    required IconData icon,
+    required Color color,
+    required String label,
+    required VoidCallback onTap,
   }) {
-  return InkWell(
-  onTap: onTap,
-  child: Column(
-  mainAxisSize: MainAxisSize.min,
-  children: [
-  Icon(icon, color: color),
-  const SizedBox(height: 4),
-  Text(
-  label,
-  style: TextStyle(
-  color: color,
-  fontWeight: FontWeight.bold,
-  fontSize: 12,
-  ),
-  ),
-  ],
-  ),
-  );
+    return SizedBox(
+      height: 36,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: color,
+          side: BorderSide(color: color.withValues(alpha: 0.6)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+        ),
+        icon: Icon(icon, size: 18),
+        label: Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      ),
+    );
   }
   }
