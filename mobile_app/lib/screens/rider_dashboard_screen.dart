@@ -249,7 +249,7 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null) return;
 
-      await ApiService.updateOrderStatus(token, orderId, 'delivered');
+      await ApiService.markOrderAsDelivered(token, orderId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Order marked as delivered!')),

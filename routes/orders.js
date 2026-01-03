@@ -568,7 +568,9 @@ router.get('/available-riders', authenticateToken, requireAdmin, async (req, res
 });
 
 // Update payment status (Admin or Rider)
-router.put('/:id/payment-status', authenticateToken, async (req, res) => {
+router.put('/:id/payment-status', authenticateToken, [
+    body('payment_status').isIn(['pending', 'paid', 'failed']).withMessage('Invalid payment status')
+], async (req, res) => {
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -581,6 +583,13 @@ router.put('/:id/payment-status', authenticateToken, async (req, res) => {
 
         const { id } = req.params;
         const { payment_status } = req.body;
+
+        if (!payment_status) {
+            return res.status(400).json({
+                success: false,
+                message: 'Payment status is required'
+            });
+        }
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(

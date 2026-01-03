@@ -275,6 +275,22 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> markOrderAsDelivered(
+    String token,
+    int orderId,
+  ) async {
+    final uri = Uri.parse('$baseUrl/api/orders/$orderId/deliver');
+    _logger.d('ApiService: PUT $uri');
+    final response = await http.put(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+    return _handleResponse(response);
+  }
+
   static Future<Map<String, dynamic>> updatePaymentStatus(
     String token,
     int orderId,
@@ -288,7 +304,7 @@ class ApiService {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       },
-      body: jsonEncode({'paymentStatus': status}),
+      body: jsonEncode({'payment_status': status}),
     );
     return _handleResponse(response);
   }
