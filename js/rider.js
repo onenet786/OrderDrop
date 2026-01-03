@@ -530,6 +530,15 @@ async function loadRiderProfileTab() {
         const data = await response.json();
         if (data.success) {
             const r = data.rider || {};
+            const resolve = (u) => {
+                if (!u || typeof u !== 'string') return null;
+                const url = u.trim();
+                if (!url) return null;
+                if (/^https?:\/\//i.test(url) || url.toLowerCase().startsWith('data:')) return url;
+                return API_BASE.replace(/\/$/, '') + (url.startsWith('/') ? url : '/' + url);
+            };
+            const riderImg = resolve(r.image_url) || '/images/servenow.png';
+            const idImg = resolve(r.id_card_url) || '/images/servenow.png';
             c.innerHTML = `
                 <div class="card">
                     <h3>My Profile</h3>
@@ -537,6 +546,16 @@ async function loadRiderProfileTab() {
                     <p><strong>Email:</strong> ${r.email || 'N/A'}</p>
                     <p><strong>Phone:</strong> ${r.phone || 'N/A'}</p>
                     <p><strong>Vehicle:</strong> ${r.vehicle_type || 'N/A'}</p>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
+                        <div style="flex:1;min-width:240px;max-width:420px;">
+                            <div style="font-weight:bold;margin-bottom:6px;">Rider Photo</div>
+                            <img src="${riderImg}" alt="Rider Photo" style="width:100%;height:220px;object-fit:cover;border-radius:8px;background:#f2f2f2" onerror="this.onerror=null;this.src='/images/servenow.png'">
+                        </div>
+                        <div style="flex:1;min-width:240px;max-width:420px;">
+                            <div style="font-weight:bold;margin-bottom:6px;">ID Card</div>
+                            <img src="${idImg}" alt="ID Card" style="width:100%;height:220px;object-fit:cover;border-radius:8px;background:#f2f2f2" onerror="this.onerror=null;this.src='/images/servenow.png'">
+                        </div>
+                    </div>
                 </div>
             `;
         } else {

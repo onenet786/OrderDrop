@@ -810,6 +810,34 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   
   Widget _buildProfileTab() {
   final r = _riderProfile;
+  final photoUrl = (r?['image_url'] as String?) ?? '';
+  final idCardUrl = (r?['id_card_url'] as String?) ?? '';
+  
+  Widget imageBox(String label, String? url) {
+  final resolved = (url == null || url.isEmpty) ? null : ApiService.getImageUrl(url);
+  return Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+  const SizedBox(height: 8),
+  ClipRRect(
+  borderRadius: BorderRadius.circular(12),
+  child: Container(
+  height: 180,
+  color: Colors.grey[200],
+  child: resolved == null
+  ? _imagePlaceholder()
+  : Image.network(
+  resolved,
+  fit: BoxFit.cover,
+  errorBuilder: (ctx, err, stack) => _imagePlaceholder(),
+  ),
+  ),
+  ),
+  ],
+  );
+  }
+  
   return SingleChildScrollView(
   padding: const EdgeInsets.all(16),
   child: Card(
@@ -826,7 +854,11 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   _buildDetailRow('Email', '${r?['email'] ?? 'N/A'}'),
   _buildDetailRow('Phone', '${r?['phone'] ?? 'N/A'}'),
   _buildDetailRow('Vehicle', '${r?['vehicle_type'] ?? 'N/A'}'),
-  const SizedBox(height: 12),
+  const SizedBox(height: 16),
+  imageBox('Rider Photo', photoUrl),
+  const SizedBox(height: 16),
+  imageBox('ID Card', idCardUrl),
+  const SizedBox(height: 16),
   Row(
   children: [
   const Icon(Icons.location_on, color: Colors.blue, size: 20),
@@ -838,6 +870,19 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   ],
   ),
   ),
+  ),
+  );
+  }
+  
+  Widget _imagePlaceholder() {
+  return Center(
+  child: Column(
+  mainAxisSize: MainAxisSize.min,
+  children: const [
+  Icon(Icons.image_not_supported, color: Colors.grey, size: 36),
+  SizedBox(height: 6),
+  Text('No image', style: TextStyle(color: Colors.grey)),
+  ],
   ),
   );
   }
