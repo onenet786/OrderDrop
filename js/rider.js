@@ -515,21 +515,6 @@ function loadRiderWallet() {
     c.innerHTML = `
         <div class="card">
             <h3>Wallet</h3>
-        displayRiderDeliveries('assigned', 'tabHomeContent');
-    } else if (name === 'history') {
-        displayRiderDeliveries('completed', 'tabHistoryContent');
-    } else if (name === 'wallet') {
-        loadRiderWallet();
-    } else if (name === 'profile') {
-        loadRiderProfileTab();
-    }
-}
-function loadRiderWallet() {
-    const c = document.getElementById('tabWalletContent');
-    if (!c) return;
-    c.innerHTML = `
-        <div class="card">
-            <h3>Wallet</h3>
             <p>Wallet details for riders are not configured yet.</p>
             <p>Please contact admin to enable rider wallet.</p>
         </div>
