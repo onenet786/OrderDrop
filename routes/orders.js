@@ -698,7 +698,7 @@ router.get('/rider/profile', authenticateToken, async (req, res) => {
         }
 
         const [riders] = await req.db.execute(
-            'SELECT id, first_name, last_name, email, phone, vehicle_type FROM riders WHERE id = ?',
+            'SELECT id, first_name, last_name, email, phone, vehicle_type, image_url, id_card_url FROM riders WHERE id = ?',
             [req.user.id]
         );
 
