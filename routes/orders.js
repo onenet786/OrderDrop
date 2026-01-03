@@ -225,26 +225,7 @@ router.post('/', authenticateToken, async (req, res) => {
             }
         }
 
-        // Generate order number: OrdYYMMDDXXXX (daily sequence)
-        // Ensure sequences table exists
-        await req.db.execute(
-            'CREATE TABLE IF NOT EXISTS order_sequences (date_key DATE PRIMARY KEY, last_seq INT NOT NULL)'
-        );
-        // Atomically increment sequence for today using LAST_INSERT_ID trick
-        await req.db.execute(`
-            INSERT INTO order_sequences (date_key, last_seq)
-            VALUES (CURDATE(), 1)
-            ON DUPLICATE KEY UPDATE last_seq = LAST_INSERT_ID(last_seq + 1)
-        `);
-        const [seqRows] = await req.db.execute('SELECT LAST_INSERT_ID() AS seq');
-        const seq = (seqRows && seqRows[0] && seqRows[0].seq) ? Number(seqRows[0].seq) : 1;
-
-        const now = new Date();
-        const y = String(now.getFullYear()).slice(-2);
-        const m = String(now.getMonth() + 1).padStart(2, '0');
-        const d = String(now.getDate()).padStart(2, '0');
-        const seqStr = String(seq).padStart(4, '0');
-        const orderNumber = `Ord${y}${m}${d}${seqStr}`;
+        const orderNumber = 'ORD' + Date.now() + Math.floor(Math.random() * 1000);
 
         const [orderResult] = await req.db.execute(
             `INSERT INTO orders (order_number, user_id, store_id, total_amount, delivery_fee, payment_method, delivery_address, delivery_time, special_instructions)

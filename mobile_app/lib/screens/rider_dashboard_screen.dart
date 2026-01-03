@@ -473,7 +473,7 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
               children: [
                 Expanded(
                   child: Text(
-                    'Order #${delivery['order_number']}',
+                    'Order ${delivery['order_number']}',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
