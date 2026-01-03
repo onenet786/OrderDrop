@@ -24,7 +24,7 @@ function displayStoreInfo(store) {
 
     document.getElementById('storeTitle').textContent = `${store.name} - ServeNow`;
     
-    let logoSrc = 'https://via.placeholder.com/100x100/667eea/ffffff?text=' + encodeURIComponent(store.name.substring(0, 1));
+    let logoSrc = API_BASE.replace(/\/$/, '') + '/images/servenow.png';
     if (store.image_url) {
         let url = String(store.image_url).trim().replace(/\\/g, '/');
         if (/^https?:\/\//i.test(url) || url.toLowerCase().startsWith('data:')) {
@@ -38,7 +38,7 @@ function displayStoreInfo(store) {
     
     document.getElementById('storeInfo').innerHTML = `
         <div class="store-info-content">
-            <img src="${logoSrc}" alt="${store.name}" class="store-logo" onerror="this.src='https://via.placeholder.com/100x100/667eea/ffffff?text=S'">
+            <img src="${logoSrc}" alt="${store.name}" class="store-logo" onerror="this.src='/images/servenow.png'">
             <div class="store-details">
                 <h2>${store.name}</h2>
                 <p><i class="fas fa-map-marker-alt"></i> ${store.location || 'Location not available'}</p>
@@ -64,7 +64,7 @@ function displayStoreProducts(storeProducts) {
         const productCard = document.createElement('div');
         productCard.className = 'product-card';
 
-        let imageSrc = 'https://via.placeholder.com/200x150/E0E0E0/666666?text=No+Image';
+        let imageSrc = API_BASE.replace(/\/$/, '') + '/images/servenow.png';
         let variants = null;
         const rawImage = product.image_url || product.image;
         
@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // Helper to build img tag with srcset for store page
 function buildImgTagForStore(src, variants, alt, pid, meta) {
     const safeAlt = (alt || '').replace(/"/g, '&quot;');
-    const fallback = "https://via.placeholder.com/200x150/E0E0E0/666666?text=No+Image";
+    const fallback = "/images/servenow.png";
     if (variants && typeof variants === 'object') {
         const entries = Object.keys(variants).map(k => `${variants[k]} ${k}w`).join(', ');
         const widths = Object.keys(variants).map(n=>parseInt(n,10)).sort((a,b)=>a-b);

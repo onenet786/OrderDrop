@@ -154,7 +154,7 @@ async function loadHomeCategories() {
             const slug = String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
             // normalize image URL similar to product handling
-            let imageSrc = 'https://via.placeholder.com/300x200/E0E0E0/666666?text=No+Image';
+            let imageSrc = '/images/servenow.png';
             if (cat.image_url) {
                 let url = String(cat.image_url).trim().replace(/\\/g, '/');
                 if (/^https?:\/\//i.test(url) || url.toLowerCase().startsWith('data:')) {
@@ -422,7 +422,7 @@ function displayCart() {
         const step = qtyStepForUnit(item.unitName, item.unitId);
         const isFrac = isFractionalUnit(item.unitName, item.unitId);
 
-        const imgSrc = item.image || "https://via.placeholder.com/150?text=No+Image";
+        const imgSrc = item.image || "/images/servenow.png";
 
         const itemElement = document.createElement('div');
         itemElement.className = 'cart-item serving-card';
@@ -552,7 +552,7 @@ function formatStoreRatingValue(rating) {
 }
 
 function buildStoreCardHtml(store) {
-    const fallbackImg = 'https://via.placeholder.com/96x96/E0E0E0/666666?text=Store';
+    const fallbackImg = '/images/servenow.png';
     const imageSrc = normalizePublicImageUrl(store && store.image_url, fallbackImg);
     const safeAlt = String((store && store.name) || 'Store').replace(/"/g, '&quot;');
     const locationText = (store && store.location) ? store.location : '—';
@@ -732,7 +732,7 @@ async function loadProducts(category) {
                 productCard.className = 'product-card';
 
                 // Normalize image URL: if it's a relative path, prefix with API_BASE
-                let imageSrc = 'https://via.placeholder.com/200x150/E0E0E0/666666?text=No+Image';
+                let imageSrc = '/images/servenow.png';
                 if (product.image_url) {
                     // Normalize backslashes and trim
                     let url = String(product.image_url).trim().replace(/\\/g, '/');
@@ -785,7 +785,7 @@ async function loadProducts(category) {
 // Build img tag string with optional srcset using variants mapping
 function buildImgTag(src, variants, alt, pid, meta) {
     const safeAlt = (alt || '').replace(/"/g, '&quot;');
-    const fallback = "https://via.placeholder.com/200x150/E0E0E0/666666?text=No+Image";
+    const fallback = "/images/servenow.png";
     if (variants && typeof variants === 'object') {
         // build srcset entries sorted by width
         const entries = Object.keys(variants).map(k => `${variants[k]} ${k}w`).join(', ');

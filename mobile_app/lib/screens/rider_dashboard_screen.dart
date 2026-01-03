@@ -95,7 +95,7 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadAllData();
   }
 
@@ -323,8 +323,10 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
                   labelColor: Colors.blue,
                   unselectedLabelColor: Colors.grey,
                   tabs: const [
-                    Tab(text: 'My Deliveries'),
-                    Tab(text: 'Completed'),
+                    Tab(text: 'Home'),
+                    Tab(text: 'History'),
+                    Tab(text: 'Wallet'),
+                    Tab(text: 'Profile'),
                   ],
                 ),
 
@@ -335,6 +337,8 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
                     children: [
                       _buildDeliveriesList(_assignedDeliveries, true),
                       _buildDeliveriesList(_completedDeliveries, false),
+                      _buildWalletTab(),
+                      _buildProfileTab(),
                     ],
                   ),
                 ),
@@ -477,7 +481,14 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  color: Colors.blueGrey,
+                  tooltip: 'Order Info',
+                  onPressed: () => _showOrderInfo(delivery),
+                ),
+                const SizedBox(width: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -688,27 +699,146 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   }
   
   Widget _contactAction({
-    required IconData icon,
-    required Color color,
-    required String label,
-    required VoidCallback onTap,
+  required IconData icon,
+  required Color color,
+  required String label,
+  required VoidCallback onTap,
   }) {
-    return SizedBox(
-      height: 36,
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: color,
-          side: BorderSide(color: color.withValues(alpha: 0.6)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-        ),
-        icon: Icon(icon, size: 18),
-        label: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-        ),
-      ),
-    );
+  return SizedBox(
+  height: 36,
+  child: OutlinedButton.icon(
+  onPressed: onTap,
+  style: OutlinedButton.styleFrom(
+  foregroundColor: color,
+  side: BorderSide(color: color.withValues(alpha: 0.6)),
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+  padding: const EdgeInsets.symmetric(horizontal: 10),
+  ),
+  icon: Icon(icon, size: 18),
+  label: Text(
+  label,
+  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+  ),
+  ),
+  );
+  }
+  
+  void _showOrderInfo(Map<String, dynamic> delivery) {
+  final items = (delivery['items'] as List?) ?? [];
+  showModalBottomSheet(
+  context: context,
+  isScrollControlled: true,
+  shape: const RoundedRectangleBorder(
+  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+  ),
+  builder: (ctx) {
+  return Padding(
+  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+  child: SafeArea(
+  child: Column(
+  mainAxisSize: MainAxisSize.min,
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  Row(
+  children: [
+  const Icon(Icons.receipt_long, color: Colors.blueGrey),
+  const SizedBox(width: 8),
+  Expanded(
+  child: Text(
+  'Order #${delivery['order_number']}',
+  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  ),
+  ),
+  IconButton(
+  icon: const Icon(Icons.close),
+  onPressed: () => Navigator.of(ctx).pop(),
+  )
+  ],
+  ),
+  const SizedBox(height: 8),
+  _buildDetailRow('Status', '${delivery['status']}'),
+  _buildDetailRow('Total', 'PKR ${delivery['total_amount']}'),
+  _buildDetailRow('Payment', '${delivery['payment_status'] ?? 'unknown'}'),
+  _buildDetailRow('Customer', '${delivery['first_name'] ?? ''} ${delivery['last_name'] ?? ''}'),
+  _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
+  _buildDetailRow('Address', '${delivery['delivery_address'] ?? 'N/A'}'),
+  const Divider(),
+  const Text('Items', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+  const SizedBox(height: 6),
+  ...items.map((item) => Padding(
+  padding: const EdgeInsets.only(bottom: 4),
+  child: Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  children: [
+  Expanded(
+  child: Text(
+  '${item['quantity']}x ${item['product_name'] ?? 'Product'}${item['variant_name'] != null ? ' (${item['variant_name']})' : ''}',
+  style: const TextStyle(fontSize: 13),
+  ),
+  ),
+  Text('PKR ${((item['price'] ?? 0) * (item['quantity'] ?? 1)).toString()}',
+  style: const TextStyle(fontWeight: FontWeight.w600)),
+  ],
+  ),
+  )),
+  const SizedBox(height: 8),
+  ],
+  ),
+  ),
+  );
+  },
+  );
+  }
+  
+  Widget _buildWalletTab() {
+  return Center(
+  child: Padding(
+  padding: const EdgeInsets.all(24.0),
+  child: Column(
+  mainAxisSize: MainAxisSize.min,
+  children: const [
+  Icon(Icons.account_balance_wallet, size: 48, color: Colors.blueGrey),
+  SizedBox(height: 12),
+  Text('Wallet coming soon', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+  SizedBox(height: 6),
+  Text('Contact admin to enable rider wallet.', textAlign: TextAlign.center),
+  ],
+  ),
+  ),
+  );
+  }
+  
+  Widget _buildProfileTab() {
+  final r = _riderProfile;
+  return SingleChildScrollView(
+  padding: const EdgeInsets.all(16),
+  child: Card(
+  elevation: 2,
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  child: Padding(
+  padding: const EdgeInsets.all(16),
+  child: Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  const Text('My Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+  const SizedBox(height: 12),
+  _buildDetailRow('Name', '${r?['first_name'] ?? ''} ${r?['last_name'] ?? ''}'),
+  _buildDetailRow('Email', '${r?['email'] ?? 'N/A'}'),
+  _buildDetailRow('Phone', '${r?['phone'] ?? 'N/A'}'),
+  _buildDetailRow('Vehicle', '${r?['vehicle_type'] ?? 'N/A'}'),
+  const SizedBox(height: 12),
+  Row(
+  children: [
+  const Icon(Icons.location_on, color: Colors.blue, size: 20),
+  const SizedBox(width: 4),
+  Expanded(child: Text(_currentLocation, style: const TextStyle(fontWeight: FontWeight.w500))),
+  TextButton(onPressed: _refreshLocation, child: const Text('Refresh')),
+  ],
+  ),
+  ],
+  ),
+  ),
+  ),
+  );
   }
   }
