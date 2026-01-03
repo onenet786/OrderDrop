@@ -499,7 +499,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       child: Column(
         children: [
           _buildActivityItem(
-            title: 'New Order #1234',
+            title: 'New Order Ord2501021234',
             subtitle: '2 mins ago',
             icon: Icons.shopping_bag,
             color: Colors.blue,

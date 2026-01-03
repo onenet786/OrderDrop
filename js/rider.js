@@ -227,7 +227,7 @@ async function displayRiderDeliveries(status = 'assigned') {
                 deliveryCard.className = 'order-card';
                 deliveryCard.innerHTML = `
                     <div class="order-header">
-                        <h3>Order #${delivery.order_number}</h3>
+                        <h3>Order ${delivery.order_number}</h3>
                         <span class="order-status status-${delivery.status}">${delivery.status}</span>
                     </div>
                     <div class="order-details">

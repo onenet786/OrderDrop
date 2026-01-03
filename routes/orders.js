@@ -225,7 +225,12 @@ router.post('/', authenticateToken, async (req, res) => {
             }
         }
 
-        const orderNumber = 'ORD' + Date.now() + Math.floor(Math.random() * 1000);
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const xxxx = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        const orderNumber = `Ord${yy}${mm}${dd}${xxxx}`;
 
         const [orderResult] = await req.db.execute(
             `INSERT INTO orders (order_number, user_id, store_id, total_amount, delivery_fee, payment_method, delivery_address, delivery_time, special_instructions)

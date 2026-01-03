@@ -204,7 +204,7 @@ async function processWalletPayment(req, orderId, userId, amount) {
         await req.db.execute(
             `INSERT INTO wallet_transactions (wallet_id, type, amount, description, 
              reference_type, reference_id, balance_after) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [wallet.id, 'debit', amount, `Payment for Order #${orderId}`, 
+            [wallet.id, 'debit', amount, `Payment for Order ${orderId}`, 
              'order', orderId, newBalance]
         );
 
@@ -451,7 +451,7 @@ router.post('/:paymentId/refund', authenticateToken, [
                 await req.db.execute(
                     `INSERT INTO wallet_transactions (wallet_id, type, amount, description, 
                      reference_type, reference_id) VALUES (?, ?, ?, ?, ?, ?)`,
-                    [wallet.id, 'credit', payment.amount, `Refund for Order #${payment.order_id}`, 
+                    [wallet.id, 'credit', payment.amount, `Refund for Order ${payment.order_id}`, 
                      'refund', result.insertId]
                 );
 

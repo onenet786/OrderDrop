@@ -58,7 +58,7 @@ async function displayOrders(status = 'pending') {
 
                 orderCard.innerHTML = `
                     <div class="order-header">
-                        <h3>Order #${order.order_number}</h3>
+                        <h3>Order ${order.order_number}</h3>
                         <span class="order-status status-${order.status}">${order.status}</span>
                     </div>
                     <div class="order-details">
