@@ -813,14 +813,10 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   final photoUrl = (r?['image_url'] as String?) ?? '';
   final idCardUrl = (r?['id_card_url'] as String?) ?? '';
   
-  Widget imageBox(String label, String? url) {
+  // Image tile without label (clean top row)
+  Widget imageTile(String? url) {
   final resolved = (url == null || url.isEmpty) ? null : ApiService.getImageUrl(url);
-  return Column(
-  crossAxisAlignment: CrossAxisAlignment.start,
-  children: [
-  Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-  const SizedBox(height: 8),
-  ClipRRect(
+  return ClipRRect(
   borderRadius: BorderRadius.circular(12),
   child: Container(
   height: 180,
@@ -833,10 +829,41 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   errorBuilder: (ctx, err, stack) => _imagePlaceholder(),
   ),
   ),
-  ),
-  ],
   );
   }
+  
+  // Two-column detail row (label left, value right)
+  Widget detail2Col(String label, String value, {Color? valueColor}) {
+  return Padding(
+  padding: const EdgeInsets.symmetric(vertical: 6),
+  child: Row(
+  children: [
+  Expanded(
+  child: Text(
+  label,
+  style: const TextStyle(
+  fontWeight: FontWeight.bold,
+  color: Colors.grey,
+  ),
+  ),
+  ),
+  const SizedBox(width: 12),
+  Expanded(
+  child: Text(
+  value,
+  textAlign: TextAlign.right,
+  style: TextStyle(
+  color: valueColor ?? Colors.black87,
+  fontWeight: valueColor != null ? FontWeight.bold : FontWeight.normal,
+  ),
+  ),
+  ),
+  ],
+  ),
+  );
+  }
+  
+  final fullName = '${r?['first_name'] ?? ''} ${r?['last_name'] ?? ''}'.trim();
   
   return SingleChildScrollView(
   padding: const EdgeInsets.all(16),
@@ -848,17 +875,21 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   child: Column(
   crossAxisAlignment: CrossAxisAlignment.start,
   children: [
-  const Text('My Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-  const SizedBox(height: 12),
-  _buildDetailRow('Name', '${r?['first_name'] ?? ''} ${r?['last_name'] ?? ''}'),
-  _buildDetailRow('Email', '${r?['email'] ?? 'N/A'}'),
-  _buildDetailRow('Phone', '${r?['phone'] ?? 'N/A'}'),
-  _buildDetailRow('Vehicle', '${r?['vehicle_type'] ?? 'N/A'}'),
+  // Images row at top: user image (left), ID card (right)
+  Row(
+  children: [
+  Expanded(child: imageTile(photoUrl)),
+  const SizedBox(width: 12),
+  Expanded(child: imageTile(idCardUrl)),
+  ],
+  ),
   const SizedBox(height: 16),
-  imageBox('Rider Photo', photoUrl),
-  const SizedBox(height: 16),
-  imageBox('ID Card', idCardUrl),
-  const SizedBox(height: 16),
+  // Details with label left, value right
+  detail2Col('Name', fullName.isEmpty ? 'N/A' : fullName),
+  detail2Col('Email', '${r?['email'] ?? 'N/A'}'),
+  detail2Col('Phone', '${r?['phone'] ?? 'N/A'}'),
+  detail2Col('Vehicle', '${r?['vehicle_type'] ?? 'N/A'}'),
+  const SizedBox(height: 8),
   Row(
   children: [
   const Icon(Icons.location_on, color: Colors.blue, size: 20),
