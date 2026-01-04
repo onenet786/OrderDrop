@@ -1346,8 +1346,96 @@ function loadDashboardStats() {
         if (el('allDelivered')) el('allDelivered').textContent = countStatus(list, 'delivered');
         if (el('allPending')) el('allPending').textContent = countPendingLike(list);
         if (el('allCancelled')) el('allCancelled').textContent = countStatus(list, 'cancelled');
+
+        // Load recent activity
+        loadRecentActivity();
     })
     .catch(error => console.error('Error loading dashboard stats:', error));
+}
+
+function loadRecentActivity() {
+    fetch(`${API_BASE}/api/admin/recent-activity`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            renderActivityList('recentOrdersList', data.recent_orders);
+            renderActivityList('recentUsersList', data.recent_users);
+            renderActivityList('recentStoresList', data.recent_stores);
+        }
+    })
+    .catch(err => console.error('Error loading recent activity:', err));
+}
+
+function renderActivityList(containerId, items) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    if (!items || items.length === 0) {
+        container.innerHTML = '<p style="color:#718096;font-size:0.9rem;font-style:italic;">No recent activity</p>';
+        return;
+    }
+
+    items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'activity-item';
+        div.innerHTML = `
+            <div class="title">${item.title}</div>
+            <div class="subtitle">${item.subtitle}</div>
+            <div class="meta">
+                <span>${new Date(item.timestamp).toLocaleDateString()}</span>
+                <span>${new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            </div>
+        `;
+        // Add click listener
+        div.onclick = () => showActivityDetails(item);
+        container.appendChild(div);
+    });
+}
+
+function showActivityDetails(item) {
+    // Create modal HTML
+    const modalId = 'activityDetailsModal';
+    let modal = document.getElementById(modalId);
+    if (modal) modal.remove(); // Remove existing to recreate
+
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'modal';
+    modal.style.display = 'block'; // Make sure it's visible
+
+    let detailsHtml = '<div class="detail-list" style="display:flex;flex-direction:column;gap:0.5rem;">';
+    if (item.details) {
+        for (const [key, value] of Object.entries(item.details)) {
+            detailsHtml += `
+                <div style="display:flex;justify-content:space-between;border-bottom:1px solid #eee;padding-bottom:0.25rem;">
+                    <strong style="color:#4a5568;">${key}:</strong>
+                    <span style="color:#2d3748;">${value || 'N/A'}</span>
+                </div>
+            `;
+        }
+    }
+    detailsHtml += '</div>';
+
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:500px;">
+            <span class="close" onclick="document.getElementById('${modalId}').remove()">&times;</span>
+            <h3 style="margin-top:0;margin-bottom:1rem;color:#1a202c;border-bottom:2px solid #e2e8f0;padding-bottom:0.5rem;">
+                ${item.title}
+            </h3>
+            ${detailsHtml}
+            <div class="modal-footer" style="margin-top:1.5rem;text-align:right;">
+                <button class="btn btn-primary" onclick="document.getElementById('${modalId}').remove()">Close</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Close on outside click
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
 }
 
 function loadAccounts() {

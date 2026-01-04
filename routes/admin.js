@@ -118,7 +118,7 @@ router.get(
             SELECT id, total_amount, status, created_at, payment_method, delivery_address 
             FROM orders 
             ORDER BY created_at DESC 
-            LIMIT 5
+            LIMIT 2
         `);
 
       // Fetch recent users
@@ -126,7 +126,7 @@ router.get(
             SELECT id, first_name, last_name, email, phone, created_at 
             FROM users 
             ORDER BY created_at DESC 
-            LIMIT 5
+            LIMIT 2
         `);
 
       // Fetch recent store updates/creations
@@ -134,7 +134,7 @@ router.get(
             SELECT id, name, location, phone, created_at 
             FROM stores 
             ORDER BY created_at DESC 
-            LIMIT 5
+            LIMIT 2
         `);
 
       // Format data
