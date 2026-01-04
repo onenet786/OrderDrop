@@ -245,6 +245,27 @@ router.get('/me', authenticateToken, async (req, res) => {
       });
     }
 
+    // Check if user is a rider
+    if (req.user.user_type === 'rider') {
+      const [riders] = await req.db.execute(
+        'SELECT id, first_name, last_name, email, phone, vehicle_type, license_number, is_available, created_at FROM riders WHERE id = ?',
+        [req.user.id]
+      );
+
+      if (riders.length === 0) {
+        return res.status(404).json({ success: false, message: 'Rider not found' });
+      }
+
+      const rider = riders[0];
+      return res.json({
+        success: true,
+        user: {
+          ...rider,
+          user_type: 'rider',
+        },
+      });
+    }
+
     const [users] = await req.db.execute(
       'SELECT id, first_name, last_name, email, phone, address, user_type, created_at FROM users WHERE id = ?',
       [req.user.id]
