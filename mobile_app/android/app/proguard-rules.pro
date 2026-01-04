@@ -21,5 +21,9 @@
 # Retrofit/Gson adapters (if used)
 -dontwarn retrofit2.**
 
+# Google Play Core (for deferred components/split APKs)
+-keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
+
 # Keep model classes in your app package (adjust package name)
 -keep class com.example.servenow.** { *; }
