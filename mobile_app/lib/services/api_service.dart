@@ -230,7 +230,7 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  static Future<List<dynamic>> getRecentActivity(String token) async {
+  static Future<Map<String, dynamic>> getRecentActivity(String token) async {
     final uri = Uri.parse('$baseUrl/api/admin/recent-activity');
     _logger.d('ApiService: GET $uri');
     final response = await http.get(
@@ -238,7 +238,7 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     final data = _handleResponse(response);
-    return data['activity'] ?? [];
+    return data;
   }
 
   // Rider APIs
