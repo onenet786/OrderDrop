@@ -37,25 +37,46 @@ async function ensureOrderItemsVariantColumns(db) {
 
 async function ensureOrdersParentColumn(db) {
     try {
-        const hasCol = await hasColumn(db, 'orders', 'parent_order_number');
-        if (!hasCol) {
-            await db.execute('ALTER TABLE orders ADD COLUMN parent_order_number VARCHAR(50) NULL');
-            await db.execute('CREATE INDEX idx_orders_parent_order_number ON orders(parent_order_number)');
+        // Try to select the column to check existence (more robust than information_schema)
+        await db.execute('SELECT parent_order_number FROM orders LIMIT 1');
+    } catch (e) {
+        // If error is about missing column, add it
+        if (e.code === 'ER_BAD_FIELD_ERROR' || (e.message && e.message.includes('Unknown column'))) {
+            try {
+                await db.execute('ALTER TABLE orders ADD COLUMN parent_order_number VARCHAR(50) NULL');
+                try {
+                    await db.execute('CREATE INDEX idx_orders_parent_order_number ON orders(parent_order_number)');
+                } catch (idxErr) {
+                    // Ignore index creation error
+                }
+            } catch (alterErr) {
+                console.error('Failed to add parent_order_number column:', alterErr);
+            }
         }
-    } catch (e) {}
+    }
+}
+
+async function ensureOrdersStoreIdNullable(db) {
+    try {
+        // Check if store_id is nullable (simplified: just try to modify it)
+        await db.execute('ALTER TABLE orders MODIFY COLUMN store_id INT NULL');
+    } catch (e) {
+        // Ignore if already nullable or other non-critical errors
+        // console.error('Failed to make store_id nullable:', e);
+    }
 }
 
 // Get user's orders
 router.get('/my-orders', authenticateToken, async (req, res) => {
     try {
         await ensureOrderItemsVariantColumns(req.db);
-        await ensureOrdersParentColumn(req.db);
+        // await ensureOrdersParentColumn(req.db); // Not strictly needed if we don't use it for grouping anymore
         
         const [orders] = await req.db.execute(`
             SELECT o.*, s.name as store_name, s.location as store_location,
                    r.first_name as rider_first_name, r.last_name as rider_last_name, r.phone as rider_phone
             FROM orders o
-            JOIN stores s ON o.store_id = s.id
+            LEFT JOIN stores s ON o.store_id = s.id
             LEFT JOIN riders r ON o.rider_id = r.id
             WHERE o.user_id = ?
             ORDER BY o.created_at DESC
@@ -64,58 +85,39 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
         // Get order items for each order
         for (let order of orders) {
             const [items] = await req.db.execute(`
-                SELECT oi.*, p.name as product_name, p.image_url
+                SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name
                 FROM order_items oi
                 JOIN products p ON oi.product_id = p.id
+                JOIN stores s ON p.store_id = s.id
                 WHERE oi.order_id = ?
             `, [order.id]);
             order.items = items;
-        }
-
-        // Group orders by parent_order_number if applicable
-        const groupedOrders = [];
-        const orderMap = new Map(); // parent_order_number -> [orders]
-
-        for (const order of orders) {
-            if (order.parent_order_number) {
-                if (!orderMap.has(order.parent_order_number)) {
-                    orderMap.set(order.parent_order_number, []);
-                }
-                orderMap.get(order.parent_order_number).push(order);
-            } else {
-                groupedOrders.push(order);
-            }
-        }
-
-        for (const [parentNum, group] of orderMap) {
-            if (group.length === 1) {
-                groupedOrders.push(group[0]);
-            } else {
-                // Merge multiple stores order into one display entry
-                const first = group[0];
-                const totalAmount = group.reduce((sum, o) => sum + parseFloat(o.total_amount), 0);
+            
+            // If store_id is NULL (multi-store order), set display name
+            if (!order.store_id) {
+                order.store_name = 'Multiple Stores';
+                order.is_group = true; // reusing existing frontend logic
                 
-                const merged = {
-                    ...first,
-                    id: first.id, // Keep one ID for key purposes, though details might need handling
-                    order_number: parentNum, // Display parent number
-                    store_name: 'Multiple Stores',
-                    total_amount: totalAmount.toFixed(2),
-                    items: group.flatMap(o => o.items),
-                    is_group: true,
-                    sub_orders: group,
-                    status: group.every(o => o.status === group[0].status) ? group[0].status : 'Processing' // Simplified status logic
-                };
-                groupedOrders.push(merged);
+                // Group items by store for display if needed, or just let frontend handle it
+                // We can construct sub_orders mock structure for frontend compatibility
+                const storeGroups = {};
+                items.forEach(item => {
+                    if (!storeGroups[item.store_id]) {
+                        storeGroups[item.store_id] = {
+                            store_name: item.item_store_name,
+                            status: order.status, // Inherit main order status
+                            items: []
+                        };
+                    }
+                    storeGroups[item.store_id].items.push(item);
+                });
+                order.sub_orders = Object.values(storeGroups);
             }
         }
-        
-        // Sort by date desc
-        groupedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         res.json({
             success: true,
-            orders: groupedOrders
+            orders: orders
         });
 
     } catch (error) {
@@ -161,10 +163,13 @@ router.post('/', authenticateToken, async (req, res) => {
         }
 
         const delivery_fee = 2.99;
-        const parent_order_number = 'ORD' + Date.now() + Math.floor(Math.random() * 1000);
-        const storeGroups = {};
+        const order_number = 'ORD' + Date.now() + Math.floor(Math.random() * 1000);
         
-        // 1. Group items by store
+        // Validate and prepare items
+        const preparedItems = [];
+        const storeIds = new Set();
+        let itemsSubtotal = 0;
+
         for (let item of items) {
             const productId = parseInt(String(item.product_id), 10);
             const quantity = parseInt(String(item.quantity), 10);
@@ -190,7 +195,7 @@ router.post('/', authenticateToken, async (req, res) => {
             }
 
             const product = products[0];
-            const storeId = product.store_id;
+            storeIds.add(product.store_id);
             let unitPrice = Number(product.price);
             let variantLabel = providedVariantLabel;
 
@@ -238,23 +243,13 @@ router.post('/', authenticateToken, async (req, res) => {
                 }
             }
 
-            if (!storeGroups[storeId]) {
-                storeGroups[storeId] = {
-                    items: [],
-                    subtotal: 0
-                };
-            }
-
-            storeGroups[storeId].items.push({ productId, quantity, unitPrice, sizeId, unitId, variantLabel });
-            storeGroups[storeId].subtotal += unitPrice * quantity;
+            preparedItems.push({ productId, quantity, unitPrice, sizeId, unitId, variantLabel });
+            itemsSubtotal += unitPrice * quantity;
         }
 
-        // 2. Check Wallet
-        let grandTotal = 0;
-        for (const storeId in storeGroups) {
-            grandTotal += storeGroups[storeId].subtotal + delivery_fee;
-        }
+        const grandTotal = itemsSubtotal + delivery_fee;
 
+        // Check Wallet
         let wallet = null;
         if (payment_method === 'wallet') {
             const [wallets] = await req.db.execute(
@@ -280,39 +275,32 @@ router.post('/', authenticateToken, async (req, res) => {
             }
         }
 
-        // 3. Create Orders
+        // Create Single Order
         await ensureOrderItemsVariantColumns(req.db);
-        await ensureOrdersParentColumn(req.db);
-        const createdOrders = [];
+        await ensureOrdersStoreIdNullable(req.db); // Ensure store_id can be NULL
         
-        for (const storeIdKey in storeGroups) {
-            const storeId = parseInt(storeIdKey);
-            const group = storeGroups[storeIdKey];
-            const orderTotal = group.subtotal + delivery_fee;
-            // Use parent_order_number as prefix to link them
-            const orderNumber = parent_order_number + '-' + storeId;
-
-            const [orderResult] = await req.db.execute(
-                `INSERT INTO orders (order_number, user_id, store_id, total_amount, delivery_fee, payment_method, delivery_address, delivery_time, special_instructions, parent_order_number)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [orderNumber, req.user.id, storeId, orderTotal, delivery_fee, payment_method, delivery_address, delivery_time || null, special_instructions || null, parent_order_number]
-            );
-
-            for (let item of group.items) {
-                await req.db.execute(
-                    'INSERT INTO order_items (order_id, product_id, quantity, price, size_id, unit_id, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [orderResult.insertId, item.productId, item.quantity, item.unitPrice, item.sizeId, item.unitId, item.variantLabel]
-                );
-            }
-
-            createdOrders.push({
-                id: orderResult.insertId,
-                order_number: orderNumber,
-                total_amount: orderTotal
-            });
+        // Determine store_id for the order
+        let orderStoreId = null;
+        if (storeIds.size === 1) {
+            orderStoreId = Array.from(storeIds)[0];
         }
 
-        // 4. Update Wallet
+        const [orderResult] = await req.db.execute(
+            `INSERT INTO orders (order_number, user_id, store_id, total_amount, delivery_fee, payment_method, delivery_address, delivery_time, special_instructions)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [order_number, req.user.id, orderStoreId, grandTotal, delivery_fee, payment_method, delivery_address, delivery_time || null, special_instructions || null]
+        );
+
+        const orderId = orderResult.insertId;
+
+        for (let item of preparedItems) {
+            await req.db.execute(
+                'INSERT INTO order_items (order_id, product_id, quantity, price, size_id, unit_id, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [orderId, item.productId, item.quantity, item.unitPrice, item.sizeId, item.unitId, item.variantLabel]
+            );
+        }
+
+        // Update Wallet
         if (payment_method === 'wallet' && wallet) {
             const newBalance = parseFloat(wallet.balance) - grandTotal;
             
@@ -321,24 +309,23 @@ router.post('/', authenticateToken, async (req, res) => {
                 [newBalance, grandTotal, wallet.id]
             );
             
-            // Create transaction records for each order
-            let currentBalanceForLog = parseFloat(wallet.balance);
-            for (const order of createdOrders) {
-                currentBalanceForLog -= order.total_amount;
-                await req.db.execute(
-                    `INSERT INTO wallet_transactions (wallet_id, type, amount, description, 
-                     reference_type, reference_id, balance_after) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [wallet.id, 'debit', order.total_amount, `Order payment - ${order.order_number}`, 
-                     'order', order.id, currentBalanceForLog]
-                );
-            }
+            await req.db.execute(
+                `INSERT INTO wallet_transactions (wallet_id, type, amount, description, 
+                 reference_type, reference_id, balance_after) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [wallet.id, 'debit', grandTotal, `Order payment - ${order_number}`, 
+                 'order', orderId, newBalance]
+            );
         }
 
         res.status(201).json({
             success: true,
             message: 'Order created successfully',
-            orders: createdOrders,
-            order: createdOrders[0] // Backward compatibility
+            order: {
+                id: orderId,
+                order_number: order_number,
+                total_amount: grandTotal,
+                store_id: orderStoreId
+            }
         });
 
     } catch (error) {
@@ -366,7 +353,7 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
                    CAST((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS SIGNED) as items_count
             FROM orders o
             JOIN users u ON o.user_id = u.id
-            JOIN stores s ON o.store_id = s.id
+            LEFT JOIN stores s ON o.store_id = s.id
             LEFT JOIN riders r ON o.rider_id = r.id
             ${whereClause}
             ORDER BY o.created_at DESC
@@ -408,7 +395,7 @@ router.put('/:id/status', authenticateToken, requireStoreOwner, [
         const [orders] = await req.db.execute(`
             SELECT o.*, s.owner_id
             FROM orders o
-            JOIN stores s ON o.store_id = s.id
+            LEFT JOIN stores s ON o.store_id = s.id
             WHERE o.id = ?
         `, [id]);
 
@@ -422,7 +409,7 @@ router.put('/:id/status', authenticateToken, requireStoreOwner, [
         const order = orders[0];
 
         // Check ownership permission
-        if (req.user.user_type !== 'admin' && order.owner_id !== req.user.id) {
+        if (req.user.user_type !== 'admin' && (!order.owner_id || order.owner_id !== req.user.id)) {
             return res.status(403).json({
                 success: false,
                 message: 'You do not have permission to update this order'
