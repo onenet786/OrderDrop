@@ -137,69 +137,59 @@ router.get(
             LIMIT 5
         `);
 
-      // Combine and sort
-      const activity = [];
+      // Format data
+      const recent_orders = orders.map((o) => ({
+        type: "order",
+        title: `New Order #${o.id}`,
+        subtitle: `${o.status} - $${o.total_amount}`,
+        timestamp: o.created_at,
+        icon: "shopping_bag",
+        color: "blue",
+        details: {
+          "Order ID": `#${o.id}`,
+          Amount: `$${o.total_amount}`,
+          Status: o.status,
+          Payment: o.payment_method,
+          Address: o.delivery_address,
+          Date: o.created_at,
+        },
+      }));
 
-      orders.forEach((o) => {
-        activity.push({
-          type: "order",
-          title: `New Order #${o.id}`,
-          subtitle: `${o.status} - $${o.total_amount}`,
-          timestamp: o.created_at,
-          icon: "shopping_bag",
-          color: "blue",
-          details: {
-            "Order ID": `#${o.id}`,
-            Amount: `$${o.total_amount}`,
-            Status: o.status,
-            Payment: o.payment_method,
-            Address: o.delivery_address,
-            Date: o.created_at,
-          },
-        });
-      });
+      const recent_users = users.map((u) => ({
+        type: "user",
+        title: "New User Registered",
+        subtitle: `${u.first_name} ${u.last_name}`,
+        timestamp: u.created_at,
+        icon: "person_add",
+        color: "green",
+        details: {
+          Name: `${u.first_name} ${u.last_name}`,
+          Email: u.email,
+          Phone: u.phone || "N/A",
+          Date: u.created_at,
+        },
+      }));
 
-      users.forEach((u) => {
-        activity.push({
-          type: "user",
-          title: "New User Registered",
-          subtitle: `${u.first_name} ${u.last_name}`,
-          timestamp: u.created_at,
-          icon: "person_add",
-          color: "green",
-          details: {
-            Name: `${u.first_name} ${u.last_name}`,
-            Email: u.email,
-            Phone: u.phone || "N/A",
-            Date: u.created_at,
-          },
-        });
-      });
+      const recent_stores = stores.map((s) => ({
+        type: "store",
+        title: `New Store "${s.name}"`,
+        subtitle: "Store registered",
+        timestamp: s.created_at,
+        icon: "store",
+        color: "orange",
+        details: {
+          "Store Name": s.name,
+          Location: s.location || "N/A",
+          Phone: s.phone || "N/A",
+          Date: s.created_at,
+        },
+      }));
 
-      stores.forEach((s) => {
-        activity.push({
-          type: "store",
-          title: `New Store "${s.name}"`,
-          subtitle: "Store registered",
-          timestamp: s.created_at,
-          icon: "store",
-          color: "orange",
-          details: {
-            "Store Name": s.name,
-            Location: s.location || "N/A",
-            Phone: s.phone || "N/A",
-            Date: s.created_at,
-          },
-        });
-      });
-
-      // Sort by timestamp descending
-      activity.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-      // Return top 10 combined
       res.json({
         success: true,
-        activity: activity.slice(0, 10),
+        recent_orders,
+        recent_users,
+        recent_stores,
       });
     } catch (err) {
       console.error("Recent activity error:", err);

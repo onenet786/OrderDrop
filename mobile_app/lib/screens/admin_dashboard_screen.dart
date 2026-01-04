@@ -32,7 +32,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _todayLogins = 0;
 
   // Recent Activity
-  List<dynamic> _recentActivity = [];
+  List<dynamic> _recentOrdersList = [];
+  List<dynamic> _recentUsersList = [];
+  List<dynamic> _recentStoresList = [];
+  String _selectedActivityType = 'orders';
 
   @override
   void initState() {
@@ -54,7 +57,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       final orders = results[0] as List<dynamic>;
       final visitorStats = results[1] as Map<String, dynamic>;
-      final recentActivity = results[2] as List<dynamic>;
+      final recentActivityData = results[2] as Map<String, dynamic>;
 
       final now = DateTime.now();
       final todayOrders = orders.where((o) {
@@ -101,7 +104,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _todayLogins = visitorStats['today_logins'] ?? 0;
 
         // Recent Activity
-        _recentActivity = recentActivity;
+        _recentOrdersList = recentActivityData['recent_orders'] ?? [];
+        _recentUsersList = recentActivityData['recent_users'] ?? [];
+        _recentStoresList = recentActivityData['recent_stores'] ?? [];
 
         _isLoading = false;
       });
@@ -224,6 +229,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         color: Colors.black87,
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    _buildActivityFilter(),
                     const SizedBox(height: 16),
                     _buildRecentActivityList(),
                   ],
@@ -492,7 +499,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildRecentActivityList() {
-    if (_recentActivity.isEmpty) {
+    List<dynamic> list;
+    switch (_selectedActivityType) {
+      case 'users':
+        list = _recentUsersList;
+        break;
+      case 'stores':
+        list = _recentStoresList;
+        break;
+      case 'orders':
+      default:
+        list = _recentOrdersList;
+        break;
+    }
+
+    if (list.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(16.0),
@@ -515,7 +536,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       child: Column(
         children: [
-          ..._recentActivity.map((activity) {
+          ...list.map((activity) {
             return Column(
               children: [
                 InkWell(
@@ -527,11 +548,51 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     color: _getColor(activity['color']),
                   ),
                 ),
-                if (activity != _recentActivity.last) const Divider(height: 1),
+                if (activity != list.last) const Divider(height: 1),
               ],
             );
           }),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActivityFilter() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _buildFilterChip('New Orders', 'orders'),
+          const SizedBox(width: 8),
+          _buildFilterChip('New Users', 'users'),
+          const SizedBox(width: 8),
+          _buildFilterChip('New Stores', 'stores'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, String value) {
+    final isSelected = _selectedActivityType == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (selected) {
+        if (selected) {
+          setState(() {
+            _selectedActivityType = value;
+          });
+        }
+      },
+      selectedColor: Colors.indigo.withValues(alpha: 0.2),
+      labelStyle: TextStyle(
+        color: isSelected ? Colors.indigo : Colors.grey[700],
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+      ),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: isSelected ? Colors.indigo : Colors.grey[300]!),
       ),
     );
   }
