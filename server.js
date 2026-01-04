@@ -49,12 +49,28 @@ const paymentRoutes = require("./routes/payments");
 const walletRoutes = require("./routes/wallets");
 const financialRoutes = require("./routes/financial");
 const { logError } = require("./utils/debugLogger");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
+
 console.log("Express application created.");
 
 // Middleware
 console.log("Setting up middleware...");
+
+// Make io available to routes
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 // Request logging
 if (process.env.NODE_ENV === "production") {
