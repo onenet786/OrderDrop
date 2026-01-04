@@ -27,6 +27,10 @@ class CartProvider with ChangeNotifier {
   }
 
   void addItem(Product product, int quantity, {ProductVariant? variant}) {
+    if (_items.isNotEmpty && _items.first.product.storeId != product.storeId) {
+      throw Exception('Cannot add items from different stores. Please clear your cart first.');
+    }
+
     final existingIndex = _items.indexWhere(
       (item) => item.product.id == product.id && _sameVariant(item.variant, variant),
     );
