@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cart_provider.dart';
 import 'providers/wallet_provider.dart';
+import 'providers/notification_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
@@ -19,6 +20,8 @@ import 'screens/orders_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/change_password_screen.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() {
   runApp(const MyApp());
 }
@@ -33,8 +36,13 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => CartProvider()),
         ChangeNotifierProvider(create: (_) => WalletProvider()),
+        ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
+          create: (_) => NotificationProvider(navigatorKey),
+          update: (_, auth, previous) => (previous ?? NotificationProvider(navigatorKey))..update(auth),
+        ),
       ],
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'ServeNow',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(

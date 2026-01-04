@@ -99,6 +99,22 @@ router.post(
       // Send verification email
       await sendVerificationEmail(email, verificationCode);
 
+      // Emit new_user event to admin
+      try {
+        if (req.io) {
+          req.io.emit('new_user', {
+            id: result.insertId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            user_type: userType,
+            created_at: new Date()
+          });
+        }
+      } catch (e) {
+        console.error('Socket emit error:', e);
+      }
+
       // Issue token (client may gate access until verification)
       const token = jwt.sign(
         {

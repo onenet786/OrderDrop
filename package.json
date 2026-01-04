@@ -20,6 +20,7 @@
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.6.5",
     "nodemailer": "^7.0.11",
+    "socket.io": "^4.8.3",
     "stripe": "^14.8.0"
   },
   "optionalDependencies": {
@@ -35,15 +36,27 @@
       "node": true,
       "es2021": true
     },
-    "extends": ["eslint:recommended"],
+    "extends": [
+      "eslint:recommended"
+    ],
     "parserOptions": {
       "ecmaVersion": 12,
       "sourceType": "module"
     },
     "rules": {
-      "no-unused-vars": ["warn", {"argsIgnorePattern": "^_"}],
-      "no-console": ["off"],
-      "semi": ["error", "always"]
+      "no-unused-vars": [
+        "warn",
+        {
+          "argsIgnorePattern": "^_"
+        }
+      ],
+      "no-console": [
+        "off"
+      ],
+      "semi": [
+        "error",
+        "always"
+      ]
     }
   },
   "keywords": [

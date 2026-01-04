@@ -340,6 +340,22 @@ router.post('/', authenticateToken, async (req, res) => {
             );
         }
 
+        // Emit new_order event to admin
+        try {
+            if (req.io) {
+                req.io.emit('new_order', {
+                    id: orderId,
+                    order_number: order_number,
+                    total_amount: grandTotal,
+                    store_id: orderStoreId,
+                    created_at: new Date(),
+                    user_id: req.user.id
+                });
+            }
+        } catch (e) {
+            console.error('Socket emit error:', e);
+        }
+
         res.status(201).json({
             success: true,
             message: 'Order created successfully',

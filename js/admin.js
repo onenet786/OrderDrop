@@ -87,6 +87,48 @@ function showInfo(title, message, duration = 3000) {
     showToast(title, message, 'info', duration);
 }
 
+// ===== REAL-TIME NOTIFICATIONS =====
+let socket;
+if (typeof io !== 'undefined') {
+    socket = io();
+    
+    socket.on('connect', () => {
+        console.log('Connected to notification server');
+    });
+
+    socket.on('new_user', (data) => {
+        showInfo('New User Registered', `${data.first_name} ${data.last_name} (${data.user_type}) has joined.`);
+        
+        // Update data if on relevant tab
+        const activeTab = document.querySelector('.tab-link.active');
+        if (activeTab) {
+            const tabId = activeTab.getAttribute('data-tab');
+            if (tabId === 'dashboard') {
+                if (typeof loadDashboardStats === 'function') loadDashboardStats();
+                if (typeof loadRecentActivity === 'function') loadRecentActivity();
+            } else if (tabId === 'accounts') {
+                if (typeof loadAccounts === 'function') loadAccounts();
+            }
+        }
+    });
+
+    socket.on('new_order', (data) => {
+        showInfo('New Order Placed', `Order #${data.order_number} received. Total: $${data.total_amount}`);
+        
+        // Update data if on relevant tab
+        const activeTab = document.querySelector('.tab-link.active');
+        if (activeTab) {
+            const tabId = activeTab.getAttribute('data-tab');
+            if (tabId === 'dashboard') {
+                if (typeof loadDashboardStats === 'function') loadDashboardStats();
+                if (typeof loadRecentActivity === 'function') loadRecentActivity();
+            } else if (tabId === 'orders') {
+                if (typeof loadOrders === 'function') loadOrders();
+            }
+        }
+    });
+}
+
 // Initialize admin dashboard
 document.addEventListener('DOMContentLoaded', function() {
     // Check if user is logged in and is admin
