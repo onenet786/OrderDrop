@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import '../services/api_service.dart';
 import 'auth_provider.dart';
 
 class NotificationProvider with ChangeNotifier {
-  IO.Socket? _socket;
+  socket_io.Socket? _socket;
   final GlobalKey<NavigatorState> navigatorKey;
   AuthProvider? _authProvider;
 
@@ -37,9 +37,9 @@ class NotificationProvider with ChangeNotifier {
       baseUrl = baseUrl.substring(0, baseUrl.length - 1);
     }
 
-    _socket = IO.io(
+    _socket = socket_io.io(
       baseUrl,
-      IO.OptionBuilder()
+      socket_io.OptionBuilder()
           .setTransports(['websocket'])
           .disableAutoConnect()
           .build(),
