@@ -35,10 +35,22 @@ async function ensureOrderItemsVariantColumns(db) {
     } catch (e) {}
 }
 
+async function ensureOrdersParentColumn(db) {
+    try {
+        const hasCol = await hasColumn(db, 'orders', 'parent_order_number');
+        if (!hasCol) {
+            await db.execute('ALTER TABLE orders ADD COLUMN parent_order_number VARCHAR(50) NULL');
+            await db.execute('CREATE INDEX idx_orders_parent_order_number ON orders(parent_order_number)');
+        }
+    } catch (e) {}
+}
+
 // Get user's orders
 router.get('/my-orders', authenticateToken, async (req, res) => {
     try {
         await ensureOrderItemsVariantColumns(req.db);
+        await ensureOrdersParentColumn(req.db);
+        
         const [orders] = await req.db.execute(`
             SELECT o.*, s.name as store_name, s.location as store_location,
                    r.first_name as rider_first_name, r.last_name as rider_last_name, r.phone as rider_phone
@@ -60,9 +72,50 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
             order.items = items;
         }
 
+        // Group orders by parent_order_number if applicable
+        const groupedOrders = [];
+        const orderMap = new Map(); // parent_order_number -> [orders]
+
+        for (const order of orders) {
+            if (order.parent_order_number) {
+                if (!orderMap.has(order.parent_order_number)) {
+                    orderMap.set(order.parent_order_number, []);
+                }
+                orderMap.get(order.parent_order_number).push(order);
+            } else {
+                groupedOrders.push(order);
+            }
+        }
+
+        for (const [parentNum, group] of orderMap) {
+            if (group.length === 1) {
+                groupedOrders.push(group[0]);
+            } else {
+                // Merge multiple stores order into one display entry
+                const first = group[0];
+                const totalAmount = group.reduce((sum, o) => sum + parseFloat(o.total_amount), 0);
+                
+                const merged = {
+                    ...first,
+                    id: first.id, // Keep one ID for key purposes, though details might need handling
+                    order_number: parentNum, // Display parent number
+                    store_name: 'Multiple Stores',
+                    total_amount: totalAmount.toFixed(2),
+                    items: group.flatMap(o => o.items),
+                    is_group: true,
+                    sub_orders: group,
+                    status: group.every(o => o.status === group[0].status) ? group[0].status : 'Processing' // Simplified status logic
+                };
+                groupedOrders.push(merged);
+            }
+        }
+        
+        // Sort by date desc
+        groupedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
         res.json({
             success: true,
-            orders
+            orders: groupedOrders
         });
 
     } catch (error) {
@@ -108,6 +161,7 @@ router.post('/', authenticateToken, async (req, res) => {
         }
 
         const delivery_fee = 2.99;
+        const parent_order_number = 'ORD' + Date.now() + Math.floor(Math.random() * 1000);
         const storeGroups = {};
         
         // 1. Group items by store
@@ -228,19 +282,20 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // 3. Create Orders
         await ensureOrderItemsVariantColumns(req.db);
+        await ensureOrdersParentColumn(req.db);
         const createdOrders = [];
         
         for (const storeIdKey in storeGroups) {
             const storeId = parseInt(storeIdKey);
             const group = storeGroups[storeIdKey];
             const orderTotal = group.subtotal + delivery_fee;
-            // Append random suffix to ensure uniqueness if timestamp collision (unlikely but safe)
-            const orderNumber = 'ORD' + Date.now() + Math.floor(Math.random() * 1000) + '-' + storeId;
+            // Use parent_order_number as prefix to link them
+            const orderNumber = parent_order_number + '-' + storeId;
 
             const [orderResult] = await req.db.execute(
-                `INSERT INTO orders (order_number, user_id, store_id, total_amount, delivery_fee, payment_method, delivery_address, delivery_time, special_instructions)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [orderNumber, req.user.id, storeId, orderTotal, delivery_fee, payment_method, delivery_address, delivery_time || null, special_instructions || null]
+                `INSERT INTO orders (order_number, user_id, store_id, total_amount, delivery_fee, payment_method, delivery_address, delivery_time, special_instructions, parent_order_number)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [orderNumber, req.user.id, storeId, orderTotal, delivery_fee, payment_method, delivery_address, delivery_time || null, special_instructions || null, parent_order_number]
             );
 
             for (let item of group.items) {

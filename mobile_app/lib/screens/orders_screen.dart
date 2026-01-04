@@ -136,6 +136,103 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Widget _buildOrderCard(Map<String, dynamic> order) {
+    final isGroup = order['is_group'] == true;
+    final subOrders = order['sub_orders'] as List?;
+
+    if (isGroup && subOrders != null) {
+      return Card(
+        margin: const EdgeInsets.only(bottom: 16),
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Order ${order['order_number']}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue),
+                    ),
+                    child: const Text(
+                      'MULTIPLE STORES',
+                      style: TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(),
+              _buildInfoRow('Total', 'PKR ${order['total_amount']}'),
+              _buildInfoRow('Address', order['delivery_address'] ?? 'N/A'),
+              const SizedBox(height: 12),
+              const Text(
+                'Shipments:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              ...subOrders.map<Widget>((sub) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            sub['store_name'] ?? 'Store',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          _buildStatusBadge(sub['status'] ?? 'pending'),
+                        ],
+                      ),
+                      if (sub['rider_phone'] != null) ...[
+                         const SizedBox(height: 4),
+                         Row(
+                           children: [
+                             const Icon(Icons.delivery_dining, size: 14, color: Colors.grey),
+                             const SizedBox(width: 4),
+                             Text(
+                               "${sub['rider_first_name'] ?? ''} ${sub['rider_last_name'] ?? ''}".trim(),
+                               style: const TextStyle(fontSize: 12, color: Colors.grey),
+                             ),
+                           ],
+                         )
+                      ]
+                    ],
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+      );
+    }
+
     final status = order['status'] ?? 'pending';
     final riderPhone = order['rider_phone'];
     final riderName = "${order['rider_first_name'] ?? ''} ${order['rider_last_name'] ?? ''}".trim();

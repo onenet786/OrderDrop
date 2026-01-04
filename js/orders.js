@@ -56,14 +56,28 @@ async function displayOrders(status = 'pending') {
                     `;
                 }
 
+                let storeHtml = `<p><strong>Store:</strong> ${order.store_name}</p>`;
+                if (order.is_group && order.sub_orders) {
+                    storeHtml = `<p><strong>Store:</strong> <span style="color: #2196F3; font-weight: bold;">Multiple Stores</span></p>`;
+                    storeHtml += `<div style="margin-top: 10px; padding: 10px; background-color: #f5f5f5; border-radius: 5px;">
+                        <p style="margin-bottom: 5px;"><strong>Shipments:</strong></p>`;
+                    order.sub_orders.forEach(sub => {
+                        storeHtml += `<div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.9em;">
+                            <span>${sub.store_name}</span>
+                            <span class="status-${sub.status}" style="padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">${sub.status}</span>
+                        </div>`;
+                    });
+                    storeHtml += `</div>`;
+                }
+
                 orderCard.innerHTML = `
                     <div class="order-header">
                         <h3>Order ${order.order_number}</h3>
-                        <span class="order-status status-${order.status}">${order.status}</span>
+                        ${order.is_group ? '' : `<span class="order-status status-${order.status}">${order.status}</span>`}
                     </div>
                     <div class="order-details">
                         <p><strong>Customer:</strong> ${order.first_name || (user ? user.first_name : '')} ${order.last_name || (user ? user.last_name : '')}</p>
-                        <p><strong>Store:</strong> ${order.store_name}</p>
+                        ${storeHtml}
                         <p><strong>Total:</strong> PKR ${order.total_amount}</p>
                         <p><strong>Delivery Address:</strong> ${order.delivery_address}</p>
                         <p><strong>Items:</strong> ${order.items_count || (order.items ? order.items.length : 0)} items</p>

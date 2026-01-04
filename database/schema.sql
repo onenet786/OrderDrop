@@ -111,6 +111,7 @@ CREATE TABLE orders (
     delivery_address TEXT NOT NULL,
     delivery_time VARCHAR(50),
     special_instructions TEXT,
+    parent_order_number VARCHAR(50) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -171,6 +172,7 @@ CREATE INDEX idx_products_store_id ON products(store_id);
 CREATE INDEX idx_products_category_id ON products(category_id);
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_orders_store_id ON orders(store_id);
+CREATE INDEX idx_orders_parent_order_number ON orders(parent_order_number);
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);
 
 -- Table: riders_fuel_history
