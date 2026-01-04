@@ -39,22 +39,18 @@ router.post(
       // Only allow ALTER TABLE statements and restrict table names
       const m = sql.trim().match(/^ALTER\s+TABLE\s+`?(\w+)`?/i);
       if (!m)
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Only ALTER TABLE statements are permitted",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Only ALTER TABLE statements are permitted",
+        });
 
       const table = m[1];
       const allowed = ["stores", "riders_fuel_history", "riders"];
       if (!allowed.includes(table))
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: `ALTER TABLE on '${table}' is not permitted`,
-          });
+        return res.status(403).json({
+          success: false,
+          message: `ALTER TABLE on '${table}' is not permitted`,
+        });
 
       // Execute
       const [result] = await req.db.execute(sql);
@@ -101,13 +97,11 @@ router.get(
       });
     } catch (err) {
       console.error("Visitor stats error:", err);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to fetch visitor stats",
-          error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch visitor stats",
+        error: err.message,
+      });
     }
   }
 );
@@ -121,7 +115,7 @@ router.get(
     try {
       // Fetch recent orders
       const [orders] = await req.db.execute(`
-            SELECT id, total_amount, status, created_at 
+            SELECT id, total_amount, status, created_at, payment_method, delivery_address 
             FROM orders 
             ORDER BY created_at DESC 
             LIMIT 5
@@ -129,63 +123,91 @@ router.get(
 
       // Fetch recent users
       const [users] = await req.db.execute(`
-            SELECT id, first_name, last_name, created_at 
+            SELECT id, first_name, last_name, email, phone, created_at 
             FROM users 
             ORDER BY created_at DESC 
             LIMIT 5
         `);
 
-      // Fetch recent store updates/creations (using created_at for now)
+      // Fetch recent store updates/creations
       const [stores] = await req.db.execute(`
-            SELECT id, name, created_at 
+            SELECT id, name, location, phone, created_at 
             FROM stores 
             ORDER BY created_at DESC 
             LIMIT 5
         `);
 
-      // Format data
-      const recent_orders = orders.map((o) => ({
-        type: "order",
-        title: `New Order #${o.id}`,
-        subtitle: `${o.status} - $${o.total_amount}`,
-        timestamp: o.created_at,
-        icon: "shopping_bag",
-        color: "blue",
-      }));
+      // Combine and sort
+      const activity = [];
 
-      const recent_users = users.map((u) => ({
-        type: "user",
-        title: "New User Registered",
-        subtitle: `${u.first_name} ${u.last_name}`,
-        timestamp: u.created_at,
-        icon: "person_add",
-        color: "green",
-      }));
+      orders.forEach((o) => {
+        activity.push({
+          type: "order",
+          title: `New Order #${o.id}`,
+          subtitle: `${o.status} - $${o.total_amount}`,
+          timestamp: o.created_at,
+          icon: "shopping_bag",
+          color: "blue",
+          details: {
+            "Order ID": `#${o.id}`,
+            Amount: `$${o.total_amount}`,
+            Status: o.status,
+            Payment: o.payment_method,
+            Address: o.delivery_address,
+            Date: o.created_at,
+          },
+        });
+      });
 
-      const recent_stores = stores.map((s) => ({
-        type: "store",
-        title: `New Store "${s.name}"`,
-        subtitle: "Store registered",
-        timestamp: s.created_at,
-        icon: "store",
-        color: "orange",
-      }));
+      users.forEach((u) => {
+        activity.push({
+          type: "user",
+          title: "New User Registered",
+          subtitle: `${u.first_name} ${u.last_name}`,
+          timestamp: u.created_at,
+          icon: "person_add",
+          color: "green",
+          details: {
+            Name: `${u.first_name} ${u.last_name}`,
+            Email: u.email,
+            Phone: u.phone || "N/A",
+            Date: u.created_at,
+          },
+        });
+      });
 
+      stores.forEach((s) => {
+        activity.push({
+          type: "store",
+          title: `New Store "${s.name}"`,
+          subtitle: "Store registered",
+          timestamp: s.created_at,
+          icon: "store",
+          color: "orange",
+          details: {
+            "Store Name": s.name,
+            Location: s.location || "N/A",
+            Phone: s.phone || "N/A",
+            Date: s.created_at,
+          },
+        });
+      });
+
+      // Sort by timestamp descending
+      activity.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      // Return top 10 combined
       res.json({
         success: true,
-        recent_orders,
-        recent_users,
-        recent_stores,
+        activity: activity.slice(0, 10),
       });
     } catch (err) {
       console.error("Recent activity error:", err);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to fetch recent activity",
-          error: err.message,
-        });
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch recent activity",
+        error: err.message,
+      });
     }
   }
 );
@@ -286,13 +308,11 @@ router.get(
       });
     } catch (err) {
       console.error("Inventory report error:", err);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to fetch inventory report",
-          error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch inventory report",
+        error: err.message,
+      });
     }
   }
 );
@@ -330,13 +350,11 @@ router.get(
       });
     } catch (err) {
       console.error("Store sales report error:", err);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to fetch store sales report",
-          error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch store sales report",
+        error: err.message,
+      });
     }
   }
 );
@@ -540,13 +558,11 @@ router.get(
       return res.download(filepath);
     } catch (err) {
       console.error("Download backup error:", err);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Download failed",
-          error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Download failed",
+        error: err.message,
+      });
     }
   }
 );
@@ -569,13 +585,11 @@ router.post(
           .json({ success: false, message: "filename is required" });
 
       if (process.env.ENABLE_RESTORE !== "true") {
-        return res
-          .status(501)
-          .json({
-            success: false,
-            message:
-              "Restore endpoint is disabled on this server. Set ENABLE_RESTORE=true to enable.",
-          });
+        return res.status(501).json({
+          success: false,
+          message:
+            "Restore endpoint is disabled on this server. Set ENABLE_RESTORE=true to enable.",
+        });
       }
 
       // Implement restore using mysql2 connector (no external mysql client)
@@ -598,12 +612,10 @@ router.post(
         ""
       ).toString();
       if (requestedFrom !== "web-admin" && !referer.includes("/admin.html")) {
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "Restore requests must originate from the web admin UI",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "Restore requests must originate from the web admin UI",
+        });
       }
 
       // Require a server-side passphrase for extra confirmation
@@ -611,33 +623,27 @@ router.post(
         req.body && req.body.password ? String(req.body.password) : "";
       const requiredPass = process.env.RESTORE_PASSPHRASE;
       if (!requiredPass)
-        return res
-          .status(500)
-          .json({
-            success: false,
-            message:
-              "Server restore passphrase not configured (RESTORE_PASSPHRASE)",
-          });
+        return res.status(500).json({
+          success: false,
+          message:
+            "Server restore passphrase not configured (RESTORE_PASSPHRASE)",
+        });
       if (providedPass !== requiredPass)
-        return res
-          .status(403)
-          .json({
-            success: false,
-            message: "Invalid restore confirmation passphrase",
-          });
+        return res.status(403).json({
+          success: false,
+          message: "Invalid restore confirmation passphrase",
+        });
 
       // Locking to prevent concurrent restores
       const lockFile = path.join(BACKUP_DIR, ".restore.lock");
       if (fs.existsSync(lockFile)) {
         try {
           const info = JSON.parse(fs.readFileSync(lockFile, "utf8"));
-          return res
-            .status(423)
-            .json({
-              success: false,
-              message: "Restore already in progress",
-              info,
-            });
+          return res.status(423).json({
+            success: false,
+            message: "Restore already in progress",
+            info,
+          });
         } catch (_) {
           return res
             .status(423)
@@ -679,12 +685,10 @@ router.post(
         try {
           fs.unlinkSync(lockFile);
         } catch (_) {}
-        return res
-          .status(500)
-          .json({
-            success: false,
-            message: "DB user not configured on server",
-          });
+        return res.status(500).json({
+          success: false,
+          message: "DB user not configured on server",
+        });
       }
 
       try {
@@ -716,24 +720,19 @@ router.post(
         try {
           fs.unlinkSync(lockFile);
         } catch (_) {}
-        return res
-          .status(500)
-          .json({
-            success: false,
-            message: "Restore failed",
-            error:
-              errExec && errExec.message ? errExec.message : String(errExec),
-          });
+        return res.status(500).json({
+          success: false,
+          message: "Restore failed",
+          error: errExec && errExec.message ? errExec.message : String(errExec),
+        });
       }
     } catch (err) {
       console.error("Restore backup error:", err);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Restore failed",
-          error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Restore failed",
+        error: err.message,
+      });
     }
   }
 );
@@ -775,13 +774,11 @@ router.post(
       }
       res.json({ success: true, image_url: publicPath, variants });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Image upload failed",
-          error: error.message,
-        });
+      res.status(500).json({
+        success: false,
+        message: "Image upload failed",
+        error: error.message,
+      });
     }
   }
 );
@@ -853,13 +850,11 @@ router.post(
       });
     } catch (err) {
       console.error("Items migration error:", err);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Migration failed",
-          error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Migration failed",
+        error: err.message,
+      });
     }
   }
 );
@@ -917,13 +912,11 @@ router.get("/payments", authenticateToken, requireAdmin, async (req, res) => {
     });
   } catch (error) {
     console.error("Get payments error:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch payments",
-        error: error.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch payments",
+      error: error.message,
+    });
   }
 });
 
@@ -949,13 +942,11 @@ router.get(
       return res.json({ success: true, payment: payments[0] });
     } catch (error) {
       console.error("Get payment details error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to fetch payment details",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch payment details",
+        error: error.message,
+      });
     }
   }
 );
@@ -1018,13 +1009,11 @@ router.get(
       });
     } catch (error) {
       console.error("Payment stats error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to fetch payment stats",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch payment stats",
+        error: error.message,
+      });
     }
   }
 );
@@ -1072,13 +1061,11 @@ router.get("/wallets", authenticateToken, requireAdmin, async (req, res) => {
     });
   } catch (error) {
     console.error("Get wallets error:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch wallets",
-        error: error.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch wallets",
+      error: error.message,
+    });
   }
 });
 
@@ -1115,13 +1102,11 @@ router.get(
       });
     } catch (error) {
       console.error("Get wallet details error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to fetch wallet details",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch wallet details",
+        error: error.message,
+      });
     }
   }
 );
@@ -1162,12 +1147,10 @@ router.post(
       const newBalance = parseFloat(wallet.balance) + parseFloat(amount);
 
       if (newBalance < 0) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Insufficient balance for deduction",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Insufficient balance for deduction",
+        });
       }
 
       const type = amount > 0 ? "credit" : "debit";
@@ -1194,13 +1177,11 @@ router.post(
       });
     } catch (error) {
       console.error("Adjust wallet error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to adjust wallet",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to adjust wallet",
+        error: error.message,
+      });
     }
   }
 );
@@ -1242,13 +1223,11 @@ router.get(
       });
     } catch (error) {
       console.error("Wallet stats error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to fetch wallet stats",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch wallet stats",
+        error: error.message,
+      });
     }
   }
 );

@@ -32,10 +32,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _todayLogins = 0;
 
   // Recent Activity
-  List<dynamic> _recentOrdersList = [];
-  List<dynamic> _recentUsersList = [];
-  List<dynamic> _recentStoresList = [];
-  String _selectedActivityType = 'orders';
+  List<dynamic> _recentActivity = [];
 
   @override
   void initState() {
@@ -57,7 +54,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       final orders = results[0] as List<dynamic>;
       final visitorStats = results[1] as Map<String, dynamic>;
-      final recentActivityData = results[2] as Map<String, dynamic>;
+      final recentActivity = results[2] as List<dynamic>;
 
       final now = DateTime.now();
       final todayOrders = orders.where((o) {
@@ -104,9 +101,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _todayLogins = visitorStats['today_logins'] ?? 0;
 
         // Recent Activity
-        _recentOrdersList = recentActivityData['recent_orders'] ?? [];
-        _recentUsersList = recentActivityData['recent_users'] ?? [];
-        _recentStoresList = recentActivityData['recent_stores'] ?? [];
+        _recentActivity = recentActivity;
 
         _isLoading = false;
       });
@@ -229,8 +224,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         color: Colors.black87,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    _buildActivityFilter(),
                     const SizedBox(height: 16),
                     _buildRecentActivityList(),
                   ],
@@ -499,21 +492,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildRecentActivityList() {
-    List<dynamic> list;
-    switch (_selectedActivityType) {
-      case 'users':
-        list = _recentUsersList;
-        break;
-      case 'stores':
-        list = _recentStoresList;
-        break;
-      case 'orders':
-      default:
-        list = _recentOrdersList;
-        break;
-    }
-
-    if (list.isEmpty) {
+    if (_recentActivity.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(16.0),
@@ -536,16 +515,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       child: Column(
         children: [
-          ...list.map((activity) {
+          ..._recentActivity.map((activity) {
             return Column(
               children: [
-                _buildActivityItem(
-                  title: activity['title'] ?? '',
-                  subtitle: activity['subtitle'] ?? '',
-                  icon: _getIconData(activity['icon']),
-                  color: _getColor(activity['color']),
+                InkWell(
+                  onTap: () => _showActivityDetails(activity),
+                  child: _buildActivityItem(
+                    title: activity['title'] ?? '',
+                    subtitle: activity['subtitle'] ?? '',
+                    icon: _getIconData(activity['icon']),
+                    color: _getColor(activity['color']),
+                  ),
                 ),
-                if (activity != list.last) const Divider(height: 1),
+                if (activity != _recentActivity.last) const Divider(height: 1),
               ],
             );
           }),
@@ -554,42 +536,44 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildActivityFilter() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _buildFilterChip('New Orders', 'orders'),
-          const SizedBox(width: 8),
-          _buildFilterChip('New Users', 'users'),
-          const SizedBox(width: 8),
-          _buildFilterChip('New Stores', 'stores'),
+  void _showActivityDetails(Map<String, dynamic> activity) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(activity['title'] ?? 'Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (activity['details'] != null)
+                ...(activity['details'] as Map<String, dynamic>).entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 100,
+                          child: Text(
+                            '${e.key}:',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        Expanded(child: Text('${e.value ?? "N/A"}')),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String label, String value) {
-    final isSelected = _selectedActivityType == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        if (selected) {
-          setState(() {
-            _selectedActivityType = value;
-          });
-        }
-      },
-      selectedColor: Colors.indigo.withValues(alpha: 0.2),
-      labelStyle: TextStyle(
-        color: isSelected ? Colors.indigo : Colors.grey[700],
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-      ),
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: isSelected ? Colors.indigo : Colors.grey[300]!),
       ),
     );
   }
