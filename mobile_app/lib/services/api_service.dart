@@ -10,14 +10,14 @@ class ApiService {
   static String get baseUrl {
     if (kDebugMode) {
       if (kIsWeb) {
-        return 'http://localhost:3002';
+        return 'http://23.137.84.249:3002';
       } else if (Platform.isAndroid) {
-        return 'http://10.0.2.2:3002'; // Android Emulator localhost
+        return 'http://23.137.84.249:3002'; // Android Emulator localhost
       } else if (Platform.isIOS) {
-        return 'http://localhost:3002'; // iOS Simulator localhost
+        return 'http://23.137.84.249:3002'; // iOS Simulator localhost
       }
     }
-    
+
     // Fallback to production/remote URL
     return 'http://23.137.84.249:3002';
   }
