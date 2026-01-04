@@ -185,6 +185,7 @@ function initializeAdmin() {
 
     // Tab switching
     const tabLinks = document.querySelectorAll('.tab-link');
+
     tabLinks.forEach(link => {
         link.addEventListener('click', function(e) {
             e.preventDefault();
@@ -192,8 +193,21 @@ function initializeAdmin() {
         });
     });
 
+    // Handle right-click on dropdown toggles is now handled by native browser menu using href
+    
     // Load initial dashboard data
-    loadDashboardStats();
+    const initialTab = window.location.hash ? window.location.hash.substring(1) : 'dashboard';
+    if (initialTab && initialTab !== 'dashboard') {
+        switchTab(initialTab);
+    } else {
+        loadDashboardStats();
+    }
+
+    // Listen for hash changes to switch tabs
+    window.addEventListener('hashchange', () => {
+        const tab = window.location.hash.substring(1);
+        if (tab) switchTab(tab);
+    });
 
     // Add event listeners for modal open buttons
     document.getElementById('addAccountBtn').addEventListener('click', () => showAddAccountModal());
@@ -920,6 +934,11 @@ function switchTab(tabName) {
     }
     tabEl.classList.add('active');
     linkEl.classList.add('active');
+
+    // Update URL hash without jumping
+    if (window.location.hash !== '#' + tabName) {
+        history.pushState(null, null, '#' + tabName);
+    }
 
     // Load data for the tab
     switch(tabName) {

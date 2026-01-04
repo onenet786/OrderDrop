@@ -1174,7 +1174,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const token = localStorage.getItem('serveNowToken');
     const path = (currentPage || '').toLowerCase();
     const publicPages = ['index.html','stores.html','store.html','products.html','cart.html','login.html','register.html'];
-    const isPublic = publicPages.some(p => path.endsWith(p));
+    const isPublic = publicPages.some(p => path.endsWith(p)) || path === '/' || path === '' || path.endsWith('/');
     if (!token && !isPublic) {
         window.location.href = 'login.html';
         return;
@@ -1198,15 +1198,42 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     }
-    // Update nav if logged in - only for customers
+    // Update nav if logged in - handle different user types
     else if (token) {
         const userData = localStorage.getItem('serveNowUser');
         if (userData) {
             try {
                 const user = JSON.parse(userData);
+                const navUl = document.querySelector('nav ul');
+
+                // Handle rider navigation separately
+                if (user.user_type === 'rider') {
+                    // Redirect to rider dashboard if on admin page or login/register
+                    const currentPage = window.location.pathname.toLowerCase();
+                    if (currentPage.includes('admin.html') || isLoginPage || isRegisterPage) {
+                        window.location.href = 'rider.html';
+                        return;
+                    }
+                    // Update navigation for riders
+                    if (navUl) {
+                        navUl.innerHTML = `
+                            <li>Welcome ${user.first_name}</li>
+                            <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                            <li><a href="rider.html"><i class="fas fa-motorcycle"></i> Dashboard</a></li>
+                            <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+                            <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
+                            <li><a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                        `;
+                    }
+                }
                 // Update navigation for customers and store owners
-                if (user.user_type === 'customer' || user.user_type === 'store_owner') {
-                    const navUl = document.querySelector('nav ul');
+                else if (user.user_type === 'customer' || user.user_type === 'store_owner') {
+                    // Redirect away from role-specific dashboards
+                    const currentPage = window.location.pathname.toLowerCase();
+                    if (currentPage.includes('admin.html') || currentPage.includes('rider.html') || isLoginPage || isRegisterPage) {
+                        window.location.href = 'index.html';
+                        return;
+                    }
                     if (navUl) {
                         navUl.innerHTML = `
                             <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
@@ -1218,6 +1245,14 @@ document.addEventListener('DOMContentLoaded', function() {
                             <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
                             <li><a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                         `;
+                    }
+                }
+                // Handle admin navigation
+                else if (user.user_type === 'admin') {
+                    // Only redirect if on login/register (allow them to view rider dashboard if they want, or any other page)
+                    if (isLoginPage || isRegisterPage) {
+                        window.location.href = 'admin.html';
+                        return;
                     }
                 }
             } catch (error) {
