@@ -41,13 +41,11 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Validation failed",
-            errors: errors.array(),
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const {
@@ -66,12 +64,10 @@ router.post(
         [email]
       );
       if (existingUser.length > 0) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "User with this email already exists",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "User with this email already exists",
+        });
       }
 
       // Hash password
@@ -134,13 +130,11 @@ router.post(
       });
     } catch (error) {
       console.error("Registration error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Registration failed",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Registration failed",
+        error: error.message,
+      });
     }
   }
 );
@@ -159,13 +153,11 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Validation failed",
-            errors: errors.array(),
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { email, password } = req.body;
@@ -314,13 +306,11 @@ router.post(
         .json({ success: false, message: "Invalid email or password" });
     } catch (error) {
       console.error("Login error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Login failed",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Login failed",
+        error: error.message,
+      });
     }
   }
 );
@@ -350,12 +340,15 @@ router.get("/me", authenticateToken, async (req, res) => {
     if (req.user.user_type === "rider") {
       if (process.env.NODE_ENV === "development")
         console.log("[auth] /me fetching rider profile for:", req.user.id);
+
+      // Use email check to prevent ID collision with users table
       const [riders] = await req.db.execute(
-        "SELECT id, first_name, last_name, email, phone, vehicle_type, license_number, is_available, created_at FROM riders WHERE id = ?",
-        [req.user.id]
+        "SELECT id, first_name, last_name, email, phone, vehicle_type, license_number, is_available, created_at FROM riders WHERE id = ? AND email = ?",
+        [req.user.id, req.user.email]
       );
 
       if (riders.length === 0) {
+        // If not found by ID+Email, it might be a token issue or data inconsistency
         return res
           .status(404)
           .json({ success: false, message: "Rider not found" });
@@ -371,9 +364,11 @@ router.get("/me", authenticateToken, async (req, res) => {
       });
     }
 
+    // Default to Users table (Admin/Customer/Store Owner)
+    // Use email check to prevent ID collision with riders table
     const [users] = await req.db.execute(
-      "SELECT id, first_name, last_name, email, phone, address, user_type, created_at FROM users WHERE id = ?",
-      [req.user.id]
+      "SELECT id, first_name, last_name, email, phone, address, user_type, created_at FROM users WHERE id = ? AND email = ?",
+      [req.user.id, req.user.email]
     );
 
     if (users.length === 0) {
@@ -385,13 +380,11 @@ router.get("/me", authenticateToken, async (req, res) => {
     return res.json({ success: true, user: users[0] });
   } catch (error) {
     console.error("Profile fetch error:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch profile",
-        error: error.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch profile",
+      error: error.message,
+    });
   }
 });
 
@@ -411,13 +404,11 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Validation failed",
-            errors: errors.array(),
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
       }
 
       const { currentPassword, newPassword } = req.body;
@@ -478,13 +469,11 @@ router.post(
       });
     } catch (error) {
       console.error("Change password error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to change password",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to change password",
+        error: error.message,
+      });
     }
   }
 );
@@ -524,13 +513,11 @@ router.get("/profile", authenticateToken, async (req, res) => {
     return res.json({ success: true, user: users[0] });
   } catch (error) {
     console.error("Profile fetch error:", error);
-    return res
-      .status(500)
-      .json({
-        success: false,
-        message: "Failed to fetch profile",
-        error: error.message,
-      });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch profile",
+      error: error.message,
+    });
   }
 });
 
@@ -558,12 +545,10 @@ router.post(
       );
 
       if (users.length === 0) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: "Invalid or expired verification code",
-          });
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired verification code",
+        });
       }
 
       const user = users[0];
@@ -579,13 +564,11 @@ router.post(
       });
     } catch (error) {
       console.error("Verification error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Verification failed",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Verification failed",
+        error: error.message,
+      });
     }
   }
 );
@@ -633,13 +616,11 @@ router.post(
       return res.json({ success: true, message: "Verification code sent" });
     } catch (error) {
       console.error("Resend code error:", error);
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Failed to resend code",
-          error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Failed to resend code",
+        error: error.message,
+      });
     }
   }
 );
