@@ -75,6 +75,84 @@ router.get('/visitor-stats', authenticateToken, requireAdmin, async (req, res) =
     }
 });
 
+// Recent Activity Endpoint
+router.get('/recent-activity', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        // Fetch recent orders
+        const [orders] = await req.db.execute(`
+            SELECT id, total_amount, status, created_at 
+            FROM orders 
+            ORDER BY created_at DESC 
+            LIMIT 5
+        `);
+
+        // Fetch recent users
+        const [users] = await req.db.execute(`
+            SELECT id, first_name, last_name, created_at 
+            FROM users 
+            ORDER BY created_at DESC 
+            LIMIT 5
+        `);
+
+        // Fetch recent store updates/creations (using created_at for now)
+        const [stores] = await req.db.execute(`
+            SELECT id, name, created_at 
+            FROM stores 
+            ORDER BY created_at DESC 
+            LIMIT 5
+        `);
+
+        // Combine and sort
+        const activity = [];
+
+        orders.forEach(o => {
+            activity.push({
+                type: 'order',
+                title: `New Order #${o.id}`,
+                subtitle: `${o.status} - $${o.total_amount}`,
+                timestamp: o.created_at,
+                icon: 'shopping_bag',
+                color: 'blue'
+            });
+        });
+
+        users.forEach(u => {
+            activity.push({
+                type: 'user',
+                title: 'New User Registered',
+                subtitle: `${u.first_name} ${u.last_name}`,
+                timestamp: u.created_at,
+                icon: 'person_add',
+                color: 'green'
+            });
+        });
+
+        stores.forEach(s => {
+            activity.push({
+                type: 'store',
+                title: `New Store "${s.name}"`,
+                subtitle: 'Store registered',
+                timestamp: s.created_at,
+                icon: 'store',
+                color: 'orange'
+            });
+        });
+
+        // Sort by timestamp descending
+        activity.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        // Return top 10 combined
+        res.json({
+            success: true,
+            activity: activity.slice(0, 10)
+        });
+
+    } catch (err) {
+        console.error('Recent activity error:', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch recent activity', error: err.message });
+    }
+});
+
 router.get('/inventory-report', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const [storeInventory] = await req.db.execute(`

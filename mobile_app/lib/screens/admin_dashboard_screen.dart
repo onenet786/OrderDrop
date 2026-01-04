@@ -31,6 +31,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _activeUsers = 0;
   int _todayLogins = 0;
 
+  // Recent Activity
+  List<dynamic> _recentActivity = [];
+
   @override
   void initState() {
     super.initState();
@@ -42,14 +45,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null) return;
 
-      // Fetch Orders and Visitor Stats in parallel
+      // Fetch Orders, Visitor Stats, and Recent Activity in parallel
       final results = await Future.wait([
         ApiService.getOrders(token),
         ApiService.getVisitorStats(token),
+        ApiService.getRecentActivity(token),
       ]);
 
       final orders = results[0] as List<dynamic>;
       final visitorStats = results[1] as Map<String, dynamic>;
+      final recentActivity = results[2] as List<dynamic>;
 
       final now = DateTime.now();
       final todayOrders = orders.where((o) {
@@ -94,6 +99,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         // Visitors
         _activeUsers = visitorStats['active_users'] ?? 0;
         _todayLogins = visitorStats['today_logins'] ?? 0;
+
+        // Recent Activity
+        _recentActivity = recentActivity;
 
         _isLoading = false;
       });
@@ -484,6 +492,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildRecentActivityList() {
+    if (_recentActivity.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text('No recent activity'),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -498,29 +515,48 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       child: Column(
         children: [
-          _buildActivityItem(
-            title: 'New Order Ord2501021234',
-            subtitle: '2 mins ago',
-            icon: Icons.shopping_bag,
-            color: Colors.blue,
-          ),
-          const Divider(height: 1),
-          _buildActivityItem(
-            title: 'New User Registered',
-            subtitle: '15 mins ago',
-            icon: Icons.person_add,
-            color: Colors.green,
-          ),
-          const Divider(height: 1),
-          _buildActivityItem(
-            title: 'Store "Burger King" Updated',
-            subtitle: '1 hour ago',
-            icon: Icons.store,
-            color: Colors.orange,
-          ),
+          ..._recentActivity.map((activity) {
+            return Column(
+              children: [
+                _buildActivityItem(
+                  title: activity['title'] ?? '',
+                  subtitle: activity['subtitle'] ?? '',
+                  icon: _getIconData(activity['icon']),
+                  color: _getColor(activity['color']),
+                ),
+                if (activity != _recentActivity.last) const Divider(height: 1),
+              ],
+            );
+          }),
         ],
       ),
     );
+  }
+
+  IconData _getIconData(String? iconName) {
+    switch (iconName) {
+      case 'shopping_bag':
+        return Icons.shopping_bag;
+      case 'person_add':
+        return Icons.person_add;
+      case 'store':
+        return Icons.store;
+      default:
+        return Icons.notifications;
+    }
+  }
+
+  Color _getColor(String? colorName) {
+    switch (colorName) {
+      case 'blue':
+        return Colors.blue;
+      case 'green':
+        return Colors.green;
+      case 'orange':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget _buildActivityItem({
