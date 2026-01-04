@@ -304,7 +304,7 @@ async function updateMyLocation(orderId) {
         const data = await response.json();
         if (data.success) {
             showSuccess('Location Updated', 'Location updated successfully!');
-            displayRiderDeliveries('assigned');
+            displayRiderDeliveries('assigned', 'deliveriesContainer');
         } else {
             showError('Error', 'Failed to update location: ' + data.message);
         }
@@ -329,7 +329,7 @@ async function markDelivered(orderId) {
         const data = await response.json();
         if (data.success) {
             showSuccess('Delivery Completed', 'Delivery marked as completed!');
-            displayRiderDeliveries('assigned');
+            displayRiderDeliveries('assigned', 'deliveriesContainer');
         } else {
             showError('Error', 'Failed to mark delivery as completed: ' + data.message);
         }
@@ -356,7 +356,7 @@ async function updatePaymentStatus(orderId, status) {
         const data = await response.json();
         if (data.success) {
             showSuccess('Payment Updated', 'Payment status updated!');
-            displayRiderDeliveries('assigned');
+            displayRiderDeliveries('assigned', 'deliveriesContainer');
         } else {
             showError('Error', 'Failed to update payment status: ' + data.message);
         }
@@ -443,126 +443,104 @@ function closeOrderInfoModal() {
     setTimeout(() => { modal.style.display = 'none'; }, 200);
 }
 
-function setupRiderTabs() {
-    try {
-        const tabsBar = document.querySelector('.rider-tabs');
-        if (tabsBar) {
-            tabsBar.innerHTML = `
-                <button id="tabBtnHome" class="tab active">Home</button>
-                <button id="tabBtnHistory" class="tab">History</button>
-                <button id="tabBtnWallet" class="tab">Wallet</button>
-                <button id="tabBtnProfile" class="tab">Profile</button>
-            `;
-        }
-        const deliveriesContainer = document.getElementById('deliveriesContainer');
-        let tabsContent = document.getElementById('riderTabsContent');
-        if (!tabsContent) {
-            tabsContent = document.createElement('div');
-            tabsContent.id = 'riderTabsContent';
-            const parent = deliveriesContainer ? deliveriesContainer.parentElement : document.querySelector('.rider-section') || document.body;
-            parent.insertBefore(tabsContent, deliveriesContainer);
-        }
-        tabsContent.innerHTML = `
-            <div id="tabHomeContent"></div>
-            <div id="tabHistoryContent" style="display:none;"></div>
-            <div id="tabWalletContent" style="display:none;"></div>
-            <div id="tabProfileContent" style="display:none;"></div>
-        `;
-        if (deliveriesContainer) {
-            deliveriesContainer.id = 'tabHomeContent';
-        }
-        const bind = (btnId, cb) => {
-            const btn = document.getElementById(btnId);
-            if (btn) btn.addEventListener('click', cb);
-        };
-        bind('tabBtnHome', () => setActiveRiderTab('home'));
-        bind('tabBtnHistory', () => setActiveRiderTab('history'));
-        bind('tabBtnWallet', () => setActiveRiderTab('wallet'));
-        bind('tabBtnProfile', () => setActiveRiderTab('profile'));
-    } catch (e) {
-        console.warn('setupRiderTabs failed', e);
+// Tab Switching
+function switchTab(tabId) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+
+    // Deactivate all sidebar links
+    document.querySelectorAll('.sidebar-nav a').forEach(link => {
+        link.classList.remove('active');
+    });
+
+    // Show selected tab content
+    const selectedTab = document.getElementById(tabId);
+    if (selectedTab) {
+        selectedTab.classList.add('active');
+    }
+
+    // Activate sidebar link
+    const selectedLink = document.getElementById('nav-' + tabId);
+    if (selectedLink) {
+        selectedLink.classList.add('active');
+    }
+    
+    // Close mobile sidebar if open
+    const appSidebar = document.getElementById('appSidebar');
+    if (appSidebar && window.innerWidth <= 1024) {
+        appSidebar.classList.remove('active');
+    }
+
+    // Load data based on tab
+    if (tabId === 'assigned') {
+        displayRiderDeliveries('assigned', 'deliveriesContainer');
+    } else if (tabId === 'completed') {
+        displayRiderDeliveries('completed', 'completedDeliveriesContainer');
     }
 }
-function setActiveRiderTab(name) {
-    const btns = ['Home','History','Wallet','Profile'];
-    btns.forEach(n => {
-        const b = document.getElementById('tabBtn' + n);
-        if (b) b.classList.toggle('active', n.toLowerCase() === name);
-    });
-    const contents = {
-        home: 'tabHomeContent',
-        history: 'tabHistoryContent',
-        wallet: 'tabWalletContent',
-        profile: 'tabProfileContent'
-    };
-    Object.keys(contents).forEach(k => {
-        const el = document.getElementById(contents[k]);
-        if (el) el.style.display = (k === name) ? 'block' : 'none';
-    });
-    if (name === 'home') {
-        displayRiderDeliveries('assigned', 'tabHomeContent');
-    } else if (name === 'history') {
-        displayRiderDeliveries('completed', 'tabHistoryContent');
-    } else if (name === 'wallet') {
-        loadRiderWallet();
-    } else if (name === 'profile') {
-        loadRiderProfileTab();
+
+// Logout
+function logout() {
+    localStorage.removeItem('serveNowToken');
+    localStorage.removeItem('serveNowUser');
+    window.location.href = 'index.html';
+}
+
+// Change Password Modal
+function showChangePasswordModal() {
+    const modal = document.getElementById('changePasswordModal');
+    if (modal) {
+        modal.style.display = 'block';
+        setTimeout(() => modal.classList.add('show'), 10);
+    }
+    // Close sidebar on mobile
+    const appSidebar = document.getElementById('appSidebar');
+    if (appSidebar && window.innerWidth <= 1024) {
+        appSidebar.classList.remove('active');
     }
 }
-function loadRiderWallet() {
-    const c = document.getElementById('tabWalletContent');
-    if (!c) return;
-    c.innerHTML = `
-        <div class="card">
-            <h3>Wallet</h3>
-            <p>Wallet details for riders are not configured yet.</p>
-            <p>Please contact admin to enable rider wallet.</p>
-        </div>
-    `;
+
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('show');
+        setTimeout(() => { modal.style.display = 'none'; }, 300);
+    }
 }
-async function loadRiderProfileTab() {
-    const c = document.getElementById('tabProfileContent');
-    if (!c) return;
+
+async function submitChangePassword() {
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmNewPassword = document.getElementById('confirmNewPassword').value;
+
+    if (newPassword !== confirmNewPassword) {
+        showError('Error', 'New passwords do not match');
+        return;
+    }
+
     try {
-        const response = await fetch(`${API_BASE}/api/orders/rider/profile`, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        const response = await fetch(`${API_BASE}/api/auth/change-password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            },
+            body: JSON.stringify({ currentPassword, newPassword })
         });
+
         const data = await response.json();
         if (data.success) {
-            const r = data.rider || {};
-            const resolve = (u) => {
-                if (!u || typeof u !== 'string') return null;
-                const url = u.trim();
-                if (!url) return null;
-                if (/^https?:\/\//i.test(url) || url.toLowerCase().startsWith('data:')) return url;
-                return API_BASE.replace(/\/$/, '') + (url.startsWith('/') ? url : '/' + url);
-            };
-            const riderImg = resolve(r.image_url) || '/images/servenow.png';
-            const idImg = resolve(r.id_card_url) || '/images/servenow.png';
-            c.innerHTML = `
-                <div class="card">
-                    <h3>My Profile</h3>
-                    <p><strong>Name:</strong> ${[r.first_name, r.last_name].filter(Boolean).join(' ')}</p>
-                    <p><strong>Email:</strong> ${r.email || 'N/A'}</p>
-                    <p><strong>Phone:</strong> ${r.phone || 'N/A'}</p>
-                    <p><strong>Vehicle:</strong> ${r.vehicle_type || 'N/A'}</p>
-                    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
-                        <div style="flex:1;min-width:240px;max-width:420px;">
-                            <div style="font-weight:bold;margin-bottom:6px;">Rider Photo</div>
-                            <img src="${riderImg}" alt="Rider Photo" style="width:100%;height:220px;object-fit:cover;border-radius:8px;background:#f2f2f2" onerror="this.onerror=null;this.src='/images/servenow.png'">
-                        </div>
-                        <div style="flex:1;min-width:240px;max-width:420px;">
-                            <div style="font-weight:bold;margin-bottom:6px;">ID Card</div>
-                            <img src="${idImg}" alt="ID Card" style="width:100%;height:220px;object-fit:cover;border-radius:8px;background:#f2f2f2" onerror="this.onerror=null;this.src='/images/servenow.png'">
-                        </div>
-                    </div>
-                </div>
-            `;
+            showSuccess('Success', 'Password changed successfully');
+            closeModal('changePasswordModal');
+            document.getElementById('changePasswordForm').reset();
         } else {
-            c.innerHTML = '<p>Failed to load profile.</p>';
+            showError('Error', data.message || 'Failed to change password');
         }
-    } catch (e) {
-        c.innerHTML = '<p>Error loading profile.</p>';
+    } catch (error) {
+        console.error('Error changing password:', error);
+        showError('Error', 'An error occurred while changing password');
     }
 }
 
@@ -584,8 +562,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     loadRiderInfo();
-    setupRiderTabs();
-    setActiveRiderTab('home');
+    // Load initial tab
+    switchTab('assigned');
     createOrGetOrderInfoModal();
 
     /* Location tracking disabled
@@ -612,11 +590,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-update location every 2 minutes
     setInterval(autoUpdateLocation, 120000); // 2 minutes
     */
-
-    // Tab switching
-    // legacy tab handlers removed in favor of new tabs
-
-    // legacy tab handlers removed in favor of new tabs
 
     // Cleanup on page unload
     // window.addEventListener('beforeunload', stopLocationTracking);

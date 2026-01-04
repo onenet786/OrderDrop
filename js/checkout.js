@@ -244,7 +244,11 @@ async function handleCheckoutSubmit(e) {
             updateCartCount();
 
             // Redirect to order confirmation page
-            window.location.href = 'order-confirmation.html';
+            if (data.order && data.order.order_number) {
+                window.location.href = 'order-confirmation.html?order_number=' + encodeURIComponent(data.order.order_number);
+            } else {
+                window.location.href = 'order-confirmation.html';
+            }
         } else {
             showError('Order Failed', 'Failed to place order: ' + data.message);
         }

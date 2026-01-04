@@ -561,17 +561,12 @@ function buildStoreCardHtml(store) {
     const id = store && store.id ? store.id : '';
 
     return `
-        <div class="store-card-header">
-            <div class="store-card-header-inner">
-                <img class="store-card-logo" src="${imageSrc}" alt="${safeAlt}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackImg}'">
-                <h4>${(store && store.name) ? store.name : 'Store'}</h4>
-            </div>
-        </div>
-        <div class="store-card-body">
+        <img src="${imageSrc}" alt="${safeAlt}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackImg}'">
+        <div class="store-card-content">
+            <h4>${(store && store.name) ? store.name : 'Store'}</h4>
             <p><i class="fas fa-map-marker-alt"></i> ${locationText}</p>
-            <p class="store-rating"><i class="fas fa-star"></i> ${ratingText}</p>
-            <p><i class="fas fa-clock"></i> ${deliveryText}</p>
-            <a href="store.html?id=${id}" class="btn btn-primary">View Store</a>
+            <p><i class="fas fa-star"></i> ${ratingText} &nbsp;|&nbsp; <i class="fas fa-clock"></i> ${deliveryText}</p>
+            <a href="store.html?id=${id}">View Store</a>
         </div>
     `;
 }

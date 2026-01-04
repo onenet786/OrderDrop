@@ -4,58 +4,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ServeNow - Grocery Delivery</title>
-    <link rel="stylesheet" href="style/main.css?v=3">
-    <link rel="stylesheet" href="style/responsive.css?v=3">
+    <link rel="stylesheet" href="css/user.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        body {
-            background: linear-gradient(to right, #74ebd5, #acb6e5);
-            background-size: cover;
-            background-position: center;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-
-        .main-container {
-            background-color: rgba(255, 255, 255, 0.9);
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
-            width: 90%;
-            max-width: 1200px;
-            margin: 20px auto;
-            flex-grow: 1;
-        }
-    </style>
 </head>
 <body>
-    <div id="toastContainer" class="toast-container"></div>
-    <header>
-        <nav>
-            <div class="logo">
-                <h1>ServeNow</h1>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="images/servenow.png" alt="ServeNow" onerror="this.src='https://placehold.co/32x32/667eea/ffffff?text=SN'">
+                    <span>ServeNow</span>
+                </div>
             </div>
-            <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation menu" onclick="toggleMobileMenu()">
-                <span></span>
-                <span></span>
-                <span></span>
-            </button>
-            <ul id="navMenu">
-                <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
-                <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
-                <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
-                <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount">0</span></a></li>
-                <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
-                <li><a href="login.html"><i class="fas fa-sign-in-alt"></i> Login</a></li>
-                <li><a href="register.html"><i class="fas fa-user-plus"></i> Register</a></li>
-            </ul>
-        </nav>
-    </header>
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li><a href="index.html" class="active"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
+                    <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+                    <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
+                    <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount" class="badge badge-credit" style="display: none;">0</span></a></li>
+                    <li><a href="login.html"><i class="fas fa-sign-in-alt"></i> Login</a></li>
+                    <li><a href="register.html"><i class="fas fa-user-plus"></i> Register</a></li>
+                </ul>
+            </nav>
+        </aside>
 
-    <div class="main-container">
-        <main>
+        <!-- Header -->
+        <header class="app-header">
+            <button class="sidebar-toggle" id="sidebarToggle">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-right">
+                <div class="user-profile">
+                    <span>Welcome</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-content">
+            <div id="toastContainer" class="toast-container"></div>
+
             <section class="hero">
                 <h2>Welcome to ServeNow</h2>
                 <p>Get fresh groceries, cooked food, and household items delivered to your doorstep from registered stores near you.</p>
@@ -69,8 +59,8 @@
                         <input type="text" id="storeSearch" class="search-input" placeholder="Search products (e.g., Pizza, Milk)">
                     </div>
                     <div class="search-select-wrapper">
-                        <i class="fas fa-filter select-icon"></i>
-                        <select id="storeCategoryFilter" class="search-select">
+                        <i class="fas fa-filter select-icon" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
+                        <select id="storeCategoryFilter" class="search-select" style="padding-left: 2.5rem;">
                             <option value="">All Categories</option>
                             <!-- Populated dynamically -->
                         </select>
@@ -84,31 +74,32 @@
 
             <div id="categoriesSection">
                 <section class="categories">
-                    <h3>Shop by Category</h3>
+                    <h3 style="margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700;">Shop by Category</h3>
                     <div class="category-grid">
+                        <!-- Static Fallback Categories -->
                         <div class="category-card">
-                            <img src="images/vegetables.jpg" alt="Vegetables">
+                            <img src="images/vegetables.jpg" alt="Vegetables" onerror="this.src='https://placehold.co/300x200?text=Vegetables'">
                             <div class="category-card-content">
                                 <h4>Vegetables</h4>
                                 <a href="stores.html?category=vegetables">Shop Now</a>
                             </div>
                         </div>
                         <div class="category-card">
-                            <img src="images/cooked-food.jpg" alt="Cooked Food">
+                            <img src="images/cooked-food.jpg" alt="Cooked Food" onerror="this.src='https://placehold.co/300x200?text=Cooked+Food'">
                             <div class="category-card-content">
                                 <h4>Cooked Food</h4>
                                 <a href="stores.html?category=cooked-food">Shop Now</a>
                             </div>
                         </div>
                         <div class="category-card">
-                            <img src="images/pizza.jpg" alt="Household Items">
+                            <img src="images/pizza.jpg" alt="Household Items" onerror="this.src='https://placehold.co/300x200?text=Household'">
                             <div class="category-card-content">
                                 <h4>Household Items</h4>
                                 <a href="stores.html?category=household">Shop Now</a>
                             </div>
                         </div>
                         <div class="category-card">
-                            <img src="images/burgers.jpg" alt="Groceries">
+                            <img src="images/burgers.jpg" alt="Groceries" onerror="this.src='https://placehold.co/300x200?text=Groceries'">
                             <div class="category-card-content">
                                 <h4>Groceries</h4>
                                 <a href="stores.html?category=groceries">Shop Now</a>
@@ -118,17 +109,17 @@
                 </section>
             </div>
 
-            <div id="searchResultsSection" class="hidden">
-                <section class="featured-stores">
-                    <h3>Matching Results</h3>
+            <div id="searchResultsSection" class="hidden" style="display: none;">
+                <section class="featured-stores" style="margin-top: 3rem;">
+                    <h3 style="margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700;">Matching Results</h3>
                     <div class="store-grid" id="searchResultsGrid">
                         <!-- Search results will be loaded here -->
                     </div>
                 </section>
             </div>
 
-            <section class="featured-stores" id="allStoresSection">
-                <h3>All Stores</h3>
+            <section class="featured-stores" id="allStoresSection" style="margin-top: 3rem;">
+                <h3 style="margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700;">All Stores</h3>
                 <div class="scroll-wrapper">
                     <button id="scrollLeftBtn" class="scroll-arrow left-arrow" style="display: none;"><i class="fas fa-chevron-left"></i></button>
                     <div class="horizontal-scroll-container" id="allStoresHorizontal">
@@ -140,54 +131,46 @@
         </main>
     </div>
 
-    <footer>
-        <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
-    </footer>
-
     <!-- Scroll to Top Button -->
-    <button class="scroll-to-top" id="scrollToTop" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
-        ↑
+    <button class="scroll-to-top" id="scrollToTop" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" style="position: fixed; bottom: 20px; right: 20px; width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; border: none; box-shadow: var(--shadow); cursor: pointer; display: none; align-items: center; justify-content: center; z-index: 100;">
+        <i class="fas fa-arrow-up"></i>
     </button>
 
-    <script src="js/app.js?v=8"></script>
+    <script src="js/app.js?v=9"></script>
     <script>
-        // Mobile menu toggle functionality
-        const menuToggle = document.getElementById('menuToggle');
-        const navMenu = document.getElementById('navMenu');
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const appSidebar = document.getElementById('appSidebar');
 
-        menuToggle.addEventListener('click', function(event) {
-            event.stopPropagation();
-            navMenu.classList.toggle('active');
-            menuToggle.classList.toggle('active');
-        });
-
-        // Close mobile menu when clicking on a link
-        const navLinks = navMenu.querySelectorAll('a');
-        navLinks.forEach(link => {
-            link.addEventListener('click', function() {
-                navMenu.classList.remove('active');
-                menuToggle.classList.remove('active');
+        if (sidebarToggle && appSidebar) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appSidebar.classList.toggle('active');
             });
-        });
 
-        // Close mobile menu when clicking outside
-        document.addEventListener('click', function(event) {
-            if (!navMenu.contains(event.target) && !menuToggle.contains(event.target)) {
-                navMenu.classList.remove('active');
-                menuToggle.classList.remove('active');
-            }
-        });
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 1024 && 
+                    appSidebar.classList.contains('active') && 
+                    !appSidebar.contains(e.target) && 
+                    e.target !== sidebarToggle) {
+                    appSidebar.classList.remove('active');
+                }
+            });
+        }
 
         // Scroll to Top functionality
         const scrollToTopBtn = document.getElementById('scrollToTop');
+        const appContent = document.querySelector('.app-content');
 
-        window.addEventListener('scroll', function() {
-            if (window.pageYOffset > 300) {
-                scrollToTopBtn.classList.add('visible');
-            } else {
-                scrollToTopBtn.classList.remove('visible');
-            }
-        });
+        if (scrollToTopBtn && appContent) {
+            appContent.addEventListener('scroll', function() {
+                if (appContent.scrollTop > 300) {
+                    scrollToTopBtn.style.display = 'flex';
+                } else {
+                    scrollToTopBtn.style.display = 'none';
+                }
+            });
+        }
     </script>
 </body>
 </html>

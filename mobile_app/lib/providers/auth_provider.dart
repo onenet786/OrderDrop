@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:logger/logger.dart';
 import 'dart:convert';
 import '../models/user.dart';
 import '../services/api_service.dart';
 
 class AuthProvider with ChangeNotifier {
+  final Logger _logger = Logger();
   User? _user;
   String? _token;
   bool _isLoading = false;
@@ -37,7 +39,7 @@ class AuthProvider with ChangeNotifier {
         if (_user != null) {
           await prefs.setString('user', jsonEncode(_user!.toJson()));
         }
-        
+
         // Initialize Stripe with public key
         await _initializeStripe(_token!);
       } else {
@@ -143,13 +145,20 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> changePassword(String currentPassword, String newPassword) async {
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
     if (_token == null) throw Exception('Not authenticated');
-    
+
     _isLoading = true;
     notifyListeners();
     try {
-      final response = await ApiService.changePassword(_token!, currentPassword, newPassword);
+      final response = await ApiService.changePassword(
+        _token!,
+        currentPassword,
+        newPassword,
+      );
       if (response['success'] != true) {
         throw Exception(response['message'] ?? 'Failed to change password');
       }
@@ -165,48 +174,41 @@ class AuthProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey('token')) return;
 
-    final storedToken = prefs.getString('token');
-    if (storedToken == null) return;
+    _token = prefs.getString('token');
 
-    try {
-      // Try to validate token with server
-      final response = await ApiService.getProfile(storedToken);
-      if (response['success'] == true || response['user'] != null) {
-        _token = storedToken;
-        _user = User.fromJson(response['user']);
-
-        // Update prefs
-        await prefs.setString('user', jsonEncode(_user!.toJson()));
-        
-        // Initialize Stripe with public key
-        await _initializeStripe(storedToken);
-        
-        notifyListeners();
-      } else {
-        await logout();
-      }
-    } catch (e) {
-      // If network fails, try to load user from prefs as fallback
-      if (prefs.containsKey('user')) {
-        try {
-          final userData = jsonDecode(prefs.getString('user')!);
-          _user = User.fromJson(userData);
-          _token = storedToken;
-          notifyListeners();
-        } catch (e) {
-          await logout();
-        }
-      } else {
-        await logout();
+    // First load from cache to show something immediately
+    if (prefs.containsKey('user')) {
+      try {
+        final userData = jsonDecode(prefs.getString('user')!);
+        _user = User.fromJson(userData);
+      } catch (e) {
+        // invalid user data
       }
     }
+
+    // Then verify with server to get fresh data
+    try {
+      if (_token != null) {
+        final data = await ApiService.getProfile(_token!);
+        if (data['success'] == true && data['user'] != null) {
+          _user = User.fromJson(data['user']);
+          await prefs.setString('user', jsonEncode(_user!.toJson()));
+        }
+      }
+    } catch (e) {
+      // Token might be expired or invalid
+      // Optional: force logout if 401
+      _logger.w('Auto-login verification failed: $e');
+    }
+
+    notifyListeners();
   }
 
   Future<void> _initializeStripe(String token) async {
     try {
       final data = await ApiService.getWalletBalance(token);
       final stripePublicKey = data['stripePublicKey'];
-      
+
       if (stripePublicKey != null && stripePublicKey.isNotEmpty) {
         await Stripe.instance.applySettings();
         Stripe.publishableKey = stripePublicKey;

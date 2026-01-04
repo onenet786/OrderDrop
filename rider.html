@@ -4,83 +4,129 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rider Dashboard - ServeNow</title>
-    <link rel="stylesheet" href="style/main.css?v=3">
-    <link rel="stylesheet" href="style/responsive.css?v=3">
+    <link rel="stylesheet" href="css/rider.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <header>
-        <nav>
-            <div class="logo">
-                <h1>ServeNow Rider</h1>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="images/servenow.png" alt="ServeNow" onerror="this.src='https://placehold.co/32x32/10b981/ffffff?text=SN'">
+                    <span>ServeNow Rider</span>
+                </div>
             </div>
-            <button class="menu-toggle" aria-label="Toggle navigation menu" onclick="toggleMobileMenu()">
-                <span></span>
-                <span></span>
-                <span></span>
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li><a href="#" class="active" onclick="switchTab('assigned'); return false;" id="nav-assigned"><i class="fas fa-truck"></i> My Deliveries</a></li>
+                    <li><a href="#" onclick="switchTab('completed'); return false;" id="nav-completed"><i class="fas fa-check-circle"></i> Completed</a></li>
+                    <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
+                    <li><a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Header -->
+        <header class="app-header">
+            <button class="sidebar-toggle" id="sidebarToggle">
+                <i class="fas fa-bars"></i>
             </button>
-            <ul>
-                <li><a href="#" onclick="showChangePasswordModal(); return false;">Change Password</a></li>
-                <li><a href="#" onclick="logout()">Logout</a></li>
-            </ul>
-        </nav>
-    </header>
+            <div class="header-right">
+                <div class="user-profile">
+                    <span id="riderName">Loading...</span>
+                    <span id="riderVehicle" style="font-size: 0.8em; color: var(--text-muted);"></span>
+                </div>
+            </div>
+        </header>
 
-    <main>
-        <h2>Rider Dashboard</h2>
+        <!-- Main Content -->
+        <main class="app-content">
+            <div id="toastContainer" class="toast-container"></div>
 
-        <section class="rider-section">
-            <div class="rider-info">
-                <h3>Welcome, <span id="riderName"></span></h3>
-                <p>Vehicle: <span id="riderVehicle"></span></p>
-                <div style="display:none">
-                    <p>Current Location: <span id="currentLocation">Location tracking disabled</span>
-                        <button onclick="refreshLocation()" class="btn btn-small btn-primary" style="margin-left: 10px;">Refresh</button>
-                    </p>
+            <div class="rider-info-bar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; background:var(--bg-surface); padding:1rem; border-radius:var(--border-radius); border:1px solid var(--border-color);">
+                <div id="locationStatus">
+                    <i class="fas fa-map-marker-alt" style="color:var(--primary);"></i>
+                    <span id="currentLocation">Location tracking disabled</span>
+                </div>
+                <button onclick="refreshLocation()" class="btn btn-small btn-secondary">
+                    <i class="fas fa-sync-alt"></i> Refresh Location
+                </button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div id="assigned" class="tab-content active">
+                <h3>My Deliveries</h3>
+                <div id="deliveriesContainer" class="stats-grid">
+                    <!-- Deliveries will be loaded here -->
+                    <p>Loading deliveries...</p>
                 </div>
             </div>
 
-            <div class="rider-tabs">
-                <button id="assignedTab" class="tab active">My Deliveries</button>
-                <button id="completedTab" class="tab">Completed</button>
+            <div id="completed" class="tab-content">
+                <h3>Completed Deliveries</h3>
+                <div id="completedDeliveriesContainer" class="stats-grid">
+                    <!-- Completed deliveries will be loaded here -->
+                    <p>Loading history...</p>
+                </div>
             </div>
+        </main>
+    </div>
 
-            <div id="deliveriesContainer">
-                <!-- Deliveries will be loaded dynamically -->
+    <!-- Modals -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Change Password</h3>
+                <span class="close" onclick="closeModal('changePasswordModal')">&times;</span>
             </div>
-        </section>
-    </main>
-
-    <footer>
-        <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
-    </footer>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">Current Password</label>
+                        <input type="password" id="currentPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">New Password</label>
+                        <input type="password" id="newPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmNewPassword">Confirm New Password</label>
+                        <input type="password" id="confirmNewPassword" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('changePasswordModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitChangePassword()">Change Password</button>
+            </div>
+        </div>
+    </div>
 
     <script src="js/app.js?v=7"></script>
     <script src="js/rider.js"></script>
     <script>
-        const menuToggle = document.querySelector('.menu-toggle');
-        const navMenu = document.querySelector('nav ul');
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const appSidebar = document.getElementById('appSidebar');
+        const appContent = document.querySelector('.app-content'); // For click outside
 
-        menuToggle.addEventListener('click', function(event) {
-            event.stopPropagation();
-            navMenu.classList.toggle('active');
-            menuToggle.classList.toggle('active');
-        });
-
-        document.addEventListener('click', function(event) {
-            if (!navMenu.contains(event.target) && !menuToggle.contains(event.target)) {
-                navMenu.classList.remove('active');
-                menuToggle.classList.remove('active');
-            }
-        });
-
-        const navLinks = navMenu.querySelectorAll('a');
-        navLinks.forEach(link => {
-            link.addEventListener('click', function() {
-                navMenu.classList.remove('active');
-                menuToggle.classList.remove('active');
+        if (sidebarToggle && appSidebar) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appSidebar.classList.toggle('active');
             });
-        });
+
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 1024 && 
+                    appSidebar.classList.contains('active') && 
+                    !appSidebar.contains(e.target) && 
+                    e.target !== sidebarToggle) {
+                    appSidebar.classList.remove('active');
+                }
+            });
+        }
     </script>
 </body>
 </html>

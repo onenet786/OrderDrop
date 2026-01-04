@@ -37,14 +37,12 @@ function displayStoreInfo(store) {
     }
     
     document.getElementById('storeInfo').innerHTML = `
-        <div class="store-info-content">
-            <img src="${logoSrc}" alt="${store.name}" class="store-logo" onerror="this.src='/images/servenow.png'">
-            <div class="store-details">
-                <h2>${store.name}</h2>
-                <p><i class="fas fa-map-marker-alt"></i> ${store.location || 'Location not available'}</p>
-                <p><i class="fas fa-star"></i> ${(parseFloat(store.rating) || 0).toFixed(1)} Rating</p>
-                <p><i class="fas fa-clock"></i> ${store.delivery_time || '30-45'} min delivery</p>
-            </div>
+        <img src="${logoSrc}" alt="${store.name}" class="store-logo" onerror="this.src='/images/servenow.png'">
+        <div class="store-info">
+            <h2>${store.name}</h2>
+            <p><i class="fas fa-map-marker-alt"></i> ${store.location || 'Location not available'}</p>
+            <p><i class="fas fa-star"></i> ${(parseFloat(store.rating) || 0).toFixed(1)} Rating</p>
+            <p><i class="fas fa-clock"></i> ${store.delivery_time || '30-45'} min delivery</p>
         </div>
     `;
 }
@@ -91,44 +89,38 @@ function displayStoreProducts(storeProducts) {
         let variantsHtml = '';
         if (sizeVariants.length > 1) {
             variantsHtml = `
-                <div class="variant-selector">
-                    <label class="variant-selector-label">Select variant:</label>
-                    <div class="variant-options">
+                <div class="variant-selector" style="margin-bottom: 0.5rem;">
+                    <label class="variant-selector-label" style="display:block;font-size:0.8rem;margin-bottom:0.2rem;">Select variant:</label>
+                    <div class="variant-options" style="display:flex;flex-wrap:wrap;gap:0.2rem;">
                         ${sizeVariants.map((variant, idx) => `
-                            <label class="variant-option">
+                            <label class="variant-option" style="font-size:0.8rem;cursor:pointer;">
                                 <input type="radio" name="${uniqueId}" value="${idx}" ${idx === 0 ? 'checked' : ''} 
                                     onchange="updateProductPrice(${product.id}, this.value)">
                                 <span>${getVariantLabel(variant)}</span>
                             </label>
                         `).join('')}
                     </div>
-                    <p class="variant-price" id="price-${product.id}">PKR ${displayPrice.toFixed(2)}</p>
+                    <p class="variant-price" id="price-${product.id}" style="font-weight:bold;margin-top:0.5rem;">PKR ${displayPrice.toFixed(2)}</p>
                 </div>
             `;
         } else if (sizeVariants.length === 1) {
-            variantsHtml = `<p class="variant-label">${displayVariantLabel}</p><p class="price" id="price-${product.id}">PKR ${displayPrice.toFixed(2)}</p>`;
+            variantsHtml = `<p class="variant-label" style="font-size:0.9rem;">${displayVariantLabel}</p><p class="price" id="price-${product.id}" style="font-weight:bold;">PKR ${displayPrice.toFixed(2)}</p>`;
         }
 
         productCard.innerHTML = `
-                <div class="product-image">
-                    ${buildImgTagForStore(imageSrc, variants, product.name, product.id, {
-                        image_bg_r: product.image_bg_r,
-                        image_bg_g: product.image_bg_g,
-                        image_bg_b: product.image_bg_b,
-                        image_overlay_alpha: product.image_overlay_alpha,
-                        image_contrast: product.image_contrast
-                    })}
-                </div>
+            ${buildImgTagForStore(imageSrc, variants, product.name, product.id, {
+                image_bg_r: product.image_bg_r,
+                image_bg_g: product.image_bg_g,
+                image_bg_b: product.image_bg_b,
+                image_overlay_alpha: product.image_overlay_alpha,
+                image_contrast: product.image_contrast
+            })}
             <div class="product-card-content">
-                <div class="product-info-left">
-                    <h4>${product.name}</h4>
-                    ${variantsHtml ? variantsHtml : `<p class="price" id="price-${product.id}">PKR ${displayPrice.toFixed(2)}</p>`}
-                </div>
-                <div class="product-controls-right">
-                    <button class="add-to-cart" id="add-btn-${product.id}" onclick="addProductToCart(${product.id}, '${product.name.replace(/'/g, "\\'")}', ${currentStoreId}, '${imageSrc.replace(/'/g, "\\'")}')">
-                        <i class="fas fa-plus"></i> Add
-                    </button>
-                </div>
+                <h4>${product.name}</h4>
+                ${variantsHtml ? variantsHtml : `<p class="price" id="price-${product.id}" style="font-weight:bold;">PKR ${displayPrice.toFixed(2)}</p>`}
+                <button class="add-to-cart btn btn-primary btn-small" id="add-btn-${product.id}" onclick="addProductToCart(${product.id}, '${product.name.replace(/'/g, "\\'")}', ${currentStoreId}, '${imageSrc.replace(/'/g, "\\'")}')" style="margin-top: auto; align-self: flex-start;">
+                    <i class="fas fa-plus"></i> Add
+                </button>
             </div>
         `;
         productGrid.appendChild(productCard);
