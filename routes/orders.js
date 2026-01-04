@@ -163,7 +163,30 @@ router.post('/', authenticateToken, async (req, res) => {
         }
 
         const delivery_fee = 2.99;
-        const order_number = 'ORD' + Date.now() + Math.floor(Math.random() * 1000);
+        
+        // Generate Order Number: Ordyymmddxxxx
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const datePart = `${yy}${mm}${dd}`;
+        const prefix = `Ord${datePart}`;
+        
+        const [rows] = await req.db.execute(
+            'SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY order_number DESC LIMIT 1',
+            [`${prefix}%`]
+        );
+        
+        let sequence = 1;
+        if (rows && rows.length > 0) {
+            const lastOrderNumber = rows[0].order_number;
+            const lastSequenceStr = lastOrderNumber.slice(-4);
+            if (/^\d{4}$/.test(lastSequenceStr)) {
+                sequence = parseInt(lastSequenceStr, 10) + 1;
+            }
+        }
+        
+        const order_number = `${prefix}${String(sequence).padStart(4, '0')}`;
         
         // Validate and prepare items
         const preparedItems = [];
