@@ -79,20 +79,12 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, async (req, res) => {
     try {
         const {
-            store_id,
             items,
             delivery_address,
             delivery_time,
             payment_method,
             special_instructions
         } = req.body;
-
-        if (!store_id) {
-            return res.status(400).json({
-                success: false,
-                message: 'Store ID is required'
-            });
-        }
 
         if (!items || items.length === 0) {
             return res.status(400).json({
@@ -115,15 +107,10 @@ router.post('/', authenticateToken, async (req, res) => {
             });
         }
 
-        const storeId = parseInt(String(store_id), 10);
-        if (!Number.isInteger(storeId) || storeId <= 0) {
-            return res.status(400).json({ success: false, message: 'Store ID is invalid' });
-        }
-
         const delivery_fee = 2.99;
-        const normalizedItems = [];
-        let total = 0;
-
+        const storeGroups = {};
+        
+        // 1. Group items by store
         for (let item of items) {
             const productId = parseInt(String(item.product_id), 10);
             const quantity = parseInt(String(item.quantity), 10);
@@ -140,14 +127,17 @@ router.post('/', authenticateToken, async (req, res) => {
             }
 
             const [products] = await req.db.execute(
-                'SELECT id, price FROM products WHERE id = ? AND store_id = ? AND is_available = true',
-                [productId, storeId]
+                'SELECT id, price, store_id, name FROM products WHERE id = ? AND is_available = true',
+                [productId]
             );
+
             if (!products || products.length === 0) {
                 return res.status(400).json({ success: false, message: `Product ${productId} not found or not available` });
             }
 
-            let unitPrice = Number(products[0].price);
+            const product = products[0];
+            const storeId = product.store_id;
+            let unitPrice = Number(product.price);
             let variantLabel = providedVariantLabel;
 
             if (sizeId) {
@@ -194,11 +184,22 @@ router.post('/', authenticateToken, async (req, res) => {
                 }
             }
 
-            total += unitPrice * quantity;
-            normalizedItems.push({ productId, quantity, unitPrice, sizeId, unitId, variantLabel });
+            if (!storeGroups[storeId]) {
+                storeGroups[storeId] = {
+                    items: [],
+                    subtotal: 0
+                };
+            }
+
+            storeGroups[storeId].items.push({ productId, quantity, unitPrice, sizeId, unitId, variantLabel });
+            storeGroups[storeId].subtotal += unitPrice * quantity;
         }
 
-        total += delivery_fee;
+        // 2. Check Wallet
+        let grandTotal = 0;
+        for (const storeId in storeGroups) {
+            grandTotal += storeGroups[storeId].subtotal + delivery_fee;
+        }
 
         let wallet = null;
         if (payment_method === 'wallet') {
@@ -217,54 +218,72 @@ router.post('/', authenticateToken, async (req, res) => {
             wallet = wallets[0];
             const balance = parseFloat(wallet.balance);
             
-            if (balance < total) {
+            if (balance < grandTotal) {
                 return res.status(400).json({
                     success: false,
-                    message: `Insufficient wallet balance. Required: PKR ${total.toFixed(2)}, Available: PKR ${balance.toFixed(2)}`
+                    message: `Insufficient wallet balance. Required: PKR ${grandTotal.toFixed(2)}, Available: PKR ${balance.toFixed(2)}`
                 });
             }
         }
 
-        const orderNumber = 'ORD' + Date.now() + Math.floor(Math.random() * 1000);
-
-        const [orderResult] = await req.db.execute(
-            `INSERT INTO orders (order_number, user_id, store_id, total_amount, delivery_fee, payment_method, delivery_address, delivery_time, special_instructions)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [orderNumber, req.user.id, storeId, total, delivery_fee, payment_method, delivery_address, delivery_time || null, special_instructions || null]
-        );
-
+        // 3. Create Orders
         await ensureOrderItemsVariantColumns(req.db);
-        for (let item of normalizedItems) {
-            await req.db.execute(
-                'INSERT INTO order_items (order_id, product_id, quantity, price, size_id, unit_id, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [orderResult.insertId, item.productId, item.quantity, item.unitPrice, item.sizeId, item.unitId, item.variantLabel]
+        const createdOrders = [];
+        
+        for (const storeIdKey in storeGroups) {
+            const storeId = parseInt(storeIdKey);
+            const group = storeGroups[storeIdKey];
+            const orderTotal = group.subtotal + delivery_fee;
+            // Append random suffix to ensure uniqueness if timestamp collision (unlikely but safe)
+            const orderNumber = 'ORD' + Date.now() + Math.floor(Math.random() * 1000) + '-' + storeId;
+
+            const [orderResult] = await req.db.execute(
+                `INSERT INTO orders (order_number, user_id, store_id, total_amount, delivery_fee, payment_method, delivery_address, delivery_time, special_instructions)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [orderNumber, req.user.id, storeId, orderTotal, delivery_fee, payment_method, delivery_address, delivery_time || null, special_instructions || null]
             );
+
+            for (let item of group.items) {
+                await req.db.execute(
+                    'INSERT INTO order_items (order_id, product_id, quantity, price, size_id, unit_id, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [orderResult.insertId, item.productId, item.quantity, item.unitPrice, item.sizeId, item.unitId, item.variantLabel]
+                );
+            }
+
+            createdOrders.push({
+                id: orderResult.insertId,
+                order_number: orderNumber,
+                total_amount: orderTotal
+            });
         }
 
+        // 4. Update Wallet
         if (payment_method === 'wallet' && wallet) {
-            const newBalance = parseFloat(wallet.balance) - total;
+            const newBalance = parseFloat(wallet.balance) - grandTotal;
             
             await req.db.execute(
                 'UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?',
-                [newBalance, total, wallet.id]
+                [newBalance, grandTotal, wallet.id]
             );
             
-            await req.db.execute(
-                `INSERT INTO wallet_transactions (wallet_id, type, amount, description, 
-                 reference_type, reference_id, balance_after) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [wallet.id, 'debit', total, `Order payment - ${orderNumber}`, 
-                 'order', orderResult.insertId, newBalance]
-            );
+            // Create transaction records for each order
+            let currentBalanceForLog = parseFloat(wallet.balance);
+            for (const order of createdOrders) {
+                currentBalanceForLog -= order.total_amount;
+                await req.db.execute(
+                    `INSERT INTO wallet_transactions (wallet_id, type, amount, description, 
+                     reference_type, reference_id, balance_after) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [wallet.id, 'debit', order.total_amount, `Order payment - ${order.order_number}`, 
+                     'order', order.id, currentBalanceForLog]
+                );
+            }
         }
 
         res.status(201).json({
             success: true,
             message: 'Order created successfully',
-            order: {
-                id: orderResult.insertId,
-                order_number: orderNumber,
-                total_amount: total
-            }
+            orders: createdOrders,
+            order: createdOrders[0] // Backward compatibility
         });
 
     } catch (error) {

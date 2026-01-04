@@ -147,16 +147,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      final Map<int, List<Map<String, dynamic>>> ordersByStore = {};
+      final List<Map<String, dynamic>> orderItems = [];
 
       for (var item in cart.items) {
-        final storeId = item.product.storeId;
-        if (storeId == null) continue;
-
-        if (!ordersByStore.containsKey(storeId)) {
-          ordersByStore[storeId] = [];
-        }
-
         final payload = <String, dynamic>{
           'product_id': item.product.id,
           'quantity': item.quantity,
@@ -170,25 +163,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (item.variantLabel != null) {
           payload['variant_label'] = item.variantLabel;
         }
-
-        ordersByStore[storeId]!.add(payload);
+        orderItems.add(payload);
       }
 
-      for (final storeId in ordersByStore.keys) {
-        await ApiService.createOrder(
-          auth.token!,
-          storeId: storeId,
-          items: ordersByStore[storeId]!,
-          deliveryAddress: _addressController.text,
-          paymentMethod: _paymentMethod,
-          deliveryTime: _timeController.text.isNotEmpty
-              ? _timeController.text
-              : null,
-          specialInstructions: _instructionsController.text.isNotEmpty
-              ? _instructionsController.text
-              : null,
-        );
-      }
+      await ApiService.createOrder(
+        auth.token!,
+        storeId: null, // Let backend handle store splitting
+        items: orderItems,
+        deliveryAddress: _addressController.text,
+        paymentMethod: _paymentMethod,
+        deliveryTime: _timeController.text.isNotEmpty
+            ? _timeController.text
+            : null,
+        specialInstructions: _instructionsController.text.isNotEmpty
+            ? _instructionsController.text
+            : null,
+      );
 
       // Clear cart
       cart.clear();
@@ -281,32 +271,76 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                ListView.separated(
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  shrinkWrap: true,
-                                  itemCount: cart.items.length,
-                                  separatorBuilder: (context, index) =>
-                                      const Divider(height: 1),
-                                  itemBuilder: (context, i) {
-                                    final item = cart.items[i];
-                                    return ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      title: Text(
-                                        item.product.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      subtitle: Text(
-                                        item.variantLabel != null
-                                            ? '${item.variantLabel} • ${item.quantity} x PKR ${item.unitPrice}'
-                                            : '${item.quantity} x PKR ${item.unitPrice}',
-                                      ),
-                                      trailing: Text(
-                                        'PKR ${item.total.toStringAsFixed(2)}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
+                                Builder(
+                                  builder: (context) {
+                                    final Map<String, List<CartItem>>
+                                    itemsByStore = {};
+                                    for (var item in cart.items) {
+                                      final store =
+                                          item.product.storeName ??
+                                          'Unknown Store';
+                                      if (!itemsByStore.containsKey(store)) {
+                                        itemsByStore[store] = [];
+                                      }
+                                      itemsByStore[store]!.add(item);
+                                    }
+
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children:
+                                          itemsByStore.entries.map((entry) {
+                                            return Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                if (itemsByStore.length > 1)
+                                                  Padding(
+                                                    padding: const EdgeInsets
+                                                        .only(
+                                                          top: 8.0,
+                                                          bottom: 4.0,
+                                                        ),
+                                                    child: Text(
+                                                      entry.key,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color:
+                                                            Theme.of(
+                                                              context,
+                                                            ).primaryColor,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ...entry.value.map((item) {
+                                                  return ListTile(
+                                                    contentPadding:
+                                                        EdgeInsets.zero,
+                                                    title: Text(
+                                                      item.product.name,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                    subtitle: Text(
+                                                      item.variantLabel != null
+                                                          ? '${item.variantLabel} • ${item.quantity} x PKR ${item.unitPrice}'
+                                                          : '${item.quantity} x PKR ${item.unitPrice}',
+                                                    ),
+                                                    trailing: Text(
+                                                      'PKR ${item.total.toStringAsFixed(2)}',
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                  );
+                                                }),
+                                                const Divider(height: 1),
+                                              ],
+                                            );
+                                          }).toList(),
                                     );
                                   },
                                 ),

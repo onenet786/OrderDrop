@@ -193,7 +193,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> createOrder(
     String token, {
-    required int storeId,
+    int? storeId,
     required List<Map<String, dynamic>> items,
     required String deliveryAddress,
     required String paymentMethod,
@@ -209,7 +209,7 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
-        'store_id': storeId,
+        if (storeId != null) 'store_id': storeId,
         'items': items,
         'delivery_address': deliveryAddress,
         'payment_method': paymentMethod,

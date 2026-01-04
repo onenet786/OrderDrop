@@ -55,53 +55,15 @@ class _StoreScreenState extends State<StoreScreen> {
   ) {
     final cart = Provider.of<CartProvider>(context, listen: false);
 
-    if (cart.itemCount > 0 &&
-        cart.currentStoreId != null &&
-        cart.currentStoreId != product.storeId) {
-      showDialog(
-        context: context,
-        builder:
-            (ctx) => AlertDialog(
-              title: const Text('Different Store'),
-              content: const Text(
-                'Your cart contains items from another store. Do you want to clear the cart and add this item?',
-              ),
-              actions: [
-                TextButton(
-                  child: const Text('No'),
-                  onPressed: () => Navigator.of(ctx).pop(),
-                ),
-                TextButton(
-                  child: const Text('Yes'),
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    cart.clear();
-                    try {
-                      cart.addItem(product, 1, variant: variant);
-                      Notifier.success(
-                        context,
-                        'Added to cart',
-                        duration: const Duration(seconds: 1),
-                      );
-                    } catch (e) {
-                      Notifier.error(context, e.toString());
-                    }
-                  },
-                ),
-              ],
-            ),
+    try {
+      cart.addItem(product, 1, variant: variant);
+      Notifier.success(
+        context,
+        'Added to cart',
+        duration: const Duration(seconds: 1),
       );
-    } else {
-      try {
-        cart.addItem(product, 1, variant: variant);
-        Notifier.success(
-          context,
-          'Added to cart',
-          duration: const Duration(seconds: 1),
-        );
-      } catch (e) {
-        Notifier.error(context, e.toString());
-      }
+    } catch (e) {
+      Notifier.error(context, e.toString());
     }
   }
 

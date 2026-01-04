@@ -61,7 +61,7 @@ function updateCartCount() {
 }
 
 // Display cart items in checkout
-function displayCheckoutItems() {
+async function displayCheckoutItems() {
     const checkoutItems = document.getElementById('checkoutItems');
     const checkoutTotal = document.getElementById('checkoutTotal');
 
@@ -71,22 +71,81 @@ function displayCheckoutItems() {
         return;
     }
 
-    checkoutItems.innerHTML = '';
+    checkoutItems.innerHTML = '<p style="text-align: center;">Loading order details...</p>';
     let total = 0;
-
+    
+    // Group items by store
+    const storeGroups = {};
+    const storeIds = new Set();
+    
     cart.forEach(item => {
-        console.log('Item:', item);
-        const itemTotal = parseFloat(item.price) * item.quantity;
-        console.log('Item total:', itemTotal);
-        total += itemTotal;
+        const sId = item.storeId || 'unknown';
+        if (!storeGroups[sId]) {
+            storeGroups[sId] = [];
+            if (sId !== 'unknown') storeIds.add(sId);
+        }
+        storeGroups[sId].push(item);
+    });
 
-        const itemElement = document.createElement('div');
-        itemElement.className = 'checkout-item';
-        itemElement.innerHTML = `
-            <span>${item.name} x ${item.quantity}</span>
-            <span>PKR ${itemTotal.toFixed(2)}</span>
-        `;
-        checkoutItems.appendChild(itemElement);
+    // Fetch store names if needed
+    const storeNames = {};
+    if (storeIds.size > 0) {
+        try {
+            // Fetch store details in parallel
+            const promises = Array.from(storeIds).map(async (id) => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/stores/${id}`);
+                    const data = await res.json();
+                    if (data.success && data.store) {
+                        storeNames[id] = data.store.name;
+                    }
+                } catch (e) {
+                    console.warn(`Failed to fetch store ${id}`, e);
+                }
+            });
+            await Promise.all(promises);
+        } catch (e) {
+            console.error('Error fetching store names', e);
+        }
+    }
+
+    checkoutItems.innerHTML = '';
+
+    // Render groups
+    const storeIdsList = Object.keys(storeGroups);
+    if (storeIdsList.length > 1) {
+         const summaryHeader = document.createElement('div');
+         summaryHeader.innerHTML = '<div class="alert alert-info" style="margin-bottom: 15px; padding: 10px; background-color: #e3f2fd; border-radius: 5px; color: #0d47a1;"><strong>Multiple Stores Order:</strong> Your order will be split into separate deliveries.</div>';
+         checkoutItems.appendChild(summaryHeader);
+    }
+
+    storeIdsList.forEach(sId => {
+        const items = storeGroups[sId];
+        const storeName = storeNames[sId] || (sId === 'unknown' ? 'Unknown Store' : `Store #${sId}`);
+        
+        // Store Header if multiple stores
+        if (storeIdsList.length > 1) {
+            const storeHeader = document.createElement('div');
+            storeHeader.className = 'store-group-header';
+            storeHeader.style.cssText = 'font-weight: bold; margin-top: 15px; margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 5px;';
+            storeHeader.textContent = storeName;
+            checkoutItems.appendChild(storeHeader);
+        }
+
+        items.forEach(item => {
+            console.log('Item:', item);
+            const itemTotal = parseFloat(item.price) * item.quantity;
+            console.log('Item total:', itemTotal);
+            total += itemTotal;
+    
+            const itemElement = document.createElement('div');
+            itemElement.className = 'checkout-item';
+            itemElement.innerHTML = `
+                <span>${item.name} x ${item.quantity}</span>
+                <span>PKR ${itemTotal.toFixed(2)}</span>
+            `;
+            checkoutItems.appendChild(itemElement);
+        });
     });
 
     console.log('Total:', total);
@@ -236,15 +295,27 @@ async function handleCheckoutSubmit(e) {
 
         const data = await response.json();
         if (data.success) {
-            showSuccess('Order Placed', 'Order placed successfully! Order number: ' + data.order.order_number);
+            let msg = 'Order placed successfully!';
+            if (data.orders && data.orders.length > 1) {
+                msg = `Orders placed successfully! (${data.orders.length} separate orders created for different stores)`;
+            } else if (data.order) {
+                msg = 'Order placed successfully! Order number: ' + data.order.order_number;
+            }
+            showSuccess('Order Placed', msg);
 
             // Clear cart and redirect
             localStorage.removeItem('serveNowCart');
             cart = [];
             updateCartCount();
 
-            // Redirect to order confirmation page
-            if (data.order && data.order.order_number) {
+            // Redirect to order confirmation page or my orders
+            if (data.orders && data.orders.length > 1) {
+                // If multiple orders, go to order history to see them all
+                // Or we could pass the first one to confirmation, but my-orders is better
+                 setTimeout(() => {
+                    window.location.href = 'my-orders.html';
+                 }, 1500);
+            } else if (data.order && data.order.order_number) {
                 window.location.href = 'order-confirmation.html?order_number=' + encodeURIComponent(data.order.order_number);
             } else {
                 window.location.href = 'order-confirmation.html';

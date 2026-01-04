@@ -300,26 +300,7 @@ async function addToCart(
 ) {
   const qToAdd = parseFloat(quantityToAdd) || 1;
 
-  // Check for mixed store cart
-  if (cart.length > 0 && storeId) {
-    const firstItem = cart[0];
-    if (
-      firstItem.storeId &&
-      parseInt(firstItem.storeId) !== parseInt(storeId)
-    ) {
-      if (
-        confirm(
-          "Your cart contains items from another store. Do you want to clear the cart and add this item?"
-        )
-      ) {
-        cart = [];
-        localStorage.setItem("serveNowCart", JSON.stringify(cart));
-        updateCartCount();
-      } else {
-        return;
-      }
-    }
-  }
+  // Mixed store check removed to allow multi-store orders
 
   const existingItem = cart.find((item) => item.id === productId);
   let maxQty = Number.isFinite(parseFloat(stockQty))
