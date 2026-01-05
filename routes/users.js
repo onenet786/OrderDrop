@@ -2,6 +2,8 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const crypto = require('crypto');
+const { sendVerificationEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -63,12 +65,21 @@ router.post('/', authenticateToken, requireAdmin, [
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        await req.db.execute(
-            'INSERT INTO users (first_name, last_name, email, phone, password, address, user_type, is_active, is_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [firstName, lastName, email, phone || null, hashedPassword, address || null, user_type || 'customer', true, false]
+        const verificationCode = crypto.randomInt(100000, 999999).toString();
+        const verificationExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        const [result] = await req.db.execute(
+            'INSERT INTO users (first_name, last_name, email, phone, password, address, user_type, verification_code, verification_expires_at, is_verified, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [firstName, lastName, email, phone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, false, true]
         );
 
-        res.json({ success: true, message: 'User created successfully' });
+        try {
+            await sendVerificationEmail(email, verificationCode);
+        } catch (e) {
+            console.error('Error sending verification email:', e);
+        }
+
+        res.json({ success: true, message: 'User created successfully. Verification code sent to email.', user_id: result.insertId });
 
     } catch (error) {
         console.error('Error creating user:', error);

@@ -1115,6 +1115,9 @@ async function handleLogin(e) {
       } else {
         window.location.href = "index.html";
       }
+    } else if (data.requires_verification === true) {
+      showWarning("Verification Required", "Please verify your email to continue.");
+      showVerificationModal(loginData.email);
     } else {
       showError(
         "Login Failed",
@@ -1158,7 +1161,10 @@ async function handleRegister(e) {
 
     const data = await response.json();
 
-    if (data.success) {
+    if (data.success && data.requires_verification === true) {
+      showSuccess("Account Created", "Please verify your email to activate your account.");
+      showVerificationModal(registerData.email);
+    } else if (data.success) {
       localStorage.setItem("serveNowToken", data.token);
       localStorage.setItem("serveNowUser", JSON.stringify(data.user));
       currentUser = data.user;
@@ -1182,6 +1188,107 @@ async function handleRegister(e) {
   }
 }
 
+async function verifyEmailCode(email, code) {
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/verify-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, code }),
+    });
+    const data = await response.json();
+    if (data.success) {
+      hideVerificationModal();
+      showSuccess("Email Verified", "Please login to continue.");
+      window.location.href = "login.html";
+    } else {
+      showError("Verification Failed", data.message || "Invalid or expired code.");
+    }
+  } catch (error) {
+    console.error("Verification error:", error);
+    showError("Error", "Verification failed. Please try again.");
+  }
+}
+
+async function resendVerificationCode(email) {
+  try {
+    const response = await fetch(`${API_BASE}/api/auth/resend-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json();
+    if (data.success) {
+      showSuccess("Code Sent", "Verification code sent to your email.");
+    } else {
+      showError("Failed", data.message || "Could not resend code.");
+    }
+  } catch (error) {
+    console.error("Resend code error:", error);
+    showError("Error", "Failed to resend code. Please try again.");
+  }
+}
+
+function showVerificationModal(email) {
+  let modal = document.getElementById("verificationModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "verificationModal";
+    modal.className = "modal";
+    modal.innerHTML = `
+      <div class="modal-content">
+        <span class="close" onclick="hideVerificationModal()">&times;</span>
+        <h3>Email Verification</h3>
+        <form id="verificationForm">
+          <div class="form-group">
+            <label for="verificationEmail">Email</label>
+            <input type="email" id="verificationEmail" required>
+          </div>
+          <div class="form-group">
+            <label for="verificationCode">6-digit Code</label>
+            <input type="text" id="verificationCode" required maxlength="6" minlength="6" pattern="\\d{6}">
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">Verify</button>
+            <button type="button" class="btn btn-secondary" id="resendCodeBtn">Resend Code</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById("verificationForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      const em = document.getElementById("verificationEmail").value;
+      const code = document.getElementById("verificationCode").value;
+      verifyEmailCode(em, code);
+    });
+    document.getElementById("resendCodeBtn").addEventListener("click", function () {
+      const em = document.getElementById("verificationEmail").value;
+      if (!em) {
+        showWarning("Email Required", "Please enter your email.");
+        return;
+      }
+      resendVerificationCode(em);
+    });
+  }
+  const emailInput = document.getElementById("verificationEmail");
+  if (emailInput && email) {
+    emailInput.value = email;
+  }
+  modal.style.display = "block";
+  setTimeout(() => modal.classList.add("show"), 10);
+}
+
+function hideVerificationModal() {
+  const modal = document.getElementById("verificationModal");
+  if (modal) {
+    modal.classList.remove("show");
+    setTimeout(() => {
+      modal.style.display = "none";
+      const form = document.getElementById("verificationForm");
+      if (form) form.reset();
+    }, 300);
+  }
+}
 // Form validation
 function validateForm(formId) {
   const form = document.getElementById(formId);

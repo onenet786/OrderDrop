@@ -86,8 +86,8 @@ router.post(
           firstName,
           lastName,
           email,
-          phone,
-          address,
+          phone || null,
+          address || null,
           hashedPassword,
           userType,
           verificationCode,
@@ -116,25 +116,29 @@ router.post(
       }
 
       // Issue token (client may gate access until verification)
-      const token = jwt.sign(
-        {
-          id: result.insertId,
-          email,
-          user_type: userType,
-          first_name: firstName,
-          last_name: lastName,
-          is_verified: false,
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRE }
-      );
+      // SECURITY: Do not issue token if verification is required
+      let token = null;
+      if (!process.env.REQUIRE_EMAIL_VERIFICATION || process.env.REQUIRE_EMAIL_VERIFICATION === 'false') {
+          token = jwt.sign(
+            {
+              id: result.insertId,
+              email,
+              user_type: userType,
+              first_name: firstName,
+              last_name: lastName,
+              is_verified: false,
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRE }
+          );
+      }
 
       return res.status(201).json({
         success: true,
         message:
           "User registered successfully. Please check your email for verification code.",
         requires_verification: true,
-        token,
+        token, // Will be null
         user: {
           id: result.insertId,
           first_name: firstName,
