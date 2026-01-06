@@ -1054,7 +1054,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (addExpenseBtn) addExpenseBtn.addEventListener('click', createExpense);
 
     if (reportTypeFilter) reportTypeFilter.addEventListener('change', loadFinancialReports);
-    if (generateReportBtn) generateReportBtn.addEventListener('click', generateFinancialReport);
+    const generateFinancialReportBtn = document.getElementById('generateFinancialReportBtn');
+    if (generateFinancialReportBtn) generateFinancialReportBtn.addEventListener('click', generateFinancialReport);
     if (exportReportBtn) exportReportBtn.addEventListener('click', () => {
         if (currentReports.length > 0) {
             downloadReport(currentReports[0].id);

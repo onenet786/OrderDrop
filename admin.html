@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Dashboard - ServeNow</title>
-    <link rel="stylesheet" href="style/main.css?v=3" />
-    <link rel="stylesheet" href="css/admin.css?v=3" />
+    <link rel="stylesheet" href="style/main.css?v=4" />
+    <link rel="stylesheet" href="css/admin.css?v=4" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
@@ -424,40 +424,39 @@
 
           <div class="filter-controls">
             <div class="filter-group">
-              <label for="accountSearch">Search:</label>
-              <input
-                type="text"
-                id="accountSearch"
-                placeholder="Search by name or email"
-              />
+                <label for="accountSearch">Search</label>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="accountSearch" class="form-control" placeholder="Search by name or email" style="padding-left: 2.5rem;">
+                </div>
             </div>
             <div class="filter-group">
-              <label for="accountTypeFilter">Type:</label>
-              <select id="accountTypeFilter">
-                <option value="">All Types</option>
-                <option value="customer">Customer</option>
-                <option value="store_owner">Store Owner</option>
-                <option value="admin">Admin</option>
-              </select>
+                <label for="accountTypeFilter">Type</label>
+                <select id="accountTypeFilter" class="form-control">
+                    <option value="">All Types</option>
+                    <option value="customer">Customer</option>
+                    <option value="store_owner">Store Owner</option>
+                    <option value="admin">Admin</option>
+                </select>
             </div>
             <div class="filter-group">
-              <label for="accountStatusFilter">Status:</label>
-              <select id="accountStatusFilter">
-                <option value="">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
+                <label for="accountStatusFilter">Status</label>
+                <select id="accountStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
             </div>
             <div class="filter-group">
-              <label for="accountVerifiedFilter">Verification:</label>
-              <select id="accountVerifiedFilter">
-                <option value="">All</option>
-                <option value="verified">Verified</option>
-                <option value="unverified">Unverified</option>
-              </select>
+                <label for="accountVerifiedFilter">Verified</label>
+                <select id="accountVerifiedFilter" class="form-control">
+                    <option value="">All</option>
+                    <option value="verified">Verified</option>
+                    <option value="unverified">Unverified</option>
+                </select>
             </div>
             <button class="btn btn-secondary" id="accountClearFiltersBtn">
-              Clear Filters
+              <i class="fas fa-times"></i> Clear
             </button>
           </div>
 
@@ -488,16 +487,16 @@
         <div id="financial-dashboard" class="tab-content">
           <h2>Financial Dashboard</h2>
           <div class="filter-controls" style="margin-bottom: 1.5rem">
-            <select
-              id="financialPeriodFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month" selected>This Month</option>
-            </select>
-            <button class="btn btn-primary" id="refreshFinancialDashboardBtn">
-              Refresh
+            <div class="filter-group">
+                <label for="financialPeriodFilter">Period</label>
+                <select id="financialPeriodFilter" class="form-control">
+                    <option value="today">Today</option>
+                    <option value="week">This Week</option>
+                    <option value="month" selected>This Month</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" id="refreshFinancialDashboardBtn" style="align-self: flex-end; margin-bottom: 2px;">
+              <i class="fas fa-sync-alt"></i> Refresh
             </button>
           </div>
           <div
@@ -544,29 +543,27 @@
             Add Transaction
           </button>
           <div class="filter-controls">
-            <select
-              id="transactionTypeFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Types</option>
-              <option value="income">Income</option>
-              <option value="expense">Expense</option>
-              <option value="settlement">Settlement</option>
-              <option value="refund">Refund</option>
-              <option value="adjustment">Adjustment</option>
-            </select>
-            <select
-              id="transactionStatusFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <button class="btn btn-secondary" id="clearTransactionFiltersBtn">
-              Clear
-            </button>
+            <div class="filter-group">
+                <label for="transactionTypeFilter">Type</label>
+                <select id="transactionTypeFilter" class="form-control">
+                    <option value="">All Types</option>
+                    <option value="income">Income</option>
+                    <option value="expense">Expense</option>
+                    <option value="settlement">Settlement</option>
+                    <option value="refund">Refund</option>
+                    <option value="adjustment">Adjustment</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="transactionStatusFilter">Status</label>
+                <select id="transactionStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearTransactionFiltersBtn">Clear</button>
           </div>
           <div class="table-container">
             <table id="transactionsTable">
@@ -595,23 +592,18 @@
             Create Payment Voucher
           </button>
           <div class="filter-controls">
-            <select
-              id="paymentVoucherStatusFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="paid">Paid</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <button
-              class="btn btn-secondary"
-              id="clearPaymentVoucherFiltersBtn"
-            >
-              Clear
-            </button>
+            <div class="filter-group">
+                <label for="paymentVoucherStatusFilter">Status</label>
+                <select id="paymentVoucherStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="draft">Draft</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="paid">Paid</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearPaymentVoucherFiltersBtn">Clear</button>
           </div>
           <div class="table-container">
             <table id="paymentVouchersTable">
@@ -639,22 +631,17 @@
             Create Receipt Voucher
           </button>
           <div class="filter-controls">
-            <select
-              id="receiptVoucherStatusFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
-              <option value="received">Received</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <button
-              class="btn btn-secondary"
-              id="clearReceiptVoucherFiltersBtn"
-            >
-              Clear
-            </button>
+            <div class="filter-group">
+                <label for="receiptVoucherStatusFilter">Status</label>
+                <select id="receiptVoucherStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="draft">Draft</option>
+                    <option value="pending">Pending</option>
+                    <option value="received">Received</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearReceiptVoucherFiltersBtn">Clear</button>
           </div>
           <div class="table-container">
             <table id="receiptVouchersTable">
@@ -682,29 +669,27 @@
             Record Cash Movement
           </button>
           <div class="filter-controls">
-            <select
-              id="riderCashMovementTypeFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Types</option>
-              <option value="cash_collection">Cash Collection</option>
-              <option value="cash_submission">Cash Submission</option>
-              <option value="advance">Advance</option>
-              <option value="settlement">Settlement</option>
-              <option value="adjustment">Adjustment</option>
-            </select>
-            <select
-              id="riderCashStatusFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="completed">Completed</option>
-              <option value="approved">Approved</option>
-            </select>
-            <button class="btn btn-secondary" id="clearRiderCashFiltersBtn">
-              Clear
-            </button>
+            <div class="filter-group">
+                <label for="riderCashMovementTypeFilter">Type</label>
+                <select id="riderCashMovementTypeFilter" class="form-control">
+                    <option value="">All Types</option>
+                    <option value="cash_collection">Cash Collection</option>
+                    <option value="cash_submission">Cash Submission</option>
+                    <option value="advance">Advance</option>
+                    <option value="settlement">Settlement</option>
+                    <option value="adjustment">Adjustment</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="riderCashStatusFilter">Status</label>
+                <select id="riderCashStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="completed">Completed</option>
+                    <option value="approved">Approved</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearRiderCashFiltersBtn">Clear</button>
           </div>
           <div class="table-container">
             <table id="riderCashTable">
@@ -732,22 +717,17 @@
             Create Settlement
           </button>
           <div class="filter-controls">
-            <select
-              id="storeSettlementStatusFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="paid">Paid</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <button
-              class="btn btn-secondary"
-              id="clearStoreSettlementFiltersBtn"
-            >
-              Clear
-            </button>
+            <div class="filter-group">
+                <label for="storeSettlementStatusFilter">Status</label>
+                <select id="storeSettlementStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="paid">Paid</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearStoreSettlementFiltersBtn">Clear</button>
           </div>
           <div class="table-container">
             <table id="storeSettlementsTable">
@@ -775,31 +755,29 @@
             Record Expense
           </button>
           <div class="filter-controls">
-            <select
-              id="expenseCategoryFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Categories</option>
-              <option value="utilities">Utilities</option>
-              <option value="maintenance">Maintenance</option>
-              <option value="office">Office</option>
-              <option value="travel">Travel</option>
-              <option value="marketing">Marketing</option>
-              <option value="other">Other</option>
-            </select>
-            <select
-              id="expenseStatusFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="paid">Paid</option>
-              <option value="rejected">Rejected</option>
-            </select>
-            <button class="btn btn-secondary" id="clearExpenseFiltersBtn">
-              Clear
-            </button>
+            <div class="filter-group">
+                <label for="expenseCategoryFilter">Category</label>
+                <select id="expenseCategoryFilter" class="form-control">
+                    <option value="">All Categories</option>
+                    <option value="utilities">Utilities</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="office">Office</option>
+                    <option value="travel">Travel</option>
+                    <option value="marketing">Marketing</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="expenseStatusFilter">Status</label>
+                <select id="expenseStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="paid">Paid</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearExpenseFiltersBtn">Clear</button>
           </div>
           <div class="table-container">
             <table id="expensesTable">
@@ -823,32 +801,25 @@
         <!-- Financial Reports Tab -->
         <div id="financial-reports" class="tab-content">
           <h2>Financial Reports</h2>
-          <div
-            style="
-              display: flex;
-              gap: 0.5rem;
-              margin-bottom: 1.5rem;
-              flex-wrap: wrap;
-            "
-          >
-            <select
-              id="reportTypeFilter"
-              style="padding: 0.5rem; border-radius: 0.25rem"
-            >
-              <option value="">All Report Types</option>
-              <option value="daily_summary">Daily Summary</option>
-              <option value="weekly_summary">Weekly Summary</option>
-              <option value="monthly_summary">Monthly Summary</option>
-              <option value="store_settlement">Store Settlement</option>
-              <option value="rider_cash_report">Rider Cash Report</option>
-              <option value="expense_report">Expense Report</option>
-              <option value="custom">Custom</option>
-            </select>
-            <button class="btn btn-primary" id="generateReportBtn">
-              Generate Report
+          <div class="filter-controls">
+            <div class="filter-group">
+                <label for="reportTypeFilter">Report Type</label>
+                <select id="reportTypeFilter" class="form-control">
+                    <option value="">All Report Types</option>
+                    <option value="daily_summary">Daily Summary</option>
+                    <option value="weekly_summary">Weekly Summary</option>
+                    <option value="monthly_summary">Monthly Summary</option>
+                    <option value="store_settlement">Store Settlement</option>
+                    <option value="rider_cash_report">Rider Cash Report</option>
+                    <option value="expense_report">Expense Report</option>
+                    <option value="custom">Custom</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" id="generateFinancialReportBtn">
+              <i class="fas fa-file-alt"></i> Generate Report
             </button>
             <button class="btn btn-secondary" id="exportReportBtn">
-              Export
+              <i class="fas fa-download"></i> Export
             </button>
           </div>
           <div class="table-container">
@@ -881,45 +852,45 @@
             stored on the server in <code>database/backups/</code>.
           </p>
 
-          <div
-            style="
-              display: flex;
-              gap: 0.5rem;
-              align-items: center;
-              margin-bottom: 0.75rem;
-              flex-wrap: wrap;
-            "
-          >
-            <input
-              type="text"
-              id="utilUsername"
-              placeholder="Super Admin Username"
-              style="min-width: 180px"
-            />
-            <input
-              type="password"
-              id="utilPassword"
-              placeholder="Super Admin Password"
-              style="min-width: 180px"
-            />
-            <button class="btn btn-primary" id="createBackupBtn">
+          <div class="filter-controls">
+            <div class="filter-group">
+                <label for="utilUsername">Super Admin Username</label>
+                <input
+                  type="text"
+                  id="utilUsername"
+                  class="form-control"
+                  placeholder="Username"
+                  style="min-width: 180px"
+                />
+            </div>
+            <div class="filter-group">
+                <label for="utilPassword">Super Admin Password</label>
+                <input
+                  type="password"
+                  id="utilPassword"
+                  class="form-control"
+                  placeholder="Password"
+                  style="min-width: 180px"
+                />
+            </div>
+            <button class="btn btn-primary" id="createBackupBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Create Backup
             </button>
-            <button class="btn btn-secondary" id="refreshBackupsBtn">
+            <button class="btn btn-secondary" id="refreshBackupsBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Refresh List
             </button>
-            <button class="btn btn-warning" id="restoreBackupBtn">
+            <button class="btn btn-warning" id="restoreBackupBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Restore Selected
             </button>
-            <button class="btn btn-danger" id="clearDatabaseBtn">
+            <button class="btn btn-danger" id="clearDatabaseBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Clear DB (Keep Admin)
             </button>
-            <button class="btn btn-danger" id="clearDatabaseKeepOneBtn">
+            <button class="btn btn-danger" id="clearDatabaseKeepOneBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Clear DB (Keep One+Admin)
             </button>
             <span
               id="backupStatus"
-              style="font-size: 0.95rem; color: #666; margin-left: 0.5rem"
+              style="font-size: 0.95rem; color: #666; margin-left: 0.5rem; align-self: center;"
             ></span>
           </div>
 
@@ -990,24 +961,18 @@
 
           <div class="filter-controls">
             <div class="filter-group">
-              <label for="storeSearch">Search:</label>
-              <input
-                type="text"
-                id="storeSearch"
-                placeholder="Search by name or location"
-              />
+                <label for="storeSearch">Search</label>
+                <input type="text" id="storeSearch" class="form-control" placeholder="Search by name or location">
             </div>
             <div class="filter-group">
-              <label for="storeStatusFilter">Status:</label>
-              <select id="storeStatusFilter">
-                <option value="">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
+                <label for="storeStatusFilter">Status</label>
+                <select id="storeStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
             </div>
-            <button class="btn btn-secondary" id="storeClearFiltersBtn">
-              Clear Filters
-            </button>
+            <button class="btn btn-secondary" id="storeClearFiltersBtn">Clear</button>
           </div>
 
           <div class="table-container">
@@ -1057,35 +1022,34 @@
 
           <div class="filter-controls">
             <div class="filter-group">
-              <label for="productSearch">Search:</label>
-              <input
-                type="text"
-                id="productSearch"
-                placeholder="Search by name"
-              />
+                <label for="productSearch">Search</label>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="productSearch" class="form-control" placeholder="Search by name" style="padding-left: 2.5rem;">
+                </div>
             </div>
             <div class="filter-group">
-              <label for="productCategoryFilter">Category:</label>
-              <select id="productCategoryFilter">
-                <option value="">All Categories</option>
-              </select>
+                <label for="productCategoryFilter">Category</label>
+                <select id="productCategoryFilter" class="form-control">
+                    <option value="">All Categories</option>
+                </select>
             </div>
             <div class="filter-group">
-              <label for="productStoreFilter">Store:</label>
-              <select id="productStoreFilter">
-                <option value="">All Stores</option>
-              </select>
+                <label for="productStoreFilter">Store</label>
+                <select id="productStoreFilter" class="form-control">
+                    <option value="">All Stores</option>
+                </select>
             </div>
             <div class="filter-group">
-              <label for="productStatusFilter">Status:</label>
-              <select id="productStatusFilter">
-                <option value="">All Status</option>
-                <option value="available">Available</option>
-                <option value="unavailable">Unavailable</option>
-              </select>
+                <label for="productStatusFilter">Status</label>
+                <select id="productStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="available">Available</option>
+                    <option value="unavailable">Unavailable</option>
+                </select>
             </div>
-            <button class="btn btn-secondary" id="productClearFiltersBtn">
-              Clear Filters
+            <button class="btn btn-secondary" id="productClearFiltersBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                <i class="fas fa-times"></i> Clear
             </button>
           </div>
 
@@ -1126,17 +1090,17 @@
           <!-- Filters -->
           <div class="filter-controls">
             <div class="filter-group">
-              <label for="filterDate">Filter by Date:</label>
-              <input type="date" id="filterDate" />
+                <label for="filterDate">Date</label>
+                <input type="date" id="filterDate" class="form-control">
             </div>
             <div class="filter-group">
-              <label for="filterRider">Filter by Rider:</label>
-              <select id="filterRider">
-                <option value="">All Riders</option>
-              </select>
+                <label for="filterRider">Rider</label>
+                <select id="filterRider" class="form-control">
+                    <option value="">All Riders</option>
+                </select>
             </div>
-            <button class="btn btn-secondary" id="clearFiltersBtn">
-              Clear Filters
+            <button class="btn btn-secondary" id="clearFiltersBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                <i class="fas fa-times"></i> Clear
             </button>
           </div>
 
@@ -1204,35 +1168,33 @@
 
           <div class="filter-controls">
             <div class="filter-group">
-              <label for="paymentStatusFilter">Status:</label>
-              <select id="paymentStatusFilter">
-                <option value="">All Status</option>
-                <option value="success">Success</option>
-                <option value="pending">Pending</option>
-                <option value="failed">Failed</option>
-                <option value="refunded">Refunded</option>
-              </select>
+                <label for="paymentStatusFilter">Status</label>
+                <select id="paymentStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="success">Success</option>
+                    <option value="pending">Pending</option>
+                    <option value="failed">Failed</option>
+                    <option value="refunded">Refunded</option>
+                </select>
             </div>
             <div class="filter-group">
-              <label for="paymentMethodFilter">Method:</label>
-              <select id="paymentMethodFilter">
-                <option value="">All Methods</option>
-                <option value="card">Card</option>
-                <option value="wallet">Wallet</option>
-                <option value="cash">Cash</option>
-              </select>
+                <label for="paymentMethodFilter">Method</label>
+                <select id="paymentMethodFilter" class="form-control">
+                    <option value="">All Methods</option>
+                    <option value="card">Card</option>
+                    <option value="wallet">Wallet</option>
+                    <option value="cash">Cash</option>
+                </select>
             </div>
             <div class="filter-group">
-              <label for="paymentStartDate">Start Date:</label>
-              <input type="date" id="paymentStartDate" />
+                <label for="paymentStartDate">Start Date</label>
+                <input type="date" id="paymentStartDate" class="form-control">
             </div>
             <div class="filter-group">
-              <label for="paymentEndDate">End Date:</label>
-              <input type="date" id="paymentEndDate" />
+                <label for="paymentEndDate">End Date</label>
+                <input type="date" id="paymentEndDate" class="form-control">
             </div>
-            <button class="btn btn-secondary" id="paymentClearFiltersBtn">
-              Clear Filters
-            </button>
+            <button class="btn btn-secondary" id="paymentClearFiltersBtn">Clear</button>
           </div>
 
           <div class="table-container">
@@ -1290,26 +1252,14 @@
 
           <div class="filter-controls">
             <div class="filter-group">
-              <label for="walletBalanceMin">Min Balance:</label>
-              <input
-                type="number"
-                id="walletBalanceMin"
-                placeholder="0"
-                step="0.01"
-              />
+                <label for="walletBalanceMin">Min Balance</label>
+                <input type="number" id="walletBalanceMin" class="form-control" placeholder="Min" step="0.01">
             </div>
             <div class="filter-group">
-              <label for="walletBalanceMax">Max Balance:</label>
-              <input
-                type="number"
-                id="walletBalanceMax"
-                placeholder="10000"
-                step="0.01"
-              />
+                <label for="walletBalanceMax">Max Balance</label>
+                <input type="number" id="walletBalanceMax" class="form-control" placeholder="Max" step="0.01">
             </div>
-            <button class="btn btn-secondary" id="walletClearFiltersBtn">
-              Clear Filters
-            </button>
+            <button class="btn btn-secondary" id="walletClearFiltersBtn">Clear</button>
           </div>
 
           <div class="table-container">
@@ -1340,29 +1290,29 @@
           <!-- Report Filters -->
           <div class="filter-controls">
             <div class="filter-group">
-              <label for="reportStartDate">Start Date:</label>
-              <input type="date" id="reportStartDate" />
+                <label for="reportStartDate">Start Date</label>
+                <input type="date" id="reportStartDate" class="form-control">
             </div>
             <div class="filter-group">
-              <label for="reportEndDate">End Date:</label>
-              <input type="date" id="reportEndDate" />
+                <label for="reportEndDate">End Date</label>
+                <input type="date" id="reportEndDate" class="form-control">
             </div>
             <div class="filter-group">
-              <label for="reportRiderFilter">Filter by Rider:</label>
-              <select id="reportRiderFilter">
-                <option value="">All Riders</option>
-                <!-- Riders will be loaded dynamically -->
-              </select>
+                <label for="reportRiderFilter">Rider</label>
+                <select id="reportRiderFilter" class="form-control">
+                    <option value="">All Riders</option>
+                    <!-- Riders will be loaded dynamically -->
+                </select>
             </div>
-            <button class="btn btn-secondary" id="generateReportBtn">
-              Generate Report
+            <button class="btn btn-secondary" id="generateOrderReportBtn">
+              <i class="fas fa-file-alt"></i> Generate
             </button>
             <button
               class="btn btn-primary"
               id="printReportBtn"
               style="display: none"
             >
-              Print Report
+              <i class="fas fa-print"></i> Print
             </button>
           </div>
 
@@ -1408,7 +1358,7 @@
 
           <!-- Detailed Report Table -->
           <div class="table-container" style="margin-top: 2rem">
-            <table id="reportsTable">
+            <table id="orderReportsTable">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -1418,7 +1368,7 @@
                   <th>Most Popular Store</th>
                 </tr>
               </thead>
-              <tbody id="reportsTableBody">
+              <tbody id="orderReportsTableBody">
                 <!-- Report data will be loaded here -->
               </tbody>
             </table>
@@ -1468,27 +1418,16 @@
             </div>
           </div>
 
-          <div style="margin-top: 2rem; margin-bottom: 1rem">
-            <label
-              for="inventoryReportSelect"
-              style="margin-right: 1rem; font-weight: 600"
-              >Select Report:</label
-            >
-            <select
-              id="inventoryReportSelect"
-              style="
-                padding: 8px 12px;
-                border-radius: 6px;
-                border: 1px solid #d1d5db;
-                font-size: 0.95rem;
-                cursor: pointer;
-              "
-            >
-              <option value="store">Store-wise Inventory</option>
-              <option value="category">Category-wise Inventory</option>
-              <option value="breakdown">Store-wise Category Breakdown</option>
-              <option value="sales">Store Sale-wise</option>
-            </select>
+          <div class="filter-controls">
+            <div class="filter-group">
+                <label for="inventoryReportSelect">Select Report</label>
+                <select id="inventoryReportSelect" class="form-control">
+                  <option value="store">Store-wise Inventory</option>
+                  <option value="category">Category-wise Inventory</option>
+                  <option value="breakdown">Store-wise Category Breakdown</option>
+                  <option value="sales">Store Sale-wise</option>
+                </select>
+            </div>
           </div>
 
           <!-- Store-wise Inventory -->
@@ -1585,23 +1524,22 @@
 
           <div class="filter-controls">
             <div class="filter-group">
-              <label for="categorySearch">Search:</label>
-              <input
-                type="text"
-                id="categorySearch"
-                placeholder="Search by name or description"
-              />
+                <label for="categorySearch">Search</label>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="categorySearch" class="form-control" placeholder="Search by name or description" style="padding-left: 2.5rem;">
+                </div>
             </div>
             <div class="filter-group">
-              <label for="categoryStatusFilter">Status:</label>
-              <select id="categoryStatusFilter">
-                <option value="">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
+                <label for="categoryStatusFilter">Status</label>
+                <select id="categoryStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
             </div>
-            <button class="btn btn-secondary" id="categoryClearFiltersBtn">
-              Clear Filters
+            <button class="btn btn-secondary" id="categoryClearFiltersBtn" style="align-self: flex-end; margin-bottom: 2px;">
+              <i class="fas fa-times"></i> Clear
             </button>
           </div>
 
@@ -1711,34 +1649,33 @@
 
           <div id="rider-list-panel" class="rider-subpanel">
             <div class="filter-controls">
-              <div class="filter-group">
-                <label for="riderSearch">Search:</label>
-                <input
-                  type="text"
-                  id="riderSearch"
-                  placeholder="Search by name, email, phone"
-                />
-              </div>
-              <div class="filter-group">
-                <label for="riderAvailabilityFilter">Availability:</label>
-                <select id="riderAvailabilityFilter">
-                  <option value="">All</option>
+            <div class="filter-group">
+                <label for="riderSearch">Search</label>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="riderSearch" class="form-control" placeholder="Search by name, email, phone" style="padding-left: 2.5rem;">
+                </div>
+            </div>
+            <div class="filter-group">
+                <label for="riderAvailabilityFilter">Availability</label>
+                <select id="riderAvailabilityFilter" class="form-control">
+                  <option value="">All Availability</option>
                   <option value="available">Available</option>
                   <option value="unavailable">Unavailable</option>
                 </select>
-              </div>
-              <div class="filter-group">
-                <label for="riderStatusFilter">Status:</label>
-                <select id="riderStatusFilter">
+            </div>
+            <div class="filter-group">
+                <label for="riderStatusFilter">Status</label>
+                <select id="riderStatusFilter" class="form-control">
                   <option value="">All Status</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
-              </div>
-              <button class="btn btn-secondary" id="riderClearFiltersBtn">
-                Clear Filters
-              </button>
             </div>
+            <button class="btn btn-secondary" id="riderClearFiltersBtn" style="align-self: flex-end; margin-bottom: 2px;">
+              <i class="fas fa-times"></i> Clear
+            </button>
+          </div>
 
             <div class="table-container">
               <table id="ridersTable">
@@ -1768,19 +1705,14 @@
             style="display: none; margin-top: 1rem"
           >
             <h3>Fuel Management</h3>
-            <div
-              class="tab-actions"
-              style="align-items: center; margin-bottom: 0.5rem"
-            >
-              <label
-                for="fuelRiderSelect"
-                style="font-weight: 600; margin-right: 0.5rem"
-                >Select Rider:</label
-              >
-              <select id="fuelRiderSelect" style="padding: 0.35rem 0.5rem">
-                <option value="">-- Select Rider --</option>
-              </select>
-              <button class="btn btn-secondary" id="refreshFuelBtn">
+            <div class="filter-controls">
+              <div class="filter-group">
+                  <label for="fuelRiderSelect">Select Rider</label>
+                  <select id="fuelRiderSelect" class="form-control">
+                    <option value="">-- Select Rider --</option>
+                  </select>
+              </div>
+              <button class="btn btn-secondary" id="refreshFuelBtn" style="align-self: flex-end; margin-bottom: 2px;">
                 Refresh
               </button>
             </div>

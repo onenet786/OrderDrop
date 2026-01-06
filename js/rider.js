@@ -57,6 +57,82 @@ let currentLocation = null;
 let locationWatchId = null;
 window._riderDeliveries = {};
 
+// Normalize relative image URL to absolute
+function _normalizeImageUrl(url) {
+    try {
+        if (!url) return null;
+        let u = String(url).trim().replace(/\\/g, '/');
+        if (!u) return null;
+        if (/^https?:\/\//i.test(u) || u.toLowerCase().startsWith('data:')) return u;
+        if (u.startsWith('//')) return window.location.protocol + u;
+        if (u.startsWith('/')) return API_BASE.replace(/\/$/, '') + u;
+        return API_BASE.replace(/\/$/, '') + '/' + u.replace(/^\/+/, '');
+    } catch (e) { return null; }
+}
+
+// Load Rider Profile and populate header + Profile tab
+async function loadRiderProfile() {
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/rider/profile`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            }
+        });
+        const data = await response.json();
+        if (data && data.success && data.rider) {
+            const r = data.rider;
+            const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim() || (r.first_name || 'Rider');
+            const vehicle = r.vehicle_type || '';
+            const headerName = document.getElementById('riderName');
+            const headerVehicle = document.getElementById('riderVehicle');
+            if (headerName) headerName.textContent = fullName;
+            if (headerVehicle) headerVehicle.textContent = vehicle;
+
+            // Profile tab
+            const nameEl = document.getElementById('profileName');
+            const emailEl = document.getElementById('profileEmail');
+            const phoneEl = document.getElementById('profilePhone');
+            const vehicleEl = document.getElementById('profileVehicle');
+            if (nameEl) nameEl.textContent = fullName || '-';
+            if (emailEl) emailEl.textContent = r.email || '-';
+            if (phoneEl) phoneEl.textContent = r.phone || '-';
+            if (vehicleEl) vehicleEl.textContent = vehicle || '-';
+
+            const photoWrap = document.getElementById('profilePhoto');
+            const idWrap = document.getElementById('profileIdImage');
+            const photoUrl = _normalizeImageUrl(r.image_url);
+            const idUrl = _normalizeImageUrl(r.id_card_url);
+            if (photoWrap && photoUrl) {
+                photoWrap.innerHTML = `<img src="${photoUrl}" alt="Rider Photo" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" onerror="this.parentNode.textContent='No image'">`;
+            }
+            if (idWrap && idUrl) {
+                idWrap.innerHTML = `<img src="${idUrl}" alt="ID Card" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" onerror="this.parentNode.textContent='No image'">`;
+            }
+        }
+    } catch (e) {
+        console.error('Error loading rider profile:', e);
+    }
+}
+
+// Load Rider Wallet and populate Wallet tab
+async function loadRiderWallet() {
+    try {
+        const response = await fetch(`${API_BASE}/api/wallet/balance`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            }
+        });
+        const data = await response.json();
+        if (data && data.success && data.wallet) {
+            const bal = parseFloat(data.wallet.balance || 0);
+            const b1 = document.getElementById('walletBalanceTile2');
+            if (b1) b1.textContent = `PKR ${bal.toFixed(2)}`;
+        }
+    } catch (e) {
+        // Ignore if wallet endpoint is not available for rider
+    }
+}
+
 // Get current location using GPS
 function getCurrentLocation() {
     return new Promise((resolve, reject) => {
@@ -544,6 +620,10 @@ async function submitChangePassword() {
     }
 }
 
+// Load completed deliveries for Completed tab
+async function displayCompletedDeliveries() {
+    await displayRiderDeliveries('completed', 'completedDeliveriesContainer');
+}
 // Initialize rider dashboard
 document.addEventListener('DOMContentLoaded', function() {
     // Check if user is rider
@@ -562,6 +642,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     loadRiderInfo();
+    // Hide dashboard tiles to match mobile tab UX
+    try { const tiles = document.getElementById('riderSummaryTiles'); if (tiles) tiles.style.display = 'none'; } catch (e) {}
+    // Load profile and wallet
+    loadRiderProfile();
+    loadRiderWallet();
+    // Preload data for tabs
+    displayRiderDeliveries('assigned', 'deliveriesContainer');
+    displayCompletedDeliveries();
     // Load initial tab
     switchTab('assigned');
     createOrGetOrderInfoModal();

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rider Dashboard - ServeNow</title>
-    <link rel="stylesheet" href="css/rider.css">
+    <link rel="stylesheet" href="css/rider.css?v=2">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
@@ -19,8 +19,10 @@
             </div>
             <nav class="sidebar-nav">
                 <ul class="nav-menu">
-                    <li><a href="#" class="active" onclick="switchTab('assigned'); return false;" id="nav-assigned"><i class="fas fa-truck"></i> My Deliveries</a></li>
-                    <li><a href="#" onclick="switchTab('completed'); return false;" id="nav-completed"><i class="fas fa-check-circle"></i> Completed</a></li>
+                    <li><a href="#" class="active" onclick="switchTab('assigned'); return false;" id="nav-assigned"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="#" onclick="switchTab('completed'); return false;" id="nav-completed"><i class="fas fa-history"></i> History</a></li>
+                    <li><a href="#" onclick="switchTab('wallet'); return false;" id="nav-wallet"><i class="fas fa-wallet"></i> Wallet</a></li>
+                    <li><a href="#" onclick="switchTab('profile'); return false;" id="nav-profile"><i class="fas fa-id-card"></i> Profile</a></li>
                     <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
                     <li><a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                 </ul>
@@ -55,6 +57,30 @@
             </div>
 
             <!-- Tab Contents -->
+            <!-- Summary Tiles -->
+            <div class="stats-grid" id="riderSummaryTiles">
+                <div class="stat-card">
+                    <h3 id="riderNameTile">-</h3>
+                    <p>Rider</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="riderVehicleTile">-</h3>
+                    <p>Vehicle</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="assignedCountTile">-</h3>
+                    <p>Assigned Deliveries</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="completedCountTile">-</h3>
+                    <p>Completed Today</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="walletBalanceTile">PKR -</h3>
+                    <p>Wallet Balance</p>
+                </div>
+            </div>
+
             <div id="assigned" class="tab-content active">
                 <h3>My Deliveries</h3>
                 <div id="deliveriesContainer" class="stats-grid">
@@ -68,6 +94,41 @@
                 <div id="completedDeliveriesContainer" class="stats-grid">
                     <!-- Completed deliveries will be loaded here -->
                     <p>Loading history...</p>
+                </div>
+            </div>
+
+            <div id="wallet" class="tab-content">
+                <h3>Wallet</h3>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3 id="walletBalanceTile2">PKR -</h3>
+                        <p>Current Balance</p>
+                    </div>
+                </div>
+                <div id="walletContent" style="background: var(--bg-surface); border:1px solid var(--border-color); border-radius: var(--border-radius); padding:1rem;">
+                    <p>No wallet transactions available.</p>
+                </div>
+            </div>
+
+            <div id="profile" class="tab-content">
+                <h3>Profile</h3>
+                <div id="profileContent" style="background: var(--bg-surface); border:1px solid var(--border-color); border-radius: var(--border-radius); padding:1rem;">
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem;">
+                        <div>
+                            <h4 style="margin-bottom:0.5rem;">Photo</h4>
+                            <div id="profilePhoto" style="width:100%; height:200px; background:#f1f5f9; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#64748b;">No image</div>
+                        </div>
+                        <div>
+                            <h4 style="margin-bottom:0.5rem;">ID Image</h4>
+                            <div id="profileIdImage" style="width:100%; height:200px; background:#f1f5f9; border:1px solid var(--border-color); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#64748b;">No image</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:1rem; display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:0.75rem;">
+                        <div><strong>Name:</strong> <span id="profileName">-</span></div>
+                        <div><strong>Email:</strong> <span id="profileEmail">-</span></div>
+                        <div><strong>Phone:</strong> <span id="profilePhone">-</span></div>
+                        <div><strong>Vehicle:</strong> <span id="profileVehicle">-</span></div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -103,8 +164,8 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=7"></script>
-    <script src="js/rider.js"></script>
+    <script src="js/app.js?v=8"></script>
+    <script src="js/rider.js?v=3"></script>
     <script>
         // Sidebar Toggle
         const sidebarToggle = document.getElementById('sidebarToggle');

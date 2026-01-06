@@ -29,7 +29,9 @@ let sortState = {
     stores: { column: 'id', direction: 'asc' },
     categories: { column: 'id', direction: 'asc' },
     riders: { column: 'id', direction: 'asc' },
-    orders: { column: 'order_number', direction: 'asc' }
+    orders: { column: 'order_number', direction: 'asc' },
+    payments: { column: 'id', direction: 'asc' },
+    wallets: { column: 'id', direction: 'asc' }
 };
 
 // ===== MODERN TOAST NOTIFICATION SYSTEM =====
@@ -512,9 +514,9 @@ function initializeAdmin() {
     } catch (e) {}
 
     // Add report event listeners
-    const generateReportBtn = document.getElementById('generateReportBtn');
-    if (generateReportBtn) {
-        generateReportBtn.addEventListener('click', generateOrderReport);
+    const generateOrderReportBtn = document.getElementById('generateOrderReportBtn');
+    if (generateOrderReportBtn) {
+        generateOrderReportBtn.addEventListener('click', generateOrderReport);
     }
 
     // Fuel management panel toggles and actions
@@ -814,7 +816,7 @@ function printOrderReport() {
     const completedOrders = document.getElementById('completedOrders').textContent;
 
     // Get table data
-    const tableRows = document.querySelectorAll('#reportsTableBody tr');
+    const tableRows = document.querySelectorAll('#orderReportsTableBody tr');
 
     // Create print-friendly HTML
     const printContent = `
@@ -4721,32 +4723,34 @@ function displayOrderReport(stats, orders) {
     });
 
     // Create detailed report table
-    const tbody = document.getElementById('reportsTableBody');
-    tbody.innerHTML = '';
+    const tbody = document.getElementById('orderReportsTableBody');
+    if (tbody) {
+        tbody.innerHTML = '';
 
-    Object.keys(ordersByDate).sort().forEach(date => {
-        const dayOrders = ordersByDate[date];
-        const dayRevenue = dayOrders.reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
-        const avgOrderValue = dayRevenue / dayOrders.length;
+        Object.keys(ordersByDate).sort().forEach(date => {
+            const dayOrders = ordersByDate[date];
+            const dayRevenue = dayOrders.reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
+            const avgOrderValue = dayRevenue / dayOrders.length;
 
-        // Find most popular store for the day
-        const storeCounts = {};
-        dayOrders.forEach(order => {
-            storeCounts[order.store_name] = (storeCounts[order.store_name] || 0) + 1;
+            // Find most popular store for the day
+            const storeCounts = {};
+            dayOrders.forEach(order => {
+                storeCounts[order.store_name] = (storeCounts[order.store_name] || 0) + 1;
+            });
+            const mostPopularStore = Object.keys(storeCounts).reduce((a, b) =>
+                storeCounts[a] > storeCounts[b] ? a : b, 'N/A');
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${date}</td>
+                <td>${dayOrders.length}</td>
+                <td>PKR ${dayRevenue.toLocaleString()}</td>
+                <td>PKR ${avgOrderValue.toFixed(2)}</td>
+                <td>${mostPopularStore}</td>
+            `;
+            tbody.appendChild(row);
         });
-        const mostPopularStore = Object.keys(storeCounts).reduce((a, b) =>
-            storeCounts[a] > storeCounts[b] ? a : b, 'N/A');
-
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${date}</td>
-            <td>${dayOrders.length}</td>
-            <td>PKR ${dayRevenue.toLocaleString()}</td>
-            <td>PKR ${avgOrderValue.toFixed(2)}</td>
-            <td>${mostPopularStore}</td>
-        `;
-        tbody.appendChild(row);
-    });
+    }
 }
 
 function createStatusChart(statusCounts) {
@@ -5013,8 +5017,55 @@ function loadStores() {
         currentStores = data.stores || [];
         displayStores(currentStores);
         initializeTableSorting('stores');
+        attachStoreFilterListeners();
     })
     .catch(error => console.error('Error loading stores:', error));
+}
+
+function attachStoreFilterListeners() {
+    const searchInput = document.getElementById('storeSearch');
+    const statusFilter = document.getElementById('storeStatusFilter');
+    const clearBtn = document.getElementById('storeClearFiltersBtn');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', filterStores);
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', filterStores);
+    }
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (searchInput) searchInput.value = '';
+            if (statusFilter) statusFilter.value = '';
+            filterStores();
+        });
+    }
+}
+
+function filterStores() {
+    const searchTerm = document.getElementById('storeSearch')?.value.toLowerCase();
+    const status = document.getElementById('storeStatusFilter')?.value;
+
+    let filtered = currentStores;
+
+    if (searchTerm) {
+        filtered = filtered.filter(store => 
+            (store.name && store.name.toLowerCase().includes(searchTerm)) ||
+            (store.location && store.location.toLowerCase().includes(searchTerm)) ||
+            (store.owner_name && store.owner_name.toLowerCase().includes(searchTerm))
+        );
+    }
+
+    if (status) {
+        filtered = filtered.filter(store => {
+            const isActive = store.is_active === true || store.is_active === 1 || store.is_active === '1';
+            if (status === 'active') return isActive;
+            if (status === 'inactive') return !isActive;
+            return true;
+        });
+    }
+
+    displayStores(filtered);
 }
 
 function displayStores(stores) {
@@ -5405,32 +5456,18 @@ async function loadPayments() {
             document.getElementById('paymentsTodayAmount').textContent = `PKR ${stats.today?.total?.toFixed(2) || '0.00'}`;
         }
 
-        const listResponse = await fetch(`${API_BASE}/api/admin/payments?limit=50`, {
+        const listResponse = await fetch(`${API_BASE}/api/admin/payments?limit=200`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const listData = await listResponse.json();
         
-        const tbody = document.getElementById('paymentsTableBody');
-        tbody.innerHTML = '';
-
-        if (listData.success && listData.payments && listData.payments.length) {
-            listData.payments.forEach(payment => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${payment.id}</td>
-                    <td>#${payment.order_id}</td>
-                    <td>${payment.first_name} ${payment.last_name}</td>
-                    <td>PKR ${parseFloat(payment.amount).toFixed(2)}</td>
-                    <td><span class="badge badge-${payment.payment_method}">${payment.payment_method}</span></td>
-                    <td>${payment.gateway || 'N/A'}</td>
-                    <td><span class="badge badge-${payment.status}">${payment.status}</span></td>
-                    <td>${new Date(payment.created_at).toLocaleDateString()}</td>
-                    <td><button class="btn btn-small btn-info" onclick="viewPaymentDetails(${payment.id})">View</button></td>
-                `;
-                tbody.appendChild(row);
-            });
+        if (listData.success && listData.payments) {
+            currentPayments = listData.payments;
+            displayPayments(currentPayments);
+            initializeTableSorting('payments');
         } else {
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No payments found</td></tr>';
+            currentPayments = [];
+            displayPayments([]);
         }
 
         attachPaymentFilterListeners();
@@ -5440,13 +5477,72 @@ async function loadPayments() {
     }
 }
 
+function displayPayments(payments) {
+    const tbody = document.getElementById('paymentsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (!payments || payments.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No payments found</td></tr>';
+        return;
+    }
+
+    payments.forEach(payment => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${payment.id}</td>
+            <td>#${payment.order_id}</td>
+            <td>${payment.first_name} ${payment.last_name}</td>
+            <td>PKR ${parseFloat(payment.amount).toFixed(2)}</td>
+            <td><span class="badge badge-${payment.payment_method}">${payment.payment_method}</span></td>
+            <td>${payment.gateway || 'N/A'}</td>
+            <td><span class="badge badge-${payment.status}">${payment.status}</span></td>
+            <td>${new Date(payment.created_at).toLocaleDateString()}</td>
+            <td><button class="btn btn-small btn-info" onclick="viewPaymentDetails(${payment.id})">View</button></td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function filterPayments() {
+    const status = document.getElementById('paymentStatusFilter')?.value;
+    const method = document.getElementById('paymentMethodFilter')?.value;
+    const startDate = document.getElementById('paymentStartDate')?.value;
+    const endDate = document.getElementById('paymentEndDate')?.value;
+
+    let filtered = currentPayments;
+
+    if (status) {
+        filtered = filtered.filter(p => p.status === status);
+    }
+    if (method) {
+        filtered = filtered.filter(p => p.payment_method === method);
+    }
+    if (startDate) {
+        filtered = filtered.filter(p => new Date(p.created_at) >= new Date(startDate));
+    }
+    if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(p => new Date(p.created_at) <= end);
+    }
+
+    displayPayments(filtered);
+}
+
 function attachPaymentFilterListeners() {
+    const filters = ['paymentStatusFilter', 'paymentMethodFilter', 'paymentStartDate', 'paymentEndDate'];
+    filters.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', filterPayments);
+    });
+
     document.getElementById('paymentClearFiltersBtn')?.addEventListener('click', () => {
-        document.getElementById('paymentStatusFilter').value = '';
-        document.getElementById('paymentMethodFilter').value = '';
-        document.getElementById('paymentStartDate').value = '';
-        document.getElementById('paymentEndDate').value = '';
-        loadPayments();
+        filters.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        displayPayments(currentPayments);
     });
 }
 
@@ -5484,34 +5580,18 @@ async function loadWallets() {
             document.getElementById('walletsTotalSpent').textContent = `PKR ${stats.transactions?.total_spent?.toFixed(2) || '0.00'}`;
         }
 
-        const listResponse = await fetch(`${API_BASE}/api/admin/wallets?limit=50`, {
+        const listResponse = await fetch(`${API_BASE}/api/admin/wallets?limit=200`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const listData = await listResponse.json();
         
-        const tbody = document.getElementById('walletsTableBody');
-        tbody.innerHTML = '';
-
-        if (listData.success && listData.wallets && listData.wallets.length) {
-            listData.wallets.forEach(wallet => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${wallet.id}</td>
-                    <td>${wallet.first_name} ${wallet.last_name}</td>
-                    <td>PKR ${parseFloat(wallet.balance).toFixed(2)}</td>
-                    <td>PKR ${parseFloat(wallet.total_credited).toFixed(2)}</td>
-                    <td>PKR ${parseFloat(wallet.total_spent).toFixed(2)}</td>
-                    <td>${wallet.auto_recharge_enabled ? '<span class="badge badge-success">Yes</span>' : '<span class="badge badge-danger">No</span>'}</td>
-                    <td>${new Date(wallet.updated_at).toLocaleDateString()}</td>
-                    <td>
-                        <button class="btn btn-small btn-info" onclick="viewWalletDetails(${wallet.id})">View</button>
-                        <button class="btn btn-small btn-warning" onclick="adjustWalletBalance(${wallet.id})">Adjust</button>
-                    </td>
-                `;
-                tbody.appendChild(row);
-            });
+        if (listData.success && listData.wallets) {
+            currentWallets = listData.wallets;
+            displayWallets(currentWallets);
+            initializeTableSorting('wallets');
         } else {
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No wallets found</td></tr>';
+            currentWallets = [];
+            displayWallets([]);
         }
 
         attachWalletFilterListeners();
@@ -5521,11 +5601,64 @@ async function loadWallets() {
     }
 }
 
+function displayWallets(wallets) {
+    const tbody = document.getElementById('walletsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (!wallets || wallets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No wallets found</td></tr>';
+        return;
+    }
+
+    wallets.forEach(wallet => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${wallet.id}</td>
+            <td>${wallet.first_name} ${wallet.last_name}</td>
+            <td>PKR ${parseFloat(wallet.balance).toFixed(2)}</td>
+            <td>PKR ${parseFloat(wallet.total_credited).toFixed(2)}</td>
+            <td>PKR ${parseFloat(wallet.total_spent).toFixed(2)}</td>
+            <td>${wallet.auto_recharge_enabled ? '<span class="badge badge-success">Yes</span>' : '<span class="badge badge-danger">No</span>'}</td>
+            <td>${new Date(wallet.updated_at).toLocaleDateString()}</td>
+            <td>
+                <button class="btn btn-small btn-info" onclick="viewWalletDetails(${wallet.id})">View</button>
+                <button class="btn btn-small btn-warning" onclick="adjustWalletBalance(${wallet.id})">Adjust</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function filterWallets() {
+    const minBal = parseFloat(document.getElementById('walletBalanceMin')?.value) || 0;
+    const maxBal = parseFloat(document.getElementById('walletBalanceMax')?.value);
+
+    let filtered = currentWallets;
+
+    if (minBal > 0) {
+        filtered = filtered.filter(w => parseFloat(w.balance) >= minBal);
+    }
+    if (!isNaN(maxBal)) {
+        filtered = filtered.filter(w => parseFloat(w.balance) <= maxBal);
+    }
+
+    displayWallets(filtered);
+}
+
 function attachWalletFilterListeners() {
+    const filters = ['walletBalanceMin', 'walletBalanceMax'];
+    filters.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', filterWallets);
+    });
+
     document.getElementById('walletClearFiltersBtn')?.addEventListener('click', () => {
-        document.getElementById('walletBalanceMin').value = '';
-        document.getElementById('walletBalanceMax').value = '';
-        loadWallets();
+        filters.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        displayWallets(currentWallets);
     });
 }
 

@@ -1522,7 +1522,6 @@ document.addEventListener("DOMContentLoaded", function () {
           if (navUl) {
             navUl.innerHTML = `
                             <li>Welcome ${user.first_name}</li>
-                            <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
                             <li><a href="rider.html"><i class="fas fa-motorcycle"></i> Dashboard</a></li>
                             <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
                             <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
