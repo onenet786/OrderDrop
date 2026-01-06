@@ -62,8 +62,6 @@
                   <a href="admin.html#riders" class="tab-link" data-tab="riders"
                     ><i class="fas fa-motorcycle"></i> Riders</a
                   >
-                </li>
-              </ul>
             </li>
             <li>
               <a href="admin.html#stores" class="tab-link" data-tab="stores"
@@ -265,6 +263,11 @@
                 class="tab-link"
                 data-tab="db-backup"
                 ><i class="fas fa-database"></i> Utilities</a
+              >
+            </li>
+            <li>
+              <a href="admin.html#problems" class="tab-link" data-tab="problems"
+                ><i class="fas fa-exclamation-triangle"></i> Problems</a
               >
             </li>
             <li>
@@ -838,6 +841,66 @@
                 </tr>
               </thead>
               <tbody id="reportsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Problems Tab -->
+
+        <div id="problems" class="tab-content">
+          <h2>System Problems & Diagnostics</h2>
+
+          <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 1.5rem">
+            <div class="stat-card">
+              <h3 id="problemsChecksRun">-</h3>
+              <p>Checks Run</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="problemsIssuesFound">-</h3>
+              <p>Issues Found</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="problemsLastRun">-</h3>
+              <p>Last Run</p>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" id="runDiagnosticsBtn">
+            <i class="fas fa-search"></i> Run All Diagnostics
+          </button>
+
+          <div class="filter-controls" style="margin-top: 1rem">
+            <div class="filter-group">
+                <label for="diagnosticType">Check Type:</label>
+                <select id="diagnosticType" class="form-control">
+                    <option value="all">All Checks</option>
+                    <option value="admin">Admin User</option>
+                    <option value="orphans">Orphan Records</option>
+                    <option value="types">Enum Types</option>
+                    <option value="wallets">Wallets</option>
+                    <option value="tx_ref">Transaction References</option>
+                    <option value="logs_schema">Logs Schema</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="runSingleDiagnosticBtn">
+              <i class="fas fa-play"></i> Run Selected
+            </button>
+          </div>
+
+          <div class="table-container" style="margin-top: 1.5rem">
+            <table id="diagnosticsTable">
+              <thead>
+                <tr>
+                  <th>Check Type</th>
+                  <th>Status</th>
+                  <th>Issues Found</th>
+                  <th>Last Run</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="diagnosticsTableBody">
+                <!-- Diagnostic results will be loaded here -->
+              </tbody>
             </table>
           </div>
         </div>

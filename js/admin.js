@@ -21,6 +21,10 @@ let editingUnitId = null;
 let editingSizeId = null;
 let productStoreTermsById = {};
 
+// Chart references
+window['statusChart'] = null;
+window['revenueChart'] = null;
+
 // Sorting state for each table
 let sortState = {
     products: { column: 'id', direction: 'asc' },
@@ -125,7 +129,7 @@ if (typeof io !== 'undefined') {
                 if (typeof loadDashboardStats === 'function') loadDashboardStats();
                 if (typeof loadRecentActivity === 'function') loadRecentActivity();
             } else if (tabId === 'orders') {
-                if (typeof loadOrders === 'function') loadOrders();
+                if (typeof window.loadOrders === 'function') window.loadOrders();
             }
         }
     });
@@ -280,7 +284,9 @@ function initializeAdmin() {
     
     const clearStoreSettlementFiltersBtn = document.getElementById('clearStoreSettlementFiltersBtn');
     if (clearStoreSettlementFiltersBtn) {
-        clearStoreSettlementFiltersBtn.addEventListener('click', () => loadStoreSettlements());
+        clearStoreSettlementFiltersBtn.addEventListener('click', () => {
+            if (typeof window.loadStoreSettlements === 'function') window.loadStoreSettlements();
+        });
     }
     let addUnitBtn = document.getElementById('addUnitBtn');
     console.debug('admin:init addUnitBtn present:', !!addUnitBtn);
@@ -598,6 +604,12 @@ function initializeAdmin() {
     try { loadUnits(); } catch(e) { /* ignore */ }
     try { loadSizes(); } catch(e) { /* ignore */ }
 
+    // Add problems tab event listeners
+    const runDiagnosticsBtn = document.getElementById('runDiagnosticsBtn');
+    if (runDiagnosticsBtn) runDiagnosticsBtn.addEventListener('click', runAllDiagnostics);
+
+    const runSingleDiagnosticBtn = document.getElementById('runSingleDiagnosticBtn');
+    if (runSingleDiagnosticBtn) runSingleDiagnosticBtn.addEventListener('click', runSingleDiagnostic);
 
 document.addEventListener('click', function(e) {
     try {
@@ -1067,22 +1079,25 @@ function switchTab(tabName) {
             if (typeof loadTransactions === 'function') loadTransactions();
             break;
         case 'payment-vouchers':
-            if (typeof loadPaymentVouchers === 'function') loadPaymentVouchers();
+            if (typeof window['loadPaymentVouchers'] === 'function') window['loadPaymentVouchers']();
             break;
         case 'receipt-vouchers':
-            if (typeof loadReceiptVouchers === 'function') loadReceiptVouchers();
+            if (typeof window['loadReceiptVouchers'] === 'function') window['loadReceiptVouchers']();
             break;
         case 'rider-cash':
-            if (typeof loadRiderCash === 'function') loadRiderCash();
+            if (typeof window['loadRiderCash'] === 'function') window['loadRiderCash']();
             break;
         case 'store-settlements':
-            if (typeof loadStoreSettlements === 'function') loadStoreSettlements();
+            if (typeof window['loadStoreSettlements'] === 'function') window['loadStoreSettlements']();
             break;
         case 'expenses':
-            if (typeof loadExpenses === 'function') loadExpenses();
+            if (typeof window['loadExpenses'] === 'function') window['loadExpenses']();
             break;
         case 'financial-reports':
-            if (typeof loadFinancialReports === 'function') loadFinancialReports();
+            if (typeof window['loadFinancialReports'] === 'function') window['loadFinancialReports']();
+            break;
+        case 'problems':
+            loadProblemsDiagnostics();
             break;
     }
 }
@@ -1585,7 +1600,6 @@ function editAccount(accountId) {
 }
 
 function saveAccount() {
-    const form = document.getElementById('editAccountForm');
     const accountId = document.getElementById('editAccountId').value;
     const firstName = document.getElementById('editAccountFirstName').value;
     const lastName = document.getElementById('editAccountLastName').value;
@@ -1670,7 +1684,7 @@ function toggleAccountStatus(accountId, currentStatus) {
     });
 }
 
-function resetAccountVerification(accountId, email) {
+function resetAccountVerification(accountId) {
     if (!confirm('Are you sure you want to reset the verification status for this account?')) {
         return;
     }
@@ -1743,7 +1757,7 @@ function loadStores() {
     .catch(error => console.error('Error loading stores:', error));
 }
 
-async function editStoreType(storeId) {
+async function editStoreType() {
     showInfo('Coming Soon', 'Edit store functionality is being implemented.');
 }
 
@@ -1914,9 +1928,7 @@ function displayProducts(products) {
 
 // Export Base64 Images removed
 
-async function editProduct(productId) {
-    showInfo('Coming Soon', 'Edit product functionality is being implemented.');
-}
+
 
 function toggleProductStatus(productId, currentStatus) {
     fetch(`${API_BASE}/api/products/${productId}`, {
@@ -2670,12 +2682,7 @@ async function loadSizes() {
     }
 }
 
-function showAddSizeModal() {
-    editingSizeId = null;
-    const form = document.getElementById('addSizeForm');
-    if (form) form.reset();
-    showModal('addSizeModal');
-}
+
 
 async function saveSize() {
     const form = document.getElementById('addSizeForm');
@@ -3457,7 +3464,6 @@ async function showAddProductModal() {
             }
             const nameEl = document.getElementById('productName');
             const descEl = document.getElementById('productDescription');
-            const fileEl = document.getElementById('productImageFile');
             const unitSel = document.getElementById('productUnit');
             const sizeSel = document.getElementById('productSize');
             const catSel = document.getElementById('productCategory');
@@ -3589,10 +3595,6 @@ async function saveProduct() {
     const rawItemId = formData.get('item_id') || '';
     const storeId = parseInt(rawStoreId, 10);
     const usingTemplate = !!rawItemId;
-    const rawCostPrice = formData.get('cost_price');
-    const rawCost = String(rawCostPrice || '').trim();
-    const isEditing = !!editingProductId;
-    const costPriceVal = rawCost.length ? parseFloat(rawCost) : NaN;
     const rawPrice = String(formData.get('price') || '').trim();
     const priceVal = rawPrice.length ? parseFloat(rawPrice) : NaN;
     const useSizePrices = !!document.getElementById('productHasSizePrices')?.checked;
@@ -4050,10 +4052,10 @@ try { window.editCategory = editCategory; } catch (e) {}
 
 // Riders Management Functions
 // --- Rider Fuel History Client Functions ---
-function loadRidersForFuelSelect() {
-    return fetch(`${API_BASE}/api/riders`, { headers: { 'Authorization': `Bearer ${authToken}` } })
-    .then(r => r.json())
-    .then(data => {
+async function loadRidersForFuelSelect() {
+    try {
+        const r = await fetch(`${API_BASE}/api/riders`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+        const data = await r.json();
         const sel = document.getElementById('fuelRiderSelect');
         if (!sel) return null;
         sel.innerHTML = '<option value="">-- Select Rider --</option>';
@@ -4071,26 +4073,29 @@ function loadRidersForFuelSelect() {
             return sel.value || null;
         }
         return null;
-    })
-    .catch(err => { console.error('Error loading riders for fuel select:', err); showError('Error', 'Failed to load rider list'); return null; });
+    } catch (err) {
+        console.error('Error loading riders for fuel select:', err);
+        showError('Error', 'Failed to load rider list');
+        return null;
+    }
 }
 
-function loadFuelHistory(riderId) {
+async function loadFuelHistory(riderId) {
     const tbody = document.getElementById('fuelHistoryTableBody');
-    if (!tbody) return Promise.resolve();
+    if (!tbody) return;
     if (!riderId) {
         tbody.innerHTML = '<tr><td colspan="10">Select a rider to view fuel history.</td></tr>';
-        return Promise.resolve();
+        return;
     }
 
     tbody.innerHTML = '<tr><td colspan="10">Loading...</td></tr>';
 
-    return fetch(`${API_BASE}/api/riders/${riderId}/fuel-history`, { headers: { 'Authorization': `Bearer ${authToken}` } })
-    .then(r => r.json())
-    .then(data => {
+    try {
+        const r = await fetch(`${API_BASE}/api/riders/${riderId}/fuel-history`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+        const data = await r.json();
         tbody.innerHTML = '';
         if (data.success && Array.isArray(data.records)) {
-                if (data.records.length === 0) {
+            if (data.records.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="10">No fuel history records found.</td></tr>';
                 return data;
             }
@@ -4124,13 +4129,12 @@ function loadFuelHistory(riderId) {
             showError('Error', (data && data.message) ? data.message : 'Failed to load fuel history');
         }
         return data;
-    })
-    .catch(err => {
+    } catch (err) {
         console.error('Error loading fuel history:', err);
         tbody.innerHTML = '<tr><td colspan="10">Error loading fuel history.</td></tr>';
         showError('Error', 'Error loading fuel history');
-        return Promise.reject(err);
-    });
+        throw err;
+    }
 }
 
 async function saveFuelEntry() {
@@ -4215,49 +4219,7 @@ function deleteFuelEntry(entryId, riderId) {
     });
 }
 
-function showAddUnitModal() {
-    editingUnitId = null;
-    const existing = document.getElementById('addUnitModal');
-    if (existing) try { existing.remove(); } catch (e) {}
-    const m = document.createElement('div');
-    m.id = 'addUnitModal';
-    m.className = 'modal';
-    m.innerHTML = `
-        <div class="modal-content">
-            <span class="close" data-modal="addUnitModal">&times;</span>
-            <h3>Add Unit</h3>
-            <form id="addUnitForm" autocomplete="off">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="unitName">Unit Name:</label>
-                        <input type="text" id="unitName" name="name" required autocomplete="off" />
-                    </div>
-                    <div class="form-group">
-                        <label for="unitAbbrev">Abbreviation:</label>
-                        <input type="text" id="unitAbbrev" name="abbreviation" autocomplete="off" />
-                    </div>
-                </div>
-                <div class="form-row-full">
-                    <div class="form-group">
-                        <label for="unitMultiplier">Multiplier (relative):</label>
-                        <input type="number" id="unitMultiplier" name="multiplier" step="0.0001" value="1.0000" autocomplete="off" />
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <div class="action-buttons">
-                        <button type="submit" class="btn btn-small btn-primary" id="saveUnitBtn"><i class="fas fa-check"></i> Save Unit</button>
-                        <button type="button" class="btn btn-small btn-secondary" data-modal="addUnitModal"><i class="fas fa-ban"></i> Cancel</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    `;
-    document.body.appendChild(m);
-    const form = document.getElementById('addUnitForm');
-    form.addEventListener('submit', function(e){ e.preventDefault(); saveUnit(); });
-    setTimeout(function(){ showModal('addUnitModal'); }, 0);
-}
-window.showAddUnitModal = showAddUnitModal;
+
 
 function showAddSizeModal() {
     editingSizeId = null;
@@ -4282,7 +4244,6 @@ function attachPhoneFormatterTo(input) {
     };
     input.addEventListener('focus', ensurePrefix);
     input.addEventListener('keydown', function(e) {
-        const v = String(input.value || '');
         if ((e.key === 'Backspace' || e.key === 'Delete') && input.selectionStart <= 3) {
             e.preventDefault();
             input.setSelectionRange(3, 3);
@@ -4757,11 +4718,11 @@ function createStatusChart(statusCounts) {
     const ctx = document.getElementById('statusChart').getContext('2d');
 
     // Destroy existing chart if it exists
-    if (window.statusChart) {
-        window.statusChart.destroy();
+    if (window['statusChart']) {
+        window['statusChart'].destroy();
     }
 
-    window.statusChart = new Chart(ctx, {
+    window['statusChart'] = new Chart(ctx, {
         type: 'pie',
         data: {
             labels: Object.keys(statusCounts),
@@ -4797,8 +4758,8 @@ function createRevenueChart(orders) {
     const ctx = document.getElementById('revenueChart').getContext('2d');
 
     // Destroy existing chart if it exists
-    if (window.revenueChart) {
-        window.revenueChart.destroy();
+    if (window['revenueChart']) {
+        window['revenueChart'].destroy();
     }
 
     // Group revenue by date for the last 30 days
@@ -4825,7 +4786,7 @@ function createRevenueChart(orders) {
         data.push(revenueByDate[dateKey] || 0);
     }
 
-    window.revenueChart = new Chart(ctx, {
+    window['revenueChart'] = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
@@ -5399,35 +5360,6 @@ function runDebugTableHighlight() {
         const table = document.querySelector('#ridersTable');
         if (!table) return console.log('Debug: No #ridersTable found');
 
-        const thead = table.querySelector('thead');
-        const tbody = table.querySelector('tbody');
-        const firstTr = tbody ? tbody.querySelector('tr') : null;
-        const th = table.querySelector('thead th:first-child');
-        const td = table.querySelector('tbody tr td:first-child');
-
-        function pick(el){
-            if(!el) return null;
-            const cs = getComputedStyle(el);
-            return {
-                tag: el.tagName,
-                id: el.id || null,
-                class: el.className || null,
-                inlineStyle: el.style && el.style.cssText ? el.style.cssText : null,
-                display: cs.display,
-                position: cs.position,
-                left: cs.left,
-                transform: cs.transform,
-                marginLeft: cs.marginLeft,
-                paddingLeft: cs.paddingLeft,
-                width: cs.width,
-                minWidth: cs.minWidth,
-                maxWidth: cs.maxWidth,
-                boxSizing: cs.boxSizing,
-                whiteSpace: cs.whiteSpace,
-                overflow: cs.overflow
-            };
-        }
-
         // highlight first column visually
         document.querySelectorAll('#ridersTable th:first-child, #ridersTable td:first-child').forEach(e=>{
             e.style.outline = '3px dashed red';
@@ -5719,3 +5651,85 @@ document.addEventListener('DOMContentLoaded', function(){
         }
     } catch (e) { /* ignore */ }
 });
+
+// ===== PROBLEMS & DIAGNOSTICS =====
+async function loadProblemsDiagnostics() {
+    const tbody = document.getElementById('diagnosticsTableBody');
+    if (!tbody) return;
+    
+    // Initial UI state
+    if (tbody.innerHTML.trim() === '' || tbody.innerHTML.includes('loading')) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Click "Run All Diagnostics" to scan for issues.</td></tr>';
+    }
+}
+
+async function runAllDiagnostics() {
+    await runDiagnostics('all');
+}
+
+async function runSingleDiagnostic() {
+    const type = document.getElementById('diagnosticType').value;
+    await runDiagnostics(type);
+}
+
+async function runDiagnostics(type) {
+    const runBtn = document.getElementById('runDiagnosticsBtn');
+    const singleBtn = document.getElementById('runSingleDiagnosticBtn');
+    const tbody = document.getElementById('diagnosticsTableBody');
+    
+    if (runBtn) runBtn.disabled = true;
+    if (singleBtn) singleBtn.disabled = true;
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;"><i class="fas fa-spinner fa-spin"></i> Running diagnostics...</td></tr>';
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/admin/diagnostics?type=${type}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            displayDiagnostics(data.results);
+            showSuccess('Diagnostics Complete', `Finished running ${data.results.length} checks.`);
+        } else {
+            showError('Diagnostics Failed', data.message || 'Unknown error');
+            if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: red;">Failed to load diagnostics.</td></tr>';
+        }
+    } catch (error) {
+        console.error('Run diagnostics error:', error);
+        showError('Diagnostics Error', 'Failed to connect to server');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: red;">Error connecting to diagnostic service.</td></tr>';
+    } finally {
+        if (runBtn) runBtn.disabled = false;
+        if (singleBtn) singleBtn.disabled = false;
+    }
+}
+
+function displayDiagnostics(results) {
+    const tbody = document.getElementById('diagnosticsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    let totalChecks = results.length;
+    let totalIssues = 0;
+    
+    results.forEach(res => {
+        totalIssues += res.issuesFound || 0;
+        
+        const row = document.createElement('tr');
+        const statusClass = res.status.toLowerCase() === 'success' ? 'status-active' : (res.status.toLowerCase() === 'warning' ? 'status-pending' : 'status-inactive');
+        
+        row.innerHTML = `
+            <td><strong>${res.type}</strong></td>
+            <td><span class="${statusClass}">${res.status}</span></td>
+            <td>${res.issuesFound || 0}</td>
+            <td>${new Date(res.lastRun).toLocaleString()}</td>
+            <td><small>${res.details || '-'}</small></td>
+        `;
+        tbody.appendChild(row);
+    });
+    
+    // Update stats
+    document.getElementById('problemsChecksRun').textContent = totalChecks;
+    document.getElementById('problemsIssuesFound').textContent = totalIssues;
+    document.getElementById('problemsLastRun').textContent = new Date().toLocaleTimeString();
+}

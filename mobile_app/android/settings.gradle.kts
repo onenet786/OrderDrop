@@ -24,3 +24,4 @@ plugins {
 }
 
 include(":app")
+rootProject.name = "servenow_android"

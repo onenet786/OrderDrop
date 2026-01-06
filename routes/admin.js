@@ -349,8 +349,6 @@ router.get(
   }
 );
 
-module.exports = router;
-
 // --- Database backup endpoints ---
 // POST /api/admin/backup-db  -> create a new dump (admin only)
 // GET  /api/admin/backup-db/list -> list available dumps
@@ -1221,3 +1219,107 @@ router.get(
     }
   }
 );
+
+// ===== SYSTEM DIAGNOSTICS (ADMIN) =====
+
+router.get("/diagnostics", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { type } = req.query;
+    const results = [];
+
+    // Helper to add result
+    const addResult = (checkType, status, issuesFound, details) => {
+      results.push({
+        type: checkType,
+        status,
+        issuesFound,
+        details,
+        lastRun: new Date().toISOString()
+      });
+    };
+
+    // 1. Admin User Check
+    if (!type || type === "all" || type === "admin") {
+      const [admins] = await req.db.execute("SELECT * FROM users WHERE user_type = 'admin'");
+      if (admins.length === 0) {
+        addResult("Admin User", "Error", 1, "No admin user found in database!");
+      } else {
+        addResult("Admin User", "Success", 0, `Found ${admins.length} admin user(s).`);
+      }
+    }
+
+    // 2. Orphan Records Check
+    if (!type || type === "all" || type === "orphans") {
+      let orphansCount = 0;
+      let orphanDetails = [];
+
+      // Check products without stores
+      const [badProducts] = await req.db.execute("SELECT COUNT(*) as count FROM products WHERE store_id NOT IN (SELECT id FROM stores)");
+      if (badProducts[0].count > 0) {
+        orphansCount += badProducts[0].count;
+        orphanDetails.push(`${badProducts[0].count} products with invalid store_id`);
+      }
+
+      // Check order items without orders
+      const [badItems] = await req.db.execute("SELECT COUNT(*) as count FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)");
+      if (badItems[0].count > 0) {
+        orphansCount += badItems[0].count;
+        orphanDetails.push(`${badItems[0].count} order items with invalid order_id`);
+      }
+
+      if (orphansCount > 0) {
+        addResult("Orphan Records", "Warning", orphansCount, orphanDetails.join(", "));
+      } else {
+        addResult("Orphan Records", "Success", 0, "No orphaned records found.");
+      }
+    }
+
+    // 3. Enum Types Check
+    if (!type || type === "all" || type === "types") {
+      // Check for any invalid statuses in orders
+      const [invalidOrders] = await req.db.execute("SELECT COUNT(*) as count FROM orders WHERE status NOT IN ('pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'cancelled')");
+      if (invalidOrders[0].count > 0) {
+        addResult("Enum Types", "Error", invalidOrders[0].count, `${invalidOrders[0].count} orders have invalid status values`);
+      } else {
+        addResult("Enum Types", "Success", 0, "All order statuses are valid.");
+      }
+    }
+
+    // 4. Wallets Consistency Check
+    if (!type || type === "all" || type === "wallets") {
+      const [badWallets] = await req.db.execute("SELECT COUNT(*) as count FROM wallets WHERE balance < 0");
+      if (badWallets[0].count > 0) {
+        addResult("Wallets", "Error", badWallets[0].count, `${badWallets[0].count} wallets have negative balances`);
+      } else {
+        addResult("Wallets", "Success", 0, "All wallet balances are non-negative.");
+      }
+    }
+
+    // 5. Transaction References Check
+    if (!type || type === "all" || type === "tx_ref") {
+      const [missingRefs] = await req.db.execute("SELECT COUNT(*) as count FROM financial_transactions WHERE related_entity_id IS NULL AND transaction_type IN ('income', 'settlement')");
+      if (missingRefs[0].count > 0) {
+        addResult("Transaction References", "Warning", missingRefs[0].count, `${missingRefs[0].count} transactions missing entity references`);
+      } else {
+        addResult("Transaction References", "Success", 0, "All critical transactions have references.");
+      }
+    }
+
+    // 6. Logs Schema Check
+    if (!type || type === "all" || type === "logs_schema") {
+      try {
+        await req.db.execute("DESCRIBE login_logs");
+        addResult("Logs Schema", "Success", 0, "login_logs table exists and is accessible.");
+      } catch (err) {
+        addResult("Logs Schema", "Error", 1, "login_logs table is missing or corrupted.");
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (error) {
+    console.error("Diagnostics error:", error);
+    res.status(500).json({ success: false, message: "Diagnostics failed", error: error.message });
+  }
+});
+
+module.exports = router;
