@@ -24,6 +24,7 @@ Map<String, dynamic>? _riderProfile;
 List<dynamic> _assignedDeliveries = [];
 List<dynamic> _completedDeliveries = [];
 String _currentLocation = 'Getting location...';
+double _walletBalance = 0.0;
 
 Future<void> _makeCall(String phoneNumber) async {
   final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
@@ -116,6 +117,7 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
         _loadDeliveries(token, 'assigned'),
         _loadDeliveries(token, 'completed'),
         _getCurrentLocation(),
+        _loadWalletBalance(token),
       ]);
     } catch (e) {
       _logger.e('Error loading rider data: $e');
@@ -151,6 +153,48 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
       });
     } catch (e) {
       _logger.e('Error loading $status deliveries: $e');
+    }
+  }
+
+  Future<void> _loadWalletBalance(String token) async {
+    try {
+      _logger.d('Loading wallet balance...');
+      final data = await ApiService.getWalletBalance(token);
+      _logger.d('Wallet API response: $data');
+
+      if (data['success'] != true) {
+        _logger.w('Wallet API returned success=false');
+        return;
+      }
+
+      final wallet = data['wallet'];
+      if (wallet == null) {
+        _logger.w('Wallet object is null in response');
+        return;
+      }
+
+      final balance = wallet['balance'];
+      if (balance == null) {
+        _logger.w('Balance field is null in wallet object');
+        setState(() {
+          _walletBalance = 0.0;
+        });
+        return;
+      }
+
+      _logger.d('Extracted balance: $balance (type: ${balance.runtimeType})');
+      final parsedBalance = double.tryParse(balance.toString());
+      _logger.d('Parsed balance: $parsedBalance');
+      
+      setState(() {
+        _walletBalance = parsedBalance ?? 0.0;
+        _logger.d('Set wallet balance to: $_walletBalance');
+      });
+    } catch (e) {
+      _logger.e('Error loading wallet balance: $e');
+      setState(() {
+        _walletBalance = 0.0;
+      });
     }
   }
 
@@ -274,9 +318,13 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
       await ApiService.updatePaymentStatus(token, orderId, 'paid');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment marked as received!')),
+          const SnackBar(content: Text('Payment marked as received! Wallet updated.')),
         );
-        _loadAllData(); // Refresh list
+        _loadAllData();
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) {
+          await _loadWalletBalance(token);
+        }
       }
     } catch (e) {
       _logger.e('Error updating payment: $e');
@@ -791,20 +839,261 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   }
   
   Widget _buildWalletTab() {
-  return Center(
-  child: Padding(
-  padding: const EdgeInsets.all(24.0),
+  return SingleChildScrollView(
+  padding: const EdgeInsets.all(16),
   child: Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  Card(
+  elevation: 4,
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+  child: Container(
+  decoration: BoxDecoration(
+  borderRadius: BorderRadius.circular(16),
+  gradient: LinearGradient(
+  colors: [Colors.green.shade600, Colors.teal.shade600],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  ),
+  ),
+  padding: const EdgeInsets.all(24),
+  child: Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  children: [
+  const Text(
+  'Wallet Balance',
+  style: TextStyle(
+  fontSize: 18,
+  fontWeight: FontWeight.w600,
+  color: Colors.white70,
+  ),
+  ),
+  Row(
+  children: [
+  Icon(Icons.account_balance_wallet, color: Colors.white.withValues(alpha: 0.8), size: 28),
+  const SizedBox(width: 8),
+  IconButton(
+  icon: const Icon(Icons.refresh, color: Colors.white),
+  onPressed: () async {
+  final token = Provider.of<AuthProvider>(context, listen: false).token;
+  if (token != null) {
+  await _loadWalletBalance(token);
+  if (mounted) {
+  ScaffoldMessenger.of(context).showSnackBar(
+  const SnackBar(content: Text('Wallet updated')),
+  );
+  }
+  }
+  },
+  iconSize: 20,
+  ),
+  ],
+  ),
+  ],
+  ),
+  const SizedBox(height: 16),
+  Text(
+  'PKR ${_walletBalance.toStringAsFixed(2)}',
+  style: const TextStyle(
+  fontSize: 36,
+  fontWeight: FontWeight.bold,
+  color: Colors.white,
+  ),
+  ),
+  const SizedBox(height: 12),
+  Container(
+  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+  decoration: BoxDecoration(
+  color: Colors.white.withValues(alpha: 0.2),
+  borderRadius: BorderRadius.circular(8),
+  ),
+  child: Row(
   mainAxisSize: MainAxisSize.min,
-  children: const [
-  Icon(Icons.account_balance_wallet, size: 48, color: Colors.blueGrey),
-  SizedBox(height: 12),
-  Text('Wallet coming soon', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-  SizedBox(height: 6),
-  Text('Contact admin to enable rider wallet.', textAlign: TextAlign.center),
+  children: [
+  const Icon(Icons.info_outline, color: Colors.white, size: 16),
+  const SizedBox(width: 6),
+  const Text(
+  'Tap refresh to update balance',
+  style: TextStyle(
+  color: Colors.white,
+  fontSize: 12,
+  ),
+  ),
   ],
   ),
   ),
+  ],
+  ),
+  ),
+  ),
+  const SizedBox(height: 24),
+  _walletBalance == 0
+  ? Card(
+  color: Colors.blue.shade50,
+  child: Padding(
+  padding: const EdgeInsets.all(16),
+  child: Row(
+  children: [
+  Icon(Icons.info, color: Colors.blue.shade600),
+  const SizedBox(width: 12),
+  Expanded(
+  child: Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  const Text(
+  'No earnings yet',
+  style: TextStyle(fontWeight: FontWeight.bold),
+  ),
+  const SizedBox(height: 4),
+  const Text(
+  'Complete deliveries and mark payments as received to earn',
+  style: TextStyle(fontSize: 12, color: Colors.grey),
+  ),
+  ],
+  ),
+  ),
+  ],
+  ),
+  ),
+  )
+  : const SizedBox.shrink(),
+  const SizedBox(height: 24),
+  const Text(
+  'Wallet Information',
+  style: TextStyle(
+  fontSize: 16,
+  fontWeight: FontWeight.bold,
+  ),
+  ),
+  const SizedBox(height: 12),
+  Card(
+  child: Padding(
+  padding: const EdgeInsets.all(16),
+  child: Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  _buildWalletInfoRow('Account Type', 'Rider Wallet'),
+  const Divider(),
+  _buildWalletInfoRow('Status', 'Active'),
+  const Divider(),
+  _buildWalletInfoRow('Balance', 'PKR ${_walletBalance.toStringAsFixed(2)}'),
+  ],
+  ),
+  ),
+  ),
+  const SizedBox(height: 24),
+  const Text(
+  'How it works',
+  style: TextStyle(
+  fontSize: 16,
+  fontWeight: FontWeight.bold,
+  ),
+  ),
+  const SizedBox(height: 12),
+  Card(
+  child: Padding(
+  padding: const EdgeInsets.all(16),
+  child: Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  _buildHowItWorksItem(
+  '1',
+  'Complete Deliveries',
+  'Accept and complete delivery orders',
+  ),
+  const SizedBox(height: 12),
+  _buildHowItWorksItem(
+  '2',
+  'Mark Payment Received',
+  'Confirm when customer pays you',
+  ),
+  const SizedBox(height: 12),
+  _buildHowItWorksItem(
+  '3',
+  'Wallet Updated',
+  'Amount instantly credited to your wallet',
+  ),
+  ],
+  ),
+  ),
+  ),
+  const SizedBox(height: 16),
+  ],
+  ),
+  );
+  }
+
+  Widget _buildWalletInfoRow(String label, String value) {
+  return Padding(
+  padding: const EdgeInsets.symmetric(vertical: 8),
+  child: Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  children: [
+  Text(
+  label,
+  style: const TextStyle(
+  color: Colors.grey,
+  fontWeight: FontWeight.w500,
+  ),
+  ),
+  Text(
+  value,
+  style: const TextStyle(
+  fontWeight: FontWeight.bold,
+  ),
+  ),
+  ],
+  ),
+  );
+  }
+
+  Widget _buildHowItWorksItem(String number, String title, String description) {
+  return Row(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  Container(
+  width: 32,
+  height: 32,
+  decoration: BoxDecoration(
+  color: Colors.blue.shade100,
+  borderRadius: BorderRadius.circular(8),
+  ),
+  child: Center(
+  child: Text(
+  number,
+  style: TextStyle(
+  color: Colors.blue.shade600,
+  fontWeight: FontWeight.bold,
+  ),
+  ),
+  ),
+  ),
+  const SizedBox(width: 12),
+  Expanded(
+  child: Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+  Text(
+  title,
+  style: const TextStyle(
+  fontWeight: FontWeight.bold,
+  ),
+  ),
+  const SizedBox(height: 4),
+  Text(
+  description,
+  style: const TextStyle(
+  fontSize: 12,
+  color: Colors.grey,
+  ),
+  ),
+  ],
+  ),
+  ),
+  ],
   );
   }
   
@@ -878,9 +1167,9 @@ const SnackBar(content: Text('Could not launch WhatsApp')),
   // Images row at top: user image (left), ID card (right)
   Row(
   children: [
-  Expanded(child: imageTile(photoUrl)),
+  Expanded(flex: 2, child: imageTile(photoUrl)),
   const SizedBox(width: 12),
-  Expanded(child: imageTile(idCardUrl)),
+  Expanded(flex: 8, child: imageTile(idCardUrl)),
   ],
   ),
   const SizedBox(height: 16),

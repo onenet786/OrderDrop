@@ -693,7 +693,7 @@ router.put('/:id/payment-status', authenticateToken, [
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            'SELECT rider_id FROM orders WHERE id = ?',
+            'SELECT rider_id, total_amount FROM orders WHERE id = ?',
             [id]
         );
 
@@ -718,6 +718,47 @@ router.put('/:id/payment-status', authenticateToken, [
             'UPDATE orders SET payment_status = ? WHERE id = ?',
             [payment_status, id]
         );
+
+        if (payment_status === 'paid' && order.rider_id) {
+            const [wallets] = await req.db.execute(
+                'SELECT id, balance FROM wallets WHERE user_id = ?',
+                [order.rider_id]
+            );
+
+            if (wallets.length > 0) {
+                const wallet = wallets[0];
+                const newBalance = parseFloat(wallet.balance || 0) + parseFloat(order.total_amount || 0);
+                
+                await req.db.execute(
+                    'UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?',
+                    [newBalance, order.total_amount, wallet.id]
+                );
+
+                await req.db.execute(
+                    `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [wallet.id, 'credit', order.total_amount, `Payment received for order #${id}`, 'order', id, newBalance]
+                );
+            } else {
+                await req.db.execute(
+                    'INSERT INTO wallets (user_id, balance, total_credited) VALUES (?, ?, ?)',
+                    [order.rider_id, order.total_amount, order.total_amount]
+                );
+
+                const [newWallets] = await req.db.execute(
+                    'SELECT id FROM wallets WHERE user_id = ?',
+                    [order.rider_id]
+                );
+
+                if (newWallets.length > 0) {
+                    await req.db.execute(
+                        `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                        [newWallets[0].id, 'credit', order.total_amount, `Payment received for order #${id}`, 'order', id, order.total_amount]
+                    );
+                }
+            }
+        }
 
         res.json({
             success: true,
