@@ -33,6 +33,14 @@ async function ensureOrderItemsVariantColumns(db) {
             await db.execute('ALTER TABLE order_items ADD COLUMN variant_label VARCHAR(255) NULL');
         }
     } catch (e) {}
+
+    try {
+        const hasStoreId = await hasColumn(db, 'order_items', 'store_id');
+        if (!hasStoreId) {
+            await db.execute('ALTER TABLE order_items ADD COLUMN store_id INT NULL');
+            await db.execute('ALTER TABLE order_items ADD FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL');
+        }
+    } catch (e) {}
 }
 
 async function ensureOrdersParentColumn(db) {
@@ -88,7 +96,7 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
                 SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name
                 FROM order_items oi
                 JOIN products p ON oi.product_id = p.id
-                JOIN stores s ON p.store_id = s.id
+                LEFT JOIN stores s ON oi.store_id = s.id
                 WHERE oi.order_id = ?
             `, [order.id]);
             order.items = items;
@@ -283,7 +291,7 @@ router.post('/', authenticateToken, async (req, res) => {
                 }
             }
 
-            preparedItems.push({ productId, quantity, unitPrice, sizeId, unitId, variantLabel });
+            preparedItems.push({ productId, quantity, unitPrice, sizeId, unitId, variantLabel, storeId: product.store_id });
             itemsSubtotal += unitPrice * quantity;
         }
 
@@ -348,8 +356,8 @@ router.post('/', authenticateToken, async (req, res) => {
 
         for (let item of preparedItems) {
             await req.db.execute(
-                'INSERT INTO order_items (order_id, product_id, quantity, price, size_id, unit_id, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [orderId, item.productId, item.quantity, item.unitPrice, item.sizeId, item.unitId, item.variantLabel]
+                'INSERT INTO order_items (order_id, product_id, store_id, quantity, price, size_id, unit_id, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [orderId, item.productId, item.storeId, item.quantity, item.unitPrice, item.sizeId, item.unitId, item.variantLabel]
             );
         }
 
@@ -926,9 +934,10 @@ router.get('/rider/deliveries', authenticateToken, async (req, res) => {
             }
 
             const [items] = await req.db.execute(`
-                SELECT oi.*, p.name as product_name, p.image_url
+                SELECT oi.*, p.name as product_name, p.image_url, s.name as store_name
                 FROM order_items oi
                 LEFT JOIN products p ON oi.product_id = p.id
+                LEFT JOIN stores s ON oi.store_id = s.id
                 WHERE oi.order_id = ?
             `, [delivery.id]);
             delivery.items = items;

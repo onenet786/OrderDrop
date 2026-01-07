@@ -546,12 +546,55 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       return const Center(child: Text('No deliveries found.'));
     }
 
+    final Map<String, List<dynamic>> deliveriesByStore = {};
+    for (var delivery in deliveries) {
+      final storeName = delivery['store_name'] ?? 'Unknown Store';
+      if (!deliveriesByStore.containsKey(storeName)) {
+        deliveriesByStore[storeName] = [];
+      }
+      deliveriesByStore[storeName]!.add(delivery);
+    }
+
+    final storeNames = deliveriesByStore.keys.toList();
+    int totalItems = storeNames.length;
+    for (var storeName in storeNames) {
+      totalItems += deliveriesByStore[storeName]!.length;
+    }
+
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: deliveries.length,
+      itemCount: totalItems,
       itemBuilder: (context, index) {
-        final delivery = deliveries[index];
-        return _buildDeliveryCard(delivery, isAssigned);
+        int currentIndex = 0;
+
+        for (int i = 0; i < storeNames.length; i++) {
+          final storeName = storeNames[i];
+          final storeDeliveries = deliveriesByStore[storeName]!;
+
+          if (currentIndex == index) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 8),
+              child: Text(
+                storeName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blueAccent,
+                ),
+              ),
+            );
+          }
+          currentIndex++;
+
+          for (int j = 0; j < storeDeliveries.length; j++) {
+            if (currentIndex == index) {
+              return _buildDeliveryCard(storeDeliveries[j], isAssigned);
+            }
+            currentIndex++;
+          }
+        }
+
+        return const SizedBox.shrink();
       },
     );
   }
@@ -795,7 +838,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     
     Map<String, List<dynamic>> itemsByStore = {};
     for (var item in items) {
-      final storeName = deliveryStoreName;
+      final storeName = item['store_name'] ?? deliveryStoreName;
       if (!itemsByStore.containsKey(storeName)) {
         itemsByStore[storeName] = [];
       }
