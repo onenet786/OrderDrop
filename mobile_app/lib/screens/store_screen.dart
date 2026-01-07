@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
 import '../providers/cart_provider.dart';
+import '../models/cart_item.dart';
 import 'package:servenow/services/notifier.dart';
 
 class StoreScreen extends StatefulWidget {
@@ -56,7 +57,7 @@ class _StoreScreenState extends State<StoreScreen> {
     final cart = Provider.of<CartProvider>(context, listen: false);
 
     if (product.stockQuantity <= 0) {
-      Notifier.warning(context, 'Out of stock');
+      Notifier.info(context, 'Out of stock');
       return;
     }
 
@@ -69,14 +70,14 @@ class _StoreScreenState extends State<StoreScreen> {
     );
 
     if (existingItem.quantity >= product.stockQuantity) {
-      Notifier.warning(context, 'Only ${product.stockQuantity} available');
+      Notifier.info(context, 'Only ${product.stockQuantity} available');
       return;
     }
 
     try {
       final warning = cart.addItem(product, 1, variant: variant);
       if (warning != null) {
-        Notifier.warning(context, warning);
+        Notifier.info(context, warning);
       } else {
         Notifier.success(
           context,
