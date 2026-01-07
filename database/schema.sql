@@ -105,6 +105,8 @@ CREATE TABLE orders (
     delivery_fee DECIMAL(5, 2) DEFAULT 2.99,
     status ENUM('pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery', 'delivered', 'cancelled') DEFAULT 'pending',
     rider_location TEXT,
+    rider_latitude DECIMAL(10, 8),
+    rider_longitude DECIMAL(11, 8),
     estimated_delivery_time TIMESTAMP,
     payment_method ENUM('card', 'cash', 'wallet') NOT NULL,
     payment_status ENUM('pending', 'paid', 'failed') DEFAULT 'pending',

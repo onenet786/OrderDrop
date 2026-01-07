@@ -539,7 +539,9 @@ router.put('/:id/assign-rider', authenticateToken, requireAdmin, [
 
 // Update rider location (Rider or Admin)
 router.put('/:id/rider-location', authenticateToken, [
-    body('location').notEmpty().withMessage('Location is required')
+    body('latitude').optional().isFloat().withMessage('Invalid latitude'),
+    body('longitude').optional().isFloat().withMessage('Invalid longitude'),
+    body('location').optional().notEmpty().withMessage('Location is required')
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -552,7 +554,7 @@ router.put('/:id/rider-location', authenticateToken, [
         }
 
         const { id } = req.params;
-        const { location } = req.body;
+        const { location, latitude, longitude } = req.body;
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
@@ -577,10 +579,19 @@ router.put('/:id/rider-location', authenticateToken, [
             });
         }
 
-        await req.db.execute(
-            'UPDATE orders SET rider_location = ? WHERE id = ?',
-            [location, id]
-        );
+        await ensureRiderLocationColumns(req.db);
+
+        if (latitude !== undefined && longitude !== undefined) {
+            await req.db.execute(
+                'UPDATE orders SET rider_latitude = ?, rider_longitude = ? WHERE id = ?',
+                [latitude, longitude, id]
+            );
+        } else if (location !== undefined) {
+            await req.db.execute(
+                'UPDATE orders SET rider_location = ? WHERE id = ?',
+                [location, id]
+            );
+        }
 
         res.json({
             success: true,
@@ -865,6 +876,26 @@ router.get('/rider/profile', authenticateToken, async (req, res) => {
     }
 });
 
+async function ensureRiderLocationColumns(db) {
+    try {
+        const hasRiderLatitude = await hasColumn(db, 'orders', 'rider_latitude');
+        if (!hasRiderLatitude) {
+            await db.execute('ALTER TABLE orders ADD COLUMN rider_latitude DECIMAL(10, 8) NULL');
+        }
+    } catch (e) {
+        console.error('Failed to add rider_latitude column:', e);
+    }
+
+    try {
+        const hasRiderLongitude = await hasColumn(db, 'orders', 'rider_longitude');
+        if (!hasRiderLongitude) {
+            await db.execute('ALTER TABLE orders ADD COLUMN rider_longitude DECIMAL(11, 8) NULL');
+        }
+    } catch (e) {
+        console.error('Failed to add rider_longitude column:', e);
+    }
+}
+
 // Update rider location
 router.put('/rider/location', authenticateToken, [
     body('latitude').isFloat().withMessage('Invalid latitude'),
@@ -890,9 +921,11 @@ router.put('/rider/location', authenticateToken, [
         const { latitude, longitude } = req.body;
         const riderId = req.user.id;
 
+        await ensureRiderLocationColumns(req.db);
+
         // Update rider location in database
         await req.db.execute(
-            `UPDATE orders SET rider_location = POINT(?, ?) 
+            `UPDATE orders SET rider_latitude = ?, rider_longitude = ?
              WHERE rider_id = ? AND status = 'out_for_delivery'`,
             [latitude, longitude, riderId]
         );
