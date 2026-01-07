@@ -118,7 +118,7 @@ function displayStoreProducts(storeProducts) {
             <div class="product-card-content">
                 <h4>${product.name}</h4>
                 ${variantsHtml ? variantsHtml : `<p class="price" id="price-${product.id}" style="font-weight:bold;">PKR ${displayPrice.toFixed(2)}</p>`}
-                <button class="add-to-cart btn btn-primary btn-small" id="add-btn-${product.id}" onclick="addProductToCart(${product.id}, '${product.name.replace(/'/g, "\\'")}', ${currentStoreId}, '${imageSrc.replace(/'/g, "\\'")}')" style="margin-top: auto; align-self: flex-start;">
+                <button class="add-to-cart btn btn-primary btn-small" id="add-btn-${product.id}" onclick="addProductToCart(${product.id}, '${product.name.replace(/'/g, "\\'")}', ${currentStoreId}, '${imageSrc.replace(/'/g, "\\'")}', ${product.stock_quantity || 0})" style="margin-top: auto; align-self: flex-start;">
                     <i class="fas fa-plus"></i> Add
                 </button>
             </div>

@@ -253,7 +253,10 @@ async function handleCheckoutSubmit(e) {
         store_id: storeId,
         items: cart.map(item => ({
             product_id: item.id,
-            quantity: item.quantity
+            quantity: item.quantity,
+            size_id: item.sizeId || null,
+            unit_id: item.unitId || null,
+            variant_label: item.variantLabel || null
         })),
         delivery_address: formData.get('deliveryAddress'),
         delivery_time: formData.get('deliveryTime'),

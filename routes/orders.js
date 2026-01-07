@@ -231,10 +231,6 @@ router.post('/', authenticateToken, async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Invalid order item payload' });
             }
 
-            if (sizeId && unitId) {
-                return res.status(400).json({ success: false, message: 'Order item cannot include both size_id and unit_id' });
-            }
-
             const [products] = await req.db.execute(
                 'SELECT id, price, store_id, name FROM products WHERE id = ? AND is_available = true',
                 [productId]
@@ -249,42 +245,38 @@ router.post('/', authenticateToken, async (req, res) => {
             let unitPrice = Number(product.price);
             let variantLabel = providedVariantLabel;
 
-            if (sizeId) {
-                const [rows] = await req.db.execute(
-                    `
-                        SELECT psp.price, sz.label as size_label, u.name as unit_name, u.abbreviation as unit_abbreviation
-                        FROM product_size_prices psp
-                        LEFT JOIN sizes sz ON psp.size_id = sz.id
-                        LEFT JOIN units u ON psp.unit_id = u.id
-                        WHERE psp.product_id = ? AND psp.size_id = ?
-                        LIMIT 1
-                    `,
-                    [productId, sizeId]
-                );
+            if (sizeId || unitId) {
+                let query = `
+                    SELECT psp.price, sz.label as size_label, u.name as unit_name, u.abbreviation as unit_abbreviation
+                    FROM product_size_prices psp
+                    LEFT JOIN sizes sz ON psp.size_id = sz.id
+                    LEFT JOIN units u ON psp.unit_id = u.id
+                    WHERE psp.product_id = ?
+                `;
+                const params = [productId];
+
+                if (sizeId && unitId) {
+                    query += " AND psp.size_id = ? AND psp.unit_id = ?";
+                    params.push(sizeId, unitId);
+                } else if (sizeId) {
+                    query += " AND psp.size_id = ? AND psp.unit_id IS NULL";
+                    params.push(sizeId);
+                } else if (unitId) {
+                    query += " AND psp.unit_id = ? AND psp.size_id IS NULL";
+                    params.push(unitId);
+                }
+
+                query += " LIMIT 1";
+
+                const [rows] = await req.db.execute(query, params);
+                
                 if (!rows || rows.length === 0) {
-                    return res.status(400).json({ success: false, message: `Variant size ${sizeId} not found for product ${productId}` });
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: `Variant with ${sizeId ? `size ${sizeId}` : ''} ${sizeId && unitId ? 'and ' : ''} ${unitId ? `unit ${unitId}` : ''} not found for product ${productId}` 
+                    });
                 }
-                unitPrice = Number(rows[0].price);
-                if (!variantLabel) {
-                    const sizeLabel = rows[0].size_label ? String(rows[0].size_label) : '';
-                    const unitLabel = rows[0].unit_abbreviation || rows[0].unit_name ? String(rows[0].unit_abbreviation || rows[0].unit_name) : '';
-                    variantLabel = (sizeLabel && unitLabel) ? `${sizeLabel} ${unitLabel}` : (sizeLabel || unitLabel || null);
-                }
-            } else if (unitId) {
-                const [rows] = await req.db.execute(
-                    `
-                        SELECT psp.price, sz.label as size_label, u.name as unit_name, u.abbreviation as unit_abbreviation
-                        FROM product_size_prices psp
-                        LEFT JOIN sizes sz ON psp.size_id = sz.id
-                        LEFT JOIN units u ON psp.unit_id = u.id
-                        WHERE psp.product_id = ? AND psp.unit_id = ?
-                        LIMIT 1
-                    `,
-                    [productId, unitId]
-                );
-                if (!rows || rows.length === 0) {
-                    return res.status(400).json({ success: false, message: `Variant unit ${unitId} not found for product ${productId}` });
-                }
+                
                 unitPrice = Number(rows[0].price);
                 if (!variantLabel) {
                     const sizeLabel = rows[0].size_label ? String(rows[0].size_label) : '';
