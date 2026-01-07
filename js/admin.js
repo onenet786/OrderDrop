@@ -2035,7 +2035,9 @@ function displayOrders(orders) {
             <td>PKR ${order.total_amount}</td>
             <td><span class="status-${order.status}">${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</span></td>
             <td>${riderName}</td>
-            <td>${order.rider_location || 'N/A'}</td>
+            <td>${order.rider_latitude && order.rider_longitude ? 
+                `${order.rider_latitude.toFixed(4)}, ${order.rider_longitude.toFixed(4)}` : 
+                (order.rider_location || 'N/A')}</td>
             <td>${new Date(order.created_at).toLocaleDateString()}</td>
             <td>
                 <div class="action-buttons">
@@ -2254,6 +2256,8 @@ async function editOrder(orderId) {
         // Populate form with current values
         document.getElementById('orderStatus').value = order.status;
         document.getElementById('riderLocation').value = order.rider_location || '';
+        document.getElementById('riderLatitude').value = order.rider_latitude || '';
+        document.getElementById('riderLongitude').value = order.rider_longitude || '';
 
         // Store order ID for saving
         document.getElementById('editOrderForm').dataset.orderId = orderId;
@@ -2273,6 +2277,8 @@ async function saveOrder() {
     const status = formData.get('status');
     const riderId = formData.get('rider_id') || null;
     const riderLocation = formData.get('rider_location') || null;
+    const riderLatitude = formData.get('rider_latitude') || null;
+    const riderLongitude = formData.get('rider_longitude') || null;
 
     try {
         // Update status if changed
@@ -2300,14 +2306,20 @@ async function saveOrder() {
         }
 
         // Update rider location if provided
-        if (riderLocation) {
+        if (riderLocation || (riderLatitude && riderLongitude)) {
+            const locationBody = { location: riderLocation };
+            if (riderLatitude && riderLongitude) {
+                locationBody.latitude = parseFloat(riderLatitude);
+                locationBody.longitude = parseFloat(riderLongitude);
+            }
+            
             await fetch(`${API_BASE}/api/orders/${orderId}/rider-location`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${authToken}`
                 },
-                body: JSON.stringify({ location: riderLocation })
+                body: JSON.stringify(locationBody)
             });
         }
 

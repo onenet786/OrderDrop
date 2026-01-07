@@ -54,6 +54,8 @@ function showInfo(title, message, duration = 3000) {
 }
 
 let currentLocation = null;
+let currentLat = null;
+let currentLng = null;
 let locationWatchId = null;
 window._riderDeliveries = {};
 
@@ -153,7 +155,9 @@ function getCurrentLocation() {
 
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                const location = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+                currentLat = position.coords.latitude;
+                currentLng = position.coords.longitude;
+                const location = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`;
                 resolve(location);
             },
             (error) => {
@@ -191,7 +195,9 @@ function startLocationTracking() {
 
     locationWatchId = navigator.geolocation.watchPosition(
         (position) => {
-            currentLocation = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+            currentLat = position.coords.latitude;
+            currentLng = position.coords.longitude;
+            currentLocation = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`;
             updateLocationDisplay();
         },
         (error) => {
@@ -269,7 +275,11 @@ async function autoUpdateLocation() {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
                     },
-                    body: JSON.stringify({ location: currentLocation })
+                    body: JSON.stringify({ 
+                        location: currentLocation,
+                        latitude: currentLat,
+                        longitude: currentLng
+                    })
                 });
             }
         }
@@ -336,7 +346,7 @@ async function displayRiderDeliveries(status = 'assigned', containerId = 'delive
                                 `).join('') : '<li>No items found</li>'}
                             </ul>
                         </div>
-                        ${delivery.rider_location ? `<p><strong>My Location:</strong> ${delivery.rider_location}</p>` : ''}
+                        ${delivery.rider_latitude && delivery.rider_longitude ? `<p><strong>My Location:</strong> ${delivery.rider_latitude.toFixed(6)}, ${delivery.rider_longitude.toFixed(6)}</p>` : (delivery.rider_location ? `<p><strong>My Location:</strong> ${delivery.rider_location}</p>` : '')}
                         ${delivery.estimated_delivery_time ? `<p><strong>Estimated Delivery:</strong> ${new Date(delivery.estimated_delivery_time).toLocaleString()}</p>` : ''}
                     </div>
                     <div class="order-actions">
@@ -374,7 +384,11 @@ async function updateMyLocation(orderId) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             },
-            body: JSON.stringify({ location: currentLocation })
+            body: JSON.stringify({ 
+                location: currentLocation,
+                latitude: currentLat,
+                longitude: currentLng
+            })
         });
 
         const data = await response.json();

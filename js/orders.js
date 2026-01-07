@@ -81,7 +81,10 @@ async function displayOrders(status = 'pending') {
                         <p><strong>Total:</strong> PKR ${order.total_amount}</p>
                         <p><strong>Delivery Address:</strong> ${order.delivery_address}</p>
                         <p><strong>Items:</strong> ${order.items_count || (order.items ? order.items.length : 0)} items</p>
-                        ${order.rider_location ? `<p><strong>Rider Location:</strong> ${order.rider_location}</p>` : ''}
+                        ${order.rider_latitude && order.rider_longitude ? 
+                            `<p><strong>Rider Location:</strong> ${order.rider_latitude.toFixed(6)}, ${order.rider_longitude.toFixed(6)} 
+                            <a href="https://www.google.com/maps?q=${order.rider_latitude},${order.rider_longitude}" target="_blank" style="margin-left: 8px; font-size: 0.9em; color: #2196F3;"><i class="fas fa-map-marker-alt"></i> View on Map</a></p>` : 
+                            (order.rider_location ? `<p><strong>Rider Location:</strong> ${order.rider_location}</p>` : '')}
                         ${order.estimated_delivery_time ? `<p><strong>Estimated Delivery:</strong> ${new Date(order.estimated_delivery_time).toLocaleString()}</p>` : ''}
                         ${contactRiderHtml}
                     </div>
@@ -231,8 +234,21 @@ async function assignRider(orderId) {
 
 // Update rider location
 async function updateRiderLocation(orderId) {
-    const location = prompt('Enter current rider location:');
-    if (!location) return;
+    const input = prompt('Enter current rider location (e.g., "Main St" or "24.8607, 67.0011"):');
+    if (!input) return;
+
+    let body = { location: input };
+    
+    // Check if input is lat, lng
+    const coords = input.split(',').map(s => s.trim());
+    if (coords.length === 2) {
+        const lat = parseFloat(coords[0]);
+        const lng = parseFloat(coords[1]);
+        if (!isNaN(lat) && !isNaN(lng)) {
+            body.latitude = lat;
+            body.longitude = lng;
+        }
+    }
 
     try {
         const response = await fetch(`${API_BASE}/api/orders/${orderId}/rider-location`, {
@@ -241,7 +257,7 @@ async function updateRiderLocation(orderId) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             },
-            body: JSON.stringify({ location })
+            body: JSON.stringify(body)
         });
 
         const data = await response.json();
