@@ -574,13 +574,25 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           if (currentIndex == index) {
             return Padding(
               padding: const EdgeInsets.only(top: 12, bottom: 8),
-              child: Text(
-                storeName,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blueAccent,
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    storeName,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blueAccent,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.info_outline, size: 20),
+                    color: Colors.blueAccent,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _showStoreInfo(storeName, storeDeliveries),
+                  ),
+                ],
               ),
             );
           }
@@ -829,6 +841,121 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
         ),
       ),
+    );
+  }
+
+  void _showStoreInfo(String storeName, List<dynamic> deliveries) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (_, scrollController) => Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  storeName,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blueAccent,
+                  ),
+                ),
+                Text(
+                  '${deliveries.length} orders from this store',
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 20),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: deliveries.length,
+                    itemBuilder: (context, index) {
+                      final delivery = deliveries[index];
+                      final items = (delivery['items'] as List?) ?? [];
+                      
+                      // Filter items for THIS store
+                      final storeItems = items.where((item) => 
+                        (item['store_name'] ?? delivery['store_name']) == storeName
+                      ).toList();
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Order #${delivery['order_number']}',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    delivery['status']?.toString().toUpperCase() ?? '',
+                                    style: TextStyle(
+                                      color: _getStatusColor(delivery['status'] ?? ''),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              ...storeItems.map((item) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Row(
+                                  children: [
+                                    Text('${item['quantity']}x ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    Expanded(child: Text('${item['product_name']}')),
+                                    Text('PKR ${item['price']}'),
+                                  ],
+                                ),
+                              )),
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Address: ${delivery['delivery_address']}',
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

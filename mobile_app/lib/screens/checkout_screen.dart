@@ -16,6 +16,8 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _timeController = TextEditingController();
   final _instructionsController = TextEditingController();
@@ -27,8 +29,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void initState() {
     super.initState();
     final user = Provider.of<AuthProvider>(context, listen: false).user;
-    if (user != null && user.address != null) {
-      _addressController.text = user.address!;
+    if (user != null) {
+      _nameController.text = '${user.firstName} ${user.lastName}'.trim();
+      if (user.phone != null) {
+        _phoneController.text = user.phone!;
+      }
+      if (user.address != null) {
+        _addressController.text = user.address!;
+      }
     }
     _loadWalletBalance();
   }
@@ -53,6 +61,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
     _addressController.dispose();
     _timeController.dispose();
     _instructionsController.dispose();
@@ -167,6 +177,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         orderItems.add(payload);
       }
 
+      String combinedInstructions = _instructionsController.text;
+      if (_nameController.text.isNotEmpty || _phoneController.text.isNotEmpty) {
+        String contactInfo = 'Contact: ${_nameController.text} (${_phoneController.text})';
+        combinedInstructions = combinedInstructions.isEmpty 
+            ? contactInfo 
+            : '$contactInfo\n$combinedInstructions';
+      }
+
       await ApiService.createOrder(
         auth.token!,
         storeId: null, // Let backend handle store splitting
@@ -176,8 +194,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         deliveryTime: _timeController.text.isNotEmpty
             ? _timeController.text
             : null,
-        specialInstructions: _instructionsController.text.isNotEmpty
-            ? _instructionsController.text
+        specialInstructions: combinedInstructions.isNotEmpty
+            ? combinedInstructions
             : null,
       );
 
@@ -413,6 +431,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       ),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _nameController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Contact Name',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(Icons.person),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please enter contact name';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _phoneController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Phone Number',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(Icons.phone),
+                                  ),
+                                  keyboardType: TextInputType.phone,
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please enter phone number';
+                                    }
+                                    return null;
+                                  },
                                 ),
                                 const SizedBox(height: 12),
                                 TextFormField(
