@@ -2022,8 +2022,8 @@ function populateRiderFilter() {
     const riders = new Set();
     
     currentOrders.forEach(order => {
-        if (order.rider_first_name && order.rider_last_name) {
-            riders.add(`${order.rider_first_name} ${order.rider_last_name}`);
+        if (order.rider_first_name) {
+            riders.add(`${order.rider_first_name} ${order.rider_last_name || ''}`.trim());
         }
     });
     
@@ -2046,8 +2046,8 @@ function displayOrders(orders) {
     tbody.innerHTML = '';
 
     orders.forEach(order => {
-        const riderName = order.rider_first_name && order.rider_last_name
-            ? `${order.rider_first_name} ${order.rider_last_name}`
+        const riderName = order.rider_first_name
+            ? `${order.rider_first_name} ${order.rider_last_name || ''}`.trim()
             : 'Not Assigned';
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -2090,8 +2090,8 @@ function filterOrders() {
     // Filter by rider
     if (riderFilter) {
         filtered = filtered.filter(order => {
-            const riderName = order.rider_first_name && order.rider_last_name
-                ? `${order.rider_first_name} ${order.rider_last_name}`
+            const riderName = order.rider_first_name
+                ? `${order.rider_first_name} ${order.rider_last_name || ''}`.trim()
                 : '';
             return riderName === riderFilter;
         });
@@ -2277,6 +2277,7 @@ async function editOrder(orderId) {
 
         // Populate form with current values
         document.getElementById('orderStatus').value = order.status;
+        document.getElementById('deliveryFee').value = order.delivery_fee || '';
         document.getElementById('riderLocation').value = order.rider_location || '';
         document.getElementById('riderLatitude').value = order.rider_latitude || '';
         document.getElementById('riderLongitude').value = order.rider_longitude || '';
@@ -2298,6 +2299,7 @@ async function saveOrder() {
 
     const status = formData.get('status');
     const riderId = formData.get('rider_id') || null;
+    const deliveryFee = formData.get('delivery_fee') || null;
     const riderLocation = formData.get('rider_location') || null;
     const riderLatitude = formData.get('rider_latitude') || null;
     const riderLongitude = formData.get('rider_longitude') || null;
@@ -2317,13 +2319,16 @@ async function saveOrder() {
 
         // Assign rider if selected
         if (riderId) {
+            const assignBody = { rider_id: parseInt(riderId) };
+            if (deliveryFee) assignBody.delivery_fee = parseFloat(deliveryFee);
+
             await fetch(`${API_BASE}/api/orders/${orderId}/assign-rider`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${authToken}`
                 },
-                body: JSON.stringify({ rider_id: parseInt(riderId) })
+                body: JSON.stringify(assignBody)
             });
         }
 

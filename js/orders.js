@@ -40,7 +40,7 @@ async function displayOrders(status = 'pending') {
                     const cleanPhone = order.rider_phone.replace(/[^0-9]/g, '');
                     contactRiderHtml = `
                         <div class="rider-contact" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee;">
-                            <p style="margin-bottom: 10px;"><strong>Rider:</strong> ${order.rider_first_name} ${order.rider_last_name}</p>
+                            <p style="margin-bottom: 10px;"><strong>Rider:</strong> ${order.rider_first_name} ${order.rider_last_name || ''}</p>
                             <div class="contact-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
                                 <a href="tel:${order.rider_phone}" class="btn btn-sm" style="background: #2196F3; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 14px;">
                                     <i class="fas fa-phone"></i> Call
