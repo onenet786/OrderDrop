@@ -479,10 +479,12 @@ CREATE TABLE notifications (
 
 **Features**:
 - Firebase Cloud Messaging
-- Order status notifications
-- Promotional notifications
-- Delivery updates
-- In-app notification center
+- **Order Status**: Notifications for status transitions (e.g., Accepted, Dispatched, Delivered)
+- **Promotional**: Alerts for discounts, promo codes, and seasonal offers
+- **Delivery Updates**: Real-time alerts on rider assignment and proximity
+- **In-App Messaging**: Alerts for new messages from stores or riders
+- **Reminders**: Prompts for KYC verification, incomplete profiles, or abandoned carts
+- In-app notification center for historical alerts
 
 **API Routes**:
 ```javascript
