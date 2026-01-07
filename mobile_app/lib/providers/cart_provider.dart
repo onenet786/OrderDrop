@@ -26,9 +26,10 @@ class CartProvider with ChangeNotifier {
     return a?.sizeId == b?.sizeId && a?.unitId == b?.unitId;
   }
 
-  void addItem(Product product, int quantity, {ProductVariant? variant}) {
+  String? addItem(Product product, int quantity, {ProductVariant? variant}) {
     // Check stock availability
     final int availableStock = product.stockQuantity;
+    String? warning;
     
     final existingIndex = _items.indexWhere(
       (item) => item.product.id == product.id && _sameVariant(item.variant, variant),
@@ -38,6 +39,7 @@ class CartProvider with ChangeNotifier {
       final int newQuantity = _items[existingIndex].quantity + quantity;
       if (newQuantity > availableStock) {
         _items[existingIndex].quantity = availableStock;
+        warning = 'Only $availableStock items available in stock';
       } else {
         _items[existingIndex].quantity = newQuantity;
       }
@@ -45,13 +47,17 @@ class CartProvider with ChangeNotifier {
       int initialQuantity = quantity;
       if (initialQuantity > availableStock) {
         initialQuantity = availableStock;
+        warning = 'Only $availableStock items available in stock';
       }
       
       if (initialQuantity > 0) {
         _items.add(CartItem(product: product, variant: variant, quantity: initialQuantity));
+      } else {
+        warning = 'Item is out of stock';
       }
     }
     notifyListeners();
+    return warning;
   }
 
   void removeCartItem(CartItem item) {
@@ -59,16 +65,25 @@ class CartProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void updateCartItemQuantity(CartItem item, int quantity) {
+  String? updateCartItemQuantity(CartItem item, int quantity) {
     final index = _items.indexOf(item);
+    String? warning;
     if (index >= 0) {
       if (quantity <= 0) {
         _items.removeAt(index);
       } else {
-        _items[index].quantity = quantity;
+        // Respect stock limit
+        final int availableStock = _items[index].product.stockQuantity;
+        if (quantity > availableStock) {
+          _items[index].quantity = availableStock;
+          warning = 'Only $availableStock items available in stock';
+        } else {
+          _items[index].quantity = quantity;
+        }
       }
       notifyListeners();
     }
+    return warning;
   }
 
   void clear() {

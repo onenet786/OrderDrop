@@ -55,13 +55,35 @@ class _StoreScreenState extends State<StoreScreen> {
   ) {
     final cart = Provider.of<CartProvider>(context, listen: false);
 
+    if (product.stockQuantity <= 0) {
+      Notifier.warning(context, 'Out of stock');
+      return;
+    }
+
+    // Check if adding more exceeds stock
+    final existingItem = cart.items.firstWhere(
+      (item) => item.product.id == product.id && 
+                item.variant?.sizeId == variant?.sizeId && 
+                item.variant?.unitId == variant?.unitId,
+      orElse: () => CartItem(product: product, quantity: 0),
+    );
+
+    if (existingItem.quantity >= product.stockQuantity) {
+      Notifier.warning(context, 'Only ${product.stockQuantity} available');
+      return;
+    }
+
     try {
-      cart.addItem(product, 1, variant: variant);
-      Notifier.success(
-        context,
-        'Added to cart',
-        duration: const Duration(seconds: 1),
-      );
+      final warning = cart.addItem(product, 1, variant: variant);
+      if (warning != null) {
+        Notifier.warning(context, warning);
+      } else {
+        Notifier.success(
+          context,
+          'Added to cart',
+          duration: const Duration(seconds: 1),
+        );
+      }
     } catch (e) {
       Notifier.error(context, e.toString());
     }

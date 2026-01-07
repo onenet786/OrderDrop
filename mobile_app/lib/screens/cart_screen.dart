@@ -163,10 +163,15 @@ class CartScreen extends StatelessWidget {
                                                   icon: const Icon(Icons.add,
                                                       size: 18),
                                                   onPressed: () {
-                                                    cart.updateCartItemQuantity(
+                                                    final warning = cart.updateCartItemQuantity(
                                                       item,
                                                       item.quantity + 1,
                                                     );
+                                                    if (warning != null) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        SnackBar(content: Text(warning)),
+                                                      );
+                                                    }
                                                   },
                                                 ),
                                               ),
