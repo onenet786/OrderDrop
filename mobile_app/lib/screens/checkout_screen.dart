@@ -315,26 +315,41 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                     ),
                                                   ),
                                                 ...entry.value.map((item) {
-                                                  return ListTile(
-                                                    contentPadding:
-                                                        EdgeInsets.zero,
-                                                    title: Text(
-                                                      item.product.name,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                    subtitle: Text(
-                                                      item.variantLabel != null
-                                                          ? '${item.variantLabel} • ${item.quantity} x PKR ${item.unitPrice}'
-                                                          : '${item.quantity} x PKR ${item.unitPrice}',
-                                                    ),
-                                                    trailing: Text(
-                                                      'PKR ${item.total.toStringAsFixed(2)}',
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
+                                                  return Padding(
+                                                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                                    child: Row(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Expanded(
+                                                          child: Column(
+                                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                                            children: [
+                                                              Text(
+                                                                item.product.name,
+                                                                style: const TextStyle(fontWeight: FontWeight.w500),
+                                                                maxLines: 2,
+                                                                overflow: TextOverflow.ellipsis,
+                                                              ),
+                                                              Text(
+                                                                item.variantLabel != null
+                                                                    ? '${item.variantLabel} • ${item.quantity} x PKR ${item.unitPrice}'
+                                                                    : '${item.quantity} x PKR ${item.unitPrice}',
+                                                                style: TextStyle(
+                                                                  fontSize: 12,
+                                                                  color: Colors.grey[600],
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        Text(
+                                                          'PKR ${item.total.toStringAsFixed(2)}',
+                                                          style: const TextStyle(
+                                                            fontWeight: FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   );
                                                 }),

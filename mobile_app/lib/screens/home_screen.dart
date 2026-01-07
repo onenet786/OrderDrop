@@ -174,15 +174,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Text(
-                          'Welcome, ${user.firstName}!',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                        Expanded(
+                          child: Text(
+                            'Welcome, ${user.firstName}!',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const Spacer(),
                         IconButton(
                           icon: const Icon(Icons.key, color: Colors.white),
                           onPressed: () {

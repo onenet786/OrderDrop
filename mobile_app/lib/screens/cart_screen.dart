@@ -111,72 +111,69 @@ class CartScreen extends StatelessWidget {
                                               )
                                             : const Icon(Icons.fastfood,
                                                 size: 50),
-                                        const SizedBox(width: 12),
+                                        const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             item.variantLabel != null
-                                                ? '${item.variantLabel} • Total: PKR ${item.total.toStringAsFixed(2)}'
+                                                ? '${item.variantLabel} • PKR ${item.total.toStringAsFixed(2)}'
                                                 : 'Total: PKR ${item.total.toStringAsFixed(2)}',
+                                            style: const TextStyle(fontSize: 13),
                                           ),
                                         ),
-                                        SizedBox(
-                                          width: 100,
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.end,
-                                            children: [
-                                              SizedBox(
-                                                width: 32,
-                                                height: 32,
-                                                child: IconButton(
-                                                  padding: EdgeInsets.zero,
-                                                  icon: const Icon(Icons.remove,
-                                                      size: 18),
-                                                  onPressed: () {
-                                                    if (item.quantity > 1) {
-                                                      cart.updateCartItemQuantity(
-                                                        item,
-                                                        item.quantity - 1,
-                                                      );
-                                                    } else {
-                                                      cart.removeCartItem(item);
-                                                    }
-                                                  },
-                                                ),
-                                              ),
-                                              SizedBox(
-                                                width: 32,
-                                                child: Center(
-                                                  child: Text(
-                                                    '${item.quantity}',
-                                                    style: const TextStyle(
-                                                        fontSize: 16),
-                                                  ),
-                                                ),
-                                              ),
-                                              SizedBox(
-                                                width: 32,
-                                                height: 32,
-                                                child: IconButton(
-                                                  padding: EdgeInsets.zero,
-                                                  icon: const Icon(Icons.add,
-                                                      size: 18),
-                                                  onPressed: () {
-                                                    final warning = cart.updateCartItemQuantity(
+                                        const SizedBox(width: 4),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 28,
+                                              height: 28,
+                                              child: IconButton(
+                                                padding: EdgeInsets.zero,
+                                                icon: const Icon(Icons.remove,
+                                                    size: 16),
+                                                onPressed: () {
+                                                  if (item.quantity > 1) {
+                                                    cart.updateCartItemQuantity(
                                                       item,
-                                                      item.quantity + 1,
+                                                      item.quantity - 1,
                                                     );
-                                                    if (warning != null) {
-                                                      ScaffoldMessenger.of(context).showSnackBar(
-                                                        SnackBar(content: Text(warning)),
-                                                      );
-                                                    }
-                                                  },
+                                                  } else {
+                                                    cart.removeCartItem(item);
+                                                  }
+                                                },
+                                              ),
+                                            ),
+                                            SizedBox(
+                                              width: 24,
+                                              child: Center(
+                                                child: Text(
+                                                  '${item.quantity}',
+                                                  style: const TextStyle(
+                                                      fontSize: 14, fontWeight: FontWeight.bold),
                                                 ),
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                            SizedBox(
+                                              width: 28,
+                                              height: 28,
+                                              child: IconButton(
+                                                padding: EdgeInsets.zero,
+                                                icon: const Icon(Icons.add,
+                                                    size: 16),
+                                                onPressed: () {
+                                                  final warning = cart.updateCartItemQuantity(
+                                                    item,
+                                                    item.quantity + 1,
+                                                  );
+                                                  if (warning != null) {
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      SnackBar(content: Text(warning)),
+                                                    );
+                                                  }
+                                                },
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),

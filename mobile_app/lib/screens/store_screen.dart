@@ -310,7 +310,7 @@ class _StoreScreenState extends State<StoreScreen> {
           children: [
             // Product Image
             SizedBox(
-              width: 130,
+              width: 110,
               height: double.infinity,
               child: ClipRRect(
                 borderRadius: const BorderRadius.horizontal(
@@ -324,7 +324,7 @@ class _StoreScreenState extends State<StoreScreen> {
                           errorBuilder:
                               (ctx, err, _) => const Icon(
                                 Icons.image_not_supported,
-                                size: 40,
+                                size: 30,
                               ),
                         )
                         : Container(
@@ -332,7 +332,7 @@ class _StoreScreenState extends State<StoreScreen> {
                           child: const Center(
                             child: Icon(
                               Icons.fastfood,
-                              size: 40,
+                              size: 30,
                               color: Colors.grey,
                             ),
                           ),
@@ -342,9 +342,10 @@ class _StoreScreenState extends State<StoreScreen> {
             // Product Details
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.all(12.0),
+                padding: const EdgeInsets.all(10.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       product.name,
@@ -352,20 +353,20 @@ class _StoreScreenState extends State<StoreScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: 15,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
                       'PKR $displayPrice',
                       style: TextStyle(
                         color: Colors.green[700],
                         fontWeight: FontWeight.bold,
-                        fontSize: 15,
+                        fontSize: 14,
                       ),
                     ),
                     if (variants.isNotEmpty) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       if (variants.length == 1)
                         Text(
                           variants.first.displayLabel,
@@ -373,7 +374,7 @@ class _StoreScreenState extends State<StoreScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.grey,
-                            fontSize: 12,
+                            fontSize: 11,
                           ),
                         )
                       else
@@ -395,14 +396,14 @@ class _StoreScreenState extends State<StoreScreen> {
                                     },
                                     child: Padding(
                                       padding: const EdgeInsets.only(
-                                        right: 12.0,
+                                        right: 8.0,
                                       ),
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           SizedBox(
-                                            height: 32,
-                                            width: 32,
+                                            height: 24,
+                                            width: 24,
                                             child: // ignore: deprecated_member_use
                                               Radio<String>(
                                               value: key,
@@ -415,32 +416,20 @@ class _StoreScreenState extends State<StoreScreen> {
                                                       ),
                                               // ignore: deprecated_member_use
                                               onChanged: (value) {
-                                                if (value == null) return;
-                                                setState(() {
-                                                  _selectedVariantKeyByProductId[product
-                                                      .id] = value;
-                                                });
+                                                if (value != null) {
+                                                  setState(() {
+                                                    _selectedVariantKeyByProductId[product.id] = value;
+                                                  });
+                                                }
                                               },
-                                              materialTapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              visualDensity: const VisualDensity(
-                                                horizontal:
-                                                    VisualDensity.minimumDensity,
-                                                vertical:
-                                                    VisualDensity.minimumDensity,
-                                              ),
+                                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                             ),
                                           ),
-                                          const SizedBox(width: 4),
                                           Text(
                                             v.displayLabel,
                                             style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight:
-                                                  isSelected
-                                                      ? FontWeight.bold
-                                                      : FontWeight.normal,
+                                              fontSize: 11,
+                                              color: isSelected ? Colors.blue : Colors.black87,
                                             ),
                                           ),
                                         ],
@@ -451,26 +440,19 @@ class _StoreScreenState extends State<StoreScreen> {
                           ),
                         ),
                     ],
-                    const Spacer(),
+                    const SizedBox(height: 6),
                     SizedBox(
+                      height: 32,
                       width: double.infinity,
-                      height: 36,
                       child: ElevatedButton(
+                        onPressed: () => _addToCart(context, product, selectedVariant),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red[900],
+                          padding: EdgeInsets.zero,
+                          backgroundColor: Colors.blueAccent,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                         ),
-                        onPressed:
-                            product.isAvailable
-                                ? () =>
-                                    _addToCart(context, product, selectedVariant)
-                                : null,
-                        child: Text(
-                          product.isAvailable ? 'Add to Cart' : 'Unavailable',
-                        ),
+                        child: const Text('Add to Cart'),
                       ),
                     ),
                   ],

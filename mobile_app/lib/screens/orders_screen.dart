@@ -249,13 +249,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Order ${order['order_number']}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    'Order ${order['order_number']}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 8),
                 _buildStatusBadge(status),
               ],
             ),
@@ -283,28 +287,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _contactButton(
-                          icon: Icons.phone,
-                          color: Colors.blue,
-                          label: 'Call',
-                          onPressed: () => _makeCall(riderPhone.toString()),
-                        ),
-                        _contactButton(
-                          icon: Icons.message,
-                          color: Colors.orange,
-                          label: 'SMS',
-                          onPressed: () => _sendSms(riderPhone.toString()),
-                        ),
-                        _contactButton(
-                          icon: Icons.chat,
-                          color: Colors.green,
-                          label: 'WhatsApp',
-                          onPressed: () => _openWhatsApp(riderPhone.toString()),
-                        ),
-                      ],
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _contactButton(
+                            icon: Icons.phone,
+                            color: Colors.blue,
+                            label: 'Call',
+                            onPressed: () => _makeCall(riderPhone.toString()),
+                          ),
+                          const SizedBox(width: 8),
+                          _contactButton(
+                            icon: Icons.message,
+                            color: Colors.orange,
+                            label: 'SMS',
+                            onPressed: () => _sendSms(riderPhone.toString()),
+                          ),
+                          const SizedBox(width: 8),
+                          _contactButton(
+                            icon: Icons.chat,
+                            color: Colors.green,
+                            label: 'WhatsApp',
+                            onPressed: () => _openWhatsApp(riderPhone.toString()),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

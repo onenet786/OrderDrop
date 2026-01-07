@@ -67,7 +67,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
-                    width: 350,
+                    constraints: const BoxConstraints(maxWidth: 350),
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
                       color: const Color.fromARGB(255, 250, 250, 248),

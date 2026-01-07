@@ -419,6 +419,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 // Tabs
                 TabBar(
                   controller: _tabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
                   labelColor: Colors.blue,
                   unselectedLabelColor: Colors.grey,
                   tabs: const [
@@ -471,72 +473,67 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
         ),
         padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 28,
-              backgroundColor: Colors.white.withValues(alpha: 0.2),
-              child: const Icon(
-                Icons.pedal_bike,
+            Text(
+              'Welcome, $name',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
                 color: Colors.white,
-                size: 28,
               ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome, $name',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.directions_bike,
                       color: Colors.white,
+                      size: 18,
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.directions_bike,
-                        color: Colors.white.withValues(alpha: 0.9),
-                        size: 18,
+                    const SizedBox(width: 8),
+                    Text(
+                      'Vehicle: $vehicle',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(width: 6),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.location_on, color: Colors.white, size: 16),
+                      SizedBox(width: 4),
                       Text(
-                        'Vehicle: $vehicle',
+                        'Tracking',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.9),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.location_on, color: Colors.white, size: 18),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Tracking',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
@@ -630,28 +627,32 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             if (customerPhone.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _contactAction(
-                      icon: Icons.phone,
-                      color: Colors.blue,
-                      label: 'Call',
-                      onTap: () => _makeCall(customerPhone),
-                    ),
-                    _contactAction(
-                      icon: Icons.message,
-                      color: Colors.orange,
-                      label: 'SMS',
-                      onTap: () => _sendSms(customerPhone),
-                    ),
-                    _contactAction(
-                      icon: Icons.chat,
-                      color: Colors.green,
-                      label: 'WhatsApp',
-                      onTap: () => _openWhatsApp(customerPhone),
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _contactAction(
+                        icon: Icons.phone,
+                        color: Colors.blue,
+                        label: 'Call',
+                        onTap: () => _makeCall(customerPhone),
+                      ),
+                      const SizedBox(width: 8),
+                      _contactAction(
+                        icon: Icons.message,
+                        color: Colors.orange,
+                        label: 'SMS',
+                        onTap: () => _sendSms(customerPhone),
+                      ),
+                      const SizedBox(width: 8),
+                      _contactAction(
+                        icon: Icons.chat,
+                        color: Colors.green,
+                        label: 'WhatsApp',
+                        onTap: () => _openWhatsApp(customerPhone),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             _buildDetailRow(
@@ -661,43 +662,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ? Colors.green
                   : Colors.orange,
             ),
-
-            const Divider(),
-            const Text(
-              'Items:',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
-            ),
-            const SizedBox(height: 4),
-            if (delivery['items'] != null &&
-                (delivery['items'] as List).isNotEmpty)
-              ...(delivery['items'] as List).map((item) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${item['quantity']}x ${item['product_name'] ?? 'Unknown Product'}${item['variant_name'] != null ? ' (${item['variant_name']})' : ''}',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ),
-                      Text(
-                        'PKR ${((item['price'] ?? 0) * (item['quantity'] ?? 1))}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              })
-            else
-              const Text(
-                'No items found',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
-              ),
 
             if (delivery['rider_location'] != null)
               _buildDetailRow('My Location', '${delivery['rider_location']}'),
@@ -740,19 +704,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       _refreshLocation, // Ideally updates specific order location
                   icon: const Icon(Icons.location_on),
                   label: const Text('Update My Location'),
-                ),
-              ),
-            ] else if (!isAssigned) ...[
-              // Completed or other
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Viewing details...')),
-                    );
-                  },
-                  child: const Text('View Details'),
                 ),
               ),
             ],
@@ -840,6 +791,16 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
   void _showOrderInfo(Map<String, dynamic> delivery) {
     final items = (delivery['items'] as List?) ?? [];
+    
+    Map<String, List<dynamic>> itemsByStore = {};
+    for (var item in items) {
+      final storeName = item['store_name'] ?? 'Unknown Store';
+      if (!itemsByStore.containsKey(storeName)) {
+        itemsByStore[storeName] = [];
+      }
+      itemsByStore[storeName]!.add(item);
+    }
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -847,79 +808,125 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.receipt_long, color: Colors.blueGrey),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Order #${delivery['order_number']}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(ctx).pop(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _buildDetailRow('Status', '${delivery['status']}'),
-                _buildDetailRow('Total', 'PKR ${delivery['total_amount']}'),
-                _buildDetailRow(
-                  'Payment',
-                  '${delivery['payment_status'] ?? 'unknown'}',
-                ),
-                _buildDetailRow(
-                  'Customer',
-                  '${delivery['first_name'] ?? ''} ${delivery['last_name'] ?? ''}',
-                ),
-                _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
-                _buildDetailRow(
-                  'Address',
-                  '${delivery['delivery_address'] ?? 'N/A'}',
-                ),
-                const Divider(),
-                const Text(
-                  'Items',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                ...items.map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${item['quantity']}x ${item['product_name'] ?? 'Product'}${item['variant_name'] != null ? ' (${item['variant_name']})' : ''}',
-                            style: const TextStyle(fontSize: 13),
+        return SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.receipt_long, color: Colors.blueGrey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Order #${delivery['order_number']}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Text(
-                          'PKR ${((item['price'] ?? 0) * (item['quantity'] ?? 1)).toString()}',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildDetailRow('Status', '${delivery['status']}'),
+                  _buildDetailRow('Total', 'PKR ${delivery['total_amount']}'),
+                  _buildDetailRow(
+                    'Payment',
+                    '${delivery['payment_status'] ?? 'unknown'}',
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const Text(
+                    'Customer Details',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.blueGrey,
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-              ],
+                  const SizedBox(height: 8),
+                  _buildDetailRow(
+                    'Name',
+                    '${delivery['first_name'] ?? ''} ${delivery['last_name'] ?? ''}',
+                  ),
+                  _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
+                  _buildDetailRow(
+                    'Delivery Address',
+                    '${delivery['delivery_address'] ?? 'N/A'}',
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const Text(
+                    'Items by Store',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.blueGrey,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...itemsByStore.entries.map((entry) {
+                    final storeName = entry.key;
+                    final storeItems = entry.value;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Text(
+                            storeName,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ...storeItems.map(
+                          (item) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4, left: 8),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${item['quantity']}x ${item['product_name'] ?? 'Product'}${item['variant_name'] != null ? ' (${item['variant_name']})' : ''}',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                                Text(
+                                  'PKR ${((item['price'] ?? 0) * (item['quantity'] ?? 1)).toString()}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                ],
+              ),
             ),
           ),
         );
