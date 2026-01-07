@@ -92,6 +92,17 @@ class CartScreen extends StatelessWidget {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                     ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      item.product.storeName ?? 'Unknown Store',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.blueAccent,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                     const SizedBox(height: 8),
                                     Row(
                                       children: [
