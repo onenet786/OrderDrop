@@ -586,11 +586,6 @@ router.put('/:id/rider-location', authenticateToken, [
                 'UPDATE orders SET rider_latitude = ?, rider_longitude = ? WHERE id = ?',
                 [latitude, longitude, id]
             );
-        } else if (location !== undefined) {
-            await req.db.execute(
-                'UPDATE orders SET rider_location = ? WHERE id = ?',
-                [location, id]
-            );
         }
 
         res.json({
@@ -637,8 +632,8 @@ router.put('/:id/deliver', authenticateToken, async (req, res) => {
         }
 
         await req.db.execute(
-            'UPDATE orders SET status = ?, rider_location = ? WHERE id = ?',
-            ['delivered', 'Delivered to customer', id]
+            'UPDATE orders SET status = ? WHERE id = ?',
+            ['delivered', id]
         );
 
         res.json({
