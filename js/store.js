@@ -213,7 +213,7 @@ function updateProductPrice(productId, variantIndex) {
 }
 
 // Add product to cart with variant info
-function addProductToCart(productId, productName, storeId, imageSrc) {
+function addProductToCart(productId, productName, storeId, imageSrc, stockQty) {
     const variants = productVariantsMap[productId] || [];
     const selectedVariantIndex = getSelectedVariantIndex(productId);
     const selectedVariant = variants.length > 0 ? variants[selectedVariantIndex || 0] : null;
@@ -232,7 +232,7 @@ function addProductToCart(productId, productName, storeId, imageSrc) {
         storeId: storeId
     };
     
-    addToCart(productId, productName, cartItem.price, 1, 
+    addToCart(productId, productName, cartItem.price, stockQty, 
               cartItem.unit_name || '', cartItem.unit_id, imageSrc, storeId, cartItem);
 }
 
