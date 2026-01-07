@@ -27,15 +27,29 @@ class CartProvider with ChangeNotifier {
   }
 
   void addItem(Product product, int quantity, {ProductVariant? variant}) {
-    // Multi-store check removed
-
+    // Check stock availability
+    final int availableStock = product.stockQuantity;
+    
     final existingIndex = _items.indexWhere(
       (item) => item.product.id == product.id && _sameVariant(item.variant, variant),
     );
+
     if (existingIndex >= 0) {
-      _items[existingIndex].quantity += quantity;
+      final int newQuantity = _items[existingIndex].quantity + quantity;
+      if (newQuantity > availableStock) {
+        _items[existingIndex].quantity = availableStock;
+      } else {
+        _items[existingIndex].quantity = newQuantity;
+      }
     } else {
-      _items.add(CartItem(product: product, variant: variant, quantity: quantity));
+      int initialQuantity = quantity;
+      if (initialQuantity > availableStock) {
+        initialQuantity = availableStock;
+      }
+      
+      if (initialQuantity > 0) {
+        _items.add(CartItem(product: product, variant: variant, quantity: initialQuantity));
+      }
     }
     notifyListeners();
   }
