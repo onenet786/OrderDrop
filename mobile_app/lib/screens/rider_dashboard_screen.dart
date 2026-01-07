@@ -791,10 +791,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
   void _showOrderInfo(Map<String, dynamic> delivery) {
     final items = (delivery['items'] as List?) ?? [];
+    final deliveryStoreName = delivery['store_name'] ?? 'Unknown Store';
     
     Map<String, List<dynamic>> itemsByStore = {};
     for (var item in items) {
-      final storeName = item['store_name'] ?? 'Unknown Store';
+      final storeName = deliveryStoreName;
       if (!itemsByStore.containsKey(storeName)) {
         itemsByStore[storeName] = [];
       }
