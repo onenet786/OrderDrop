@@ -133,6 +133,18 @@ if (typeof io !== 'undefined') {
             }
         }
     });
+
+    socket.on('order_assigned', (data) => {
+        showSuccess('Order Assigned', `Order #${data.order_number} assigned to ${data.rider_name}.`);
+        if (typeof window.loadOrders === 'function') window.loadOrders();
+        if (typeof loadDashboardStats === 'function') loadDashboardStats();
+    });
+
+    socket.on('order_status_update', (data) => {
+        showInfo('Order Status Updated', `Order #${data.order_number} is now ${data.status}.`);
+        if (typeof window.loadOrders === 'function') window.loadOrders();
+        if (typeof loadDashboardStats === 'function') loadDashboardStats();
+    });
 }
 
 // Initialize admin dashboard

@@ -58,12 +58,18 @@ class NotificationProvider with ChangeNotifier {
       );
     });
 
-    _socket!.on('new_order', (data) {
-      _showNotification(
-        'New Order Placed',
-        'Order #${data['order_number']} received. Total: \$${data['total_amount']}',
-      );
-    });
+    _socket!.on('new_order', (data) => _showNotification(
+          'New Order Placed',
+          'Order #${data['order_number']} received. Total: \$${data['total_amount']}',
+        ));
+    _socket!.on('order_assigned', (data) => _showNotification(
+          'Order Assigned',
+          'Order #${data['order_number']} assigned to ${data['rider_name']}',
+        ));
+    _socket!.on('order_status_update', (data) => _showNotification(
+          'Order Status Updated',
+          'Order #${data['order_number']} is now ${data['status']}',
+        ));
 
     _socket!.onDisconnect((_) => debugPrint('Socket disconnected'));
   }

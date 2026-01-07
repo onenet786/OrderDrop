@@ -460,6 +460,20 @@ router.put('/:id/status', authenticateToken, requireStoreOwner, [
             [status, id]
         );
 
+        // Emit order_status_update event
+        try {
+            if (req.io) {
+                req.io.emit('order_status_update', {
+                    id: id,
+                    order_number: order.order_number,
+                    status: status,
+                    updated_at: new Date()
+                });
+            }
+        } catch (e) {
+            console.error('Socket emit error:', e);
+        }
+
         res.json({
             success: true,
             message: 'Order status updated successfully'
@@ -493,7 +507,7 @@ router.put('/:id/assign-rider', authenticateToken, requireAdmin, [
         const { rider_id } = req.body;
 
         // Check if order exists
-        const [orders] = await req.db.execute('SELECT id FROM orders WHERE id = ?', [id]);
+        const [orders] = await req.db.execute('SELECT id, order_number FROM orders WHERE id = ?', [id]);
         if (orders.length === 0) {
             return res.status(404).json({
                 success: false,
@@ -501,9 +515,11 @@ router.put('/:id/assign-rider', authenticateToken, requireAdmin, [
             });
         }
 
+        const order = orders[0];
+
         // Check if rider exists and is available
         const [riders] = await req.db.execute(
-            'SELECT id FROM riders WHERE id = ? AND is_available = true AND is_active = true',
+            'SELECT id, first_name, last_name FROM riders WHERE id = ? AND is_available = true AND is_active = true',
             [rider_id]
         );
         if (riders.length === 0) {
@@ -513,6 +529,8 @@ router.put('/:id/assign-rider', authenticateToken, requireAdmin, [
             });
         }
 
+        const rider = riders[0];
+
         // Set estimated delivery time (current time + 30 minutes)
         const estimatedDelivery = new Date(Date.now() + 30 * 60 * 1000);
 
@@ -521,6 +539,22 @@ router.put('/:id/assign-rider', authenticateToken, requireAdmin, [
             'UPDATE orders SET rider_id = ?, status = ?, estimated_delivery_time = ? WHERE id = ?',
             [rider_id, 'out_for_delivery', estimatedDelivery, id]
         );
+
+        // Emit order_assigned event
+        try {
+            if (req.io) {
+                req.io.emit('order_assigned', {
+                    id: id,
+                    order_number: order.order_number,
+                    rider_id: rider_id,
+                    rider_name: `${rider.first_name} ${rider.last_name}`,
+                    status: 'out_for_delivery',
+                    estimated_delivery_time: estimatedDelivery
+                });
+            }
+        } catch (e) {
+            console.error('Socket emit error:', e);
+        }
 
         res.json({
             success: true,

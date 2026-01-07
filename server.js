@@ -339,7 +339,7 @@ async function startServer() {
   }
 
   console.log("Database connected. Starting HTTP server...");
-  app.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`Server accessible at: http://0.0.0.0:${PORT}`);
