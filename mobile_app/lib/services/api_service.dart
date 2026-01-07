@@ -616,4 +616,25 @@ class ApiService {
     final data = _handleResponse(response);
     return data['riders'] ?? [];
   }
+
+  static Future<Map<String, dynamic>> updateRiderLocation(
+    String token, {
+    required double latitude,
+    required double longitude,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/orders/rider/location');
+    _logger.d('ApiService: PUT $uri');
+    final response = await http.put(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'latitude': latitude,
+        'longitude': longitude,
+      }),
+    );
+    return _handleResponse(response);
+  }
 }

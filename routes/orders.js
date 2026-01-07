@@ -865,4 +865,62 @@ router.get('/rider/profile', authenticateToken, async (req, res) => {
     }
 });
 
+// Update rider location
+router.put('/rider/location', authenticateToken, [
+    body('latitude').isFloat().withMessage('Invalid latitude'),
+    body('longitude').isFloat().withMessage('Invalid longitude')
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: errors.array()
+            });
+        }
+
+        if (req.user.user_type !== 'rider') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Rider only.'
+            });
+        }
+
+        const { latitude, longitude } = req.body;
+        const riderId = req.user.id;
+
+        // Update rider location in database
+        await req.db.execute(
+            `UPDATE orders SET rider_location = POINT(?, ?) 
+             WHERE rider_id = ? AND status = 'out_for_delivery'`,
+            [latitude, longitude, riderId]
+        );
+
+        // Also store in a rider location log table if available
+        try {
+            await req.db.execute(
+                `INSERT INTO rider_location_logs (rider_id, latitude, longitude) VALUES (?, ?, ?)`,
+                [riderId, latitude, longitude]
+            );
+        } catch (e) {
+            // Table might not exist yet, that's okay
+        }
+
+        res.json({
+            success: true,
+            message: 'Location updated successfully',
+            location: { latitude, longitude }
+        });
+
+    } catch (error) {
+        console.error('Error updating rider location:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update location',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;
