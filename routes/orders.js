@@ -130,6 +130,33 @@ router.get('/my-orders', authenticateToken, async (req, res) => {
     }
 });
 
+// Test notification endpoint
+router.get('/test-notification', (req, res) => {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const logEvent = (msg) => {
+            fs.appendFileSync(path.join(__dirname, '../socket_debug.log'), `[${new Date().toISOString()}] ${msg}\n`);
+        };
+
+        logEvent(`Attempting to emit TEST notification. req.io present: ${!!req.io}`);
+        if (req.io) {
+            req.io.emit('new_order', {
+                id: 0,
+                order_number: 'TEST-SOCKET',
+                total_amount: 0.00,
+                created_at: new Date()
+            });
+            logEvent('TEST notification emitted');
+            return res.json({ success: true, message: 'Test notification emitted' });
+        }
+        logEvent('ERROR: req.io not found for TEST notification');
+        res.status(500).json({ success: false, message: 'req.io not found' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Create new order
 router.post('/', authenticateToken, async (req, res) => {
     try {
@@ -342,6 +369,13 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // Emit new_order event to admin
         try {
+            const fs = require('fs');
+            const path = require('path');
+            const logEvent = (msg) => {
+                fs.appendFileSync(path.join(__dirname, '../socket_debug.log'), `[${new Date().toISOString()}] ${msg}\n`);
+            };
+
+            logEvent(`Attempting to emit new_order event for ${order_number}. req.io present: ${!!req.io}`);
             if (req.io) {
                 req.io.emit('new_order', {
                     id: orderId,
@@ -351,6 +385,9 @@ router.post('/', authenticateToken, async (req, res) => {
                     created_at: new Date(),
                     user_id: req.user.id
                 });
+                logEvent(`new_order event emitted for ${order_number}`);
+            } else {
+                logEvent(`ERROR: req.io is not defined for ${order_number}`);
             }
         } catch (e) {
             console.error('Socket emit error:', e);

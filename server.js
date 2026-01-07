@@ -59,7 +59,32 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"],
   },
+  transports: ["polling", "websocket"],
 });
+
+// Export io for use in other files
+module.exports = { io };
+
+const fs = require("fs");
+const debugLog = (msg) => {
+  const logMsg = `[${new Date().toISOString()}] ${msg}\n`;
+  fs.appendFileSync(path.join(__dirname, "socket_debug.log"), logMsg);
+};
+
+io.on("connection", (socket) => {
+  debugLog(`New client connected: ${socket.id}`);
+  socket.on("disconnect", () => {
+    debugLog(`Client disconnected: ${socket.id}`);
+  });
+});
+
+// Heartbeat for debugging
+setInterval(() => {
+  if (io) {
+    io.emit('heartbeat', { time: new Date() });
+    // debugLog('Heartbeat emitted');
+  }
+}, 10000);
 
 console.log("Express application created.");
 
@@ -68,6 +93,9 @@ console.log("Setting up middleware...");
 
 // Make io available to routes
 app.use((req, res, next) => {
+  if (!io) {
+    console.error("Socket.io instance (io) is not initialized!");
+  }
   req.io = io;
   next();
 });

@@ -99,7 +99,11 @@ if (typeof io !== 'undefined') {
     socket = io();
     
     socket.on('connect', () => {
-        console.log('Connected to notification server');
+        console.log('Connected to notification server. ID:', socket.id);
+    });
+
+    socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error);
     });
 
     socket.on('new_user', (data) => {
