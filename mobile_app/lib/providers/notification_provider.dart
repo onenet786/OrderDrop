@@ -40,8 +40,8 @@ class NotificationProvider with ChangeNotifier {
     _socket = socket_io.io(
       baseUrl,
       socket_io.OptionBuilder()
-          .setTransports(['websocket'])
-          .disableAutoConnect()
+          .setTransports(['polling', 'websocket'])
+          .enableAutoConnect()
           .build(),
     );
 

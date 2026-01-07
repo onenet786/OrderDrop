@@ -100,6 +100,12 @@ if (typeof io !== 'undefined') {
     
     socket.on('connect', () => {
         console.log('Connected to notification server. ID:', socket.id);
+        showInfo('System', 'Connected to real-time notification server.');
+    });
+
+    socket.on('heartbeat', (data) => {
+        console.debug('Heartbeat received:', data.time);
+        window._adminDiag.lastHeartbeat = new Date();
     });
 
     socket.on('connect_error', (error) => {

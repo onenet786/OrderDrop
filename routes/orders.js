@@ -372,10 +372,14 @@ router.post('/', authenticateToken, async (req, res) => {
             const fs = require('fs');
             const path = require('path');
             const logEvent = (msg) => {
-                fs.appendFileSync(path.join(__dirname, '../socket_debug.log'), `[${new Date().toISOString()}] ${msg}\n`);
+                try {
+                    fs.appendFileSync(path.join(__dirname, '../socket_debug.log'), `[${new Date().toISOString()}] ${msg}\n`);
+                } catch (e) {
+                    console.error('Failed to write to socket_debug.log:', e);
+                }
             };
 
-            logEvent(`Attempting to emit new_order event for ${order_number}. req.io present: ${!!req.io}`);
+            logEvent(`Order Created: ${order_number} (ID: ${orderId}). req.io present: ${!!req.io}`);
             if (req.io) {
                 req.io.emit('new_order', {
                     id: orderId,
@@ -385,9 +389,9 @@ router.post('/', authenticateToken, async (req, res) => {
                     created_at: new Date(),
                     user_id: req.user.id
                 });
-                logEvent(`new_order event emitted for ${order_number}`);
+                logEvent(`new_order event emitted for ${order_number}. Total clients: ${req.io.engine.clientsCount}`);
             } else {
-                logEvent(`ERROR: req.io is not defined for ${order_number}`);
+                logEvent(`WARNING: req.io missing for order ${order_number}`);
             }
         } catch (e) {
             console.error('Socket emit error:', e);
@@ -506,6 +510,10 @@ router.put('/:id/status', authenticateToken, requireStoreOwner, [
                     status: status,
                     updated_at: new Date()
                 });
+                const fs = require('fs');
+                const path = require('path');
+                const logMsg = `[${new Date().toISOString()}] Status updated: ${order.order_number} -> ${status}. Total clients: ${req.io.engine.clientsCount}\n`;
+                fs.appendFileSync(path.join(__dirname, '../socket_debug.log'), logMsg);
             }
         } catch (e) {
             console.error('Socket emit error:', e);
@@ -588,6 +596,10 @@ router.put('/:id/assign-rider', authenticateToken, requireAdmin, [
                     status: 'out_for_delivery',
                     estimated_delivery_time: estimatedDelivery
                 });
+                const fs = require('fs');
+                const path = require('path');
+                const logMsg = `[${new Date().toISOString()}] Order assigned: ${order.order_number} to ${rider.first_name}. Total clients: ${req.io.engine.clientsCount}\n`;
+                fs.appendFileSync(path.join(__dirname, '../socket_debug.log'), logMsg);
             }
         } catch (e) {
             console.error('Socket emit error:', e);

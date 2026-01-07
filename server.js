@@ -82,9 +82,18 @@ io.on("connection", (socket) => {
 setInterval(() => {
   if (io) {
     io.emit('heartbeat', { time: new Date() });
-    // debugLog('Heartbeat emitted');
+    debugLog(`Heartbeat emitted. Clients connected: ${io.engine.clientsCount}`);
   }
-}, 10000);
+}, 30000);
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    socket: !!io,
+    clients: io ? io.engine.clientsCount : 0,
+    time: new Date()
+  });
+});
 
 console.log("Express application created.");
 
