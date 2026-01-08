@@ -61,6 +61,52 @@ async function sendVerificationEmail(email, code) {
     }
 }
 
+/**
+ * Send account deletion request email to support
+ * @param {string} userEmail 
+ * @param {string} reason 
+ */
+async function sendDeletionRequestEmail(userEmail, reason) {
+    const supportEmail = 'onenetpk@gmail.com'; // User specified email
+    const subject = 'Account Deletion Request - ServeNow';
+    const text = `A new account deletion request has been received.\n\nUser Email: ${userEmail}\nReason: ${reason || 'Not provided'}`;
+    const html = `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2>Account Deletion Request</h2>
+            <p>A new account deletion request has been received from the web form.</p>
+            <p><strong>User Email:</strong> ${userEmail}</p>
+            <p><strong>Reason:</strong> ${reason || 'Not provided'}</p>
+            <p>Please process this request within 48-72 hours.</p>
+        </div>
+    `;
+
+    if (transporter) {
+        try {
+            await transporter.sendMail({
+                from: `"ServeNow System" <${process.env.EMAIL_USER}>`,
+                to: supportEmail,
+                subject: subject,
+                text: text,
+                html: html
+            });
+            console.log(`Deletion request email sent to support for ${userEmail}`);
+            return true;
+        } catch (error) {
+            console.error('Error sending deletion request email:', error);
+            return false;
+        }
+    } else {
+        console.warn('Email credentials not found. Logging deletion request to console.');
+        console.log('----------------------------------------');
+        console.log(`[MOCK EMAIL] To: ${supportEmail}`);
+        console.log(`[MOCK EMAIL] Request from: ${userEmail}`);
+        console.log(`[MOCK EMAIL] Reason: ${reason}`);
+        console.log('----------------------------------------');
+        return true;
+    }
+}
+
 module.exports = {
-    sendVerificationEmail
+    sendVerificationEmail,
+    sendDeletionRequestEmail
 };

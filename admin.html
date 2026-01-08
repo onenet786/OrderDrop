@@ -36,32 +36,18 @@
                 ><i class="fas fa-tachometer-alt"></i> Dashboard</a
               >
             </li>
-            <li class="dropdown">
+            <li>
               <a
                 href="admin.html#accounts"
-                class="dropdown-toggle"
-                role="button"
-                aria-haspopup="true"
-                aria-expanded="false"
-                ><i class="fas fa-address-card"></i> Accounts
-                <i
-                  class="fas fa-chevron-down"
-                  style="margin-left: 0.25rem; font-size: 0.8rem"
-                ></i
-              ></a>
-              <ul class="dropdown-menu">
-                <li>
-                  <a
-                    href="admin.html#accounts"
-                    class="tab-link"
-                    data-tab="accounts"
-                    ><i class="fas fa-users"></i> Accounts</a
-                  >
-                </li>
-                <li>
-                  <a href="admin.html#riders" class="tab-link" data-tab="riders"
-                    ><i class="fas fa-motorcycle"></i> Riders</a
-                  >
+                class="tab-link"
+                data-tab="accounts"
+                ><i class="fas fa-users"></i> Accounts</a
+              >
+            </li>
+            <li>
+              <a href="admin.html#riders" class="tab-link" data-tab="riders"
+                ><i class="fas fa-motorcycle"></i> Riders</a
+              >
             </li>
             <li>
               <a href="admin.html#stores" class="tab-link" data-tab="stores"
@@ -1885,21 +1871,8 @@
             </div>
           </div>
         </div>
-        <footer
-          class="app-footer"
-          style="
-            margin-top: 2rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            text-align: center;
-            font-size: 0.875rem;
-          "
-        >
-          <p>
-            © 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions
-            Pakistan
-          </p>
+        <footer class="app-footer">
+          <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
         </footer>
       </main>
     </div>
@@ -2852,7 +2825,7 @@
     </div>
 
     <div id="editOrderModal" class="modal">
-      <div class="modal-content">
+      <div class="modal-content" style="max-width: 850px">
         <div class="modal-header">
           <h3>Edit Order</h3>
           <span class="close" data-modal="editOrderModal">&times;</span>
@@ -2889,7 +2862,7 @@
                 />
               </div>
             </div>
-            <div class="form-row-full">
+            <div class="form-row">
               <div class="form-group">
                 <label for="riderLocation">Rider Current Location:</label>
                 <input
@@ -2899,8 +2872,6 @@
                   placeholder="Enter current location (description)"
                 />
               </div>
-            </div>
-            <div class="form-row">
               <div class="form-group">
                 <label for="riderLatitude">Latitude:</label>
                 <input

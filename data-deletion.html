@@ -77,13 +77,10 @@
 
         <p>At ServeNow, we value your privacy. You can request the deletion of your account and all associated personal data using one of the following methods.</p>
 
-        <div class="method-box">
-            <span class="method-title">Method 1: In-App (Fastest)</span>
-            Log in to the <strong>ServeNow</strong> mobile app, go to your <strong>Profile/Home</strong> screen, and tap the <strong>Delete Account</strong> (trash) icon.
-        </div>
+       
 
         <div class="method-box">
-            <span class="method-title">Method 2: Web Request</span>
+            <span class="method-title">Method : Web Request</span>
             Submit the form below, and our support team will process your request within 48-72 hours.
             
             <form id="deletionForm" style="margin-top: 15px;">
@@ -104,25 +101,53 @@
         <p style="font-size: 13px;"><strong>Note:</strong> Deleting your account is permanent. You will lose access to your order history, wallet balance, and any active subscriptions.</p>
 
         <div class="footer">
-            &copy; 2024 ServeNow Delivery Services. All rights reserved.
+            <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
         </div>
     </div>
 
     <script>
-        document.getElementById('deletionForm').addEventListener('submit', function(e) {
+        document.getElementById('deletionForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const email = document.getElementById('email').value;
+            const reason = document.getElementById('reason').value;
             const status = document.getElementById('statusMessage');
+            const submitBtn = this.querySelector('button[type="submit"]');
             
-            // In a real scenario, this would call an API
-            // For now, we show a success message as per Play Store policy requirements
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Submitting...';
             
-            status.style.display = 'block';
-            status.style.backgroundColor = '#d4edda';
-            status.style.color = '#155724';
-            status.innerText = 'Request submitted! We have sent a confirmation email to ' + email + '. Please click the link in that email to confirm your deletion request.';
-            
-            this.reset();
+            try {
+                const response = await fetch('/api/users/request-deletion', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, reason })
+                });
+                
+                const data = await response.json();
+                
+                status.style.display = 'block';
+                if (data.success) {
+                    status.style.backgroundColor = '#d4edda';
+                    status.style.color = '#155724';
+                    status.innerText = data.message;
+                    this.reset();
+                } else {
+                    status.style.backgroundColor = '#f8d7da';
+                    status.style.color = '#721c24';
+                    status.innerText = 'Error: ' + (data.message || 'Something went wrong');
+                }
+            } catch (error) {
+                status.style.display = 'block';
+                status.style.backgroundColor = '#f8d7da';
+                status.style.color = '#721c24';
+                status.innerText = 'Failed to submit request. Please try again later.';
+                console.error('Deletion request error:', error);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'Request Account Deletion';
+            }
         });
     </script>
 </body>

@@ -3,7 +3,7 @@ const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const crypto = require('crypto');
-const { sendVerificationEmail } = require('../services/emailService');
+const { sendVerificationEmail, sendDeletionRequestEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -195,8 +195,44 @@ router.delete('/me', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Error deleting account:', error);
         res.status(500).json({
-            success: true, // Returning success true as requested or handled? No, success false.
+            success: false,
             message: 'Failed to delete account',
+            error: error.message
+        });
+    }
+});
+
+// Request account deletion (Public/Web)
+router.post('/request-deletion', [
+    body('email').isEmail().withMessage('Invalid email address'),
+    body('reason').optional().trim()
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: errors.array()
+            });
+        }
+
+        const { email, reason } = req.body;
+        const sent = await sendDeletionRequestEmail(email, reason);
+
+        if (sent) {
+            res.json({
+                success: true,
+                message: 'Deletion request received. We have sent a confirmation email to our support team and you will be contacted soon.'
+            });
+        } else {
+            throw new Error('Failed to send deletion request email');
+        }
+    } catch (error) {
+        console.error('Error requesting deletion:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to process deletion request',
             error: error.message
         });
     }
