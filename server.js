@@ -287,6 +287,15 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "login.html"));
 });
 
+// Explicit route for data deletion request page (required for Play Store compliance)
+app.get("/data-deletion", (req, res) => {
+  res.sendFile(path.join(__dirname, "data-deletion.html"));
+});
+
+app.get("/data-deletion.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "data-deletion.html"));
+});
+
 // Serve static files from the root directory for the frontend
 console.log("Setting up frontend static file serving...");
 app.use(express.static(path.join(__dirname)));

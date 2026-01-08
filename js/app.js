@@ -1464,6 +1464,7 @@ document.addEventListener("DOMContentLoaded", function () {
     "cart.html",
     "login.html",
     "register.html",
+    "data-deletion.html",
   ];
   const isPublic =
     publicPages.some((p) => path.endsWith(p)) ||

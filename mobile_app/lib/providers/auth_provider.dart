@@ -170,6 +170,26 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<void> deleteAccount() async {
+    if (_token == null) throw Exception('Not authenticated');
+
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await ApiService.deleteAccount(_token!);
+      if (response['success'] == true) {
+        await logout();
+      } else {
+        throw Exception(response['message'] ?? 'Failed to delete account');
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> tryAutoLogin() async {
     final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey('token')) return;
