@@ -226,7 +226,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
                              ),
                            ],
                          )
-                      ]
+                      ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Items:',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 4),
+                      ...(sub['items'] as List? ?? []).map<Widget>((item) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              Text(
+                                "PKR ${(double.tryParse(item['price'].toString()) ?? 0.0) * (int.tryParse(item['quantity'].toString()) ?? 1)}",
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
                     ],
                   ),
                 );
@@ -274,6 +300,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
             if (order['rider_location'] != null)
               _buildInfoRow('Rider Location', order['rider_location']),
             
+            const SizedBox(height: 12),
+            const Text(
+              'Items:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            ...(order['items'] as List? ?? []).map<Widget>((item) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    Text(
+                      "PKR ${(double.tryParse(item['price'].toString()) ?? 0.0) * (int.tryParse(item['quantity'].toString()) ?? 1)}",
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
             if (riderPhone != null && riderPhone.toString().isNotEmpty) ...[
               const SizedBox(height: 12),
               Container(

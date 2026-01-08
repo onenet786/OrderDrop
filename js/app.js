@@ -52,7 +52,12 @@ const API_BASE = window.location.protocol + "//" + window.location.host;
     } catch (e) {
       // ignore errors accessing localStorage or headers
     }
-    return nativeFetch(input, init);
+    return nativeFetch(input, init).then(response => {
+        if (!response.ok && response.status === 404) {
+            console.warn(`[fetch] 404 Not Found: ${input.url || input}`);
+        }
+        return response;
+    });
   };
 })();
 
