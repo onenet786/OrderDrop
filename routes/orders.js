@@ -238,7 +238,7 @@ router.post('/', authenticateToken, async (req, res) => {
             }
 
             const [products] = await req.db.execute(
-                'SELECT id, price, store_id, name FROM products WHERE id = ? AND is_available = true',
+                'SELECT id, price, store_id, name, size_id, unit_id FROM products WHERE id = ? AND is_available = true',
                 [productId]
             );
 
@@ -276,18 +276,28 @@ router.post('/', authenticateToken, async (req, res) => {
 
                 const [rows] = await req.db.execute(query, params);
                 
-                if (!rows || rows.length === 0) {
-                    return res.status(400).json({ 
-                        success: false, 
-                        message: `Variant with ${sizeId ? `size ${sizeId}` : ''} ${sizeId && unitId ? 'and ' : ''} ${unitId ? `unit ${unitId}` : ''} not found for product ${productId}` 
-                    });
-                }
-                
-                unitPrice = Number(rows[0].price);
-                if (!variantLabel) {
-                    const sizeLabel = rows[0].size_label ? String(rows[0].size_label) : '';
-                    const unitLabel = rows[0].unit_abbreviation || rows[0].unit_name ? String(rows[0].unit_abbreviation || rows[0].unit_name) : '';
-                    variantLabel = (sizeLabel && unitLabel) ? `${sizeLabel} ${unitLabel}` : (sizeLabel || unitLabel || null);
+                if (rows && rows.length > 0) {
+                    unitPrice = Number(rows[0].price);
+                    if (!variantLabel) {
+                        const sizeLabel = rows[0].size_label ? String(rows[0].size_label) : '';
+                        const unitLabel = rows[0].unit_abbreviation || rows[0].unit_name ? String(rows[0].unit_abbreviation || rows[0].unit_name) : '';
+                        variantLabel = (sizeLabel && unitLabel) ? `${sizeLabel} ${unitLabel}` : (sizeLabel || unitLabel || null);
+                    }
+                } else {
+                    // Fallback: Check if requested variant matches the base product's size/unit
+                    const productSizeId = product.size_id === null || product.size_id === undefined ? null : parseInt(String(product.size_id), 10);
+                    const productUnitId = product.unit_id === null || product.unit_id === undefined ? null : parseInt(String(product.unit_id), 10);
+                    
+                    if (sizeId === productSizeId && unitId === productUnitId) {
+                        // Match found on base product
+                        unitPrice = Number(product.price);
+                        // Label remains default or provided
+                    } else {
+                        return res.status(400).json({ 
+                            success: false, 
+                            message: `Variant with ${sizeId ? `size ${sizeId}` : ''} ${sizeId && unitId ? 'and ' : ''} ${unitId ? `unit ${unitId}` : ''} not found for product ${productId}` 
+                        });
+                    }
                 }
             }
 
