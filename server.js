@@ -314,8 +314,8 @@ app.get("*", (req, res) => {
     console.log(`Serving frontend: ${req.path} -> index.html`);
     res.sendFile(path.join(__dirname, "index.html"));
   } else {
-    console.log(`API endpoint not found: ${req.path}`);
-    res.status(404).json({ message: "API endpoint not found" });
+    console.log(`[404] API endpoint not found: ${req.method} ${req.path}`);
+    res.status(404).json({ message: "API endpoint not found", path: req.path });
   }
 });
 console.log("Catch-all handler configured.");

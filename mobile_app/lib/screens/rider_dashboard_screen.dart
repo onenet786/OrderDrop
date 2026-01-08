@@ -721,6 +721,30 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             if (delivery['rider_location'] != null)
               _buildDetailRow('My Location', '${delivery['rider_location']}'),
 
+            const SizedBox(height: 12),
+            const Text(
+              'Items Summary:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blueGrey),
+            ),
+            const SizedBox(height: 4),
+            ...(delivery['items'] as List? ?? []).map<Widget>((item) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Row(
+                  children: [
+                    const Icon(Icons.circle, size: 6, color: Colors.grey),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
             const SizedBox(height: 16),
 
             // Actions

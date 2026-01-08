@@ -12,45 +12,31 @@ async function hasColumn(db, table, column) {
     return rows && rows[0] && rows[0].cnt > 0;
 }
 
-async function ensureOrderItemsVariantColumns(db) {
-    try {
-        const hasSizeId = await hasColumn(db, 'order_items', 'size_id');
-        if (!hasSizeId) {
-            await db.execute('ALTER TABLE order_items ADD COLUMN size_id INT NULL');
-        }
-    } catch (e) {}
+async function ensureOrderItemsSchema(db) {
+    const columns = [
+        { name: 'size_id', definition: 'INT NULL' },
+        { name: 'unit_id', definition: 'INT NULL' },
+        { name: 'variant_label', definition: 'VARCHAR(255) NULL' },
+        { name: 'store_id', definition: 'INT NULL', constraint: 'FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL' }
+    ];
 
-    try {
-        const hasUnitId = await hasColumn(db, 'order_items', 'unit_id');
-        if (!hasUnitId) {
-            await db.execute('ALTER TABLE order_items ADD COLUMN unit_id INT NULL');
+    for (const col of columns) {
+        try {
+            const exists = await hasColumn(db, 'order_items', col.name);
+            if (!exists) {
+                await db.execute(`ALTER TABLE order_items ADD COLUMN ${col.name} ${col.definition}`);
+                if (col.constraint) {
+                    try {
+                        await db.execute(`ALTER TABLE order_items ADD ${col.constraint}`);
+                    } catch (err) {
+                        // Constraint might already exist or fail for other reasons
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(`Failed to ensure column ${col.name}:`, e);
         }
-    } catch (e) {}
-
-    try {
-        const hasVariantLabel = await hasColumn(db, 'order_items', 'variant_label');
-        if (!hasVariantLabel) {
-            await db.execute('ALTER TABLE order_items ADD COLUMN variant_label VARCHAR(255) NULL');
-        }
-    } catch (e) {}
-
-    try {
-        const hasStoreId = await hasColumn(db, 'order_items', 'store_id');
-        if (!hasStoreId) {
-            await db.execute('ALTER TABLE order_items ADD COLUMN store_id INT NULL');
-            await db.execute('ALTER TABLE order_items ADD FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL');
-        }
-    } catch (e) {}
-}
-
-async function ensureOrderItemsStoreId(db) {
-    try {
-        const hasStoreId = await hasColumn(db, 'order_items', 'store_id');
-        if (!hasStoreId) {
-            await db.execute('ALTER TABLE order_items ADD COLUMN store_id INT NULL');
-            await db.execute('ALTER TABLE order_items ADD CONSTRAINT fk_order_items_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL');
-        }
-    } catch (e) {}
+    }
 }
 
 async function ensureOrdersParentColumn(db) {
@@ -84,10 +70,30 @@ async function ensureOrdersStoreIdNullable(db) {
     }
 }
 
+async function ensureRiderLocationColumns(db) {
+    try {
+        const hasRiderLatitude = await hasColumn(db, 'orders', 'rider_latitude');
+        if (!hasRiderLatitude) {
+            await db.execute('ALTER TABLE orders ADD COLUMN rider_latitude DECIMAL(10, 8) NULL');
+        }
+    } catch (e) {
+        console.error('Failed to add rider_latitude column:', e);
+    }
+
+    try {
+        const hasRiderLongitude = await hasColumn(db, 'orders', 'rider_longitude');
+        if (!hasRiderLongitude) {
+            await db.execute('ALTER TABLE orders ADD COLUMN rider_longitude DECIMAL(11, 8) NULL');
+        }
+    } catch (e) {
+        console.error('Failed to add rider_longitude column:', e);
+    }
+}
+
 // Get user's orders
 router.get('/my-orders', authenticateToken, async (req, res) => {
     try {
-        await ensureOrderItemsVariantColumns(req.db);
+        await ensureOrderItemsSchema(req.db);
         // await ensureOrdersParentColumn(req.db); // Not strictly needed if we don't use it for grouping anymore
         
         const [orders] = await req.db.execute(`
@@ -357,7 +363,7 @@ router.post('/', authenticateToken, async (req, res) => {
         }
 
         // Create Single Order
-        await ensureOrderItemsVariantColumns(req.db);
+        await ensureOrderItemsSchema(req.db);
         await ensureOrdersStoreIdNullable(req.db); // Ensure store_id can be NULL
         
         // Determine store_id for the order
@@ -449,11 +455,192 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 });
 
+// Get available riders
+router.get('/available-riders', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const [riders] = await req.db.execute(
+            'SELECT id, first_name, last_name, email, phone, vehicle_type FROM riders WHERE is_active = true ORDER BY first_name ASC'
+        );
+
+        res.json({
+            success: true,
+            riders
+        });
+
+    } catch (error) {
+        console.error('Error fetching available riders:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch available riders',
+            error: error.message
+        });
+    }
+});
+
+// Get rider's deliveries
+router.get('/rider/deliveries', authenticateToken, async (req, res) => {
+    try {
+        await ensureOrderItemsSchema(req.db);
+        if (req.user.user_type !== 'rider') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Rider only.'
+            });
+        }
+
+        const { status } = req.query;
+        let whereClause = 'o.rider_id = ?';
+        if (status === 'assigned') {
+            whereClause += " AND o.status IN ('out_for_delivery', 'confirmed', 'preparing', 'ready')";
+        } else if (status === 'completed') {
+            whereClause += " AND o.status = 'delivered'";
+        }
+
+        const [deliveries] = await req.db.execute(`
+            SELECT o.*, u.first_name, u.last_name, u.phone, s.name as store_name, s.location as store_location
+            FROM orders o
+            JOIN users u ON o.user_id = u.id
+            LEFT JOIN stores s ON o.store_id = s.id
+            WHERE ${whereClause}
+            ORDER BY o.created_at DESC
+        `, [req.user.id]);
+
+        // Fetch items for each delivery
+        for (let delivery of deliveries) {
+            // Set display name for multi-store orders
+            if (!delivery.store_id) {
+                delivery.store_name = 'Multiple Stores';
+                delivery.store_location = 'Various Locations';
+            }
+
+            const [items] = await req.db.execute(`
+                SELECT oi.*, p.name as product_name, p.image_url, s.name as store_name
+                FROM order_items oi
+                LEFT JOIN products p ON oi.product_id = p.id
+                LEFT JOIN stores s ON oi.store_id = s.id
+                WHERE oi.order_id = ?
+            `, [delivery.id]);
+            delivery.items = items;
+        }
+
+        res.json({
+            success: true,
+            deliveries
+        });
+
+    } catch (error) {
+        console.error('Error fetching rider deliveries:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch deliveries',
+            error: error.message
+        });
+    }
+});
+
+// Get rider profile
+router.get('/rider/profile', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.user_type !== 'rider') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Rider only.'
+            });
+        }
+
+        const [riders] = await req.db.execute(
+            'SELECT id, first_name, last_name, email, phone, vehicle_type, image_url, id_card_url FROM riders WHERE id = ?',
+            [req.user.id]
+        );
+
+        if (riders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Rider not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            rider: riders[0]
+        });
+
+    } catch (error) {
+        console.error('Error fetching rider profile:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch rider profile',
+            error: error.message
+        });
+    }
+});
+
+// Update rider location
+router.put('/rider/location', authenticateToken, [
+    body('latitude').isFloat().withMessage('Invalid latitude'),
+    body('longitude').isFloat().withMessage('Invalid longitude')
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                errors: errors.array()
+            });
+        }
+
+        if (req.user.user_type !== 'rider') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Rider only.'
+            });
+        }
+
+        const { latitude, longitude } = req.body;
+        const riderId = req.user.id;
+
+        await ensureRiderLocationColumns(req.db);
+
+        // Update rider location in database
+        await req.db.execute(
+            `UPDATE orders SET rider_latitude = ?, rider_longitude = ?
+             WHERE rider_id = ? AND status = 'out_for_delivery'`,
+            [latitude, longitude, riderId]
+        );
+
+        // Also store in a rider location log table if available
+        try {
+            await req.db.execute(
+                `INSERT INTO rider_location_logs (rider_id, latitude, longitude) VALUES (?, ?, ?)`,
+                [riderId, latitude, longitude]
+            );
+        } catch (e) {
+            // Table might not exist yet, that's okay
+        }
+
+        res.json({
+            success: true,
+            message: 'Location updated successfully',
+            location: { latitude, longitude }
+        });
+
+    } catch (error) {
+        console.error('Error updating rider location:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update location',
+            error: error.message
+        });
+    }
+});
+
 // Get single order details
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get('/:id(\\d+)', authenticateToken, async (req, res) => {
+    console.log(`[orders] Fetching order details for ID: ${req.params.id}`);
     try {
         const { id } = req.params;
-        await ensureOrderItemsStoreId(req.db);
+        await ensureOrderItemsSchema(req.db);
 
         const [orders] = await req.db.execute(`
             SELECT o.*, u.first_name, u.last_name, u.email, u.phone, s.name as store_name,
@@ -464,6 +651,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
             LEFT JOIN riders r ON o.rider_id = r.id
             WHERE o.id = ?
         `, [id]);
+
+        console.log(`[orders] Found ${orders.length} orders for ID: ${id}`);
 
         if (orders.length === 0) {
             return res.status(404).json({
@@ -563,7 +752,7 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
 });
 
 // Update order status (Admin or Store Owner)
-router.put('/:id/status', authenticateToken, requireStoreOwner, [
+router.put('/:id(\\d+)/status', authenticateToken, requireStoreOwner, [
     body('status').isIn(['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled']).withMessage('Invalid status')
 ], async (req, res) => {
     try {
@@ -643,7 +832,7 @@ router.put('/:id/status', authenticateToken, requireStoreOwner, [
 });
 
 // Assign rider to order (Admin only)
-router.put('/:id/assign-rider', authenticateToken, requireAdmin, [
+router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
     body('rider_id').isInt().withMessage('Rider ID must be a valid integer'),
     body('delivery_fee').optional().isFloat({ min: 0 }).withMessage('Invalid delivery fee')
 ], async (req, res) => {
@@ -752,7 +941,7 @@ router.put('/:id/assign-rider', authenticateToken, requireAdmin, [
 });
 
 // Update rider location (Rider or Admin)
-router.put('/:id/rider-location', authenticateToken, [
+router.put('/:id(\\d+)/rider-location', authenticateToken, [
     body('latitude').optional().isFloat().withMessage('Invalid latitude'),
     body('longitude').optional().isFloat().withMessage('Invalid longitude'),
     body('location').optional().notEmpty().withMessage('Location is required')
@@ -818,7 +1007,7 @@ router.put('/:id/rider-location', authenticateToken, [
 });
 
 // Mark order as delivered (Rider or Admin)
-router.put('/:id/deliver', authenticateToken, async (req, res) => {
+router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -865,30 +1054,8 @@ router.put('/:id/deliver', authenticateToken, async (req, res) => {
     }
 });
 
-// Get available riders
-router.get('/available-riders', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-        const [riders] = await req.db.execute(
-            'SELECT id, first_name, last_name, email, phone, vehicle_type FROM riders WHERE is_active = true ORDER BY first_name ASC'
-        );
-
-        res.json({
-            success: true,
-            riders
-        });
-
-    } catch (error) {
-        console.error('Error fetching available riders:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch available riders',
-            error: error.message
-        });
-    }
-});
-
 // Update payment status (Admin or Rider)
-router.put('/:id/payment-status', authenticateToken, [
+router.put('/:id(\\d+)/payment-status', authenticateToken, [
     body('payment_status').isIn(['pending', 'paid', 'failed']).withMessage('Invalid payment status')
 ], async (req, res) => {
     try {
@@ -990,183 +1157,6 @@ router.put('/:id/payment-status', authenticateToken, [
         res.status(500).json({
             success: false,
             message: 'Failed to update payment status',
-            error: error.message
-        });
-    }
-});
-
-// Get rider's deliveries
-router.get('/rider/deliveries', authenticateToken, async (req, res) => {
-    try {
-        if (req.user.user_type !== 'rider') {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied. Rider only.'
-            });
-        }
-
-        const { status } = req.query;
-        let whereClause = 'o.rider_id = ?';
-        if (status === 'assigned') {
-            whereClause += " AND o.status IN ('out_for_delivery', 'confirmed', 'preparing', 'ready')";
-        } else if (status === 'completed') {
-            whereClause += " AND o.status = 'delivered'";
-        }
-
-        const [deliveries] = await req.db.execute(`
-            SELECT o.*, u.first_name, u.last_name, u.phone, s.name as store_name, s.location as store_location
-            FROM orders o
-            JOIN users u ON o.user_id = u.id
-            LEFT JOIN stores s ON o.store_id = s.id
-            WHERE ${whereClause}
-            ORDER BY o.created_at DESC
-        `, [req.user.id]);
-
-        // Fetch items for each delivery
-        for (let delivery of deliveries) {
-            // Set display name for multi-store orders
-            if (!delivery.store_id) {
-                delivery.store_name = 'Multiple Stores';
-                delivery.store_location = 'Various Locations';
-            }
-
-            const [items] = await req.db.execute(`
-                SELECT oi.*, p.name as product_name, p.image_url, s.name as store_name
-                FROM order_items oi
-                LEFT JOIN products p ON oi.product_id = p.id
-                LEFT JOIN stores s ON oi.store_id = s.id
-                WHERE oi.order_id = ?
-            `, [delivery.id]);
-            delivery.items = items;
-        }
-
-        res.json({
-            success: true,
-            deliveries
-        });
-
-    } catch (error) {
-        console.error('Error fetching rider deliveries:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch deliveries',
-            error: error.message
-        });
-    }
-});
-
-// Get rider profile
-router.get('/rider/profile', authenticateToken, async (req, res) => {
-    try {
-        if (req.user.user_type !== 'rider') {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied. Rider only.'
-            });
-        }
-
-        const [riders] = await req.db.execute(
-            'SELECT id, first_name, last_name, email, phone, vehicle_type, image_url, id_card_url FROM riders WHERE id = ?',
-            [req.user.id]
-        );
-
-        if (riders.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Rider not found'
-            });
-        }
-
-        res.json({
-            success: true,
-            rider: riders[0]
-        });
-
-    } catch (error) {
-        console.error('Error fetching rider profile:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch rider profile',
-            error: error.message
-        });
-    }
-});
-
-async function ensureRiderLocationColumns(db) {
-    try {
-        const hasRiderLatitude = await hasColumn(db, 'orders', 'rider_latitude');
-        if (!hasRiderLatitude) {
-            await db.execute('ALTER TABLE orders ADD COLUMN rider_latitude DECIMAL(10, 8) NULL');
-        }
-    } catch (e) {
-        console.error('Failed to add rider_latitude column:', e);
-    }
-
-    try {
-        const hasRiderLongitude = await hasColumn(db, 'orders', 'rider_longitude');
-        if (!hasRiderLongitude) {
-            await db.execute('ALTER TABLE orders ADD COLUMN rider_longitude DECIMAL(11, 8) NULL');
-        }
-    } catch (e) {
-        console.error('Failed to add rider_longitude column:', e);
-    }
-}
-
-// Update rider location
-router.put('/rider/location', authenticateToken, [
-    body('latitude').isFloat().withMessage('Invalid latitude'),
-    body('longitude').isFloat().withMessage('Invalid longitude')
-], async (req, res) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                message: 'Validation failed',
-                errors: errors.array()
-            });
-        }
-
-        if (req.user.user_type !== 'rider') {
-            return res.status(403).json({
-                success: false,
-                message: 'Access denied. Rider only.'
-            });
-        }
-
-        const { latitude, longitude } = req.body;
-        const riderId = req.user.id;
-
-        await ensureRiderLocationColumns(req.db);
-
-        // Update rider location in database
-        await req.db.execute(
-            `UPDATE orders SET rider_latitude = ?, rider_longitude = ?
-             WHERE rider_id = ? AND status = 'out_for_delivery'`,
-            [latitude, longitude, riderId]
-        );
-
-        // Also store in a rider location log table if available
-        try {
-            await req.db.execute(
-                `INSERT INTO rider_location_logs (rider_id, latitude, longitude) VALUES (?, ?, ?)`,
-                [riderId, latitude, longitude]
-            );
-        } catch (e) {
-            // Table might not exist yet, that's okay
-        }
-
-        res.json({
-            success: true,
-            message: 'Location updated successfully',
-            location: { latitude, longitude }
-        });
-
-    } catch (error) {
-        console.error('Error updating rider location:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to update location',
             error: error.message
         });
     }
