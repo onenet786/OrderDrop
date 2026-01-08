@@ -6,21 +6,26 @@ const { logError } = require('../utils/debugLogger');
 
 const router = express.Router();
 
-const getOrCreateWallet = async (db, userId) => {
+const getOrCreateWallet = async (db, userId, userType = 'customer') => {
+    const isRider = userType === 'rider';
+    const idColumn = isRider ? 'rider_id' : 'user_id';
+    
     const [wallets] = await db.execute(
         `SELECT id, balance, total_credited, total_spent, auto_recharge_enabled, 
-         auto_recharge_amount, auto_recharge_threshold, last_credited_at 
-         FROM wallets WHERE user_id = ?`,
+         auto_recharge_amount, auto_recharge_threshold, last_credited_at, user_type 
+         FROM wallets WHERE ${idColumn} = ?`,
         [userId]
     );
 
     if (!wallets.length) {
-        await db.execute(
-            'INSERT INTO wallets (user_id, balance) VALUES (?, ?)',
-            [userId, 0]
-        );
+        const insertSql = isRider 
+            ? 'INSERT INTO wallets (rider_id, user_type, balance) VALUES (?, ?, ?)'
+            : 'INSERT INTO wallets (user_id, user_type, balance) VALUES (?, ?, ?)';
+            
+        await db.execute(insertSql, [userId, userType, 0]);
+        
         const [newWallet] = await db.execute(
-            'SELECT id, balance, total_credited, total_spent FROM wallets WHERE user_id = ?',
+            `SELECT id, balance, total_credited, total_spent, user_type FROM wallets WHERE ${idColumn} = ?`,
             [userId]
         );
         return newWallet[0];
@@ -55,7 +60,7 @@ const recordWalletTransaction = async (db, walletId, type, amount, description, 
 router.get('/balance', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const wallet = await getOrCreateWallet(req.db, userId);
+        const wallet = await getOrCreateWallet(req.db, userId, req.user.user_type);
 
         return sendSuccess(res, { 
             wallet,
@@ -82,7 +87,7 @@ router.post('/topup', authenticateToken, [
         const userId = req.user.id;
         const { amount, paymentMethod, cardToken, saveCard } = req.body;
 
-        const wallet = await getOrCreateWallet(req.db, userId);
+        const wallet = await getOrCreateWallet(req.db, userId, req.user.user_type);
         const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
         const [users] = await req.db.execute(
@@ -160,17 +165,7 @@ router.get('/transactions', authenticateToken, async (req, res) => {
         const limitVal = Math.max(1, parseInt(limit) || 20);
         const offsetVal = Math.max(0, parseInt(offset) || 0);
 
-        // Get wallet ID
-        const [wallets] = await req.db.execute(
-            'SELECT id FROM wallets WHERE user_id = ?',
-            [userId]
-        );
-
-        if (!wallets.length) {
-            return sendError(res, 'Wallet not found', 404);
-        }
-
-        const wallet = wallets[0];
+        const wallet = await getOrCreateWallet(req.db, userId, req.user.user_type);
 
         // Build query
         let query = `SELECT id, type, amount, description, reference_type, 
@@ -233,7 +228,7 @@ router.post('/auto-recharge', authenticateToken, [
         const userId = req.user.id;
         const { enabled, amount, threshold } = req.body;
 
-        const wallet = await getOrCreateWallet(req.db, userId);
+        const wallet = await getOrCreateWallet(req.db, userId, req.user.user_type);
 
         const updateParams = [enabled];
         let updateFields = ['auto_recharge_enabled = ?'];
@@ -266,7 +261,7 @@ router.post('/auto-recharge', authenticateToken, [
 router.get('/auto-recharge', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const wallet = await getOrCreateWallet(req.db, userId);
+        const wallet = await getOrCreateWallet(req.db, userId, req.user.user_type);
 
         return sendSuccess(res, { 
             enabled: wallet.auto_recharge_enabled,
