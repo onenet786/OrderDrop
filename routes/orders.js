@@ -43,6 +43,16 @@ async function ensureOrderItemsVariantColumns(db) {
     } catch (e) {}
 }
 
+async function ensureOrderItemsStoreId(db) {
+    try {
+        const hasStoreId = await hasColumn(db, 'order_items', 'store_id');
+        if (!hasStoreId) {
+            await db.execute('ALTER TABLE order_items ADD COLUMN store_id INT NULL');
+            await db.execute('ALTER TABLE order_items ADD CONSTRAINT fk_order_items_store FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL');
+        }
+    } catch (e) {}
+}
+
 async function ensureOrdersParentColumn(db) {
     try {
         // Try to select the column to check existence (more robust than information_schema)
@@ -434,6 +444,83 @@ router.post('/', authenticateToken, async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to create order',
+            error: error.message
+        });
+    }
+});
+
+// Get single order details
+router.get('/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        await ensureOrderItemsStoreId(req.db);
+
+        const [orders] = await req.db.execute(`
+            SELECT o.*, u.first_name, u.last_name, u.email, u.phone, s.name as store_name,
+                   r.first_name as rider_first_name, r.last_name as rider_last_name, r.phone as rider_phone
+            FROM orders o
+            JOIN users u ON o.user_id = u.id
+            LEFT JOIN stores s ON o.store_id = s.id
+            LEFT JOIN riders r ON o.rider_id = r.id
+            WHERE o.id = ?
+        `, [id]);
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const order = orders[0];
+
+        // Check permission: Admin, Rider assigned, or Customer who owns the order
+        if (req.user.user_type !== 'admin' && 
+            req.user.id !== order.user_id && 
+            (req.user.user_type === 'rider' && req.user.id !== order.rider_id)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied'
+            });
+        }
+
+        // Get order items with store info
+        const [items] = await req.db.execute(`
+            SELECT oi.*, p.name as product_name, p.image_url, s.name as store_name
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            LEFT JOIN stores s ON oi.store_id = s.id
+            WHERE oi.order_id = ?
+        `, [id]);
+        
+        order.items = items;
+
+        // Group items by store for proper multi-store display
+        const storeGroups = {};
+        items.forEach(item => {
+            const sId = item.store_id || 'unknown';
+            if (!storeGroups[sId]) {
+                storeGroups[sId] = {
+                    store_id: item.store_id,
+                    store_name: item.store_name || 'Unknown Store',
+                    items: []
+                };
+            }
+            storeGroups[sId].items.push(item);
+        });
+        
+        order.store_wise_items = Object.values(storeGroups);
+
+        res.json({
+            success: true,
+            order
+        });
+
+    } catch (error) {
+        console.error('Error fetching order details:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch order details',
             error: error.message
         });
     }

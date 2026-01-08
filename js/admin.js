@@ -2063,8 +2063,11 @@ function displayOrders(orders) {
             <td>${new Date(order.created_at).toLocaleDateString()}</td>
             <td>
                 <div class="action-buttons">
+                    <button class="btn-small btn-info" onclick="viewOrderDetails(${order.id})">
+                        <i class="fas fa-eye"></i> View
+                    </button>
                     <button class="btn-small btn-edit" onclick="editOrder(${order.id})">
-                        <i class="fas fa-edit"></i> Edit Order
+                        <i class="fas fa-edit"></i> Edit
                     </button>
                 </div>
             </td>
@@ -2248,6 +2251,109 @@ function updateOrderStatus(orderId, currentStatus) {
         }
     })
     .catch(error => console.error('Error updating order:', error));
+}
+
+async function viewOrderDetails(orderId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+            showError('Error', data.message || 'Failed to load order details');
+            return;
+        }
+
+        const order = data.order;
+        document.getElementById('viewOrderTitle').textContent = `Order Details: ${order.order_number}`;
+
+        let html = `
+            <div class="order-info-section">
+                <div class="info-group">
+                    <h4>Customer Information</h4>
+                    <p><strong>Name:</strong> ${order.first_name} ${order.last_name}</p>
+                    <p><strong>Email:</strong> ${order.email}</p>
+                    <p><strong>Phone:</strong> ${order.phone || 'N/A'}</p>
+                    <p><strong>Address:</strong> ${order.delivery_address}</p>
+                </div>
+                <div class="info-group">
+                    <h4>Order Status</h4>
+                    <p><strong>Status:</strong> <span class="status-${order.status}">${order.status.toUpperCase()}</span></p>
+                    <p><strong>Payment:</strong> ${order.payment_method.toUpperCase()} (${order.payment_status})</p>
+                    <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
+                </div>
+            </div>
+            <hr>
+            <h4>Items Store-wise</h4>
+        `;
+
+        order.store_wise_items.forEach(store => {
+            html += `
+                <div class="store-order-block" style="margin-bottom: 20px; border: 1px solid #eee; padding: 15px; border-radius: 8px;">
+                    <h5 style="margin-top: 0; color: #2563eb; border-bottom: 2px solid #e5e7eb; padding-bottom: 5px;">
+                        <i class="fas fa-store"></i> ${store.store_name}
+                    </h5>
+                    <table class="items-details-table" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 1px solid #eee;">
+                                <th style="padding: 8px;">Product</th>
+                                <th style="padding: 8px;">Variant</th>
+                                <th style="padding: 8px;">Qty</th>
+                                <th style="padding: 8px;">Price</th>
+                                <th style="padding: 8px;">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            store.items.forEach(item => {
+                const subtotal = item.price * item.quantity;
+                html += `
+                    <tr style="border-bottom: 1px solid #f9f9f9;">
+                        <td style="padding: 8px;">${item.product_name}</td>
+                        <td style="padding: 8px;">${item.variant_label || '-'}</td>
+                        <td style="padding: 8px;">${item.quantity}</td>
+                        <td style="padding: 8px;">PKR ${item.price}</td>
+                        <td style="padding: 8px;">PKR ${subtotal}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        });
+
+        html += `
+            <div class="order-summary-section" style="text-align: right; margin-top: 20px; padding: 15px; background: #f8fafc; border-radius: 8px;">
+                <p><strong>Items Subtotal:</strong> PKR ${(order.total_amount - order.delivery_fee).toFixed(2)}</p>
+                <p><strong>Delivery Fee:</strong> PKR ${parseFloat(order.delivery_fee).toFixed(2)}</p>
+                <h3 style="margin: 10px 0 0 0; color: #1e293b;">Total Amount: PKR ${parseFloat(order.total_amount).toFixed(2)}</h3>
+            </div>
+        `;
+
+        if (order.rider_id) {
+            html += `
+                <hr>
+                <div class="info-group">
+                    <h4>Rider Information</h4>
+                    <p><strong>Name:</strong> ${order.rider_first_name} ${order.rider_last_name || ''}</p>
+                    <p><strong>Phone:</strong> ${order.rider_phone || 'N/A'}</p>
+                    ${order.rider_location ? `<p><strong>Last Location:</strong> ${order.rider_location}</p>` : ''}
+                </div>
+            `;
+        }
+
+        document.getElementById('orderDetailsContent').innerHTML = html;
+        showModal('viewOrderModal');
+
+    } catch (error) {
+        console.error('Error viewing order details:', error);
+        showError('Error', 'Failed to load order details');
+    }
 }
 
 async function editOrder(orderId) {
