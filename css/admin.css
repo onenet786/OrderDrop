@@ -555,23 +555,23 @@ tr:hover td {
 
 /* Forms */
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.75rem;
 }
 label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--text-main);
 }
 input,
 select,
 textarea {
   width: 100%;
-  padding: 0.875rem 1rem;
-  border: 2px solid var(--border-color); /* Thicker border */
-  border-radius: 12px;
-  font-size: 0.95rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.9rem;
   background-color: #fff;
   transition: var(--transition);
 }
@@ -580,7 +580,7 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: #667eea;
-  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 /* Search Container (Matches Products Page) */
