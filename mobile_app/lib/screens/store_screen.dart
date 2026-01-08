@@ -25,10 +25,10 @@ class _StoreScreenState extends State<StoreScreen> {
 
   int _crossAxisCountFor(double width, Orientation orientation) {
     if (orientation == Orientation.landscape) {
-      if (width >= 1000) return 2;
-      return 1;
+      if (width >= 1000) return 3;
+      return 2;
     }
-    return 1;
+    return 2;
   }
 
   double _mainAxisExtentFor(double width, int crossAxisCount) {
@@ -38,9 +38,9 @@ class _StoreScreenState extends State<StoreScreen> {
     final cardWidth =
         (width - horizontalPadding - (crossAxisCount - 1) * spacing) /
         crossAxisCount;
-    if (cardWidth >= 260) return 275;
-    if (cardWidth >= 210) return 259;
-    return 251;
+    if (cardWidth >= 260) return 260;
+    if (cardWidth >= 210) return 240;
+    return 220;
   }
 
   @override
@@ -380,63 +380,60 @@ class _StoreScreenState extends State<StoreScreen> {
                       else
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children:
-                                variants.map((v) {
-                                  final key = _variantKey(v);
-                                  final isSelected =
-                                      selectedVariant != null &&
-                                      _variantKey(selectedVariant) == key;
-                                  return InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedVariantKeyByProductId[product
-                                            .id] = key;
-                                      });
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(
-                                        right: 8.0,
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          SizedBox(
-                                            height: 24,
-                                            width: 24,
-                                            child: // ignore: deprecated_member_use
-                                              Radio<String>(
-                                              value: key,
-                                              // ignore: deprecated_member_use
-                                              groupValue:
-                                                  selectedVariant == null
-                                                      ? null
-                                                      : _variantKey(
-                                                        selectedVariant,
-                                                      ),
-                                              // ignore: deprecated_member_use
-                                              onChanged: (value) {
-                                                if (value != null) {
-                                                  setState(() {
-                                                    _selectedVariantKeyByProductId[product.id] = value;
-                                                  });
-                                                }
-                                              },
-                                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          child: RadioGroup<String>(
+                            groupValue: selectedVariant == null
+                                ? null
+                                : _variantKey(selectedVariant),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() {
+                                  _selectedVariantKeyByProductId[product.id] =
+                                      value;
+                                });
+                              }
+                            },
+                            child: Row(
+                              children:
+                                  variants.map((v) {
+                                    final key = _variantKey(v);
+                                    final isSelected =
+                                        selectedVariant != null &&
+                                        _variantKey(selectedVariant) == key;
+                                    return InkWell(
+                                      onTap: () {
+                                        setState(() {
+                                          _selectedVariantKeyByProductId[product
+                                              .id] = key;
+                                        });
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 8.0,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              height: 24,
+                                              width: 24,
+                                              child: Radio<String>(
+                                                value: key,
+                                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              ),
                                             ),
-                                          ),
-                                          Text(
-                                            v.displayLabel,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: isSelected ? Colors.blue : Colors.black87,
+                                            Text(
+                                              v.displayLabel,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: isSelected ? Colors.blue : Colors.black87,
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                }).toList(),
+                                    );
+                                  }).toList(),
+                            ),
                           ),
                         ),
                     ],
@@ -466,156 +463,166 @@ class _StoreScreenState extends State<StoreScreen> {
 
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Fixed height image container
           SizedBox(
-            height: 97,
+            height: 90,
             width: double.infinity,
             child: ClipRRect(
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(10),
+                top: Radius.circular(8),
               ),
-              child:
-                  ApiService.getImageUrl(product.imageUrl).isNotEmpty
-                      ? Image.network(
-                        ApiService.getImageUrl(product.imageUrl),
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder:
-                            (ctx, err, _) => const Icon(
-                              Icons.image_not_supported,
-                              size: 40,
-                            ),
-                      )
-                      : Container(
-                        color: Colors.grey[200],
-                        child: const Center(
-                          child: Icon(
-                            Icons.fastfood,
-                            size: 30,
-                            color: Colors.grey,
-                          ),
+              child: ApiService.getImageUrl(product.imageUrl).isNotEmpty
+                  ? Image.network(
+                      ApiService.getImageUrl(product.imageUrl),
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (ctx, err, _) => const Icon(
+                        Icons.image_not_supported,
+                        size: 30,
+                      ),
+                    )
+                  : Container(
+                      color: Colors.grey[200],
+                      child: const Center(
+                        child: Icon(
+                          Icons.fastfood,
+                          size: 24,
+                          color: Colors.grey,
                         ),
                       ),
+                    ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(6.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'PKR $displayPrice',
-                  style: const TextStyle(color: Colors.green),
-                ),
-                if (variants.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  if (variants.length == 1)
-                    Text(
-                      variants.first.displayLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.grey),
-                    )
-                  else
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(4.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'PKR ${displayPrice.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      color: Colors.green[700],
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (variants.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: RadioGroup<String>(
+                          groupValue: selectedVariant == null
+                              ? null
+                              : _variantKey(selectedVariant),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() {
+                                _selectedVariantKeyByProductId[product.id] =
+                                    value;
+                              });
+                            }
+                          },
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.start,
-                            children:
-                                variants.map((v) {
-                                  final key = _variantKey(v);
-                                  final isSelected =
-                                      selectedVariant != null &&
-                                      _variantKey(selectedVariant) == key;
-                                  return InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedVariantKeyByProductId[product
-                                            .id] = key;
-                                      });
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4.0,
+                            children: variants.map((v) {
+                              final key = _variantKey(v);
+                              final isSelected = selectedVariant != null &&
+                                  _variantKey(selectedVariant) == key;
+                              return InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedVariantKeyByProductId[product.id] =
+                                        key;
+                                  });
+                                },
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 2.0),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: Radio<String>(
+                                          value: key,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          visualDensity: const VisualDensity(
+                                            horizontal:
+                                                VisualDensity.minimumDensity,
+                                            vertical:
+                                                VisualDensity.minimumDensity,
+                                          ),
+                                        ),
                                       ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          // ignore: deprecated_member_use
-                                          Radio<String>(
-                                            value: key,
-                                            // ignore: deprecated_member_use
-                                            groupValue:
-                                                selectedVariant == null
-                                                    ? null
-                                                    : _variantKey(
-                                                      selectedVariant,
-                                                    ),
-                                            // ignore: deprecated_member_use
-                                            onChanged: (value) {
-                                              if (value == null) return;
-                                              setState(() {
-                                                _selectedVariantKeyByProductId[product
-                                                    .id] = value;
-                                              });
-                                            },
-                                            materialTapTargetSize:
-                                                MaterialTapTargetSize.shrinkWrap,
-                                            visualDensity: const VisualDensity(
-                                              horizontal:
-                                                  VisualDensity.minimumDensity,
-                                              vertical:
-                                                  VisualDensity.minimumDensity,
-                                            ),
-                                          ),
-                                          Text(
-                                            v.displayLabel,
-                                            style: TextStyle(
-                                              fontSize: 9,
-                                              fontWeight:
-                                                  isSelected
-                                                      ? FontWeight.w600
-                                                      : FontWeight.w400,
-                                            ),
-                                          ),
-                                        ],
+                                    Text(
+                                      v.displayLabel,
+                                      style: TextStyle(
+                                        fontSize: 8,
+                                        fontWeight: isSelected
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                        color: isSelected
+                                            ? Colors.blue
+                                            : Colors.grey[700],
                                       ),
                                     ),
-                                  );
-                                }).toList(),
-                          ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(),
                         ),
-                ],
-                const SizedBox(height: 5),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      minimumSize: const Size(0, 24),
-                      backgroundColor: Colors.red[900],
-                      foregroundColor: Colors.white,
+                      ),
                     ),
-                    onPressed:
-                        product.isAvailable
-                            ? () =>
-                                _addToCart(context, product, selectedVariant)
-                            : null,
-                    child: Text(product.isAvailable ? 'Add' : 'Unavailable'),
                   ),
-                ),
-              ],
+                ] else
+                    const Spacer(),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 28,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        backgroundColor: Colors.blueAccent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        elevation: 0,
+                      ),
+                      onPressed: product.isAvailable
+                          ? () => _addToCart(context, product, selectedVariant)
+                          : null,
+                      child: Text(
+                        product.isAvailable ? 'ADD' : 'N/A',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

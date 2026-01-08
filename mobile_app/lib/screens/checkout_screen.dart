@@ -117,15 +117,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ],
               ),
             ),
-            // ignore: deprecated_member_use
             Radio<String>(
               value: value,
-              // ignore: deprecated_member_use
-              groupValue: _paymentMethod,
-              // ignore: deprecated_member_use
-              onChanged: (newValue) {
-                if (newValue != null) setState(() => _paymentMethod = newValue);
-              },
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ],
@@ -533,29 +526,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                Column(
-                                  children: [
-                                    _buildPaymentOption(
-                                      title: 'Cash on Delivery',
-                                      value: 'cash',
-                                      icon: Icons.delivery_dining,
-                                      subtitle: 'Pay with cash at delivery',
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _buildPaymentOption(
-                                      title: 'Credit/Debit Card',
-                                      value: 'card',
-                                      icon: Icons.credit_card,
-                                      subtitle: 'Pay securely with your card',
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _buildPaymentOption(
-                                      title: 'Wallet',
-                                      value: 'wallet',
-                                      icon: Icons.account_balance_wallet,
-                                      subtitle: 'Use your in-app wallet',
-                                    ),
-                                  ],
+                                RadioGroup<String>(
+                                  groupValue: _paymentMethod,
+                                  onChanged: (newValue) {
+                                    if (newValue != null) {
+                                      setState(() => _paymentMethod = newValue);
+                                    }
+                                  },
+                                  child: Column(
+                                    children: [
+                                      _buildPaymentOption(
+                                        title: 'Cash on Delivery',
+                                        value: 'cash',
+                                        icon: Icons.delivery_dining,
+                                        subtitle: 'Pay with cash at delivery',
+                                      ),
+                                      const SizedBox(height: 8),
+                                      _buildPaymentOption(
+                                        title: 'Credit/Debit Card',
+                                        value: 'card',
+                                        icon: Icons.credit_card,
+                                        subtitle: 'Pay securely with your card',
+                                      ),
+                                      const SizedBox(height: 8),
+                                      _buildPaymentOption(
+                                        title: 'Wallet',
+                                        value: 'wallet',
+                                        icon: Icons.account_balance_wallet,
+                                        subtitle: 'Use your in-app wallet',
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 if (_paymentMethod == 'wallet' &&
                                     _walletBalance != null)
