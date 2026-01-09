@@ -26,4 +26,4 @@
 -dontwarn com.google.android.play.core.**
 
 # Keep model classes in your app package (adjust package name)
--keep class com.example.servenow.** { *; }
+-keep class com.onenetsol.servenow.** { *; }

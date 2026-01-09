@@ -99,7 +99,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
         title: const Text('My Orders'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              Navigator.of(context).pushReplacementNamed('/home');
+            }
+          },
         ),
         actions: [
           IconButton(

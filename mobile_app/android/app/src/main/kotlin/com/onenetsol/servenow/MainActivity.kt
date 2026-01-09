@@ -1,4 +1,4 @@
-package com.example.servenow
+package com.onenetsol.servenow
 
 import io.flutter.embedding.android.FlutterActivity
 

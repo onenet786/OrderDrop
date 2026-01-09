@@ -5,7 +5,7 @@ This document lists everything required to produce and upload a signed Android A
 ## 1) Technical Requirements
 
 - Android package name (applicationId): must be globally unique and immutable after publishing.
-  - Current: `com.example.servenow`
+  - Current: `com.onenetsol.servenow`
   - Recommended: `com.yourcompany.servenow`
   - Update in: `android/app/build.gradle.kts` under `defaultConfig { applicationId = "..." }`
 

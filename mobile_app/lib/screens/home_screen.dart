@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
+import '../providers/cart_provider.dart';
 import '../models/user.dart';
 import 'store_screen.dart';
 
@@ -119,6 +120,42 @@ class _HomeScreenState extends State<HomeScreen> {
         appBar: AppBar(
           title: const Text('ServeNow'),
           actions: [
+            Consumer<CartProvider>(
+              builder: (ctx, cart, child) => Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.shopping_cart),
+                    onPressed: () => Navigator.of(context).pushNamed('/cart'),
+                    tooltip: 'Cart',
+                  ),
+                  if (cart.itemCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          '${cart.itemCount}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.shopping_bag),
               onPressed: () => Navigator.of(context).pushNamed('/orders'),
