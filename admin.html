@@ -1143,6 +1143,14 @@
                 <input type="date" id="filterDate" class="form-control">
             </div>
             <div class="filter-group">
+                <label for="filterAssignment">Assignment</label>
+                <select id="filterAssignment" class="form-control">
+                    <option value="all">All Assignments</option>
+                    <option value="unassigned">Unassigned</option>
+                    <option value="assigned">Assigned</option>
+                </select>
+            </div>
+            <div class="filter-group">
                 <label for="filterRider">Rider</label>
                 <select id="filterRider" class="form-control">
                     <option value="">All Riders</option>
@@ -3027,7 +3035,7 @@
         align-items: center;
         margin-bottom: 1rem;
         padding-bottom: 0.75rem;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid var(--border-color);
       }
 
       .modal-header h2 {
@@ -3081,7 +3089,7 @@
         justify-content: flex-end;
         margin-top: 1rem;
         padding-top: 0.75rem;
-        border-top: 1px solid #e5e7eb;
+        border-top: 1px solid var(--border-color);
       }
 
       .form-actions button {
@@ -3091,6 +3099,3 @@
   </body>
 </html>
 
-
-        border-bottom: 1px solid #e5e7eb;
-              <option value="daily_summary">Daily Summary</option>

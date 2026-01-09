@@ -1,4 +1,19 @@
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if we are on the orders page
+    if (document.getElementById('ordersContainer')) {
+        displayOrders('pending');
+    }
+});
+
 // Display orders
+function refreshOrders() {
+    const pendingTab = document.getElementById('pendingTab');
+    // Check which tab is active (btn-primary indicates active in current CSS logic)
+    const status = pendingTab.classList.contains('btn-primary') ? 'pending' : 'all';
+    displayOrders(status);
+}
+
 async function displayOrders(status = 'pending') {
     const ordersContainer = document.getElementById('ordersContainer');
     if (!ordersContainer) return;
@@ -8,7 +23,17 @@ async function displayOrders(status = 'pending') {
         const user = userData ? JSON.parse(userData) : null;
         const isAdmin = user && user.user_type === 'admin';
 
+        // Show/Hide filter
+        const assignmentFilter = document.getElementById('assignmentFilter');
+        if (assignmentFilter && !isAdmin) {
+            assignmentFilter.style.display = 'none';
+        }
+
         let url = `${API_BASE}/api/orders?status=${status}`;
+        if (isAdmin && assignmentFilter) {
+            url += `&assignment=${assignmentFilter.value}`;
+        }
+
         if (!isAdmin) {
             url = `${API_BASE}/api/orders/my-orders`;
             // Hide tabs for non-admin
@@ -317,20 +342,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const user = JSON.parse(userData);
     const isAdmin = user.user_type === 'admin';
 
-    displayOrders(isAdmin ? 'pending' : 'all');
-
     if (isAdmin) {
-        // Tab switching
-        document.getElementById('pendingTab').addEventListener('click', function() {
-            document.getElementById('pendingTab').classList.add('active');
-            document.getElementById('allTab').classList.remove('active');
-            displayOrders('pending');
-        });
-
-        document.getElementById('allTab').addEventListener('click', function() {
-            document.getElementById('allTab').classList.add('active');
-            document.getElementById('pendingTab').classList.remove('active');
-            displayOrders('all');
-        });
+        const assignmentFilter = document.getElementById('assignmentFilter');
+        if (assignmentFilter) assignmentFilter.value = 'unassigned';
     }
+
+    displayOrders(isAdmin ? 'pending' : 'all');
 });

@@ -451,6 +451,10 @@ function initializeAdmin() {
     if (filterRider) {
         filterRider.addEventListener('change', filterOrders);
     }
+    const filterAssignment = document.getElementById('filterAssignment');
+    if (filterAssignment) {
+        filterAssignment.addEventListener('change', filterOrders);
+    }
 
     // Wire up restore confirmation modal
     const restoreInput = document.getElementById('restoreConfirmInput');
@@ -1879,7 +1883,7 @@ function displayProducts(products) {
                 card.style.borderRadius = '10px';
                 card.style.boxShadow = '0 8px 24px rgba(0,0,0,0.18)';
                 card.style.background = 'linear-gradient(180deg, #fff 0%, #f6f7fb 100%)';
-                card.style.border = '1px solid #e5e7eb';
+                card.style.border = '1px solid var(--border-color)';
                 card.style.pointerEvents = 'none';
                 document.body.appendChild(card);
             }
@@ -1894,7 +1898,7 @@ function displayProducts(products) {
                     imgSrc = API_BASE.replace(/\/$/, '') + '/' + imgSrc.replace(/^\/+/, '');
                 }
             }
-            const avatar = imgSrc ? `<img src="${imgSrc}" alt="${productName}" style="width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid #e5e7eb;">` : `<div style="width:56px;height:56px;border-radius:8px;background:#e5e7eb;border:1px solid #d1d5db;display:flex;align-items:center;justify-content:center;color:#6b7280;font-weight:700;">${(productName||'P').slice(0,1).toUpperCase()}</div>`;
+            const avatar = imgSrc ? `<img src="${imgSrc}" alt="${productName}" style="width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid var(--border-color);">` : `<div style="width:56px;height:56px;border-radius:8px;background:var(--bg-body);border:1px solid var(--border-color);display:flex;align-items:center;justify-content:center;color:#6b7280;font-weight:700;">${(productName||'P').slice(0,1).toUpperCase()}</div>`;
             const pill = `<span style="padding:4px 8px;border-radius:999px;font-size:12px;font-weight:600;display:inline-block;background:${statusBg};color:${statusColor};">${isAvailable ? 'Available' : 'Unavailable'}</span>`;
             const label = (lbl, val) => `<div style="display:flex;gap:8px;align-items:flex-start;"><div style="width:88px;color:#9ca3af;font-size:12px;">${lbl}</div><div style="flex:1;color:#374151;font-size:13px;word-break:break-word;">${val || '-'}</div></div>`;
             return `
@@ -2091,6 +2095,7 @@ function displayOrders(orders) {
 function filterOrders() {
     const dateFilter = document.getElementById('filterDate').value;
     const riderFilter = document.getElementById('filterRider').value;
+    const assignmentFilter = document.getElementById('filterAssignment') ? document.getElementById('filterAssignment').value : 'all';
     
     let filtered = currentOrders;
     
@@ -2111,6 +2116,13 @@ function filterOrders() {
             return riderName === riderFilter;
         });
     }
+
+    // Filter by assignment
+    if (assignmentFilter === 'unassigned') {
+        filtered = filtered.filter(order => !order.rider_id && order.status !== 'delivered' && order.status !== 'cancelled');
+    } else if (assignmentFilter === 'assigned') {
+        filtered = filtered.filter(order => order.rider_id);
+    }
     
     displayOrders(filtered);
 }
@@ -2118,6 +2130,8 @@ function filterOrders() {
 function clearFilters() {
     document.getElementById('filterDate').value = '';
     document.getElementById('filterRider').value = '';
+    const assignmentFilter = document.getElementById('filterAssignment');
+    if (assignmentFilter) assignmentFilter.value = 'all';
     displayOrders(currentOrders);
 }
 
@@ -2303,9 +2317,9 @@ async function viewOrderDetails(orderId) {
         order.store_wise_items.forEach(store => {
             html += `
                 <div class="store-order-block" style="margin-bottom: 20px; border: 1px solid #eee; padding: 15px; border-radius: 8px;">
-                    <h5 style="margin-top: 0; color: #2563eb; border-bottom: 2px solid #e5e7eb; padding-bottom: 5px;">
-                        <i class="fas fa-store"></i> ${store.store_name}
-                    </h5>
+                    <h5 style="margin-top: 0; color: #2563eb; border-bottom: 2px solid var(--border-color); padding-bottom: 5px;">
+                                <i class="fas fa-store"></i> ${store.store_name}
+                            </h5>
                     <table class="items-details-table" style="width: 100%; border-collapse: collapse;">
                         <thead>
                             <tr style="text-align: left; border-bottom: 1px solid #eee;">

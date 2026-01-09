@@ -141,13 +141,13 @@ router.get(
       const recent_orders = orders.map((o) => ({
         type: "order",
         title: `New Order #${o.id}`,
-        subtitle: `${o.status} - $${o.total_amount}`,
+        subtitle: `${o.status} - PKR ${o.total_amount}`,
         timestamp: o.created_at,
         icon: "shopping_bag",
         color: "blue",
         details: {
           "Order ID": `#${o.id}`,
-          Amount: `$${o.total_amount}`,
+          Amount: `PKR ${o.total_amount}`,
           Status: o.status,
           Payment: o.payment_method,
           Address: o.delivery_address,

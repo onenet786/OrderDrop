@@ -176,7 +176,7 @@ button {
 .app-header {
   grid-area: header;
   background-color: var(--bg-surface);
-  border-bottom: 1px solid var(--border-color);
+  /* border-bottom removed */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -208,7 +208,7 @@ button {
 
 .app-footer {
   margin-top: auto;
-  padding: 2rem 1rem;
+  padding: 1rem;
   background: #1e293b;
   color: #ffffff;
   text-align: center;

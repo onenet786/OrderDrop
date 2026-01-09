@@ -48,9 +48,16 @@
 
             <div class="page-header" style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
                 <h2>My Orders</h2>
-                <div class="tabs" style="display: flex; gap: 0.5rem;">
-                    <button id="pendingTab" class="btn btn-primary" onclick="switchOrderTab('pending')">Pending</button>
-                    <button id="allTab" class="btn btn-secondary" onclick="switchOrderTab('all')">All Orders</button>
+                <div class="filters" style="display: flex; gap: 1rem; align-items: center;">
+                    <select id="assignmentFilter" class="form-control" onchange="refreshOrders()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;">
+                        <option value="unassigned">Unassigned</option>
+                        <option value="all">All Assignments</option>
+                        <option value="assigned">Assigned</option>
+                    </select>
+                    <div class="tabs" style="display: flex; gap: 0.5rem;">
+                        <button id="pendingTab" class="btn btn-primary" onclick="switchOrderTab('pending')">Pending</button>
+                        <button id="allTab" class="btn btn-secondary" onclick="switchOrderTab('all')">All Orders</button>
+                    </div>
                 </div>
             </div>
 
@@ -158,6 +165,10 @@
                  allTab.classList.add('btn-primary');
                  pendingTab.classList.remove('btn-primary');
                  pendingTab.classList.add('btn-secondary');
+             }
+             
+             if (typeof displayOrders === 'function') {
+                 displayOrders(type);
              }
         }
     </script>

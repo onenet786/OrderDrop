@@ -718,10 +718,22 @@ router.get('/:id(\\d+)', authenticateToken, async (req, res) => {
 // Get all orders (Admin only)
 router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const { status } = req.query;
-        let whereClause = '';
+        const { status, assignment } = req.query;
+        let conditions = [];
+        
         if (status && status !== 'all') {
-            whereClause = `WHERE o.status = '${status}'`;
+            conditions.push(`o.status = '${status}'`);
+        }
+
+        if (assignment === 'unassigned') {
+            conditions.push(`o.rider_id IS NULL AND o.status NOT IN ('delivered', 'cancelled')`);
+        } else if (assignment === 'assigned') {
+            conditions.push(`o.rider_id IS NOT NULL`);
+        }
+
+        let whereClause = '';
+        if (conditions.length > 0) {
+            whereClause = 'WHERE ' + conditions.join(' AND ');
         }
 
         const [orders] = await req.db.execute(`
