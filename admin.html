@@ -2141,26 +2141,100 @@
                 <label for="productCategory">Category:</label>
                 <select id="productCategory" name="category_id" style="width: 100%;"></select>
               </div>
-              <div class="form-group">
-                <label for="productUnit">Unit:</label>
-                <select id="productUnit" name="unit_id" style="width: 100%;">
-                  <option value="">Select Unit (Optional)</option>
-                </select>
+
+              <!-- Measurement Mode Selection -->
+              <div class="form-group" style="grid-column: span 2; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 2rem; background: #f8fafc; padding: 0.75rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <label style="font-weight: 600; margin-bottom: 0;">Measurement Mode:</label>
+                <div style="display: flex; gap: 1.5rem;">
+                  <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0;">
+                    <input type="radio" name="product_measure_mode" id="productMeasureModeUnit" value="unit" checked /> Unit Based
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0;">
+                    <input type="radio" name="product_measure_mode" id="productMeasureModeSize" value="size" /> Size Based
+                  </label>
+                </div>
               </div>
-              <div class="form-group">
-                <label for="productSize">Size:</label>
-                <select id="productSize" name="size_id" style="width: 100%;">
-                  <option value="">Select Size (Optional)</option>
-                </select>
+
+              <!-- Single Measure Section -->
+              <div id="productSingleMeasureSection" style="grid-column: span 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                <div id="productSingleMeasureSelectorsRow" style="display: contents;">
+                  <div class="form-group">
+                    <label for="productUnit">Unit:</label>
+                    <select id="productUnit" name="unit_id" style="width: 100%;">
+                      <option value="">Select Unit (Optional)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="productSize">Size:</label>
+                    <select id="productSize" name="size_id" style="width: 100%;">
+                      <option value="">Select Size (Optional)</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 0.5rem;">
+                  <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0; font-weight: 600; color: #4f46e5;">
+                    <input type="checkbox" id="productHasSizePrices" />
+                    <span id="productVariantsToggleText">Multiple units / prices</span>
+                  </label>
+                </div>
               </div>
+
+              <!-- Multiple Variants Section -->
+              <div id="productSizePricesSection" style="grid-column: span 3; display: none; margin-top: 0.5rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                  <h4 id="productVariantsSectionTitle" style="margin: 0; color: #1e293b; font-size: 1rem;">Unit prices:</h4>
+                  <button type="button" id="addSizePriceBtn" class="btn btn-small btn-primary">
+                    <i class="fas fa-plus"></i> Add Unit Price
+                  </button>
+                </div>
+                <div style="overflow-x: auto;">
+                  <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                      <tr style="border-bottom: 2px solid #f1f5f9;">
+                        <th id="productVariantsMeasureHeader" style="text-align: left; padding: 8px; color: #64748b; font-weight: 600;">Unit</th>
+                        <th style="text-align: left; padding: 8px; color: #64748b; font-weight: 600; width: 180px;">Price (PKR)</th>
+                        <th style="text-align: left; padding: 8px; color: #64748b; font-weight: 600; width: 180px;">Cost Price (PKR)</th>
+                        <th style="text-align: center; padding: 8px; color: #64748b; font-weight: 600; width: 100px;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="productSizePricesBody">
+                      <!-- Rows added dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               <div class="form-group">
                 <label for="productPrice">Price (PKR):</label>
                 <input type="number" id="productPrice" name="price" step="0.01" min="0" style="width: 100%;" />
               </div>
               <div class="form-group">
+                <label for="productCostPrice">Cost Price (PKR):</label>
+                <input type="number" id="productCostPrice" name="cost_price" step="0.01" min="0" readonly style="width: 100%; background-color: #f1f5f9;" />
+              </div>
+              <div class="form-group">
                 <label for="productStock">Stock Quantity:</label>
                 <input type="number" id="productStock" name="stock_quantity" min="0" value="0" style="width: 100%;" />
               </div>
+
+              <!-- Discount Row (Hidden by default, shown based on store terms) -->
+              <div id="productDiscountRow" style="grid-column: span 3; display: none; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="productDiscountType">Discount Type:</label>
+                    <select id="productDiscountType" name="discount_type" style="width: 100%;">
+                      <option value="amount">Fixed Amount (PKR)</option>
+                      <option value="percent">Percentage (%)</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="productDiscountValue">Discount Value:</label>
+                    <input type="number" id="productDiscountValue" name="discount_value" step="0.01" min="0" style="width: 100%;" />
+                  </div>
+                </div>
+              </div>
+
               <div class="form-group">
                 <label for="productImageFile">Image Upload:</label>
                 <input type="file" id="productImageFile" name="image_file" accept="image/*" style="width: 100%;" />
@@ -2544,6 +2618,7 @@
 
     <script src="js/app.js?v=7"></script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script src="js/notifications.js"></script>
     <script src="js/financial.js"></script>
     <script src="js/admin.js?v=12"></script>
     <script src="js/inventory-report.js"></script>

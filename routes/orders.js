@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireStoreOwner } = require('../middleware/auth');
+const { sendOrderThanksEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -1048,7 +1049,11 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            'SELECT id, rider_id, user_id, order_number, total_amount, payment_status, status FROM orders WHERE id = ?',
+            `SELECT o.id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.payment_status, o.status,
+                    u.email as user_email, u.first_name as user_first_name
+             FROM orders o
+             JOIN users u ON o.user_id = u.id
+             WHERE o.id = ?`,
             [id]
         );
 
@@ -1104,9 +1109,14 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
                         order_number: order.order_number,
                         user_id: order.user_id,
                         total_amount: order.total_amount,
-                        message: `Order ${order.order_number} delivered and paid.`,
+                        message: `Thank you for choosing ServeNow! Your order ${order.order_number} has been completed and delivered.`,
                         timestamp: new Date()
                     });
+
+                    // Send Thanks Email
+                    if (order.user_email) {
+                        sendOrderThanksEmail(order.user_email, order.user_first_name || 'Customer', order.order_number);
+                    }
                 }
             }
         } catch (e) {
@@ -1154,7 +1164,11 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            'SELECT id, rider_id, user_id, order_number, total_amount, payment_status, status FROM orders WHERE id = ?',
+            `SELECT o.id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.payment_status, o.status,
+                    u.email as user_email, u.first_name as user_first_name
+             FROM orders o
+             JOIN users u ON o.user_id = u.id
+             WHERE o.id = ?`,
             [id]
         );
 
@@ -1239,9 +1253,14 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                         order_number: order.order_number,
                         user_id: order.user_id,
                         total_amount: order.total_amount,
-                        message: `Order ${order.order_number} delivered and paid.`,
+                        message: `Thank you for choosing ServeNow! Your order ${order.order_number} has been completed and delivered.`,
                         timestamp: new Date()
                     });
+
+                    // Send Thanks Email
+                    if (order.user_email) {
+                        sendOrderThanksEmail(order.user_email, order.user_first_name || 'Customer', order.order_number);
+                    }
                 }
             }
         } catch (e) {
