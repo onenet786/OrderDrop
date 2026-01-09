@@ -311,11 +311,30 @@ tr:hover {
 }
 
 .btn-primary {
-  background-color: var(--primary);
+  background-color: #0ea5e9;
   color: white;
 }
 .btn-primary:hover {
-  background-color: var(--primary-dark);
+  background-color: #0284c7;
+}
+
+.btn-success {
+  background-color: #10b981;
+  color: white;
+}
+.btn-success:hover {
+  background-color: #059669;
+}
+
+.order-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.order-actions .btn {
+  flex: 1;
+  min-width: 150px;
 }
 
 .btn-secondary {

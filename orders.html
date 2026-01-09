@@ -6,6 +6,35 @@
     <title>Orders - ServeNow</title>
     <link rel="stylesheet" href="css/user.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .tabs {
+            display: flex;
+            gap: 2px;
+            background: #e2e8f0;
+            padding: 4px;
+            border-radius: 8px;
+        }
+        .tab-btn {
+            padding: 8px 24px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            border: none;
+            background: transparent;
+            color: #64748b;
+            cursor: pointer;
+        }
+        .tab-btn.active {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .tab-btn:hover:not(.active) {
+            background: rgba(255,255,255,0.5);
+            color: #475569;
+        }
+    </style>
 </head>
 <body>
     <div class="app-layout">
@@ -54,9 +83,9 @@
                         <option value="all">All Assignments</option>
                         <option value="assigned">Assigned</option>
                     </select>
-                    <div class="tabs" style="display: flex; gap: 0.5rem;">
-                        <button id="pendingTab" class="btn btn-primary" onclick="switchOrderTab('pending')">Pending</button>
-                        <button id="allTab" class="btn btn-secondary" onclick="switchOrderTab('all')">All Orders</button>
+                    <div class="tabs">
+                        <button id="pendingTab" class="tab-btn active" onclick="switchOrderTab('pending')">Pending</button>
+                        <button id="allTab" class="tab-btn" onclick="switchOrderTab('all')">All Orders</button>
                     </div>
                 </div>
             </div>
@@ -152,19 +181,11 @@
              const allTab = document.getElementById('allTab');
              
              if(type === 'pending') {
-                 pendingTab.classList.remove('btn-secondary');
-                 pendingTab.classList.add('btn-primary');
-                 allTab.classList.remove('btn-primary');
-                 allTab.classList.add('btn-secondary');
-                 // Trigger logic if needed, or rely on orders.js if it attaches to click
-                 // Inspecting orders.js might be needed if it doesn't work.
-                 // Assuming orders.js attaches listeners.
-                 // If not, we might need to call a function.
+                 pendingTab.classList.add('active');
+                 allTab.classList.remove('active');
              } else {
-                 allTab.classList.remove('btn-secondary');
-                 allTab.classList.add('btn-primary');
-                 pendingTab.classList.remove('btn-primary');
-                 pendingTab.classList.add('btn-secondary');
+                 allTab.classList.add('active');
+                 pendingTab.classList.remove('active');
              }
              
              if (typeof displayOrders === 'function') {

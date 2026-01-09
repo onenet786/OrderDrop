@@ -95,17 +95,30 @@ async function ensureRiderLocationColumns(db) {
 router.get('/my-orders', authenticateToken, async (req, res) => {
     try {
         await ensureOrderItemsSchema(req.db);
-        // await ensureOrdersParentColumn(req.db); // Not strictly needed if we don't use it for grouping anymore
         
-        const [orders] = await req.db.execute(`
+        const { status } = req.query;
+        let query = `
             SELECT o.*, s.name as store_name, s.location as store_location,
                    r.first_name as rider_first_name, r.last_name as rider_last_name, r.phone as rider_phone
             FROM orders o
             LEFT JOIN stores s ON o.store_id = s.id
             LEFT JOIN riders r ON o.rider_id = r.id
             WHERE o.user_id = ?
-            ORDER BY o.created_at DESC
-        `, [req.user.id]);
+        `;
+        const params = [req.user.id];
+
+        if (status && status !== 'all') {
+            if (status === 'pending') {
+                query += " AND o.status IN ('pending', 'confirmed', 'preparing', 'ready', 'out_for_delivery')";
+            } else {
+                query += " AND o.status = ?";
+                params.push(status);
+            }
+        }
+
+        query += " ORDER BY o.created_at DESC";
+        
+        const [orders] = await req.db.execute(query, params);
 
         // Get order items for each order
         for (let order of orders) {
@@ -478,7 +491,7 @@ router.get('/available-riders', authenticateToken, requireAdmin, async (req, res
     }
 });
 
-// Get rider's deliveries
+// Get current rider's deliveries (for mobile app)
 router.get('/rider/deliveries', authenticateToken, async (req, res) => {
     try {
         await ensureOrderItemsSchema(req.db);
@@ -505,6 +518,76 @@ router.get('/rider/deliveries', authenticateToken, async (req, res) => {
             WHERE ${whereClause}
             ORDER BY o.created_at DESC
         `, [req.user.id]);
+
+        // Fetch items for each delivery
+        for (let delivery of deliveries) {
+            // Set display name for multi-store orders
+            if (!delivery.store_id) {
+                delivery.store_name = 'Multiple Stores';
+                delivery.store_location = 'Various Locations';
+            }
+
+            const [items] = await req.db.execute(`
+                SELECT oi.*, p.name as product_name, p.image_url, s.name as store_name
+                FROM order_items oi
+                LEFT JOIN products p ON oi.product_id = p.id
+                LEFT JOIN stores s ON oi.store_id = s.id
+                WHERE oi.order_id = ?
+            `, [delivery.id]);
+            delivery.items = items;
+        }
+
+        res.json({
+            success: true,
+            deliveries
+        });
+
+    } catch (error) {
+        console.error('Error fetching rider deliveries:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch deliveries',
+            error: error.message
+        });
+    }
+});
+
+// Get rider's deliveries by ID (for admins viewing a specific rider)
+router.get('/rider/:riderId/deliveries', authenticateToken, async (req, res) => {
+    try {
+        await ensureOrderItemsSchema(req.db);
+        const { riderId } = req.params;
+        const { status } = req.query;
+        
+        // Only riders can view their own deliveries, admins can view any rider's deliveries
+        if (req.user.user_type === 'rider' && req.user.id != riderId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. You can only view your own deliveries.'
+            });
+        }
+        if (req.user.user_type !== 'rider' && req.user.user_type !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied.'
+            });
+        }
+
+        let whereClause = 'o.rider_id = ?';
+        if (status === 'assigned') {
+            whereClause += " AND o.status IN ('out_for_delivery', 'confirmed', 'preparing', 'ready')";
+        } else if (status === 'completed') {
+            whereClause += " AND o.status = 'delivered'";
+        }
+
+        const [deliveries] = await req.db.execute(`
+            SELECT o.*, u.first_name, u.last_name, u.phone, s.name as store_name, s.location as store_location
+            FROM orders o
+            JOIN users u ON o.user_id = u.id
+            LEFT JOIN stores s ON o.store_id = s.id
+            WHERE ${whereClause}
+            ORDER BY o.created_at DESC
+        `, [riderId]);
 
         // Fetch items for each delivery
         for (let delivery of deliveries) {

@@ -9,8 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // Display orders
 function refreshOrders() {
     const pendingTab = document.getElementById('pendingTab');
-    // Check which tab is active (btn-primary indicates active in current CSS logic)
-    const status = pendingTab.classList.contains('btn-primary') ? 'pending' : 'all';
+    // Check which tab is active
+    const status = pendingTab.classList.contains('active') ? 'pending' : 'all';
     displayOrders(status);
 }
 
@@ -35,10 +35,8 @@ async function displayOrders(status = 'pending') {
         }
 
         if (!isAdmin) {
-            url = `${API_BASE}/api/orders/my-orders`;
-            // Hide tabs for non-admin
-            const tabs = document.querySelector('.orders-tabs');
-            if (tabs) tabs.style.display = 'none';
+            url = `${API_BASE}/api/orders/my-orders?status=${status}`;
+            // Do NOT hide tabs for non-admin
         }
 
         const response = await fetch(url, {
@@ -107,7 +105,7 @@ async function displayOrders(status = 'pending') {
                         <p><strong>Delivery Address:</strong> ${order.delivery_address}</p>
                         <p><strong>Items:</strong> ${order.items_count || (order.items ? order.items.length : 0)} items</p>
                         ${order.rider_latitude && order.rider_longitude ? 
-                            `<p><strong>Rider Location:</strong> ${order.rider_latitude.toFixed(6)}, ${order.rider_longitude.toFixed(6)} 
+                            `<p><strong>Rider Location:</strong> ${Number(order.rider_latitude).toFixed(6)}, ${Number(order.rider_longitude).toFixed(6)} 
                             <a href="https://www.google.com/maps?q=${order.rider_latitude},${order.rider_longitude}" target="_blank" style="margin-left: 8px; font-size: 0.9em; color: #2196F3;"><i class="fas fa-map-marker-alt"></i> View on Map</a></p>` : 
                             (order.rider_location ? `<p><strong>Rider Location:</strong> ${order.rider_location}</p>` : '')}
                         ${order.estimated_delivery_time ? `<p><strong>Estimated Delivery:</strong> ${new Date(order.estimated_delivery_time).toLocaleString()}</p>` : ''}
@@ -347,5 +345,5 @@ document.addEventListener('DOMContentLoaded', function() {
         if (assignmentFilter) assignmentFilter.value = 'unassigned';
     }
 
-    displayOrders(isAdmin ? 'pending' : 'all');
+    displayOrders('pending');
 });

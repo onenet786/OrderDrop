@@ -59,6 +59,42 @@ let currentLng = null;
 let locationWatchId = null;
 window._riderDeliveries = {};
 
+let requestCache = {};
+let requestRetry = {};
+const REQUEST_CACHE_TTL = 5000;
+const MAX_RETRIES = 3;
+
+async function fetchWithBackoff(url, options = {}, retryCount = 0) {
+    const cacheKey = url;
+    const now = Date.now();
+    
+    if (requestCache[cacheKey] && now - requestCache[cacheKey].time < REQUEST_CACHE_TTL) {
+        return Promise.resolve(requestCache[cacheKey].response.clone());
+    }
+    
+    try {
+        const response = await fetch(url, options);
+        
+        if (response.status === 429) {
+            if (retryCount < MAX_RETRIES) {
+                const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return fetchWithBackoff(url, options, retryCount + 1);
+            }
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        if (response.ok) {
+            requestCache[cacheKey] = { response: response.clone(), time: now };
+        }
+        
+        return response;
+    } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+    }
+}
+
 // Normalize relative image URL to absolute
 function _normalizeImageUrl(url) {
     try {
@@ -75,7 +111,7 @@ function _normalizeImageUrl(url) {
 // Load Rider Profile and populate header + Profile tab
 async function loadRiderProfile() {
     try {
-        const response = await fetch(`${API_BASE}/api/orders/rider/profile`, {
+        const response = await fetchWithBackoff(`${API_BASE}/api/orders/rider/profile`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             }
@@ -119,7 +155,7 @@ async function loadRiderProfile() {
 // Load Rider Wallet and populate Wallet tab
 async function loadRiderWallet() {
     try {
-        const response = await fetch(`${API_BASE}/api/wallet/balance`, {
+        const response = await fetchWithBackoff(`${API_BASE}/api/wallet/balance`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             }
@@ -259,7 +295,7 @@ async function autoUpdateLocation() {
 
     try {
         // Get active deliveries
-        const response = await fetch(`${API_BASE}/api/orders/rider/deliveries?status=assigned`, {
+        const response = await fetchWithBackoff(`${API_BASE}/api/orders/rider/deliveries?status=assigned`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             }
@@ -269,7 +305,7 @@ async function autoUpdateLocation() {
         if (data.success && data.deliveries.length > 0) {
             // Update location for all active deliveries
             for (const delivery of data.deliveries) {
-                await fetch(`${API_BASE}/api/orders/${delivery.id}/rider-location`, {
+                await fetchWithBackoff(`${API_BASE}/api/orders/${delivery.id}/rider-location`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
@@ -288,24 +324,79 @@ async function autoUpdateLocation() {
     }
 }
 
-// Display rider's deliveries
+// Switch delivery tab
+function switchDeliveryTab(status) {
+    const assignedTab = document.getElementById('assignedTab');
+    const completedTab = document.getElementById('completedTab');
+    const assignedTab2 = document.getElementById('assignedTab2');
+    const completedTab2 = document.getElementById('completedTab2');
+    const assignedContent = document.getElementById('assigned');
+    const completedContent = document.getElementById('completed');
+    
+    if (status === 'assigned') {
+        if (assignedTab) assignedTab.classList.add('active');
+        if (completedTab) completedTab.classList.remove('active');
+        if (assignedTab2) assignedTab2.classList.add('active');
+        if (completedTab2) completedTab2.classList.remove('active');
+        if (assignedContent) assignedContent.classList.add('active');
+        if (completedContent) completedContent.classList.remove('active');
+    } else {
+        if (assignedTab) assignedTab.classList.remove('active');
+        if (completedTab) completedTab.classList.add('active');
+        if (assignedTab2) assignedTab2.classList.remove('active');
+        if (completedTab2) completedTab2.classList.add('active');
+        if (assignedContent) assignedContent.classList.remove('active');
+        if (completedContent) completedContent.classList.add('active');
+    }
+    
+    if (status === 'assigned') {
+        displayRiderDeliveries('assigned', 'deliveriesContainer');
+    } else {
+        displayCompletedDeliveries();
+    }
+}
+
+let deliveriesLoadingState = {};
+
 async function displayRiderDeliveries(status = 'assigned', containerId = 'deliveriesContainer') {
     const deliveriesContainer = document.getElementById(containerId);
     if (!deliveriesContainer) return;
 
+    const requestKey = `${status}-${containerId}`;
+    
+    if (deliveriesLoadingState[requestKey]) {
+        console.log('Request already in progress for:', requestKey);
+        return;
+    }
+    
+    deliveriesLoadingState[requestKey] = true;
+
     try {
-        const response = await fetch(`${API_BASE}/api/orders/rider/deliveries?status=${status}`, {
+        const token = localStorage.getItem('serveNowToken');
+        const url = `${API_BASE}/api/orders/rider/deliveries?status=${status}`;
+        console.log('Fetching deliveries from:', url);
+        
+        const response = await fetchWithBackoff(url, {
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
-            }
+                'Authorization': `Bearer ${token}`
+            },
+            cache: 'no-store'
         });
 
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
         const data = await response.json();
-        if (data.success) {
+        console.log('Deliveries data:', data);
+        
+        if (data.success && data.deliveries) {
             deliveriesContainer.innerHTML = '';
 
             if (data.deliveries.length === 0) {
-                deliveriesContainer.innerHTML = '<p>No deliveries found.</p>';
+                deliveriesContainer.innerHTML = '<p style="padding: 1rem; text-align: center; color: #999;">No deliveries found for this status.</p>';
                 return;
             }
 
@@ -346,12 +437,11 @@ async function displayRiderDeliveries(status = 'assigned', containerId = 'delive
                                 `).join('') : '<li>No items found</li>'}
                             </ul>
                         </div>
-                        ${delivery.rider_latitude && delivery.rider_longitude ? `<p><strong>My Location:</strong> ${delivery.rider_latitude.toFixed(6)}, ${delivery.rider_longitude.toFixed(6)}</p>` : (delivery.rider_location ? `<p><strong>My Location:</strong> ${delivery.rider_location}</p>` : '')}
+                        ${delivery.rider_latitude && delivery.rider_longitude ? `<p><strong>My Location:</strong> ${Number(delivery.rider_latitude).toFixed(6)}, ${Number(delivery.rider_longitude).toFixed(6)}</p>` : (delivery.rider_location ? `<p><strong>My Location:</strong> ${delivery.rider_location}</p>` : '')}
                         ${delivery.estimated_delivery_time ? `<p><strong>Estimated Delivery:</strong> ${new Date(delivery.estimated_delivery_time).toLocaleString()}</p>` : ''}
                     </div>
                     <div class="order-actions">
                         ${delivery.status === 'out_for_delivery' ? `
-                            <button onclick="updateMyLocation(${delivery.id})" class="btn btn-info">Update My Location</button>
                             <button onclick="markDelivered(${delivery.id})" class="btn btn-success">Mark as Delivered</button>
                             <button onclick="updatePaymentStatus(${delivery.id}, 'paid')" class="btn btn-primary">Mark Payment Received</button>
                         ` : `
@@ -362,11 +452,15 @@ async function displayRiderDeliveries(status = 'assigned', containerId = 'delive
                 deliveriesContainer.appendChild(deliveryCard);
             });
         } else {
-            deliveriesContainer.innerHTML = '<p>Failed to load deliveries.</p>';
+            const errorMsg = data.message || 'Failed to load deliveries';
+            console.error('Error from API:', errorMsg);
+            deliveriesContainer.innerHTML = `<p style="padding: 1rem; text-align: center; color: #e53e3e;">${errorMsg}</p>`;
         }
     } catch (error) {
         console.error('Error loading deliveries:', error);
-        deliveriesContainer.innerHTML = '<p>Error loading deliveries.</p>';
+        deliveriesContainer.innerHTML = `<p style="padding: 1rem; text-align: center; color: #e53e3e;">Error: ${error.message}</p>`;
+    } finally {
+        deliveriesLoadingState[requestKey] = false;
     }
 }
 
@@ -409,7 +503,7 @@ async function markDelivered(orderId) {
     if (!confirm('Are you sure the delivery is completed?')) return;
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders/${orderId}/deliver`, {
+        const response = await fetchWithBackoff(`${API_BASE}/api/orders/${orderId}/deliver`, {
             method: 'PUT',
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
@@ -434,7 +528,7 @@ async function updatePaymentStatus(orderId, status) {
     if (!confirm('Confirm that payment has been received?')) return;
 
     try {
-        const response = await fetch(`${API_BASE}/api/orders/${orderId}/payment-status`, {
+        const response = await fetchWithBackoff(`${API_BASE}/api/orders/${orderId}/payment-status`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -465,7 +559,7 @@ function viewDeliveryDetails(orderId) {
 // Load rider info
 async function loadRiderInfo() {
     try {
-        const response = await fetch(`${API_BASE}/api/orders/rider/profile`, {
+        const response = await fetchWithBackoff(`${API_BASE}/api/orders/rider/profile`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             }

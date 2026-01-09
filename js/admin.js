@@ -590,6 +590,29 @@ function initializeAdmin() {
     if (fuelRiderSelect) fuelRiderSelect.addEventListener('change', function() {
         if (this.value) loadFuelHistory(this.value);
     });
+
+    const activeRiderSelect = document.getElementById('activeRiderSelect');
+    if (activeRiderSelect) activeRiderSelect.addEventListener('change', function() {
+        if (this.value) loadRiderActiveDeliveries(this.value);
+    });
+
+    const completedRiderSelect = document.getElementById('completedRiderSelect');
+    if (completedRiderSelect) completedRiderSelect.addEventListener('change', function() {
+        if (this.value) loadRiderCompletedDeliveries(this.value);
+    });
+
+    const refreshActiveDeliveriesBtn = document.getElementById('refreshActiveDeliveriesBtn');
+    if (refreshActiveDeliveriesBtn) refreshActiveDeliveriesBtn.addEventListener('click', function() {
+        const sel = document.getElementById('activeRiderSelect');
+        if (sel && sel.value) loadRiderActiveDeliveries(sel.value);
+    });
+
+    const refreshCompletedDeliveriesBtn = document.getElementById('refreshCompletedDeliveriesBtn');
+    if (refreshCompletedDeliveriesBtn) refreshCompletedDeliveriesBtn.addEventListener('click', function() {
+        const sel = document.getElementById('completedRiderSelect');
+        if (sel && sel.value) loadRiderCompletedDeliveries(sel.value);
+    });
+
     (function attachFuelAutoCalc(){
         const s = document.getElementById('startMeter');
         const e = document.getElementById('endMeter');
@@ -1167,12 +1190,171 @@ function openRiderSubtab(subtab) {
             const idToLoad = sel && sel.value ? sel.value : selId;
             if (idToLoad) loadFuelHistory(idToLoad).catch(()=>{});
         }).catch(err => console.error('Error opening rider fuel subtab', err));
+    } else if (subtab === 'active') {
+        const panel = document.getElementById('rider-active-panel');
+        if (panel) panel.style.display = 'block';
+
+        loadRidersForDeliveriesSelect('activeRiderSelect').then(() => {
+            const sel = document.getElementById('activeRiderSelect');
+            if (sel && sel.options.length > 1) {
+                sel.selectedIndex = 1;
+                loadRiderActiveDeliveries(sel.value);
+            }
+        }).catch(err => console.error('Error opening rider active deliveries subtab', err));
+    } else if (subtab === 'completed') {
+        const panel = document.getElementById('rider-completed-panel');
+        if (panel) panel.style.display = 'block';
+
+        loadRidersForDeliveriesSelect('completedRiderSelect').then(() => {
+            const sel = document.getElementById('completedRiderSelect');
+            if (sel && sel.options.length > 1) {
+                sel.selectedIndex = 1;
+                loadRiderCompletedDeliveries(sel.value);
+            }
+        }).catch(err => console.error('Error opening rider completed deliveries subtab', err));
     } else {
         const panel = document.getElementById('rider-list-panel');
         if (panel) panel.style.display = 'block';
         // ensure riders list is loaded
         loadRiders();
     }
+}
+
+// Load riders for deliveries select (Active/Completed tabs)
+async function loadRidersForDeliveriesSelect(selectId) {
+    try {
+        const resp = await fetch(`${API_BASE}/api/riders`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await resp.json();
+        if (data.success && data.riders && Array.isArray(data.riders)) {
+            const select = document.getElementById(selectId);
+            if (select) {
+                select.innerHTML = '<option value="">-- Select Rider --</option>';
+                data.riders.forEach(rider => {
+                    const name = rider.full_name || `${rider.first_name || ''} ${rider.last_name || ''}`.trim() || 'Unknown Rider';
+                    const opt = document.createElement('option');
+                    opt.value = rider.id;
+                    opt.textContent = `${name} (${rider.email})`;
+                    select.appendChild(opt);
+                });
+            }
+        }
+    } catch (err) {
+        console.error('Error loading riders for deliveries select:', err);
+    }
+}
+
+// Load active deliveries for a rider
+async function loadRiderActiveDeliveries(riderId) {
+    try {
+        const resp = await fetch(`${API_BASE}/api/orders/rider/${riderId}/deliveries?status=assigned&t=${Date.now()}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` },
+            cache: 'no-store'
+        });
+        const data = await resp.json();
+        if (data.success && data.deliveries) {
+            displayRiderActiveDeliveries(data.deliveries);
+        } else {
+            document.getElementById('activeDeliveriesTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;">No active deliveries found.</td></tr>';
+        }
+    } catch (err) {
+        console.error('Error loading active deliveries:', err);
+        showError('Error', 'Failed to load active deliveries: ' + err.message);
+    }
+}
+
+// Load completed deliveries for a rider
+async function loadRiderCompletedDeliveries(riderId) {
+    try {
+        const resp = await fetch(`${API_BASE}/api/orders/rider/${riderId}/deliveries?status=completed&t=${Date.now()}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` },
+            cache: 'no-store'
+        });
+        const data = await resp.json();
+        if (data.success && data.deliveries) {
+            displayRiderCompletedDeliveries(data.deliveries);
+        } else {
+            document.getElementById('completedDeliveriesTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;">No completed deliveries found.</td></tr>';
+        }
+    } catch (err) {
+        console.error('Error loading completed deliveries:', err);
+        showError('Error', 'Failed to load completed deliveries: ' + err.message);
+    }
+}
+
+// Display active deliveries in table
+function displayRiderActiveDeliveries(deliveries) {
+    const tbody = document.getElementById('activeDeliveriesTableBody');
+    tbody.innerHTML = '';
+    
+    if (!deliveries || deliveries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No active deliveries found.</td></tr>';
+        return;
+    }
+
+    deliveries.forEach(delivery => {
+        const customerName = `${delivery.first_name || ''} ${delivery.last_name || ''}`.trim() || 'Unknown';
+        const storeName = delivery.store_name || 'Multiple Stores';
+        const status = delivery.status || 'Unknown';
+        const createdAt = delivery.created_at ? new Date(delivery.created_at).toLocaleString() : 'N/A';
+        const itemCount = delivery.items ? delivery.items.length : 0;
+        const total = delivery.total_amount || 0;
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>#${delivery.id}</td>
+            <td>${customerName}</td>
+            <td>${storeName}</td>
+            <td><span class="status-pending">${status}</span></td>
+            <td>${createdAt}</td>
+            <td>${itemCount} item${itemCount !== 1 ? 's' : ''}</td>
+            <td>Rs. ${Number(total).toFixed(2)}</td>
+            <td>
+                <button class="btn-small btn-primary" onclick="viewOrderDetails(${delivery.id})" title="View Details">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+// Display completed deliveries in table
+function displayRiderCompletedDeliveries(deliveries) {
+    const tbody = document.getElementById('completedDeliveriesTableBody');
+    tbody.innerHTML = '';
+    
+    if (!deliveries || deliveries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No completed deliveries found.</td></tr>';
+        return;
+    }
+
+    deliveries.forEach(delivery => {
+        const customerName = `${delivery.first_name || ''} ${delivery.last_name || ''}`.trim() || 'Unknown';
+        const storeName = delivery.store_name || 'Multiple Stores';
+        const status = delivery.status || 'delivered';
+        const updatedAt = delivery.updated_at ? new Date(delivery.updated_at).toLocaleString() : 'N/A';
+        const itemCount = delivery.items ? delivery.items.length : 0;
+        const total = delivery.total_amount || 0;
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>#${delivery.id}</td>
+            <td>${customerName}</td>
+            <td>${storeName}</td>
+            <td><span class="status-active">${status}</span></td>
+            <td>${updatedAt}</td>
+            <td>${itemCount} item${itemCount !== 1 ? 's' : ''}</td>
+            <td>Rs. ${Number(total).toFixed(2)}</td>
+            <td>
+                <button class="btn-small btn-primary" onclick="viewOrderDetails(${delivery.id})" title="View Details">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
 }
 
 // ---------------- Database backup client functions ----------------
@@ -2074,7 +2256,7 @@ function displayOrders(orders) {
             <td><span class="status-${order.status}">${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</span></td>
             <td>${riderName}</td>
             <td>${order.rider_latitude && order.rider_longitude ? 
-                `${order.rider_latitude.toFixed(4)}, ${order.rider_longitude.toFixed(4)}` : 
+                `${Number(order.rider_latitude).toFixed(4)}, ${Number(order.rider_longitude).toFixed(4)}` : 
                 (order.rider_location || 'N/A')}</td>
             <td>${new Date(order.created_at).toLocaleDateString()}</td>
             <td>

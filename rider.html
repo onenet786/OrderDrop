@@ -6,6 +6,35 @@
     <title>Rider Dashboard - ServeNow</title>
     <link rel="stylesheet" href="css/rider.css?v=2">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .tabs {
+            display: flex;
+            gap: 2px;
+            background: #e2e8f0;
+            padding: 4px;
+            border-radius: 8px;
+        }
+        .tab-btn {
+            padding: 8px 24px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            border: none;
+            background: transparent;
+            color: #64748b;
+            cursor: pointer;
+        }
+        .tab-btn.active {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .tab-btn:hover:not(.active) {
+            background: rgba(255,255,255,0.5);
+            color: #475569;
+        }
+    </style>
 </head>
 <body>
     <div class="app-layout">
@@ -82,7 +111,13 @@
             </div>
 
             <div id="assigned" class="tab-content active">
-                <h3>My Deliveries</h3>
+                <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+                    <h3>My Deliveries</h3>
+                    <div class="tabs">
+                        <button id="assignedTab" class="tab-btn active" onclick="switchDeliveryTab('assigned')">Active</button>
+                        <button id="completedTab" class="tab-btn" onclick="switchDeliveryTab('completed')">Completed</button>
+                    </div>
+                </div>
                 <div id="deliveriesContainer" class="stats-grid">
                     <!-- Deliveries will be loaded here -->
                     <p>Loading deliveries...</p>
@@ -90,7 +125,13 @@
             </div>
 
             <div id="completed" class="tab-content">
-                <h3>Completed Deliveries</h3>
+                <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+                    <h3>Completed Deliveries</h3>
+                    <div class="tabs">
+                        <button id="assignedTab2" class="tab-btn" onclick="switchDeliveryTab('assigned')">Active</button>
+                        <button id="completedTab2" class="tab-btn active" onclick="switchDeliveryTab('completed')">Completed</button>
+                    </div>
+                </div>
                 <div id="completedDeliveriesContainer" class="stats-grid">
                     <!-- Completed deliveries will be loaded here -->
                     <p>Loading history...</p>

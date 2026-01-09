@@ -1701,6 +1701,20 @@
               >
                 Fuel
               </button>
+              <button
+                class="btn btn-secondary rider-subtab-link"
+                data-rider-subtab="active"
+                id="riderActiveTabBtn"
+              >
+                Active Deliveries
+              </button>
+              <button
+                class="btn btn-secondary rider-subtab-link"
+                data-rider-subtab="completed"
+                id="riderCompletedTabBtn"
+              >
+                Completed Deliveries
+              </button>
             </div>
           </div>
 
@@ -1875,6 +1889,82 @@
                   </tr>
                 </thead>
                 <tbody id="fuelHistoryTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div
+            id="rider-active-panel"
+            class="rider-subpanel"
+            style="display: none; margin-top: 1rem"
+          >
+            <h3>Active Deliveries</h3>
+            <div class="filter-controls">
+              <div class="filter-group">
+                <label for="activeRiderSelect">Select Rider</label>
+                <select id="activeRiderSelect" class="form-control">
+                  <option value="">-- Select Rider --</option>
+                </select>
+              </div>
+              <button class="btn btn-secondary" id="refreshActiveDeliveriesBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                Refresh
+              </button>
+            </div>
+            <div class="table-container">
+              <table id="activeDeliveriesTable">
+                <thead>
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Customer</th>
+                    <th>Store</th>
+                    <th>Status</th>
+                    <th>Created At</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="activeDeliveriesTableBody">
+                  <!-- Active deliveries will be loaded here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div
+            id="rider-completed-panel"
+            class="rider-subpanel"
+            style="display: none; margin-top: 1rem"
+          >
+            <h3>Completed Deliveries</h3>
+            <div class="filter-controls">
+              <div class="filter-group">
+                <label for="completedRiderSelect">Select Rider</label>
+                <select id="completedRiderSelect" class="form-control">
+                  <option value="">-- Select Rider --</option>
+                </select>
+              </div>
+              <button class="btn btn-secondary" id="refreshCompletedDeliveriesBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                Refresh
+              </button>
+            </div>
+            <div class="table-container">
+              <table id="completedDeliveriesTable">
+                <thead>
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Customer</th>
+                    <th>Store</th>
+                    <th>Status</th>
+                    <th>Delivered At</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="completedDeliveriesTableBody">
+                  <!-- Completed deliveries will be loaded here -->
+                </tbody>
               </table>
             </div>
           </div>
