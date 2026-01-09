@@ -53,11 +53,20 @@ class NotificationProvider with ChangeNotifier {
     _socket!.connect();
 
     _socket!.onConnect((_) {
-      debugPrint('Socket connected');
+      debugPrint('Socket connected: ${_socket?.id}');
+    });
+
+    _socket!.onConnectError((data) {
+      debugPrint('Socket connection error: $data');
+    });
+
+    _socket!.onError((data) {
+      debugPrint('Socket error: $data');
     });
 
     // Admin Notifications
     _socket!.on('new_user', (data) {
+      debugPrint('Socket: new_user received');
       if (_authProvider?.isAdmin == true) {
         _showNotification(
           'New User Registered',
@@ -67,6 +76,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('new_order', (data) {
+      debugPrint('Socket: new_order received');
       if (_authProvider?.isAdmin == true) {
         _showNotification(
           'New Order Placed',
@@ -76,6 +86,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('order_assigned', (data) {
+      debugPrint('Socket: order_assigned received');
       if (_authProvider?.isAdmin == true) {
         _showNotification(
           'Order Assigned',
@@ -85,21 +96,26 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('order_status_update', (data) {
+      debugPrint('Socket: order_status_update received for user ${data['user_id']}');
       // Admin sees all updates; User sees their own
       if (_authProvider?.isAdmin == true) {
         _showNotification(
           'Order Status Updated',
           'Order #${data['order_number']} is now ${data['status']}',
         );
-      } else if (_authProvider?.user?.id == data['user_id']) {
-        // Optionally notify user here, but user_notification is preferred if backend sends it
+      } else if (_authProvider?.user?.id.toString() == data['user_id'].toString()) {
+        _showNotification(
+          'Order Update',
+          'Your order #${data['order_number']} status is now ${data['status']}',
+        );
       }
     });
 
     // Rider Notifications
     _socket!.on('rider_notification', (data) {
+      debugPrint('Socket: rider_notification received for rider ${data['rider_id']}');
       if (_authProvider?.isRider == true &&
-          _authProvider?.user?.id == data['rider_id']) {
+          _authProvider?.user?.id.toString() == data['rider_id'].toString()) {
         _showNotification(
           'New Assignment',
           data['message'] ?? 'You have a new order assignment.',
@@ -109,7 +125,8 @@ class NotificationProvider with ChangeNotifier {
 
     // User Notifications
     _socket!.on('user_notification', (data) {
-      if (_authProvider?.user?.id == data['user_id']) {
+      debugPrint('Socket: user_notification received for user ${data['user_id']}');
+      if (_authProvider?.user?.id.toString() == data['user_id'].toString()) {
         _showNotification(
           'Order Update',
           data['message'] ?? 'Your order has been updated.',
@@ -118,13 +135,13 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('payment_status_update', (data) {
+      debugPrint('Socket: payment_status_update received for user ${data['user_id']}');
       if (_authProvider?.isAdmin == true) {
         _showNotification(
           'Payment Status Updated',
           'Order #${data['order_number']} payment is now ${data['payment_status']}',
         );
-      } else if (_authProvider?.user?.id == data['user_id']) {
-        // Optional: User usually checks app, but we can notify
+      } else if (_authProvider?.user?.id.toString() == data['user_id'].toString()) {
         _showNotification(
           'Payment Update',
           'Payment status for Order #${data['order_number']} is now ${data['payment_status']}',
@@ -133,12 +150,13 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('order_completed', (data) {
+      debugPrint('Socket: order_completed received for user ${data['user_id']}');
       if (_authProvider?.isAdmin == true) {
         _showNotification(
           'Order Completed',
           'Order #${data['order_number']} delivered and paid.',
         );
-      } else if (_authProvider?.user?.id == data['user_id']) {
+      } else if (_authProvider?.user?.id.toString() == data['user_id'].toString()) {
         _showNotification(
           'Order Completed',
           data['message'] ?? 'Your order has been delivered and paid.',
