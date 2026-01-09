@@ -16,15 +16,20 @@ class NotificationProvider with ChangeNotifier {
   }
 
   void _updateSocketConnection() {
-    // Only connect if user is authenticated and is an admin
-    if (_authProvider != null &&
-        _authProvider!.isAuthenticated &&
-        _authProvider!.isAdmin) {
+    // Connect if user is authenticated (Admin, Rider, or User)
+    if (_authProvider != null && _authProvider!.isAuthenticated) {
       if (_socket == null || !_socket!.connected) {
         _initSocket();
       }
     } else {
       _disconnectSocket();
+    }
+  }
+
+  void _disconnectSocket() {
+    if (_socket != null) {
+      _socket!.disconnect();
+      _socket = null;
     }
   }
 
@@ -51,25 +56,95 @@ class NotificationProvider with ChangeNotifier {
       debugPrint('Socket connected');
     });
 
+    // Admin Notifications
     _socket!.on('new_user', (data) {
-      _showNotification(
-        'New User Registered',
-        '${data['first_name']} ${data['last_name']} (${data['user_type']}) has joined.',
-      );
+      if (_authProvider?.isAdmin == true) {
+        _showNotification(
+          'New User Registered',
+          '${data['first_name']} ${data['last_name']} (${data['user_type']}) has joined.',
+        );
+      }
     });
 
-    _socket!.on('new_order', (data) => _showNotification(
+    _socket!.on('new_order', (data) {
+      if (_authProvider?.isAdmin == true) {
+        _showNotification(
           'New Order Placed',
           'Order #${data['order_number']} received. Total: \$${data['total_amount']}',
-        ));
-    _socket!.on('order_assigned', (data) => _showNotification(
+        );
+      }
+    });
+
+    _socket!.on('order_assigned', (data) {
+      if (_authProvider?.isAdmin == true) {
+        _showNotification(
           'Order Assigned',
           'Order #${data['order_number']} assigned to ${data['rider_name']}',
-        ));
-    _socket!.on('order_status_update', (data) => _showNotification(
+        );
+      }
+    });
+
+    _socket!.on('order_status_update', (data) {
+      // Admin sees all updates; User sees their own
+      if (_authProvider?.isAdmin == true) {
+        _showNotification(
           'Order Status Updated',
           'Order #${data['order_number']} is now ${data['status']}',
-        ));
+        );
+      } else if (_authProvider?.user?.id == data['user_id']) {
+        // Optionally notify user here, but user_notification is preferred if backend sends it
+      }
+    });
+
+    // Rider Notifications
+    _socket!.on('rider_notification', (data) {
+      if (_authProvider?.isRider == true &&
+          _authProvider?.user?.id == data['rider_id']) {
+        _showNotification(
+          'New Assignment',
+          data['message'] ?? 'You have a new order assignment.',
+        );
+      }
+    });
+
+    // User Notifications
+    _socket!.on('user_notification', (data) {
+      if (_authProvider?.user?.id == data['user_id']) {
+        _showNotification(
+          'Order Update',
+          data['message'] ?? 'Your order has been updated.',
+        );
+      }
+    });
+
+    _socket!.on('payment_status_update', (data) {
+      if (_authProvider?.isAdmin == true) {
+        _showNotification(
+          'Payment Status Updated',
+          'Order #${data['order_number']} payment is now ${data['payment_status']}',
+        );
+      } else if (_authProvider?.user?.id == data['user_id']) {
+        // Optional: User usually checks app, but we can notify
+        _showNotification(
+          'Payment Update',
+          'Payment status for Order #${data['order_number']} is now ${data['payment_status']}',
+        );
+      }
+    });
+
+    _socket!.on('order_completed', (data) {
+      if (_authProvider?.isAdmin == true) {
+        _showNotification(
+          'Order Completed',
+          'Order #${data['order_number']} delivered and paid.',
+        );
+      } else if (_authProvider?.user?.id == data['user_id']) {
+        _showNotification(
+          'Order Completed',
+          data['message'] ?? 'Your order has been delivered and paid.',
+        );
+      }
+    });
 
     _socket!.onDisconnect((_) => debugPrint('Socket disconnected'));
   }
@@ -99,13 +174,6 @@ class NotificationProvider with ChangeNotifier {
           showCloseIcon: true,
         ),
       );
-    }
-  }
-
-  void _disconnectSocket() {
-    if (_socket != null) {
-      _socket!.dispose();
-      _socket = null;
     }
   }
 

@@ -850,7 +850,7 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
         const { rider_id, delivery_fee } = req.body;
 
         // Check if order exists
-        const [orders] = await req.db.execute('SELECT id, order_number, total_amount, delivery_fee, status FROM orders WHERE id = ?', [id]);
+        const [orders] = await req.db.execute('SELECT id, order_number, user_id, total_amount, delivery_fee, status FROM orders WHERE id = ?', [id]);
         if (orders.length === 0) {
             return res.status(404).json({
                 success: false,
@@ -904,6 +904,7 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
         // Emit order_assigned event
         try {
             if (req.io) {
+                // Admin notification
                 req.io.emit('order_assigned', {
                     id: id,
                     order_number: order.order_number,
@@ -914,6 +915,28 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
                     delivery_fee: finalDeliveryFee,
                     total_amount: newTotal
                 });
+
+                // Rider notification
+                req.io.emit('rider_notification', {
+                    type: 'assigned',
+                    rider_id: rider_id,
+                    order_id: id,
+                    order_number: order.order_number,
+                    message: `New order assigned: ${order.order_number}`,
+                    timestamp: new Date()
+                });
+
+                // User notification
+                req.io.emit('user_notification', {
+                    type: 'order_update',
+                    user_id: order.user_id,
+                    order_id: id,
+                    order_number: order.order_number,
+                    status: 'out_for_delivery',
+                    message: `Your order ${order.order_number} has been assigned to rider ${rider.first_name}.`,
+                    timestamp: new Date()
+                });
+
                 const fs = require('fs');
                 const path = require('path');
                 const logMsg = `[${new Date().toISOString()}] Order assigned: ${order.order_number} to ${rider.first_name}. Fee: ${finalDeliveryFee}, Total: ${newTotal}\n`;
@@ -961,7 +984,7 @@ router.put('/:id(\\d+)/rider-location', authenticateToken, [
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            'SELECT rider_id FROM orders WHERE id = ?',
+            'SELECT id, rider_id, user_id, order_number, total_amount, payment_status, status FROM orders WHERE id = ?',
             [id]
         );
 
@@ -1013,7 +1036,7 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            'SELECT rider_id FROM orders WHERE id = ?',
+            'SELECT id, rider_id, user_id, order_number, total_amount, payment_status, status FROM orders WHERE id = ?',
             [id]
         );
 
@@ -1038,6 +1061,45 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
             'UPDATE orders SET status = ? WHERE id = ?',
             ['delivered', id]
         );
+
+        // Notifications
+        try {
+            if (req.io) {
+                // Notify User and Admin about delivery
+                req.io.emit('order_status_update', {
+                    id: id,
+                    order_number: order.order_number,
+                    status: 'delivered',
+                    user_id: order.user_id, // For user filtering
+                    updated_at: new Date()
+                });
+
+                // User notification
+                req.io.emit('user_notification', {
+                    type: 'order_update',
+                    user_id: order.user_id,
+                    order_id: id,
+                    order_number: order.order_number,
+                    status: 'delivered',
+                    message: `Your order ${order.order_number} has been delivered.`,
+                    timestamp: new Date()
+                });
+
+                // Check if completed (paid + delivered)
+                if (order.payment_status === 'paid') {
+                    req.io.emit('order_completed', {
+                        id: id,
+                        order_number: order.order_number,
+                        user_id: order.user_id,
+                        total_amount: order.total_amount,
+                        message: `Order ${order.order_number} delivered and paid.`,
+                        timestamp: new Date()
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Socket emit error in deliver:', e);
+        }
 
         res.json({
             success: true,
@@ -1080,7 +1142,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            'SELECT rider_id, total_amount, payment_status FROM orders WHERE id = ?',
+            'SELECT id, rider_id, user_id, order_number, total_amount, payment_status, status FROM orders WHERE id = ?',
             [id]
         );
 
@@ -1145,6 +1207,33 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                     );
                 }
             }
+        }
+
+        // Notifications
+        try {
+            if (req.io) {
+                req.io.emit('payment_status_update', {
+                    id: id,
+                    order_number: order.order_number,
+                    payment_status: payment_status,
+                    user_id: order.user_id,
+                    timestamp: new Date()
+                });
+
+                // Check if completed (paid + delivered)
+                if (payment_status === 'paid' && order.status === 'delivered') {
+                    req.io.emit('order_completed', {
+                        id: id,
+                        order_number: order.order_number,
+                        user_id: order.user_id,
+                        total_amount: order.total_amount,
+                        message: `Order ${order.order_number} delivered and paid.`,
+                        timestamp: new Date()
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Socket emit error in payment-status:', e);
         }
 
         res.json({

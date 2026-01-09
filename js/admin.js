@@ -155,6 +155,18 @@ if (typeof io !== 'undefined') {
         if (typeof window.loadOrders === 'function') window.loadOrders();
         if (typeof loadDashboardStats === 'function') loadDashboardStats();
     });
+
+    socket.on('payment_status_update', (data) => {
+        showInfo('Payment Status Updated', `Order #${data.order_number} payment is now ${data.payment_status}.`);
+        if (typeof window.loadOrders === 'function') window.loadOrders();
+        if (typeof loadDashboardStats === 'function') loadDashboardStats();
+    });
+
+    socket.on('order_completed', (data) => {
+        showSuccess('Order Completed', `Order #${data.order_number} has been delivered and paid.`);
+        if (typeof window.loadOrders === 'function') window.loadOrders();
+        if (typeof loadDashboardStats === 'function') loadDashboardStats();
+    });
 }
 
 // Initialize admin dashboard
