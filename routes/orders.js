@@ -1080,7 +1080,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            'SELECT rider_id, total_amount FROM orders WHERE id = ?',
+            'SELECT rider_id, total_amount, payment_status FROM orders WHERE id = ?',
             [id]
         );
 
@@ -1106,9 +1106,9 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
             [payment_status, id]
         );
 
-        if (payment_status === 'paid' && order.rider_id) {
+        if (payment_status === 'paid' && order.rider_id && order.payment_status !== 'paid') {
             const [wallets] = await req.db.execute(
-                'SELECT id, balance FROM wallets WHERE user_id = ?',
+                'SELECT id, balance FROM wallets WHERE rider_id = ?',
                 [order.rider_id]
             );
 
@@ -1128,12 +1128,12 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                 );
             } else {
                 await req.db.execute(
-                    'INSERT INTO wallets (user_id, balance, total_credited) VALUES (?, ?, ?)',
-                    [order.rider_id, order.total_amount, order.total_amount]
+                    'INSERT INTO wallets (rider_id, user_type, balance, total_credited) VALUES (?, ?, ?, ?)',
+                    [order.rider_id, 'rider', order.total_amount, order.total_amount]
                 );
 
                 const [newWallets] = await req.db.execute(
-                    'SELECT id FROM wallets WHERE user_id = ?',
+                    'SELECT id FROM wallets WHERE rider_id = ?',
                     [order.rider_id]
                 );
 

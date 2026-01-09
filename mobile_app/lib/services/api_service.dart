@@ -143,6 +143,16 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> deleteAccount(String token) async {
+    final uri = Uri.parse('$baseUrl/api/auth/account');
+    _logger.d('ApiService: DELETE $uri');
+    final response = await http.delete(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
   static Future<List<dynamic>> getStores({int? categoryId}) async {
     String url = '$baseUrl/api/stores';
     if (categoryId != null) {
