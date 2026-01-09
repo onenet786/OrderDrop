@@ -31,22 +31,20 @@ class _StoreScreenState extends State<StoreScreen> {
     return 2;
   }
 
-  double _mainAxisExtentFor(double width, int crossAxisCount) {
-    if (crossAxisCount == 1) return 180; // Horizontal layout height
-    const horizontalPadding = 32.0;
-    const spacing = 10.0;
-    final cardWidth =
-        (width - horizontalPadding - (crossAxisCount - 1) * spacing) /
-        crossAxisCount;
-    if (cardWidth >= 260) return 260;
-    if (cardWidth >= 210) return 240;
-    return 220;
-  }
-
   @override
   void initState() {
     super.initState();
     _storeDetailsFuture = ApiService.getStoreDetails(widget.storeId);
+  }
+
+  List<List<T>> _chunk<T>(List<T> list, int size) {
+    return List.generate(
+      (list.length / size).ceil(),
+      (i) => list.sublist(
+        i * size,
+        (i + 1) * size > list.length ? list.length : (i + 1) * size,
+      ),
+    );
   }
 
   void _addToCart(
@@ -142,12 +140,15 @@ class _StoreScreenState extends State<StoreScreen> {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!['success'] != true) {
+          }
+
+          final data = snapshot.data;
+          if (data == null || data['success'] != true) {
             return const Center(child: Text('Store not found'));
           }
 
-          final store = snapshot.data!['store'];
-          final productsList = snapshot.data!['products'] as List<dynamic>;
+          final store = data['store'];
+          final productsList = data['products'] as List<dynamic>? ?? [];
           final products = productsList
               .map((json) => Product.fromJson(json))
               .toList();
@@ -156,10 +157,8 @@ class _StoreScreenState extends State<StoreScreen> {
             media.size.width,
             media.orientation,
           );
-          final mainAxisExtent = _mainAxisExtentFor(
-            media.size.width,
-            crossAxisCount,
-          );
+
+          final chunkedProducts = _chunk(products, crossAxisCount);
 
           return CustomScrollView(
             slivers: [
@@ -262,17 +261,41 @@ class _StoreScreenState extends State<StoreScreen> {
               const SliverToBoxAdapter(child: SizedBox(height: 10)),
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    mainAxisExtent: mainAxisExtent,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, rowIndex) {
+                      final rowItems = chunkedProducts[rowIndex];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ...rowItems.map((product) {
+                              return Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                  ),
+                                  child: _buildProductCard(
+                                    context,
+                                    product,
+                                    crossAxisCount,
+                                  ),
+                                ),
+                              );
+                            }),
+                            // Fill empty slots in the last row
+                            if (rowItems.length < crossAxisCount)
+                              ...List.generate(
+                                crossAxisCount - rowItems.length,
+                                (index) => const Expanded(child: SizedBox()),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                    childCount: chunkedProducts.length,
                   ),
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    final product = products[index];
-                    return _buildProductCard(context, product, crossAxisCount);
-                  }, childCount: products.length),
                 ),
               ),
               const SliverPadding(padding: EdgeInsets.only(bottom: 50)),
@@ -306,28 +329,27 @@ class _StoreScreenState extends State<StoreScreen> {
       return Card(
         elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Row(
-          children: [
-            // Product Image
-            SizedBox(
-              width: 110,
-              height: double.infinity,
-              child: ClipRRect(
-                borderRadius: const BorderRadius.horizontal(
-                  left: Radius.circular(12),
-                ),
-                child:
-                    ApiService.getImageUrl(product.imageUrl).isNotEmpty
-                        ? Image.network(
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Product Image
+              SizedBox(
+                width: 110,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(12),
+                  ),
+                  child: ApiService.getImageUrl(product.imageUrl).isNotEmpty
+                      ? Image.network(
                           ApiService.getImageUrl(product.imageUrl),
                           fit: BoxFit.cover,
-                          errorBuilder:
-                              (ctx, err, _) => const Icon(
-                                Icons.image_not_supported,
-                                size: 30,
-                              ),
+                          errorBuilder: (ctx, err, _) => const Icon(
+                            Icons.image_not_supported,
+                            size: 30,
+                          ),
                         )
-                        : Container(
+                      : Container(
                           color: Colors.grey[200],
                           child: const Center(
                             child: Icon(
@@ -337,50 +359,48 @@ class _StoreScreenState extends State<StoreScreen> {
                             ),
                           ),
                         ),
+                ),
               ),
-            ),
-            // Product Details
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(10.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      product.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
+              // Product Details
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(10.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        product.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'PKR $displayPrice',
-                      style: TextStyle(
-                        color: Colors.green[700],
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                      const SizedBox(height: 2),
+                      Text(
+                        'PKR $displayPrice',
+                        style: TextStyle(
+                          color: Colors.green[700],
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                    if (variants.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      if (variants.length == 1)
-                        Text(
-                          variants.first.displayLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 11,
-                          ),
-                        )
-                      else
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: RadioGroup<String>(
+                      if (variants.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        if (variants.length == 1)
+                          Text(
+                            variants.first.displayLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 11,
+                            ),
+                          )
+                        else
+                          RadioGroup<String>(
                             groupValue: selectedVariant == null
                                 ? null
                                 : _variantKey(selectedVariant),
@@ -392,71 +412,71 @@ class _StoreScreenState extends State<StoreScreen> {
                                 });
                               }
                             },
-                            child: Row(
-                              children:
-                                  variants.map((v) {
-                                    final key = _variantKey(v);
-                                    final isSelected =
-                                        selectedVariant != null &&
-                                        _variantKey(selectedVariant) == key;
-                                    return InkWell(
-                                      onTap: () {
-                                        setState(() {
-                                          _selectedVariantKeyByProductId[product
-                                              .id] = key;
-                                        });
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 8.0,
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SizedBox(
-                                              height: 24,
-                                              width: 24,
-                                              child: Radio<String>(
-                                                value: key,
-                                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                              ),
-                                            ),
-                                            Text(
-                                              v.displayLabel,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: isSelected ? Colors.blue : Colors.black87,
-                                              ),
-                                            ),
-                                          ],
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: variants.map((v) {
+                                final key = _variantKey(v);
+                                final isSelected = selectedVariant != null &&
+                                    _variantKey(selectedVariant) == key;
+                                return InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedVariantKeyByProductId[product
+                                          .id] = key;
+                                    });
+                                  },
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                        height: 24,
+                                        width: 24,
+                                        child: Radio<String>(
+                                          value: key,
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
                                         ),
                                       ),
-                                    );
-                                  }).toList(),
+                                      Text(
+                                        v.displayLabel,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: isSelected
+                                              ? Colors.blue
+                                              : Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
                             ),
                           ),
+                      ],
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 32,
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () =>
+                              _addToCart(context, product, selectedVariant),
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            backgroundColor: Colors.blueAccent,
+                            foregroundColor: Colors.white,
+                            textStyle: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          child: const Text('Add to Cart'),
                         ),
-                    ],
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 32,
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => _addToCart(context, product, selectedVariant),
-                        style: ElevatedButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          backgroundColor: Colors.blueAccent,
-                          foregroundColor: Colors.white,
-                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                        child: const Text('Add to Cart'),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
@@ -497,132 +517,122 @@ class _StoreScreenState extends State<StoreScreen> {
                     ),
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(4.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+          Padding(
+            padding: const EdgeInsets.all(4.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
                   ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'PKR ${displayPrice.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    color: Colors.green[700],
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (variants.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(
-                    'PKR ${displayPrice.toStringAsFixed(0)}',
-                    style: TextStyle(
-                      color: Colors.green[700],
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (variants.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: RadioGroup<String>(
-                          groupValue: selectedVariant == null
-                              ? null
-                              : _variantKey(selectedVariant),
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedVariantKeyByProductId[product.id] =
-                                    value;
-                              });
-                            }
+                  RadioGroup<String>(
+                    groupValue: selectedVariant == null
+                        ? null
+                        : _variantKey(selectedVariant),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _selectedVariantKeyByProductId[product.id] =
+                              value;
+                        });
+                      }
+                    },
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 2,
+                      alignment: WrapAlignment.start,
+                      children: variants.map((v) {
+                        final key = _variantKey(v);
+                        final isSelected = selectedVariant != null &&
+                            _variantKey(selectedVariant) == key;
+                        return InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedVariantKeyByProductId[product.id] =
+                                  key;
+                            });
                           },
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            children: variants.map((v) {
-                              final key = _variantKey(v);
-                              final isSelected = selectedVariant != null &&
-                                  _variantKey(selectedVariant) == key;
-                              return InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedVariantKeyByProductId[product.id] =
-                                        key;
-                                  });
-                                },
-                                child: Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(horizontal: 2.0),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: Radio<String>(
-                                          value: key,
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                          visualDensity: const VisualDensity(
-                                            horizontal:
-                                                VisualDensity.minimumDensity,
-                                            vertical:
-                                                VisualDensity.minimumDensity,
-                                          ),
-                                        ),
-                                      ),
-                                    Text(
-                                      v.displayLabel,
-                                      style: TextStyle(
-                                        fontSize: 8,
-                                        fontWeight: isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: isSelected
-                                            ? Colors.blue
-                                            : Colors.grey[700],
-                                      ),
-                                    ),
-                                  ],
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: Radio<String>(
+                                  value: key,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: const VisualDensity(
+                                    horizontal:
+                                        VisualDensity.minimumDensity,
+                                    vertical:
+                                        VisualDensity.minimumDensity,
+                                  ),
                                 ),
                               ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ),
-                  ),
-                ] else
-                    const Spacer(),
-                  const SizedBox(height: 4),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 28,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        backgroundColor: Colors.blueAccent,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        elevation: 0,
-                      ),
-                      onPressed: product.isAvailable
-                          ? () => _addToCart(context, product, selectedVariant)
-                          : null,
-                      child: Text(
-                        product.isAvailable ? 'ADD' : 'N/A',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                              Text(
+                                v.displayLabel,
+                                style: TextStyle(
+                                  fontSize: 8,
+                                  fontWeight: isSelected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: isSelected
+                                      ? Colors.blue
+                                      : Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
                 ],
-              ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: double.infinity,
+                  height: 28,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      backgroundColor: Colors.blueAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      elevation: 0,
+                    ),
+                    onPressed: product.isAvailable
+                        ? () => _addToCart(context, product, selectedVariant)
+                        : null,
+                    child: Text(
+                      product.isAvailable ? 'ADD' : 'N/A',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
