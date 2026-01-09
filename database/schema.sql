@@ -38,10 +38,12 @@ CREATE TABLE stores (
     email VARCHAR(100),
     address TEXT,
     owner_id INT,
+    priority INT DEFAULT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE KEY unique_priority (priority)
 );
 
 -- Categories table

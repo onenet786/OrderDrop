@@ -540,6 +540,17 @@ tr:hover td {
     box-shadow: 0 8px 25px rgba(255, 154, 158, 0.6);
 }
 
+.btn-info {
+  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(14, 165, 233, 0.4);
+}
+.btn-info:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(14, 165, 233, 0.6);
+    background: linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%);
+}
+
 .btn-small {
   padding: 0.5rem 1rem;
   font-size: 0.8rem;
@@ -790,6 +801,47 @@ textarea:focus {
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
+}
+
+/* Priority Badges */
+.priority-badge {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.priority-1 {
+    background-color: #fecaca;
+    color: #7f1d1d;
+    border: 1px solid #f87171;
+}
+
+.priority-2 {
+    background-color: #fed7aa;
+    color: #7c2d12;
+    border: 1px solid #fb923c;
+}
+
+.priority-3 {
+    background-color: #fef08a;
+    color: #713f12;
+    border: 1px solid #facc15;
+}
+
+.priority-4 {
+    background-color: #bfdbfe;
+    color: #1e3a8a;
+    border: 1px solid #60a5fa;
+}
+
+.priority-5 {
+    background-color: #a78bfa;
+    color: #3f0f5c;
+    border: 1px solid #8b5cf6;
 }
 
 /* Responsive */

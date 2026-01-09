@@ -105,7 +105,7 @@ router.get('/', async (req, res) => {
             FROM stores s
             LEFT JOIN users u ON s.owner_id = u.id
             ${whereClause}
-            ORDER BY s.rating DESC, s.name ASC
+            ORDER BY COALESCE(s.priority, 999999) ASC, s.rating DESC, s.name ASC
         `, params);
 
         res.json({
@@ -127,6 +127,7 @@ router.get('/', async (req, res) => {
                 description: store.description,
                 image_url: store.cover_image || null,
                 is_active: store.is_active,
+                priority: store.priority || null,
                 owner_id: store.owner_id || null,
                 owner_email: store.owner_email || null,
                 owner_name: store.owner_name || null
@@ -198,6 +199,7 @@ router.get('/:id', async (req, res) => {
                 owner_id: store.owner_id,
                 category_id: store.category_id || null,
                 image_url: store.cover_image || null,
+                priority: store.priority || null,
                 owner_email: store.owner_email || null,
                 owner_name: store.owner_name || null
             },
@@ -364,9 +366,18 @@ router.post('/', authenticateToken, requireStoreOwner, [
 router.put('/:id', authenticateToken, requireStoreOwner, [
     body('name').optional().trim().isLength({ min: 2 }).withMessage('Store name must be at least 2 characters'),
     body('location').optional().trim().notEmpty().withMessage('Location is required'),
-    body('phone').optional().isMobilePhone().withMessage('Please provide a valid phone number'),
+    body('phone').optional().trim().matches(/^[\d\s\-\+\(\)]{6,}$/).withMessage('Please provide a valid phone number'),
     body('email').optional().isEmail().withMessage('Please provide a valid email'),
-    body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5')
+    body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
+    body('priority').custom(val => {
+        if (val === null || val === undefined || val === '') return true;
+        const num = parseInt(val, 10);
+        if (!Number.isInteger(num) || num < 1 || num > 5) {
+            throw new Error('Priority must be a number between 1 and 5');
+        }
+        return true;
+    }),
+    body('status').optional()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -420,8 +431,43 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             payment_term,
             image_url,
             rating,
-            category_id
+            category_id,
+            priority
         } = req.body;
+
+        // Check priority permission and duplicate prevention
+        if (priority !== undefined) {
+            if (req.user.user_type !== 'admin') {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Only admins can set store priority'
+                });
+            }
+            
+            // Allow null to remove priority
+            if (priority !== null) {
+                const priorityNum = parseInt(priority, 10);
+                if (!Number.isInteger(priorityNum) || priorityNum < 1 || priorityNum > 5) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Priority must be an integer between 1 and 5'
+                    });
+                }
+                
+                // Check if another store already has this priority
+                const [existingPriority] = await req.db.execute(
+                    'SELECT id FROM stores WHERE priority = ? AND id != ?',
+                    [priorityNum, id]
+                );
+                
+                if (existingPriority.length > 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Priority ${priorityNum} is already assigned to another store. Each priority (1-5) can only be used once.`
+                    });
+                }
+            }
+        }
 
         const updateFields = [];
         const updateValues = [];
@@ -452,6 +498,11 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             const safeRating = Number.isFinite(n) ? Math.max(0, Math.min(5, n)) : 0;
             updateFields.push('rating = ?');
             updateValues.push(safeRating);
+        }
+        if (priority !== undefined && req.user.user_type === 'admin') {
+            const priorityNum = parseInt(priority, 10);
+            updateFields.push('priority = ?');
+            updateValues.push(Number.isInteger(priorityNum) && priorityNum >= 1 && priorityNum <= 5 ? priorityNum : null);
         }
         if (is_active !== undefined && req.user.user_type === 'admin') { updateFields.push('is_active = ?'); updateValues.push(is_active); }
 

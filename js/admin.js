@@ -402,6 +402,43 @@ function initializeAdmin() {
     document.getElementById('saveRiderBtn').addEventListener('click', saveRider);
     document.getElementById('saveOrderBtn').addEventListener('click', saveOrder);
 
+    // Store priority button
+    const savePriorityBtn = document.getElementById('savePriorityBtn');
+    const prioritySelect = document.getElementById('prioritySelect');
+    if (savePriorityBtn) {
+        savePriorityBtn.addEventListener('click', function() {
+            const storeId = document.getElementById('setPriorityForm').dataset.storeId;
+            const priority = document.getElementById('prioritySelect').value;
+            const priorityValue = priority ? parseInt(priority, 10) : null;
+            
+            fetch(`${API_BASE}/api/stores/${storeId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ priority: priorityValue })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('setPriorityModal').style.display = 'none';
+                    showSuccess('Priority Updated', `Store priority has been updated successfully.`);
+                    loadStores();
+                } else {
+                    showError('Error', data.message || 'Failed to update store priority. Please try again.');
+                }
+            })
+            .catch(error => {
+                console.error('Error updating store priority:', error);
+                showError('Error', 'Failed to update store priority. Please try again.');
+            });
+        });
+    }
+    if (prioritySelect) {
+        prioritySelect.addEventListener('change', updatePriorityWarning);
+    }
+
     // Database backup buttons
     const createBackupBtn = document.getElementById('createBackupBtn');
     if (createBackupBtn) createBackupBtn.addEventListener('click', createBackup);
@@ -1999,6 +2036,35 @@ function toggleStoreStatus(storeId, currentStatus) {
         }
     })
     .catch(error => console.error('Error updating store:', error));
+}
+
+function showSetPriorityModal(storeId, storeName, currentPriority) {
+    document.getElementById('priorityStoreName').textContent = storeName;
+    document.getElementById('prioritySelect').value = currentPriority || '';
+    document.getElementById('setPriorityForm').dataset.storeId = storeId;
+    document.getElementById('setPriorityModal').style.display = 'block';
+    updatePriorityWarning();
+}
+
+function updatePriorityWarning() {
+    const selectedPriority = document.getElementById('prioritySelect').value;
+    const warningDiv = document.getElementById('priorityWarning');
+    
+    if (!selectedPriority) {
+        warningDiv.style.display = 'none';
+        return;
+    }
+    
+    const storeWithPriority = currentStores.find(s => s.priority == selectedPriority);
+    if (storeWithPriority) {
+        const currentStore = currentStores.find(s => s.id == document.getElementById('setPriorityForm').dataset.storeId);
+        if (!currentStore || currentStore.priority != selectedPriority) {
+            warningDiv.style.display = 'block';
+            warningDiv.innerHTML = `<strong>⚠️ Warning:</strong> Priority ${selectedPriority} is already assigned to "${storeWithPriority.name}". Setting this priority will remove it from that store.`;
+            return;
+        }
+    }
+    warningDiv.style.display = 'none';
 }
 
 // Products Management
@@ -5396,6 +5462,7 @@ function displayStores(stores) {
 
     stores.forEach(store => {
         const ownerDisplay = store.owner_name || '-';
+        const priorityDisplay = store.priority ? `<span class="priority-badge priority-${store.priority}">P${store.priority}</span>` : '-';
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${store.id}</td>
@@ -5403,11 +5470,15 @@ function displayStores(stores) {
             <td>${store.location}</td>
             <td>${ownerDisplay}</td>
             <td>${store.rating} ⭐</td>
+            <td>${priorityDisplay}</td>
             <td><span class="status-${store.is_active ? 'active' : 'inactive'}">${store.is_active ? 'Active' : 'Inactive'}</span></td>
             <td>
                 <div class="action-buttons">
                     <button class="btn-small btn-edit" onclick="editStore(${store.id})">
                         <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="btn-small btn-info" onclick="showSetPriorityModal(${store.id}, '${store.name}', ${store.priority || 'null'})">
+                        <i class="fas fa-star"></i> Priority
                     </button>
                     <button class="btn-small btn-secondary" onclick="toggleStoreStatus(${store.id}, ${store.is_active})">
                         <i class="fas fa-${store.is_active ? 'ban' : 'check'}"></i> ${store.is_active ? 'Deactivate' : 'Activate'}

@@ -1038,6 +1038,8 @@
 
                   <th>Rating</th>
 
+                  <th>Priority</th>
+
                   <th>Status</th>
 
                   <th>Actions</th>
@@ -2199,6 +2201,45 @@
           <button type="button" class="btn btn-primary" id="saveStoreBtn" style="padding: 0.6rem 1.2rem;">
             <i class="fas fa-check"></i> Save Store
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Set Store Priority Modal -->
+    <div id="setPriorityModal" class="modal">
+      <div class="modal-content" style="max-width: 95%; width: 500px;">
+        <div class="modal-header" style="padding-bottom: 1rem; margin-bottom: 1rem;">
+          <h3>Set Store Priority</h3>
+          <span class="close" data-modal="setPriorityModal">&times;</span>
+        </div>
+        <div class="modal-body" style="padding: 0;">
+          <form id="setPriorityForm">
+            <div style="margin-bottom: 1.5rem;">
+              <p style="color: #718096; margin-bottom: 1rem;"><strong id="priorityStoreName"></strong> - Set priority (1-5) for top stores. Only one store can have each priority level.</p>
+            </div>
+            <div class="form-group">
+              <label for="prioritySelect">Priority Level:</label>
+              <select id="prioritySelect" name="priority" style="width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem;">
+                <option value="">None (Remove Priority)</option>
+                <option value="1">1 - Highest Priority (Featured)</option>
+                <option value="2">2 - Very High Priority</option>
+                <option value="3">3 - High Priority</option>
+                <option value="4">4 - Medium Priority</option>
+                <option value="5">5 - Low Priority</option>
+              </select>
+            </div>
+            <div id="priorityWarning" style="background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; padding: 1rem; border-radius: 8px; margin-top: 1rem; display: none;"></div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <div class="action-buttons">
+            <button type="button" class="btn btn-primary" id="savePriorityBtn" style="padding: 0.6rem 1.2rem;">
+              <i class="fas fa-check"></i> Save Priority
+            </button>
+            <button type="button" class="btn btn-secondary" data-modal="setPriorityModal" style="padding: 0.6rem 1.2rem;">
+              <i class="fas fa-ban"></i> Cancel
+            </button>
+          </div>
         </div>
       </div>
     </div>
