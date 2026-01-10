@@ -2639,13 +2639,15 @@ async function editOrder(orderId) {
             return;
         }
 
-        // Fetch available riders
+        if (order.status === 'delivered' || order.status === 'cancelled') {
+            showWarning('Cannot Edit', `Cannot edit items for ${order.status} orders. You can only change status and rider details.`);
+        }
+
         const ridersResponse = await fetch(`${API_BASE}/api/orders/available-riders`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const ridersData = await ridersResponse.json();
 
-        // Populate rider dropdown
         const riderSelect = document.getElementById('orderRider');
         riderSelect.innerHTML = '<option value="">Select Rider</option>';
         if (ridersData.success) {
@@ -2655,14 +2657,83 @@ async function editOrder(orderId) {
             });
         }
 
-        // Populate form with current values
+        const itemsResponse = await fetch(`${API_BASE}/api/orders/${orderId}/items`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const itemsData = await itemsResponse.json();
+
+        const storeSelect = document.getElementById('orderItemStore');
+        storeSelect.innerHTML = '<option value="">Keep Current Store</option>';
+        if (itemsData.success && itemsData.availableStores) {
+            itemsData.availableStores.forEach(store => {
+                storeSelect.innerHTML += `<option value="${store.id}">${store.name}</option>`;
+            });
+        }
+
+        const itemsContainer = document.getElementById('orderItemsContainer');
+        if (itemsData.success && itemsData.items && itemsData.items.length > 0) {
+            itemsContainer.innerHTML = itemsData.items.map(item => `
+                <div style="display: grid; grid-template-columns: 1fr 80px 100px 80px; gap: 1rem; align-items: center; padding: 0.75rem; border-bottom: 1px solid #e2e8f0; background: #fff;">
+                    <div>
+                        <strong>${item.product_name}</strong>
+                        <p style="font-size: 0.875rem; color: #718096; margin: 0.25rem 0 0 0;">Price: PKR ${Number(item.price).toFixed(2)}</p>
+                        ${item.store_name ? `<p style="font-size: 0.875rem; color: #718096; margin: 0.25rem 0 0 0;">Store: ${item.store_name}</p>` : ''}
+                    </div>
+                    <div style="text-align: center;">
+                        <input type="number" class="item-quantity-input" data-item-id="${item.id}" value="${item.quantity}" min="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px; text-align: center;" />
+                    </div>
+                    <div style="text-align: right;">
+                        <strong>PKR ${(Number(item.price) * item.quantity).toFixed(2)}</strong>
+                    </div>
+                    <div style="text-align: right;">
+                        <button type="button" class="btn btn-small btn-danger remove-item-btn" data-item-id="${item.id}" style="padding: 0.4rem 0.6rem;">
+                            <i class="fas fa-trash"></i> Remove
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            
+            document.querySelectorAll('.remove-item-btn').forEach(btn => {
+                const newBtn = btn.cloneNode(true);
+                btn.parentNode.replaceChild(newBtn, btn);
+                newBtn.addEventListener('click', function() {
+                    removeOrderItem(orderId, this.dataset.itemId);
+                });
+            });
+        } else {
+            itemsContainer.innerHTML = '<p style="color: #718096; text-align: center; margin: 1rem 0;">No items found</p>';
+        }
+        
+        const addItemBtn = document.getElementById('addItemBtn');
+        if (addItemBtn) {
+            const newAddItemBtn = addItemBtn.cloneNode(true);
+            addItemBtn.parentNode.replaceChild(newAddItemBtn, addItemBtn);
+            newAddItemBtn.addEventListener('click', function() {
+                addOrderItem(orderId);
+            });
+        }
+        
+        const productSelect = document.getElementById('addItemProduct');
+        if (productSelect && itemsData.success) {
+            const productsRes = await fetch(`${API_BASE}/api/orders/${orderId}/available-products`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            const productsData = await productsRes.json();
+            
+            if (productsData.success && productsData.products) {
+                productSelect.innerHTML = '<option value="">Choose product...</option>';
+                productsData.products.forEach(product => {
+                    productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}">${product.name} - PKR ${Number(product.price).toFixed(2)}</option>`;
+                });
+            }
+        }
+
         document.getElementById('orderStatus').value = order.status;
         document.getElementById('deliveryFee').value = order.delivery_fee || '';
         document.getElementById('riderLocation').value = order.rider_location || '';
         document.getElementById('riderLatitude').value = order.rider_latitude || '';
         document.getElementById('riderLongitude').value = order.rider_longitude || '';
 
-        // Store order ID for saving
         document.getElementById('editOrderForm').dataset.orderId = orderId;
 
         showModal('editOrderModal');
@@ -2683,9 +2754,42 @@ async function saveOrder() {
     const riderLocation = formData.get('rider_location') || null;
     const riderLatitude = formData.get('rider_latitude') || null;
     const riderLongitude = formData.get('rider_longitude') || null;
+    const storeId = formData.get('store_id') || null;
 
     try {
-        // Update status if changed
+        const itemQuantityInputs = document.querySelectorAll('.item-quantity-input');
+        let itemsUpdated = false;
+        
+        if (itemQuantityInputs.length > 0) {
+            const items = Array.from(itemQuantityInputs).map(input => ({
+                id: parseInt(input.dataset.itemId),
+                quantity: parseInt(input.value)
+            }));
+            
+            const hasChanges = items.some((item, idx) => {
+                const original = currentOrders.find(o => o.id == orderId);
+                return true;
+            });
+            
+            if (items.length > 0) {
+                const itemsRes = await fetch(`${API_BASE}/api/orders/${orderId}/items`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ items, store_id: storeId ? parseInt(storeId) : null })
+                });
+                
+                const itemsJson = await itemsRes.json();
+                if (!itemsJson.success) {
+                    showError('Error', itemsJson.message || 'Failed to update order items');
+                    return;
+                }
+                itemsUpdated = true;
+            }
+        }
+
         if (status) {
             await fetch(`${API_BASE}/api/orders/${orderId}/status`, {
                 method: 'PUT',
@@ -2697,7 +2801,6 @@ async function saveOrder() {
             });
         }
 
-        // Assign rider if selected
         if (riderId) {
             const assignBody = { rider_id: parseInt(riderId) };
             if (deliveryFee) assignBody.delivery_fee = parseFloat(deliveryFee);
@@ -2712,7 +2815,6 @@ async function saveOrder() {
             });
         }
 
-        // Update rider location if provided
         if (riderLocation || (riderLatitude && riderLongitude)) {
             const locationBody = { location: riderLocation };
             if (riderLatitude && riderLongitude) {
@@ -2737,6 +2839,80 @@ async function saveOrder() {
     } catch (error) {
         console.error('Error updating order:', error);
         showError('Error', 'Failed to update order');
+    }
+}
+
+async function addOrderItem(orderId) {
+    const productSelect = document.getElementById('addItemProduct');
+    const quantityInput = document.getElementById('addItemQuantity');
+    
+    const productId = productSelect.value;
+    const quantity = parseInt(quantityInput.value);
+    
+    if (!productId) {
+        showError('Validation Error', 'Please select a product');
+        return;
+    }
+    
+    if (!quantity || quantity < 1) {
+        showError('Validation Error', 'Quantity must be at least 1');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/${orderId}/items/add`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ product_id: parseInt(productId), quantity })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess('Item Added', 'Product added to order successfully!');
+            quantityInput.value = '1';
+            productSelect.value = '';
+            editOrder(orderId);
+        } else {
+            showError('Error', data.message || 'Failed to add item to order');
+        }
+    } catch (error) {
+        console.error('Error adding item:', error);
+        showError('Error', 'Failed to add item to order');
+    }
+}
+
+async function removeOrderItem(orderId, itemId) {
+    if (!confirm('Are you sure you want to remove this item from the order?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/${orderId}/items/${itemId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            if (data.empty) {
+                showWarning('Empty Order', 'Order has no items left. Please add items or cancel the order.');
+            } else {
+                showSuccess('Item Removed', 'Item removed from order successfully!');
+            }
+            editOrder(orderId);
+        } else {
+            showError('Error', data.message || 'Failed to remove item from order');
+        }
+    } catch (error) {
+        console.error('Error removing item:', error);
+        showError('Error', 'Failed to remove item from order');
     }
 }
 

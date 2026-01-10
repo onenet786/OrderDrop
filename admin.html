@@ -2657,11 +2657,11 @@
 
     <div id="editOrderModal" class="modal">
       <div class="modal-content" style="max-width: 850px">
-        <div class="modal-header">
+        <div class="modal-header" style="max-height: 600px; overflow-y: auto;">
           <h3>Edit Order</h3>
           <span class="close" data-modal="editOrderModal">&times;</span>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" style="max-height: 600px; overflow-y: auto;">
           <form id="editOrderForm">
             <div class="form-row">
               <div class="form-group">
@@ -2679,7 +2679,6 @@
                 <label for="orderRider">Assign Rider:</label>
                 <select id="orderRider" name="rider_id">
                   <option value="">Select Rider</option>
-                  <!-- Riders will be loaded dynamically -->
                 </select>
               </div>
               <div class="form-group">
@@ -2693,6 +2692,50 @@
                 />
               </div>
             </div>
+            
+            <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e2e8f0;" />
+            
+            <div style="margin-bottom: 1rem;">
+              <h4 style="margin: 0 0 1rem 0;">Order Items</h4>
+              <div id="orderItemsContainer" style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem;">
+                <p style="color: #718096; text-align: center; margin: 2rem 0;">Loading items...</p>
+              </div>
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label for="orderItemStore">Change Store for Items:</label>
+                <select id="orderItemStore" name="store_id">
+                  <option value="">Keep Current Store</option>
+                </select>
+              </div>
+            </div>
+            
+            <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e2e8f0;" />
+            
+            <div style="margin-bottom: 1rem;">
+              <h4 style="margin: 0 0 1rem 0;">Add New Item</h4>
+              <div style="display: grid; grid-template-columns: 2fr 100px 100px; gap: 1rem; padding: 1rem; background: #f7fafc; border-radius: 6px;">
+                <div class="form-group" style="margin: 0;">
+                  <label for="addItemProduct" style="font-size: 0.875rem;">Select Product:</label>
+                  <select id="addItemProduct" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+                    <option value="">Choose product...</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label for="addItemQuantity" style="font-size: 0.875rem;">Quantity:</label>
+                  <input type="number" id="addItemQuantity" value="1" min="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;" />
+                </div>
+                <div style="display: flex; align-items: flex-end;">
+                  <button type="button" class="btn btn-small btn-primary" id="addItemBtn" style="width: 100%;">
+                    <i class="fas fa-plus"></i> Add
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e2e8f0;" />
+            
             <div class="form-row">
               <div class="form-group">
                 <label for="riderLocation">Rider Current Location:</label>

@@ -1365,4 +1365,513 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
     }
 });
 
+router.get('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [orders] = await req.db.execute(
+            'SELECT * FROM orders WHERE id = ?',
+            [id]
+        );
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const [items] = await req.db.execute(`
+            SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.store_id,
+                   p.name as product_name, p.image_url,
+                   s.name as store_name
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            LEFT JOIN stores s ON oi.store_id = s.id
+            WHERE oi.order_id = ?
+            ORDER BY oi.id ASC
+        `, [id]);
+
+        const [stores] = await req.db.execute(
+            'SELECT id, name FROM stores WHERE is_active = true ORDER BY name ASC'
+        );
+
+        res.json({
+            success: true,
+            order: orders[0],
+            items: items || [],
+            availableStores: stores || []
+        });
+
+    } catch (error) {
+        console.error('Error fetching order items:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch order items',
+            error: error.message
+        });
+    }
+});
+
+router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { items, store_id } = req.body;
+
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Items array is required and cannot be empty'
+            });
+        }
+
+        const [orders] = await req.db.execute(
+            'SELECT * FROM orders WHERE id = ?',
+            [id]
+        );
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const order = orders[0];
+
+        if (order.status === 'delivered' || order.status === 'cancelled') {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot update items for ${order.status} orders`
+            });
+        }
+
+        let totalAmount = 0;
+
+        for (const item of items) {
+            const { id: itemId, quantity } = item;
+
+            if (!quantity || quantity < 1) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'All items must have a quantity of at least 1'
+                });
+            }
+
+            if (itemId) {
+                const [existingItems] = await req.db.execute(
+                    'SELECT price FROM order_items WHERE id = ? AND order_id = ?',
+                    [itemId, id]
+                );
+
+                if (existingItems.length === 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid item ID'
+                    });
+                }
+
+                const price = existingItems[0].price;
+                const updateFields = ['quantity = ?'];
+                const updateValues = [quantity];
+
+                if (store_id && store_id !== null) {
+                    updateFields.push('store_id = ?');
+                    updateValues.push(store_id);
+                }
+
+                updateValues.push(itemId);
+                updateValues.push(id);
+
+                await req.db.execute(
+                    `UPDATE order_items SET ${updateFields.join(', ')} WHERE id = ? AND order_id = ?`,
+                    updateValues
+                );
+
+                totalAmount += price * quantity;
+            }
+        }
+
+        await req.db.execute(
+            'UPDATE orders SET total_amount = ? WHERE id = ?',
+            [totalAmount, id]
+        );
+
+        res.json({
+            success: true,
+            message: 'Order items updated successfully'
+        });
+
+    } catch (error) {
+        console.error('Error updating order items:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update order items',
+            error: error.message
+        });
+    }
+});
+
+router.get('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [orders] = await req.db.execute(
+            'SELECT * FROM orders WHERE id = ?',
+            [id]
+        );
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const [items] = await req.db.execute(`
+            SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.store_id,
+                   p.name as product_name, p.image_url,
+                   s.name as store_name
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            LEFT JOIN stores s ON oi.store_id = s.id
+            WHERE oi.order_id = ?
+            ORDER BY oi.id ASC
+        `, [id]);
+
+        const [stores] = await req.db.execute(
+            'SELECT id, name FROM stores WHERE is_active = true ORDER BY name ASC'
+        );
+
+        res.json({
+            success: true,
+            order: orders[0],
+            items: items || [],
+            availableStores: stores || []
+        });
+
+    } catch (error) {
+        console.error('Error fetching order items:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch order items',
+            error: error.message
+        });
+    }
+});
+
+router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { items, store_id } = req.body;
+
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Items array is required and cannot be empty'
+            });
+        }
+
+        const [orders] = await req.db.execute(
+            'SELECT * FROM orders WHERE id = ?',
+            [id]
+        );
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const order = orders[0];
+
+        if (order.status === 'delivered' || order.status === 'cancelled') {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot update items for ${order.status} orders`
+            });
+        }
+
+        let totalAmount = 0;
+
+        for (const item of items) {
+            const { id: itemId, quantity } = item;
+
+            if (!quantity || quantity < 1) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'All items must have a quantity of at least 1'
+                });
+            }
+
+            if (itemId) {
+                const [existingItems] = await req.db.execute(
+                    'SELECT price FROM order_items WHERE id = ? AND order_id = ?',
+                    [itemId, id]
+                );
+
+                if (existingItems.length === 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid item ID'
+                    });
+                }
+
+                const price = existingItems[0].price;
+                const updateFields = ['quantity = ?'];
+                const updateValues = [quantity];
+
+                if (store_id && store_id !== null) {
+                    updateFields.push('store_id = ?');
+                    updateValues.push(store_id);
+                }
+
+                updateValues.push(itemId);
+                updateValues.push(id);
+
+                await req.db.execute(
+                    `UPDATE order_items SET ${updateFields.join(', ')} WHERE id = ? AND order_id = ?`,
+                    updateValues
+                );
+
+                totalAmount += price * quantity;
+            }
+        }
+
+        await req.db.execute(
+            'UPDATE orders SET total_amount = ? WHERE id = ?',
+            [totalAmount, id]
+        );
+
+        res.json({
+            success: true,
+            message: 'Order items updated successfully'
+        });
+
+    } catch (error) {
+        console.error('Error updating order items:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update order items',
+            error: error.message
+        });
+    }
+});
+
+router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { product_id, quantity, store_id } = req.body;
+
+        if (!product_id || !quantity || quantity < 1) {
+            return res.status(400).json({
+                success: false,
+                message: 'Product ID and quantity (minimum 1) are required'
+            });
+        }
+
+        const [orders] = await req.db.execute(
+            'SELECT * FROM orders WHERE id = ?',
+            [id]
+        );
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const order = orders[0];
+
+        if (order.status === 'delivered' || order.status === 'cancelled') {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot add items to ${order.status} orders`
+            });
+        }
+
+        const [products] = await req.db.execute(
+            'SELECT id, price, cost_price FROM products WHERE id = ? AND is_available = true',
+            [product_id]
+        );
+
+        if (products.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Product not found or unavailable'
+            });
+        }
+
+        const product = products[0];
+        const price = product.price;
+
+        const itemStoreId = store_id || order.store_id || null;
+
+        const [result] = await req.db.execute(`
+            INSERT INTO order_items (order_id, product_id, quantity, price, store_id)
+            VALUES (?, ?, ?, ?, ?)
+        `, [id, product_id, quantity, price, itemStoreId]);
+
+        const [currentItems] = await req.db.execute(
+            'SELECT SUM(quantity * price) as total FROM order_items WHERE order_id = ?',
+            [id]
+        );
+
+        const newTotal = currentItems[0]?.total || 0;
+        await req.db.execute(
+            'UPDATE orders SET total_amount = ? WHERE id = ?',
+            [newTotal, id]
+        );
+
+        res.json({
+            success: true,
+            message: 'Item added successfully',
+            item_id: result.insertId
+        });
+
+    } catch (error) {
+        console.error('Error adding item to order:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to add item to order',
+            error: error.message
+        });
+    }
+});
+
+router.delete('/:id(\\d+)/items/:itemId(\\d+)', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id, itemId } = req.params;
+
+        const [orders] = await req.db.execute(
+            'SELECT * FROM orders WHERE id = ?',
+            [id]
+        );
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const order = orders[0];
+
+        if (order.status === 'delivered' || order.status === 'cancelled') {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot remove items from ${order.status} orders`
+            });
+        }
+
+        const [items] = await req.db.execute(
+            'SELECT id FROM order_items WHERE id = ? AND order_id = ?',
+            [itemId, id]
+        );
+
+        if (items.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Item not found in this order'
+            });
+        }
+
+        await req.db.execute(
+            'DELETE FROM order_items WHERE id = ? AND order_id = ?',
+            [itemId, id]
+        );
+
+        const [currentItems] = await req.db.execute(
+            'SELECT SUM(quantity * price) as total FROM order_items WHERE order_id = ?',
+            [id]
+        );
+
+        const newTotal = currentItems[0]?.total || 0;
+        await req.db.execute(
+            'UPDATE orders SET total_amount = ? WHERE id = ?',
+            [newTotal, id]
+        );
+
+        const [remainingItems] = await req.db.execute(
+            'SELECT COUNT(*) as count FROM order_items WHERE order_id = ?',
+            [id]
+        );
+
+        if (remainingItems[0].count === 0) {
+            return res.json({
+                success: true,
+                message: 'Item removed. Order has no items left.',
+                empty: true
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Item removed successfully'
+        });
+
+    } catch (error) {
+        console.error('Error removing item from order:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to remove item from order',
+            error: error.message
+        });
+    }
+});
+
+router.get('/:id(\\d+)/available-products', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [orders] = await req.db.execute(
+            'SELECT store_id FROM orders WHERE id = ?',
+            [id]
+        );
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const storeId = orders[0].store_id;
+
+        let query = `
+            SELECT p.id, p.name, p.price, p.image_url, s.name as store_name
+            FROM products p
+            LEFT JOIN stores s ON p.store_id = s.id
+            WHERE p.is_available = true
+        `;
+        
+        const params = [];
+        
+        if (storeId) {
+            query += ' AND p.store_id = ?';
+            params.push(storeId);
+        }
+
+        query += ' ORDER BY s.name ASC, p.name ASC';
+
+        const [products] = await req.db.execute(query, params);
+
+        res.json({
+            success: true,
+            products: products || [],
+            order_store_id: storeId
+        });
+
+    } catch (error) {
+        console.error('Error fetching available products:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch products',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;
