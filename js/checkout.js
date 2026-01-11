@@ -72,7 +72,8 @@ async function displayCheckoutItems() {
     }
 
     checkoutItems.innerHTML = '<p style="text-align: center;">Loading order details...</p>';
-    let total = 0;
+    let grandTotal = 0;
+    const deliveryFeePerOrder = 2.99;
     
     // Group items by store
     const storeGroups = {};
@@ -113,7 +114,9 @@ async function displayCheckoutItems() {
 
     // Render groups
     const storeIdsList = Object.keys(storeGroups);
-    if (storeIdsList.length > 1) {
+    const isMultiStore = storeIdsList.length > 1;
+    
+    if (isMultiStore) {
          const summaryHeader = document.createElement('div');
          summaryHeader.innerHTML = '<div class="alert alert-info" style="margin-bottom: 15px; padding: 10px; background-color: #e3f2fd; border-radius: 5px; color: #0d47a1;"><strong>Multiple Stores Order:</strong> Your order will be split into separate deliveries.</div>';
          checkoutItems.appendChild(summaryHeader);
@@ -122,35 +125,66 @@ async function displayCheckoutItems() {
     storeIdsList.forEach(sId => {
         const items = storeGroups[sId];
         const storeName = storeNames[sId] || (sId === 'unknown' ? 'Unknown Store' : `Store #${sId}`);
+        let storeSubtotal = 0;
         
-        // Store Header if multiple stores
-        if (storeIdsList.length > 1) {
-            const storeHeader = document.createElement('div');
-            storeHeader.className = 'store-group-header';
-            storeHeader.style.cssText = 'font-weight: bold; margin-top: 15px; margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 5px;';
-            storeHeader.textContent = storeName;
-            checkoutItems.appendChild(storeHeader);
-        }
+        // Store Header
+        const storeHeader = document.createElement('div');
+        storeHeader.className = 'store-group-header';
+        storeHeader.style.cssText = 'font-weight: bold; margin-top: 15px; margin-bottom: 10px; padding: 8px; background-color: #f5f5f5; border-radius: 4px; border-left: 4px solid var(--primary-color);';
+        storeHeader.textContent = storeName;
+        checkoutItems.appendChild(storeHeader);
 
+        // Items container
+        const itemsContainer = document.createElement('div');
+        itemsContainer.style.cssText = 'margin-bottom: 10px;';
+        
         items.forEach(item => {
             console.log('Item:', item);
             const itemTotal = parseFloat(item.price) * item.quantity;
             console.log('Item total:', itemTotal);
-            total += itemTotal;
+            storeSubtotal += itemTotal;
     
             const itemElement = document.createElement('div');
             itemElement.className = 'checkout-item';
+            itemElement.style.cssText = 'display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;';
             itemElement.innerHTML = `
                 <span>${item.name} x ${item.quantity}</span>
                 <span>PKR ${itemTotal.toFixed(2)}</span>
             `;
-            checkoutItems.appendChild(itemElement);
+            itemsContainer.appendChild(itemElement);
         });
+        
+        checkoutItems.appendChild(itemsContainer);
+
+        // Store subtotal
+        const storeSubtotalDiv = document.createElement('div');
+        storeSubtotalDiv.style.cssText = 'display: flex; justify-content: space-between; padding: 8px 0; font-weight: 600; margin-bottom: 8px; color: var(--text-dark);';
+        storeSubtotalDiv.innerHTML = `
+            <span>Subtotal (${storeName}):</span>
+            <span>PKR ${storeSubtotal.toFixed(2)}</span>
+        `;
+        checkoutItems.appendChild(storeSubtotalDiv);
+
+        // Delivery fee for this store
+        const deliveryDiv = document.createElement('div');
+        deliveryDiv.style.cssText = 'display: flex; justify-content: space-between; padding: 6px 0; color: #666; margin-bottom: 12px; border-bottom: 2px solid #eee; padding-bottom: 12px;';
+        deliveryDiv.innerHTML = `
+            <span>Delivery Fee:</span>
+            <span>PKR ${deliveryFeePerOrder.toFixed(2)}</span>
+        `;
+        checkoutItems.appendChild(deliveryDiv);
+
+        grandTotal += storeSubtotal + deliveryFeePerOrder;
     });
 
-    console.log('Total:', total);
+    console.log('Grand Total:', grandTotal);
     if (checkoutTotal) {
-        checkoutTotal.textContent = `Total: PKR ${total.toFixed(2)}`;
+        checkoutTotal.innerHTML = `
+            <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; color: var(--primary-color); padding-top: 12px;">
+                <span>Grand Total</span>
+                <span>PKR ${grandTotal.toFixed(2)}</span>
+            </div>
+        `;
     }
 }
 
@@ -229,10 +263,21 @@ async function showWalletBalance() {
 
 function calculateTotal() {
     let total = 0;
+    const storeIds = new Set();
+    
     cart.forEach(item => {
         total += parseFloat(item.price) * item.quantity;
+        if (item.storeId && item.storeId !== 'unknown') {
+            storeIds.add(item.storeId);
+        }
     });
-    return total + 2.99; // Total + Delivery Fee
+    
+    // Add delivery fee for each store (2.99 per store/order)
+    const deliveryFeePerStore = 2.99;
+    const numStores = storeIds.size > 0 ? storeIds.size : 1;
+    const totalDeliveryFee = deliveryFeePerStore * numStores;
+    
+    return total + totalDeliveryFee;
 }
 
 // Handle checkout form submission

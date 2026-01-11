@@ -297,103 +297,206 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       itemsByStore[store]!.add(item);
                                     }
 
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children:
-                                          itemsByStore.entries.map((entry) {
-                                            return Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
+                                    final deliveryFeePerStore = 2.99;
+                                    final numStores = itemsByStore.length;
+                                    double grandTotal = cart.totalAmount + (deliveryFeePerStore * numStores);
+
+                                    List<Widget> allChildren = [];
+                                    
+                                    for (var entry in itemsByStore.entries) {
+                                      double storeSubtotal = entry.value.fold(0.0, (sum, item) => sum + item.total);
+                                      
+                                      allChildren.add(
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                                          child: Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context).primaryColor.withAlpha((0.15 * 255).round()),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border(
+                                                left: BorderSide(
+                                                  color: Theme.of(context).primaryColor,
+                                                  width: 3,
+                                                ),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              entry.key,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                                color: Theme.of(context).primaryColor,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                      
+                                      for (var item in entry.value) {
+                                        allChildren.add(
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 6.0),
+                                            child: Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                if (itemsByStore.length > 1)
-                                                  Padding(
-                                                    padding: const EdgeInsets
-                                                        .only(
-                                                          top: 8.0,
-                                                          bottom: 4.0,
-                                                        ),
-                                                    child: Text(
-                                                      entry.key,
-                                                      style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        color:
-                                                            Theme.of(
-                                                              context,
-                                                            ).primaryColor,
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        item.product.name,
+                                                        style: const TextStyle(fontWeight: FontWeight.w500),
+                                                        maxLines: 2,
+                                                        overflow: TextOverflow.ellipsis,
                                                       ),
-                                                    ),
+                                                      Text(
+                                                        item.variantLabel != null
+                                                            ? '${item.variantLabel} • ${item.quantity} x PKR ${item.unitPrice}'
+                                                            : '${item.quantity} x PKR ${item.unitPrice}',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors.grey[600],
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
-                                                ...entry.value.map((item) {
-                                                  return Padding(
-                                                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                                                    child: Row(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Expanded(
-                                                          child: Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            children: [
-                                                              Text(
-                                                                item.product.name,
-                                                                style: const TextStyle(fontWeight: FontWeight.w500),
-                                                                maxLines: 2,
-                                                                overflow: TextOverflow.ellipsis,
-                                                              ),
-                                                              Text(
-                                                                item.variantLabel != null
-                                                                    ? '${item.variantLabel} • ${item.quantity} x PKR ${item.unitPrice}'
-                                                                    : '${item.quantity} x PKR ${item.unitPrice}',
-                                                                style: TextStyle(
-                                                                  fontSize: 12,
-                                                                  color: Colors.grey[600],
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                        const SizedBox(width: 8),
-                                                        Text(
-                                                          'PKR ${item.total.toStringAsFixed(2)}',
-                                                          style: const TextStyle(
-                                                            fontWeight: FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  );
-                                                }),
-                                                const Divider(height: 1),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  'PKR ${item.total.toStringAsFixed(2)}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
                                               ],
-                                            );
-                                          }).toList(),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      
+                                      allChildren.add(
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                'Subtotal (${entry.key}):',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              Text(
+                                                'PKR ${storeSubtotal.toStringAsFixed(2)}',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                      
+                                      allChildren.add(
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 12.0),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text(
+                                                'Delivery Fee:',
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+                                              Text(
+                                                'PKR ${deliveryFeePerStore.toStringAsFixed(2)}',
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                      
+                                      allChildren.add(const Divider(height: 12));
+                                    }
+                                    
+                                    allChildren.add(const SizedBox(height: 8));
+                                    
+                                    if (numStores > 1) {
+                                      allChildren.add(
+                                        Padding(
+                                          padding: const EdgeInsets.only(bottom: 8.0),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                'Total Delivery Fees ($numStores orders):',
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+                                              Text(
+                                                'PKR ${(deliveryFeePerStore * numStores).toStringAsFixed(2)}',
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    
+                                    allChildren.add(
+                                      Container(
+                                        padding: const EdgeInsets.only(top: 8),
+                                        decoration: BoxDecoration(
+                                          border: Border(
+                                            top: BorderSide(
+                                              color: Colors.grey[300]!,
+                                              width: 2,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'Grand Total',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            Text(
+                                              'PKR ${grandTotal.toStringAsFixed(2)}',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w700,
+                                                color: Theme.of(context).colorScheme.primary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                    
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: allChildren,
                                     );
                                   },
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Total',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    Text(
-                                      'PKR ${cart.totalAmount.toStringAsFixed(2)}',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ],
                             ),
