@@ -37,6 +37,13 @@ class _StoreScreenState extends State<StoreScreen> {
     _storeDetailsFuture = ApiService.getStoreDetails(widget.storeId);
   }
 
+  Future<void> _refresh() async {
+    setState(() {
+      _storeDetailsFuture = ApiService.getStoreDetails(widget.storeId);
+    });
+    await _storeDetailsFuture;
+  }
+
   List<List<T>> _chunk<T>(List<T> list, int size) {
     return List.generate(
       (list.length / size).ceil(),
@@ -160,8 +167,10 @@ class _StoreScreenState extends State<StoreScreen> {
 
           final chunkedProducts = _chunk(products, crossAxisCount);
 
-          return CustomScrollView(
-            slivers: [
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: CustomScrollView(
+              slivers: [
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -300,6 +309,7 @@ class _StoreScreenState extends State<StoreScreen> {
               ),
               const SliverPadding(padding: EdgeInsets.only(bottom: 50)),
             ],
+            ),
           );
         },
       ),

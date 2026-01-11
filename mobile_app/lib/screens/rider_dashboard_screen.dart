@@ -409,10 +409,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
+      body: RefreshIndicator(
+        onRefresh: _loadAllData,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
                 // Rider Info Section
                 _buildRiderInfoCard(),
 
@@ -444,11 +446,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ),
                 ),
               ],
-            ),
-    );
-  }
+              ),
+        ),
+      );
+    }
 
-  Widget _buildRiderInfoCard() {
+    Widget _buildRiderInfoCard() {
     final name = _riderProfile == null
         ? 'Rider'
         : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'

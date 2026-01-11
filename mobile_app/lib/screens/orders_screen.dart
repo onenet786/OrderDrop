@@ -114,26 +114,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Error: $_error'),
-                      ElevatedButton(
-                        onPressed: _fetchOrders,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : _orders.isEmpty
-                  ? const Center(child: Text('No orders found.'))
-                  : RefreshIndicator(
-                      onRefresh: _fetchOrders,
-                      child: ListView.builder(
+      body: RefreshIndicator(
+        onRefresh: _fetchOrders,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('Error: $_error'),
+                        ElevatedButton(
+                          onPressed: _fetchOrders,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  )
+                : _orders.isEmpty
+                    ? const Center(child: Text('No orders found.'))
+                    : ListView.builder(
                         padding: const EdgeInsets.all(16),
                         itemCount: _orders.length,
                         itemBuilder: (context, index) {
@@ -142,8 +142,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         },
                       ),
                     ),
-    );
-  }
+        ),
+      );
+    }
 
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final isGroup = order['is_group'] == true;

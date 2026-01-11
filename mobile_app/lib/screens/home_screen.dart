@@ -170,10 +170,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        body: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        body: RefreshIndicator(
+          onRefresh: _fetchData,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               // User Login Data Section
               Selector<AuthProvider, User?>(
                 selector: (_, auth) => auth.user,
@@ -336,6 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               const SizedBox(height: 20),
             ],
+            ),
           ),
         ),
       ),

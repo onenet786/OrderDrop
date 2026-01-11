@@ -415,15 +415,18 @@ class _WalletScreenState extends State<WalletScreen>
           indicatorWeight: 3,
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildBalanceTab(),
-          _buildTopupTab(),
-          _buildPaymentsTab(),
-          _buildTransfersTab(),
-          _buildHistoryTab(),
-        ],
+      body: RefreshIndicator(
+        onRefresh: _refreshWallet,
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildBalanceTab(),
+            _buildTopupTab(),
+            _buildPaymentsTab(),
+            _buildTransfersTab(),
+            _buildHistoryTab(),
+          ],
+        ),
       ),
     );
   }

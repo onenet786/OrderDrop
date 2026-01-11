@@ -3,8 +3,17 @@ import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/cart_provider.dart';
 
-class CartScreen extends StatelessWidget {
+class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
+
+  @override
+  State<CartScreen> createState() => _CartScreenState();
+}
+
+class _CartScreenState extends State<CartScreen> {
+  Future<void> _refresh() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,15 +53,17 @@ class CartScreen extends StatelessWidget {
                 ),
             ],
           ),
-          body: cart.items.isEmpty
-              ? const Center(
-                  child: Text(
-                    'Your cart is empty',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                )
-              : Column(
-                  children: [
+          body: RefreshIndicator(
+            onRefresh: _refresh,
+            child: cart.items.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Your cart is empty',
+                      style: TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                  )
+                : Column(
+                    children: [
                     Expanded(
                       child: ListView.builder(
                         itemCount: cart.items.length,
@@ -243,9 +254,10 @@ class CartScreen extends StatelessWidget {
                       ),
                     ),
                   ],
-                ),
-        );
-      },
-    );
+                  ),
+            ),
+          );
+        },
+      );
+    }
   }
-}
