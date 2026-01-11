@@ -391,13 +391,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
                                           child: Row(
                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
-                                              Text(
-                                                'Subtotal (${entry.key}):',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
+                                              Expanded(
+                                                child: Text(
+                                                  'Subtotal (${entry.key}):',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 2,
                                                 ),
                                               ),
+                                              const SizedBox(width: 8),
                                               Text(
                                                 'PKR ${storeSubtotal.toStringAsFixed(2)}',
                                                 style: const TextStyle(
@@ -419,14 +425,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         padding: const EdgeInsets.only(bottom: 8.0),
                                         child: Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(
-                                              'Total Delivery Charge ($numStores store${numStores > 1 ? 's' : ''}):',
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                color: Colors.grey,
+                                            Expanded(
+                                              child: Text(
+                                                'Total Delivery Charge ($numStores store${numStores > 1 ? 's' : ''}):',
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 2,
                                               ),
                                             ),
+                                            const SizedBox(width: 8),
                                             Text(
                                               'PKR ${deliveryFee.toStringAsFixed(2)}',
                                               style: const TextStyle(
@@ -453,14 +465,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         ),
                                         child: Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            const Text(
-                                              'Grand Total',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w700,
+                                            Expanded(
+                                              child: const Text(
+                                                'Grand Total',
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                                maxLines: 2,
                                               ),
                                             ),
+                                            const SizedBox(width: 8),
                                             Text(
                                               'PKR ${grandTotal.toStringAsFixed(2)}',
                                               style: TextStyle(
@@ -513,10 +531,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const SizedBox(height: 12),
                                 TextFormField(
                                   controller: _nameController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Contact Name',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.person),
+                                  decoration: InputDecoration(
+                                    label: const Text(
+                                      'Contact Name',
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                    ),
+                                    border: const OutlineInputBorder(),
+                                    prefixIcon: const Icon(Icons.person),
                                   ),
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {
@@ -528,10 +550,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const SizedBox(height: 12),
                                 TextFormField(
                                   controller: _phoneController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Phone Number',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.phone),
+                                  decoration: InputDecoration(
+                                    label: const Text(
+                                      'Phone Number',
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                    ),
+                                    border: const OutlineInputBorder(),
+                                    prefixIcon: const Icon(Icons.phone),
                                   ),
                                   keyboardType: TextInputType.phone,
                                   validator: (value) {
@@ -544,10 +570,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const SizedBox(height: 12),
                                 TextFormField(
                                   controller: _addressController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Delivery Address',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.location_on),
+                                  decoration: InputDecoration(
+                                    label: const Text(
+                                      'Delivery Address',
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                    ),
+                                    border: const OutlineInputBorder(),
+                                    prefixIcon: const Icon(Icons.location_on),
                                   ),
                                   maxLines: 2,
                                   validator: (value) {
@@ -560,10 +590,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<String>(
                                   value: _selectedDeliveryTime,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Preferred Delivery Time (Optional)',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.access_time),
+                                  decoration: InputDecoration(
+                                    label: const Text(
+                                      'Preferred Delivery Time (Optional)',
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                    ),
+                                    border: const OutlineInputBorder(),
+                                    prefixIcon: const Icon(Icons.access_time),
                                   ),
                                   items: const [
                                     DropdownMenuItem(
@@ -592,11 +626,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 const SizedBox(height: 12),
                                 TextFormField(
                                   controller: _instructionsController,
-                                  decoration: const InputDecoration(
-                                    labelText:
-                                        'Special Instructions (Optional)',
-                                    border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.note),
+                                  decoration: InputDecoration(
+                                    label: const Text(
+                                      'Special Instructions (Optional)',
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 2,
+                                    ),
+                                    border: const OutlineInputBorder(),
+                                    prefixIcon: const Icon(Icons.note),
                                   ),
                                   maxLines: 2,
                                 ),

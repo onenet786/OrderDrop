@@ -182,10 +182,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                runAlignment: WrapAlignment.start,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
-                  Expanded(
+                  Flexible(
                     child: Text(
                       'Order ${order['order_number']}',
                       style: const TextStyle(
@@ -239,12 +242,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        runAlignment: WrapAlignment.start,
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
-                          Text(
-                            sub['store_name'] ?? 'Store',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          Flexible(
+                            child: Text(
+                              sub['store_name'] ?? 'Store',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 2,
+                            ),
                           ),
                           _buildStatusBadge(sub['status'] ?? 'pending'),
                         ],
@@ -255,9 +265,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                            children: [
                              const Icon(Icons.delivery_dining, size: 14, color: Colors.grey),
                              const SizedBox(width: 4),
-                             Text(
-                               "${sub['rider_first_name'] ?? ''} ${sub['rider_last_name'] ?? ''}".trim(),
-                               style: const TextStyle(fontSize: 12, color: Colors.grey),
+                             Expanded(
+                               child: Text(
+                                 "${sub['rider_first_name'] ?? ''} ${sub['rider_last_name'] ?? ''}".trim(),
+                                 style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                 overflow: TextOverflow.ellipsis,
+                                 maxLines: 2,
+                               ),
                              ),
                            ],
                          )
@@ -270,19 +284,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       const SizedBox(height: 4),
                       ...items.map<Widget>((item) {
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: Text(
-                                  "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
-                                  style: const TextStyle(fontSize: 12),
-                                ),
+                              Text(
+                                "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
+                                style: const TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 2,
                               ),
                               Text(
                                 "PKR ${(double.tryParse(item['price'].toString()) ?? 0.0) * (int.tryParse(item['quantity'].toString()) ?? 1)}",
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.blue),
                               ),
                             ],
                           ),
@@ -331,10 +345,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              runAlignment: WrapAlignment.start,
+              spacing: 8,
+              runSpacing: 4,
               children: [
-                Expanded(
+                Flexible(
                   child: Text(
                     'Order ${order['order_number']}',
                     style: const TextStyle(
@@ -344,14 +361,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 8),
                 _buildStatusBadge(status),
               ],
             ),
             const Divider(),
-            _buildInfoRow('Store', order['store_name'] ?? 'N/A'),
+            _buildInfoRow('Store', order['store_name'] ?? 'N/A', maxLines: 2),
             _buildInfoRow('Total', 'PKR ${double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0}'),
-            _buildInfoRow('Address', order['delivery_address'] ?? 'N/A'),
+            _buildInfoRow('Address', order['delivery_address'] ?? 'N/A', maxLines: 3),
             if (order['rider_location'] != null)
               _buildInfoRow('Rider Location', order['rider_location']),
             
@@ -364,18 +380,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ...(order['items'] as List? ?? []).map<Widget>((item) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
-                        style: const TextStyle(fontSize: 13),
-                      ),
+                    Text(
+                      "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
+                      style: const TextStyle(fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                     ),
                     Text(
                       "PKR ${(double.tryParse(item['price'].toString()) ?? 0.0) * (int.tryParse(item['quantity'].toString()) ?? 1)}",
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.blue),
                     ),
                   ],
                 ),
@@ -397,6 +413,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     Text(
                       'Rider: $riderName',
                       style: const TextStyle(fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                     ),
                     const SizedBox(height: 8),
                     SingleChildScrollView(
@@ -483,7 +501,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildInfoRow(String label, String value, {int maxLines = 1}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -506,6 +524,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: maxLines,
             ),
           ),
         ],
