@@ -141,10 +141,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           return _buildOrderCard(order);
                         },
                       ),
-                    ),
-        ),
-      );
-    }
+              ),
+    );
+  }
 
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final isGroup = order['is_group'] == true;
