@@ -60,6 +60,19 @@ function updateCartCount() {
     }
 }
 
+// Calculate delivery fee based on number of unique stores
+function calculateDeliveryFee(storeCount) {
+    if (storeCount === 1) {
+        return 70;
+    } else if (storeCount === 2) {
+        return 100;
+    } else if (storeCount >= 3) {
+        return 120 + (storeCount - 3) * 20;
+    } else {
+        return 70;
+    }
+}
+
 // Display cart items in checkout
 async function displayCheckoutItems() {
     const checkoutItems = document.getElementById('checkoutItems');
@@ -73,7 +86,6 @@ async function displayCheckoutItems() {
 
     checkoutItems.innerHTML = '<p style="text-align: center;">Loading order details...</p>';
     let grandTotal = 0;
-    const deliveryFeePerOrder = 2.99;
     
     // Group items by store
     const storeGroups = {};
@@ -115,10 +127,12 @@ async function displayCheckoutItems() {
     // Render groups
     const storeIdsList = Object.keys(storeGroups);
     const isMultiStore = storeIdsList.length > 1;
+    const numStores = storeIdsList.length;
+    const deliveryFee = calculateDeliveryFee(numStores);
     
     if (isMultiStore) {
          const summaryHeader = document.createElement('div');
-         summaryHeader.innerHTML = '<div class="alert alert-info" style="margin-bottom: 15px; padding: 10px; background-color: #e3f2fd; border-radius: 5px; color: #0d47a1;"><strong>Multiple Stores Order:</strong> Your order will be split into separate deliveries.</div>';
+         summaryHeader.innerHTML = `<div class="alert alert-info" style="margin-bottom: 15px; padding: 10px; background-color: #e3f2fd; border-radius: 5px; color: #0d47a1;"><strong>Multiple Stores Order:</strong> Your order will be split into separate deliveries. Total delivery charge: PKR ${deliveryFee.toFixed(2)}</div>`;
          checkoutItems.appendChild(summaryHeader);
     }
 
@@ -165,17 +179,18 @@ async function displayCheckoutItems() {
         `;
         checkoutItems.appendChild(storeSubtotalDiv);
 
-        // Delivery fee for this store
-        const deliveryDiv = document.createElement('div');
-        deliveryDiv.style.cssText = 'display: flex; justify-content: space-between; padding: 6px 0; color: #666; margin-bottom: 12px; border-bottom: 2px solid #eee; padding-bottom: 12px;';
-        deliveryDiv.innerHTML = `
-            <span>Delivery Fee:</span>
-            <span>PKR ${deliveryFeePerOrder.toFixed(2)}</span>
-        `;
-        checkoutItems.appendChild(deliveryDiv);
-
-        grandTotal += storeSubtotal + deliveryFeePerOrder;
+        grandTotal += storeSubtotal;
     });
+
+    // Single delivery fee for entire order
+    const deliveryDiv = document.createElement('div');
+    deliveryDiv.style.cssText = 'display: flex; justify-content: space-between; padding: 8px 0; color: #666; margin-top: 12px; margin-bottom: 12px; border-top: 1px solid #eee; padding-top: 12px; border-bottom: 2px solid #eee; padding-bottom: 12px;';
+    deliveryDiv.innerHTML = `
+        <span>Total Delivery Charge (${numStores} store${numStores > 1 ? 's' : ''}):</span>
+        <span>PKR ${deliveryFee.toFixed(2)}</span>
+    `;
+    checkoutItems.appendChild(deliveryDiv);
+    grandTotal += deliveryFee;
 
     console.log('Grand Total:', grandTotal);
     if (checkoutTotal) {
@@ -272,12 +287,10 @@ function calculateTotal() {
         }
     });
     
-    // Add delivery fee for each store (2.99 per store/order)
-    const deliveryFeePerStore = 2.99;
     const numStores = storeIds.size > 0 ? storeIds.size : 1;
-    const totalDeliveryFee = deliveryFeePerStore * numStores;
+    const deliveryFee = calculateDeliveryFee(numStores);
     
-    return total + totalDeliveryFee;
+    return total + deliveryFee;
 }
 
 // Handle checkout form submission

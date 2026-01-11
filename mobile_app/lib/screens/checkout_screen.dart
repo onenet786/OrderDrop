@@ -297,9 +297,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       itemsByStore[store]!.add(item);
                                     }
 
-                                    final deliveryFeePerStore = 2.99;
                                     final numStores = itemsByStore.length;
-                                    double grandTotal = cart.totalAmount + (deliveryFeePerStore * numStores);
+                                    
+                                    double getDeliveryFee(int stores) {
+                                      if (stores == 1) {
+                                        return 70;
+                                      } else if (stores == 2) {
+                                        return 100;
+                                      } else if (stores >= 3) {
+                                        return 120 + (stores - 3) * 20;
+                                      } else {
+                                        return 70;
+                                      }
+                                    }
+                                    
+                                    final deliveryFee = getDeliveryFee(numStores);
+                                    double grandTotal = cart.totalAmount + deliveryFee;
 
                                     List<Widget> allChildren = [];
                                     
@@ -399,64 +412,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         ),
                                       );
                                       
-                                      allChildren.add(
-                                        Padding(
-                                          padding: const EdgeInsets.only(bottom: 12.0),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              const Text(
-                                                'Delivery Fee:',
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  color: Colors.grey,
-                                                ),
-                                              ),
-                                              Text(
-                                                'PKR ${deliveryFeePerStore.toStringAsFixed(2)}',
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                  color: Colors.grey,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                      
                                       allChildren.add(const Divider(height: 12));
                                     }
                                     
                                     allChildren.add(const SizedBox(height: 8));
                                     
-                                    if (numStores > 1) {
-                                      allChildren.add(
-                                        Padding(
-                                          padding: const EdgeInsets.only(bottom: 8.0),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'Total Delivery Fees ($numStores orders):',
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                  color: Colors.grey,
-                                                ),
+                                    allChildren.add(
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 8.0),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              'Total Delivery Charge ($numStores store${numStores > 1 ? 's' : ''}):',
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.grey,
                                               ),
-                                              Text(
-                                                'PKR ${(deliveryFeePerStore * numStores).toStringAsFixed(2)}',
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                  color: Colors.grey,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
+                                            ),
+                                            Text(
+                                              'PKR ${deliveryFee.toStringAsFixed(2)}',
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.grey,
+                                                fontWeight: FontWeight.w500,
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                          ],
                                         ),
-                                      );
-                                    }
+                                      ),
+                                    );
                                     
                                     allChildren.add(
                                       Container(
