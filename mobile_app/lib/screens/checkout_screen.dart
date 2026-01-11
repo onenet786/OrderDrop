@@ -19,9 +19,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
-  final _timeController = TextEditingController();
   final _instructionsController = TextEditingController();
   String _paymentMethod = 'cash';
+  String? _selectedDeliveryTime;
   bool _isLoading = false;
   double? _walletBalance;
 
@@ -64,7 +64,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
-    _timeController.dispose();
     _instructionsController.dispose();
     super.dispose();
   }
@@ -184,9 +183,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         items: orderItems,
         deliveryAddress: _addressController.text,
         paymentMethod: _paymentMethod,
-        deliveryTime: _timeController.text.isNotEmpty
-            ? _timeController.text
-            : null,
+        deliveryTime: _selectedDeliveryTime,
         specialInstructions: combinedInstructions.isNotEmpty
             ? combinedInstructions
             : null,
@@ -561,15 +558,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   },
                                 ),
                                 const SizedBox(height: 12),
-                                TextFormField(
-                                  controller: _timeController,
+                                DropdownButtonFormField<String>(
+                                  value: _selectedDeliveryTime,
                                   decoration: const InputDecoration(
-                                    labelText:
-                                        'Preferred Delivery Time (Optional)',
+                                    labelText: 'Preferred Delivery Time (Optional)',
                                     border: OutlineInputBorder(),
                                     prefixIcon: Icon(Icons.access_time),
-                                    hintText: 'e.g., ASAP or 2026-01-01 18:00',
                                   ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'asap',
+                                      child: Text('ASAP (30-45 mins)'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: '1hour',
+                                      child: Text('Within 1 hour'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: '2hours',
+                                      child: Text('Within 2 hours'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'tomorrow',
+                                      child: Text('Tomorrow'),
+                                    ),
+                                  ],
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedDeliveryTime = value;
+                                    });
+                                  },
                                 ),
                                 const SizedBox(height: 12),
                                 TextFormField(

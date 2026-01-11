@@ -145,6 +145,8 @@ router.post(
           last_name: lastName,
           email,
           user_type: userType,
+          phone,
+          address,
           is_verified: false,
         },
       });
@@ -240,6 +242,8 @@ router.post(
               last_name: user.last_name,
               email: user.email,
               user_type: user.user_type,
+              phone: user.phone,
+              address: user.address,
             },
           });
         }

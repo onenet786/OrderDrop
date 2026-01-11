@@ -288,7 +288,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '\$${(product['price'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                          '\$${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -429,7 +429,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                               style: const TextStyle(fontSize: 11),
                             ),
                             Text(
-                              '\$${(product['price'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                              '\$${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
                               style: const TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,

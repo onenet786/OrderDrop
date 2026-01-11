@@ -688,7 +688,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   final items = delivery['items'] as List? ?? [];
                   
                   for (var item in items) {
-                    itemsSubtotal += (item['price'] as num? ?? 0) * (item['quantity'] as num? ?? 0);
+                    itemsSubtotal += (double.tryParse(item['price']?.toString() ?? '0') ?? 0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
                     final storeId = item['store_id'] as int?;
                     if (storeId != null) storeIds.add(storeId);
                   }
@@ -1193,7 +1193,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                   ),
                                 ),
                                 Text(
-                                  'PKR ${((item['price'] ?? 0) * (item['quantity'] ?? 1)).toString()}',
+                                  'PKR ${(double.tryParse(item['price']?.toString() ?? '0') ?? 0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1)}',
                                   style: const TextStyle(fontWeight: FontWeight.w600),
                                 ),
                               ],
@@ -1222,7 +1222,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       final allItems = (delivery['items'] as List?) ?? [];
                       
                       for (var item in allItems) {
-                        itemsSubtotal += (item['price'] as num? ?? 0) * (item['quantity'] as num? ?? 0);
+                        itemsSubtotal += (double.tryParse(item['price']?.toString() ?? '0') ?? 0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
                         final storeId = item['store_id'] as int?;
                         if (storeId != null) storeIds.add(storeId);
                       }

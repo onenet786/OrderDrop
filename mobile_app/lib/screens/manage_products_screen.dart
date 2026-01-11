@@ -170,7 +170,7 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '\$${(product['price'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                        '\$${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

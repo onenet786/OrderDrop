@@ -222,6 +222,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
               const SizedBox(height: 8),
               ...subOrders.map<Widget>((sub) {
+                final items = sub['items'] as List? ?? [];
+                double storeTotal = 0;
+                for (var item in items) {
+                  storeTotal += (double.tryParse(item['price']?.toString() ?? '0') ?? 0.0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
+                }
+                
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(8),
@@ -262,7 +268,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
                       ),
                       const SizedBox(height: 4),
-                      ...(sub['items'] as List? ?? []).map<Widget>((item) {
+                      ...items.map<Widget>((item) {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 2),
                           child: Row(
@@ -282,6 +288,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                         );
                       }),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                        decoration: BoxDecoration(
+                          border: Border(top: BorderSide(color: Colors.grey[300]!)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Store Total:',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                            ),
+                            Text(
+                              'PKR $storeTotal',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 );

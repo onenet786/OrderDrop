@@ -106,7 +106,7 @@ class WalletProvider extends ChangeNotifier {
           _transactions.addAll(newTransactions);
         }
 
-        final total = data['total'] as int? ?? 0;
+        final total = int.tryParse(data['total']?.toString() ?? '0') ?? 0;
         _hasMoreTransactions = _transactions.length < total;
 
         _cacheTransactions();
@@ -183,9 +183,9 @@ class WalletProvider extends ChangeNotifier {
           _wallet = _wallet!.copyWith(
             autoRechargeEnabled: data['enabled'] ?? false,
             autoRechargeAmount:
-                (data['amount'] as num?)?.toDouble(),
+                double.tryParse(data['amount']?.toString() ?? '0') ?? 0.0,
             autoRechargeThreshold:
-                (data['threshold'] as num?)?.toDouble(),
+                double.tryParse(data['threshold']?.toString() ?? '0') ?? 0.0,
           );
         }
       } else {
@@ -580,7 +580,7 @@ class WalletProvider extends ChangeNotifier {
           _sentTransfers.addAll(newTransfers);
         }
 
-        final total = data['total'] as int? ?? 0;
+        final total = int.tryParse(data['total']?.toString() ?? '0') ?? 0;
         _hasMoreSentTransfers = _sentTransfers.length < total;
       } else {
         _error = data['message'] ?? 'Failed to load sent transfers';
@@ -623,7 +623,7 @@ class WalletProvider extends ChangeNotifier {
           _receivedTransfers.addAll(newTransfers);
         }
 
-        final total = data['total'] as int? ?? 0;
+        final total = int.tryParse(data['total']?.toString() ?? '0') ?? 0;
         _hasMoreReceivedTransfers = _receivedTransfers.length < total;
       } else {
         _error = data['message'] ?? 'Failed to load received transfers';
