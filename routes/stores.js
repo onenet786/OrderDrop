@@ -210,6 +210,8 @@ router.get('/:id', async (req, res) => {
                 price: product.price,
                 image_url: product.image_url,
                 category_name: product.category_name,
+                store_name: store.name,
+                store_id: product.store_id,
                 stock_quantity: product.stock_quantity,
                 is_available: product.is_available,
                 unit_id: product.unit_id,
@@ -217,8 +219,6 @@ router.get('/:id', async (req, res) => {
                 unit_abbreviation: product.unit_abbreviation,
                 size_id: product.size_id,
                 size_label: product.size_label,
-                store_id: product.store_id
-                ,
                 size_variants: (variantsByProductId[product.id] && variantsByProductId[product.id].length)
                     ? variantsByProductId[product.id]
                     : (product.size_id || product.unit_id ? [{
