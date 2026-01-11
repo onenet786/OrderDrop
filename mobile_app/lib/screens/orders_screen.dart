@@ -15,6 +15,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _isLoading = true;
   List<dynamic> _orders = [];
   String? _error;
+  final Set<String> _expandedOrders = {};
 
   @override
   void initState() {
@@ -171,6 +172,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Widget _buildOrderCard(Map<String, dynamic> order) {
     final isGroup = order['is_group'] == true;
     final subOrders = order['sub_orders'] as List?;
+    final orderNumber = order['order_number']?.toString() ?? '';
+    final isExpanded = _expandedOrders.contains(orderNumber);
+    
+    final subtotal = double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0;
+    final deliveryFee = double.tryParse(order['delivery_fee']?.toString() ?? '0') ?? 0.0;
+    final grandTotal = subtotal + deliveryFee;
 
     if (isGroup && subOrders != null) {
       return Card(
@@ -182,150 +189,175 @@ class _OrdersScreenState extends State<OrdersScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                runAlignment: WrapAlignment.start,
-                spacing: 8,
-                runSpacing: 4,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Flexible(
-                    child: Text(
-                      'Order ${order['order_number']}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  Expanded(
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      runAlignment: WrapAlignment.start,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          'Order $orderNumber',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.blue),
+                          ),
+                          child: const Text(
+                            'MULTIPLE STORES',
+                            style: TextStyle(
+                              color: Colors.blue,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue),
+                  IconButton(
+                    icon: Icon(
+                      isExpanded ? Icons.expand_less : Icons.info_outline,
+                      color: Colors.blue,
                     ),
-                    child: const Text(
-                      'MULTIPLE STORES',
-                      style: TextStyle(
-                        color: Colors.blue,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
-                    ),
+                    onPressed: () {
+                      setState(() {
+                        if (isExpanded) {
+                          _expandedOrders.remove(orderNumber);
+                        } else {
+                          _expandedOrders.add(orderNumber);
+                        }
+                      });
+                    },
+                    tooltip: isExpanded ? 'Hide items' : 'Show items',
                   ),
                 ],
               ),
               const Divider(),
-              _buildInfoRow('Total', 'PKR ${double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0}'),
+              _buildInfoRow('Subtotal', 'PKR $subtotal'),
+              _buildInfoRow('Delivery Fee', 'PKR $deliveryFee'),
+              _buildInfoRow('Grand Total', 'PKR $grandTotal', isBold: true, valueColor: Colors.blue),
               _buildInfoRow('Address', order['delivery_address'] ?? 'N/A'),
-              const SizedBox(height: 12),
-              const Text(
-                'Shipments:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              ...subOrders.map<Widget>((sub) {
-                final items = sub['items'] as List? ?? [];
-                double storeTotal = 0;
-                for (var item in items) {
-                  storeTotal += (double.tryParse(item['price']?.toString() ?? '0') ?? 0.0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
-                }
-                
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[200]!),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        alignment: WrapAlignment.spaceBetween,
-                        runAlignment: WrapAlignment.start,
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              sub['store_name'] ?? 'Store',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                            ),
-                          ),
-                          _buildStatusBadge(sub['status'] ?? 'pending'),
-                        ],
-                      ),
-                      if (sub['rider_phone'] != null) ...[
-                         const SizedBox(height: 4),
-                         Row(
-                           children: [
-                             const Icon(Icons.delivery_dining, size: 14, color: Colors.grey),
-                             const SizedBox(width: 4),
-                             Expanded(
-                               child: Text(
-                                 "${sub['rider_first_name'] ?? ''} ${sub['rider_last_name'] ?? ''}".trim(),
-                                 style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                 overflow: TextOverflow.ellipsis,
-                                 maxLines: 2,
-                               ),
-                             ),
-                           ],
-                         )
-                      ],
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Items:',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 4),
-                      ...items.map<Widget>((item) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
-                                style: const TextStyle(fontSize: 12),
+              if (isExpanded) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  'Shipments:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                ...subOrders.map<Widget>((sub) {
+                  final items = sub['items'] as List? ?? [];
+                  double storeTotal = 0;
+                  for (var item in items) {
+                    storeTotal += (double.tryParse(item['price']?.toString() ?? '0') ?? 0.0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
+                  }
+                  
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[200]!),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          runAlignment: WrapAlignment.start,
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                sub['store_name'] ?? 'Store',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
                                 overflow: TextOverflow.ellipsis,
                                 maxLines: 2,
                               ),
+                            ),
+                            _buildStatusBadge(sub['status'] ?? 'pending'),
+                          ],
+                        ),
+                        if (sub['rider_phone'] != null) ...[
+                           const SizedBox(height: 4),
+                           Row(
+                             children: [
+                               const Icon(Icons.delivery_dining, size: 14, color: Colors.grey),
+                               const SizedBox(width: 4),
+                               Expanded(
+                                 child: Text(
+                                   "${sub['rider_first_name'] ?? ''} ${sub['rider_last_name'] ?? ''}".trim(),
+                                   style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                   overflow: TextOverflow.ellipsis,
+                                   maxLines: 2,
+                                 ),
+                               ),
+                             ],
+                           )
+                        ],
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Items:',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 4),
+                        ...items.map<Widget>((item) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
+                                ),
+                                Text(
+                                  "PKR ${(double.tryParse(item['price'].toString()) ?? 0.0) * (int.tryParse(item['quantity'].toString()) ?? 1)}",
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.blue),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                          decoration: BoxDecoration(
+                            border: Border(top: BorderSide(color: Colors.grey[300]!)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Store Total:',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                              ),
                               Text(
-                                "PKR ${(double.tryParse(item['price'].toString()) ?? 0.0) * (int.tryParse(item['quantity'].toString()) ?? 1)}",
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.blue),
+                                'PKR $storeTotal',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
                               ),
                             ],
                           ),
-                        );
-                      }),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                        decoration: BoxDecoration(
-                          border: Border(top: BorderSide(color: Colors.grey[300]!)),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Store Total:',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
-                            ),
-                            Text(
-                              'PKR $storeTotal',
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
+                      ],
+                    ),
+                  );
+                }),
+              ],
             ],
           ),
         ),
@@ -345,58 +377,83 @@ class _OrdersScreenState extends State<OrdersScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              runAlignment: WrapAlignment.start,
-              spacing: 8,
-              runSpacing: 4,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Flexible(
-                  child: Text(
-                    'Order ${order['order_number']}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+                Expanded(
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    runAlignment: WrapAlignment.start,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Text(
+                        'Order $orderNumber',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      _buildStatusBadge(status),
+                    ],
                   ),
                 ),
-                _buildStatusBadge(status),
+                IconButton(
+                  icon: Icon(
+                    isExpanded ? Icons.expand_less : Icons.info_outline,
+                    color: Colors.blue,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      if (isExpanded) {
+                        _expandedOrders.remove(orderNumber);
+                      } else {
+                        _expandedOrders.add(orderNumber);
+                      }
+                    });
+                  },
+                  tooltip: isExpanded ? 'Hide items' : 'Show items',
+                ),
               ],
             ),
             const Divider(),
             _buildInfoRow('Store', order['store_name'] ?? 'N/A', maxLines: 2),
-            _buildInfoRow('Total', 'PKR ${double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0}'),
+            _buildInfoRow('Subtotal', 'PKR $subtotal'),
+            _buildInfoRow('Delivery Fee', 'PKR $deliveryFee'),
+            _buildInfoRow('Grand Total', 'PKR $grandTotal', isBold: true, valueColor: Colors.blue),
             _buildInfoRow('Address', order['delivery_address'] ?? 'N/A', maxLines: 3),
             if (order['rider_location'] != null)
               _buildInfoRow('Rider Location', order['rider_location']),
             
-            const SizedBox(height: 12),
-            const Text(
-              'Items:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            ...(order['items'] as List? ?? []).map<Widget>((item) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
-                      style: const TextStyle(fontSize: 13),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 2,
-                    ),
-                    Text(
-                      "PKR ${(double.tryParse(item['price'].toString()) ?? 0.0) * (int.tryParse(item['quantity'].toString()) ?? 1)}",
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.blue),
-                    ),
-                  ],
-                ),
-              );
-            }),
+            if (isExpanded) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Items:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              ...(order['items'] as List? ?? []).map<Widget>((item) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
+                        style: const TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                      ),
+                      Text(
+                        "PKR ${(double.tryParse(item['price'].toString()) ?? 0.0) * (int.tryParse(item['quantity'].toString()) ?? 1)}",
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.blue),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
 
             if (riderPhone != null && riderPhone.toString().isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -501,7 +558,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  Widget _buildInfoRow(String label, String value, {int maxLines = 1}) {
+  Widget _buildInfoRow(String label, String value, {int maxLines = 1, bool isBold = false, Color? valueColor}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -520,9 +577,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                fontWeight: FontWeight.w500,
+                fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+                color: valueColor,
               ),
               overflow: TextOverflow.ellipsis,
               maxLines: maxLines,

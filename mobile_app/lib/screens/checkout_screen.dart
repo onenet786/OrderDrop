@@ -589,7 +589,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 ),
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<String>(
-                                  value: _selectedDeliveryTime,
+                                  initialValue: _selectedDeliveryTime,
                                   decoration: InputDecoration(
                                     label: const Text(
                                       'Preferred Delivery Time (Optional)',
