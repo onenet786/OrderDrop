@@ -94,6 +94,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final userName = authProvider.user?.firstName ?? 'User';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Orders'),
@@ -133,13 +136,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   )
                 : _orders.isEmpty
                     ? const Center(child: Text('No orders found.'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _orders.length,
-                        itemBuilder: (context, index) {
-                          final order = _orders[index];
-                          return _buildOrderCard(order);
-                        },
+                    : Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Welcome, $userName',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              itemCount: _orders.length,
+                              itemBuilder: (context, index) {
+                                final order = _orders[index];
+                                return _buildOrderCard(order);
+                              },
+                            ),
+                          ),
+                        ],
                       ),
               ),
     );

@@ -196,40 +196,43 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ],
                     ),
-                    child: Row(
+                    child: Column(
                       children: [
-                        CircleAvatar(
-                          radius: 22,
-                          backgroundColor: Colors.white,
-                          child: Text(
-                            user.firstName.isNotEmpty
-                                ? user.firstName.substring(0, 1).toUpperCase()
-                                : 'U',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              color: Colors.blueAccent,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        Text(
+                          'Welcome, ${user.firstName} ${user.lastName}!',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Welcome, ${user.firstName} ${user.lastName}!',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 22,
+                              backgroundColor: Colors.white,
+                              child: Text(
+                                user.firstName.isNotEmpty
+                                    ? user.firstName.substring(0, 1).toUpperCase()
+                                    : 'U',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  color: Colors.blueAccent,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.key, color: Colors.white),
-                          onPressed: () {
-                            Navigator.of(context).pushNamed('/change-password');
-                          },
-                          tooltip: 'Change Password',
+                            const Spacer(),
+                            IconButton(
+                              icon: const Icon(Icons.key, color: Colors.white),
+                              onPressed: () {
+                                Navigator.of(context).pushNamed('/change-password');
+                              },
+                              tooltip: 'Change Password',
+                            ),
+                          ],
                         ),
                       ],
                     ),
