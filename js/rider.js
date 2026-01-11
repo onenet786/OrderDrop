@@ -59,6 +59,18 @@ let currentLng = null;
 let locationWatchId = null;
 window._riderDeliveries = {};
 
+function calculateDeliveryFee(storeCount) {
+    if (storeCount === 1) {
+        return 70;
+    } else if (storeCount === 2) {
+        return 100;
+    } else if (storeCount >= 3) {
+        return 120 + (storeCount - 3) * 20;
+    } else {
+        return 70;
+    }
+}
+
 let requestCache = {};
 let requestRetry = {};
 const REQUEST_CACHE_TTL = 5000;
@@ -404,6 +416,19 @@ async function displayRiderDeliveries(status = 'assigned', containerId = 'delive
                 window._riderDeliveries[delivery.id] = delivery;
                 const deliveryCard = document.createElement('div');
                 deliveryCard.className = 'order-card';
+                
+                // Calculate items subtotal and delivery fee
+                let itemsSubtotal = 0;
+                const storeIds = new Set();
+                if (delivery.items && delivery.items.length > 0) {
+                    delivery.items.forEach(item => {
+                        itemsSubtotal += item.price * item.quantity;
+                        if (item.store_id) storeIds.add(item.store_id);
+                    });
+                }
+                const numStores = storeIds.size > 0 ? storeIds.size : 1;
+                const deliveryFee = calculateDeliveryFee(numStores);
+                
                 deliveryCard.innerHTML = `
                     <div class="order-header">
                         <h3>Order #${delivery.order_number}</h3>
@@ -415,7 +440,18 @@ async function displayRiderDeliveries(status = 'assigned', containerId = 'delive
                     <div class="order-details">
                         <p><strong>Customer:</strong> ${delivery.first_name} ${delivery.last_name}</p>
                         <p><strong>Store:</strong> ${delivery.store_name}</p>
-                        <p><strong>Total:</strong> PKR ${delivery.total_amount}</p>
+                        <p style="display:flex;justify-content:space-between;border-top:1px solid #eee;padding-top:8px;margin-top:8px;">
+                            <span><strong>Items Subtotal:</strong></span>
+                            <span>PKR ${itemsSubtotal.toFixed(2)}</span>
+                        </p>
+                        <p style="display:flex;justify-content:space-between;">
+                            <span><strong>Delivery Fee (${numStores} store${numStores > 1 ? 's' : ''}):</strong></span>
+                            <span>PKR ${deliveryFee.toFixed(2)}</span>
+                        </p>
+                        <p style="display:flex;justify-content:space-between;border-top:2px solid #eee;padding-top:8px;margin-top:8px;font-weight:bold;">
+                            <span>Grand Total:</span>
+                            <span>PKR ${delivery.total_amount}</span>
+                        </p>
                         <p><strong>Delivery Address:</strong> ${delivery.delivery_address}</p>
                         <p><strong>Phone:</strong> ${delivery.phone || 'N/A'}</p>
                         ${delivery.phone ? `
@@ -596,16 +632,42 @@ function openOrderInfo(orderId) {
     if (!delivery) return;
     const modal = createOrGetOrderInfoModal();
     const body = modal.querySelector('#orderInfoBody');
-    const itemsHtml = (delivery.items || []).map(item => `
-        <li style="display:flex;justify-content:space-between;margin-bottom:4px;">
-            <span>${item.quantity}x ${item.product_name || 'Product'} ${item.variant_name ? '(' + item.variant_name + ')' : ''}</span>
-            <span>PKR ${(item.price * item.quantity).toFixed(2)}</span>
-        </li>
-    `).join('');
+    
+    // Calculate subtotal and delivery fee
+    let itemsSubtotal = 0;
+    const storeIds = new Set();
+    const itemsByStore = {};
+    
+    if (delivery.items && delivery.items.length > 0) {
+        delivery.items.forEach(item => {
+            itemsSubtotal += item.price * item.quantity;
+            if (item.store_id) storeIds.add(item.store_id);
+            
+            const storeName = item.item_store_name || 'Unknown Store';
+            if (!itemsByStore[storeName]) {
+                itemsByStore[storeName] = [];
+            }
+            itemsByStore[storeName].push(item);
+        });
+    }
+    
+    const numStores = storeIds.size > 0 ? storeIds.size : 1;
+    const deliveryFee = calculateDeliveryFee(numStores);
+    
+    let itemsHtml = '';
+    for (const storeName in itemsByStore) {
+        itemsHtml += `<li style="font-weight:bold;color:#2563eb;margin-top:8px;margin-bottom:4px;">${storeName}</li>`;
+        itemsByStore[storeName].forEach(item => {
+            itemsHtml += `<li style="display:flex;justify-content:space-between;margin-bottom:4px;margin-left:8px;">
+                <span>${item.quantity}x ${item.product_name || 'Product'} ${item.variant_name ? '(' + item.variant_name + ')' : ''}</span>
+                <span>PKR ${(item.price * item.quantity).toFixed(2)}</span>
+            </li>`;
+        });
+    }
+    
     body.innerHTML = `
         <h3 style="margin-top:0;">Order #${delivery.order_number}</h3>
         <p><strong>Status:</strong> ${delivery.status}</p>
-        <p><strong>Total:</strong> PKR ${Number(delivery.total_amount || 0).toFixed(2)} ${delivery.delivery_fee ? '(incl. delivery)' : ''}</p>
         <p><strong>Payment:</strong> ${delivery.payment_status || 'unknown'}</p>
         <p><strong>Customer:</strong> ${delivery.first_name || ''} ${delivery.last_name || ''}</p>
         <p><strong>Phone:</strong> ${delivery.phone || 'N/A'}</p>
@@ -615,6 +677,20 @@ function openOrderInfo(orderId) {
             <ul style="list-style:none;padding-left:0;margin:0;">
                 ${itemsHtml || '<li>No items found</li>'}
             </ul>
+        </div>
+        <div style="margin-top:12px;border-top:2px solid #eee;padding-top:8px;">
+            <p style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                <span><strong>Items Subtotal:</strong></span>
+                <span>PKR ${itemsSubtotal.toFixed(2)}</span>
+            </p>
+            <p style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                <span><strong>Delivery Fee (${numStores} store${numStores > 1 ? 's' : ''}):</strong></span>
+                <span>PKR ${deliveryFee.toFixed(2)}</span>
+            </p>
+            <p style="display:flex;justify-content:space-between;border-top:1px solid #eee;padding-top:8px;font-weight:bold;font-size:16px;">
+                <span>Grand Total:</span>
+                <span>PKR ${Number(delivery.total_amount || 0).toFixed(2)}</span>
+            </p>
         </div>
     `;
     modal.style.display = 'block';

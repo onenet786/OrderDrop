@@ -679,7 +679,90 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               '${delivery['first_name']} ${delivery['last_name']}',
             ),
             _buildDetailRow('Store', '${delivery['store_name']}'),
-            _buildDetailRow('Total', 'PKR ${delivery['total_amount']}'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Builder(
+                builder: (context) {
+                  double itemsSubtotal = 0;
+                  final storeIds = <int>{};
+                  final items = delivery['items'] as List? ?? [];
+                  
+                  for (var item in items) {
+                    itemsSubtotal += (item['price'] as num? ?? 0) * (item['quantity'] as num? ?? 0);
+                    final storeId = item['store_id'] as int?;
+                    if (storeId != null) storeIds.add(storeId);
+                  }
+                  
+                  double getDeliveryFee(int stores) {
+                    if (stores == 1) {
+                      return 70;
+                    } else if (stores == 2) {
+                      return 100;
+                    } else if (stores >= 3) {
+                      return 120 + (stores - 3) * 20;
+                    } else {
+                      return 70;
+                    }
+                  }
+                  
+                  final numStores = storeIds.isNotEmpty ? storeIds.length : 1;
+                  final deliveryFee = getDeliveryFee(numStores);
+                  
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Items Subtotal:',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                          Text(
+                            'PKR ${itemsSubtotal.toStringAsFixed(2)}',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Delivery Fee ($numStores store${numStores > 1 ? 's' : ''}):',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          Text(
+                            'PKR ${deliveryFee.toStringAsFixed(2)}',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Divider(
+                        thickness: 1,
+                        height: 8,
+                        color: Colors.grey[300],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Grand Total:',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            'PKR ${delivery['total_amount']}',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
             _buildDetailRow('Address', '${delivery['delivery_address']}'),
             _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
             if (customerPhone.isNotEmpty)
@@ -1036,7 +1119,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ),
                   const SizedBox(height: 12),
                   _buildDetailRow('Status', '${delivery['status']}'),
-                  _buildDetailRow('Total', 'PKR ${delivery['total_amount']}'),
                   _buildDetailRow(
                     'Payment',
                     '${delivery['payment_status'] ?? 'unknown'}',
@@ -1122,6 +1204,94 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       ],
                     );
                   }),
+                  const SizedBox(height: 12),
+                  const Divider(),
+                  const Text(
+                    'Pricing Breakdown',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.blueGrey,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (ctx) {
+                      double itemsSubtotal = 0;
+                      final storeIds = <int>{};
+                      final allItems = (delivery['items'] as List?) ?? [];
+                      
+                      for (var item in allItems) {
+                        itemsSubtotal += (item['price'] as num? ?? 0) * (item['quantity'] as num? ?? 0);
+                        final storeId = item['store_id'] as int?;
+                        if (storeId != null) storeIds.add(storeId);
+                      }
+                      
+                      double getDeliveryFee(int stores) {
+                        if (stores == 1) {
+                          return 70;
+                        } else if (stores == 2) {
+                          return 100;
+                        } else if (stores >= 3) {
+                          return 120 + (stores - 3) * 20;
+                        } else {
+                          return 70;
+                        }
+                      }
+                      
+                      final numStores = storeIds.isNotEmpty ? storeIds.length : 1;
+                      final deliveryFee = getDeliveryFee(numStores);
+                      
+                      return Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Items Subtotal:', style: TextStyle(fontSize: 13)),
+                              Text(
+                                'PKR ${itemsSubtotal.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Delivery Fee ($numStores store${numStores > 1 ? 's' : ''}):',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                              Text(
+                                'PKR ${deliveryFee.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Divider(color: Colors.grey[400]),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Grand Total:',
+                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                'PKR ${delivery['total_amount']}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                   const SizedBox(height: 8),
                 ],
               ),
