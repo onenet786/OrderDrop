@@ -213,7 +213,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ],
               ),
               const Divider(),
-              _buildInfoRow('Total', 'PKR ${order['total_amount']}'),
+              _buildInfoRow('Total', 'PKR ${double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0}'),
               _buildInfoRow('Address', order['delivery_address'] ?? 'N/A'),
               const SizedBox(height: 12),
               const Text(
@@ -324,7 +324,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ),
             const Divider(),
             _buildInfoRow('Store', order['store_name'] ?? 'N/A'),
-            _buildInfoRow('Total', 'PKR ${order['total_amount']}'),
+            _buildInfoRow('Total', 'PKR ${double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0}'),
             _buildInfoRow('Address', order['delivery_address'] ?? 'N/A'),
             if (order['rider_location'] != null)
               _buildInfoRow('Rider Location', order['rider_location']),
