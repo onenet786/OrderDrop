@@ -2273,15 +2273,23 @@
                 <select id="productCategory" name="category_id" style="width: 100%;"></select>
               </div>
 
+              <!-- Multiple units / prices toggle -->
+              <div class="form-group" style="grid-column: span 1; display: flex; align-items: flex-end; padding-bottom: 0.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0; font-weight: 600; color: #4f46e5;">
+                  <input type="checkbox" id="productHasSizePrices" />
+                  <span id="productVariantsToggleText">Multiple units / prices</span>
+                </label>
+              </div>
+
               <!-- Measurement Mode Selection -->
-              <div class="form-group" style="grid-column: span 2; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 2rem; background: #f8fafc; padding: 0.75rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                <label style="font-weight: 600; margin-bottom: 0;">Measurement Mode:</label>
-                <div style="display: flex; gap: 1.5rem;">
-                  <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0;">
-                    <input type="radio" name="product_measure_mode" id="productMeasureModeUnit" value="unit" checked /> Unit Based
+              <div class="form-group" style="grid-column: span 1; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; background: #f8fafc; padding: 0.5rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <label style="font-weight: 600; margin-bottom: 0; white-space: nowrap; font-size: 0.875rem;">Mode:</label>
+                <div style="display: flex; gap: 0.75rem;">
+                  <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer; margin-bottom: 0; white-space: nowrap; font-size: 0.875rem;">
+                    <input type="radio" name="product_measure_mode" id="productMeasureModeUnit" value="unit" checked /> Unit
                   </label>
-                  <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0;">
-                    <input type="radio" name="product_measure_mode" id="productMeasureModeSize" value="size" /> Size Based
+                  <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer; margin-bottom: 0; white-space: nowrap; font-size: 0.875rem;">
+                    <input type="radio" name="product_measure_mode" id="productMeasureModeSize" value="size" /> Size
                   </label>
                 </div>
               </div>
@@ -2301,13 +2309,6 @@
                       <option value="">Select Size (Optional)</option>
                     </select>
                   </div>
-                </div>
-                
-                <div class="form-group" style="display: flex; align-items: flex-end; padding-bottom: 0.5rem;">
-                  <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0; font-weight: 600; color: #4f46e5;">
-                    <input type="checkbox" id="productHasSizePrices" />
-                    <span id="productVariantsToggleText">Multiple units / prices</span>
-                  </label>
                 </div>
               </div>
 
@@ -2656,12 +2657,12 @@
     </div>
 
     <div id="editOrderModal" class="modal">
-      <div class="modal-content" style="max-width: 850px">
-        <div class="modal-header" style="max-height: 600px; overflow-y: auto;">
+      <div class="modal-content" style="max-width: 900px; display: flex; flex-direction: column; max-height: 85vh;">
+        <div class="modal-header">
           <h3>Edit Order</h3>
           <span class="close" data-modal="editOrderModal">&times;</span>
         </div>
-        <div class="modal-body" style="max-height: 600px; overflow-y: auto;">
+        <div class="modal-body" style="overflow-y: auto; flex: 1; padding: 1.5rem;">
           <form id="editOrderForm">
             <div class="form-row">
               <div class="form-group">
@@ -2681,23 +2682,36 @@
                   <option value="">Select Rider</option>
                 </select>
               </div>
-              <div class="form-group">
-                <label for="deliveryFee">Delivery Charges (PKR):</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  id="deliveryFee"
-                  name="delivery_fee"
-                  placeholder="e.g. 70"
+            </div>
+
+            <div style="background: #f0f9ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 1rem; margin: 1rem 0;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div>
+                  <p style="margin: 0 0 0.5rem 0; color: #475569; font-size: 0.875rem;">Items Subtotal:</p>
+                  <p style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #1e293b;" id="itemsSubtotal">PKR 0.00</p>
+                </div>
+                <div>
+                  <p style="margin: 0 0 0.5rem 0; color: #475569; font-size: 0.875rem;">Auto-Calculated Delivery Fee:</p>
+                  <p style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #1e293b;" id="deliveryFeeDisplay">PKR 0.00</p>
+                </div>
+              </div>
+              <div style="border-top: 2px solid #bfdbfe; margin-top: 1rem; padding-top: 1rem;">
+                <label for="orderTotalAmount" style="display: block; margin: 0 0 0.5rem 0; color: #475569; font-size: 0.875rem;">Total Amount (PKR) - Editable:</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  id="orderTotalAmount" 
+                  name="total_amount" 
+                  style="font-size: 1.375rem; font-weight: 700; color: #0369a1; width: 100%; border: 1px solid #bfdbfe; border-radius: 4px; padding: 0.5rem; background: #fff;"
                 />
               </div>
             </div>
             
             <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e2e8f0;" />
             
-            <div style="margin-bottom: 1rem;">
-              <h4 style="margin: 0 0 1rem 0;">Order Items</h4>
-              <div id="orderItemsContainer" style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem;">
+            <div style="margin-bottom: 1.5rem;">
+              <h4 style="margin: 0 0 1rem 0; font-size: 1rem; color: #1e293b;">Order Items</h4>
+              <div id="orderItemsContainer" style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem; background: #fafafa;">
                 <p style="color: #718096; text-align: center; margin: 2rem 0;">Loading items...</p>
               </div>
             </div>
@@ -2713,21 +2727,22 @@
             
             <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e2e8f0;" />
             
-            <div style="margin-bottom: 1rem;">
-              <h4 style="margin: 0 0 1rem 0;">Add New Item</h4>
-              <div style="display: grid; grid-template-columns: 2fr 100px 100px; gap: 1rem; padding: 1rem; background: #f7fafc; border-radius: 6px;">
+            <div style="margin-bottom: 1.5rem;">
+              <h4 style="margin: 0 0 1rem 0; font-size: 1rem; color: #1e293b;">Add New Item</h4>
+              <p style="margin: 0 0 0.75rem 0; font-size: 0.875rem; color: #718096; background: #f0fdf4; padding: 0.75rem; border-left: 3px solid #10b981; border-radius: 4px;"><i class="fas fa-info-circle"></i> Products are automatically assigned to their store. Delivery charges recalculate based on total unique stores.</p>
+              <div style="display: grid; grid-template-columns: 2fr 120px 100px; gap: 1rem; padding: 1rem; background: #f7fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
                 <div class="form-group" style="margin: 0;">
-                  <label for="addItemProduct" style="font-size: 0.875rem;">Select Product:</label>
+                  <label for="addItemProduct" style="font-size: 0.875rem; font-weight: 500;">Select Product:</label>
                   <select id="addItemProduct" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
                     <option value="">Choose product...</option>
                   </select>
                 </div>
                 <div class="form-group" style="margin: 0;">
-                  <label for="addItemQuantity" style="font-size: 0.875rem;">Quantity:</label>
+                  <label for="addItemQuantity" style="font-size: 0.875rem; font-weight: 500;">Quantity:</label>
                   <input type="number" id="addItemQuantity" value="1" min="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;" />
                 </div>
                 <div style="display: flex; align-items: flex-end;">
-                  <button type="button" class="btn btn-small btn-primary" id="addItemBtn" style="width: 100%;">
+                  <button type="button" class="btn btn-small btn-primary" id="addItemBtn" style="width: 100%; height: 36px; padding: 0;">
                     <i class="fas fa-plus"></i> Add
                   </button>
                 </div>
@@ -2736,35 +2751,38 @@
             
             <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e2e8f0;" />
             
-            <div class="form-row">
-              <div class="form-group">
-                <label for="riderLocation">Rider Current Location:</label>
-                <input
-                  type="text"
-                  id="riderLocation"
-                  name="rider_location"
-                  placeholder="Enter current location (description)"
-                />
-              </div>
-              <div class="form-group">
-                <label for="riderLatitude">Latitude:</label>
-                <input
-                  type="number"
-                  step="any"
-                  id="riderLatitude"
-                  name="rider_latitude"
-                  placeholder="e.g. 24.8607"
-                />
-              </div>
-              <div class="form-group">
-                <label for="riderLongitude">Longitude:</label>
-                <input
-                  type="number"
-                  step="any"
-                  id="riderLongitude"
-                  name="rider_longitude"
-                  placeholder="e.g. 67.0011"
-                />
+            <div>
+              <h4 style="margin: 0 0 1rem 0; font-size: 1rem; color: #1e293b;">Rider Location</h4>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="riderLocation">Location Description:</label>
+                  <input
+                    type="text"
+                    id="riderLocation"
+                    name="rider_location"
+                    placeholder="Enter current location"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="riderLatitude">Latitude:</label>
+                  <input
+                    type="number"
+                    step="any"
+                    id="riderLatitude"
+                    name="rider_latitude"
+                    placeholder="e.g. 24.8607"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="riderLongitude">Longitude:</label>
+                  <input
+                    type="number"
+                    step="any"
+                    id="riderLongitude"
+                    name="rider_longitude"
+                    placeholder="e.g. 67.0011"
+                  />
+                </div>
               </div>
             </div>
           </form>

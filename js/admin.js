@@ -2305,9 +2305,13 @@ function populateRiderFilter() {
     filterRider.value = currentValue;
 }
 
-function displayOrders(orders) {
+function displayOrders(orders = currentOrders) {
     const tbody = document.getElementById('ordersTableBody');
+    if (!tbody) return;
+    
     tbody.innerHTML = '';
+
+    if (!orders || !Array.isArray(orders)) return;
 
     orders.forEach(order => {
         const riderName = order.rider_first_name
@@ -2630,17 +2634,59 @@ async function viewOrderDetails(orderId) {
     }
 }
 
+function calculateDeliveryCharges(uniqueStoreCount) {
+    if (uniqueStoreCount === 1) {
+        return 70;
+    } else if (uniqueStoreCount === 2) {
+        return 100;
+    } else if (uniqueStoreCount >= 3) {
+        return 120 + (uniqueStoreCount - 3) * 20;
+    } else {
+        return 70;
+    }
+}
+
+function updateOrderSummary(items, deliveryFee) {
+    let itemsSubtotal = 0;
+    if (items && items.length > 0) {
+        itemsSubtotal = items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+    }
+    
+    const deliveryFeeNum = parseFloat(deliveryFee) || 0;
+    const grandTotal = itemsSubtotal + deliveryFeeNum;
+    
+    const itemsSubtotalEl = document.getElementById('itemsSubtotal');
+    const deliveryFeeDisplayEl = document.getElementById('deliveryFeeDisplay');
+    const totalAmountInput = document.getElementById('orderTotalAmount');
+    
+    if (itemsSubtotalEl) {
+        itemsSubtotalEl.textContent = `PKR ${itemsSubtotal.toFixed(2)}`;
+    }
+    if (deliveryFeeDisplayEl) {
+        deliveryFeeDisplayEl.textContent = `PKR ${deliveryFeeNum.toFixed(2)}`;
+    }
+    if (totalAmountInput) {
+        totalAmountInput.value = grandTotal.toFixed(2);
+    }
+}
+
 async function editOrder(orderId) {
     try {
-        // Find order from current orders data
-        const order = currentOrders.find(o => o.id === orderId);
-        if (!order) {
+        const itemsResponse = await fetch(`${API_BASE}/api/orders/${orderId}/items`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const itemsData = await itemsResponse.json();
+
+        // Use fresh order data from API if available, otherwise fallback to currentOrders
+        const freshOrder = itemsData.order || currentOrders.find(o => o.id === orderId);
+
+        if (!freshOrder) {
             showError('Order Not Found', 'The order could not be found in the system.');
             return;
         }
 
-        if (order.status === 'delivered' || order.status === 'cancelled') {
-            showWarning('Cannot Edit', `Cannot edit items for ${order.status} orders. You can only change status and rider details.`);
+        if (freshOrder.status === 'delivered' || freshOrder.status === 'cancelled') {
+            showWarning('Cannot Edit', `Cannot edit items for ${freshOrder.status} orders. You can only change status and rider details.`);
         }
 
         const ridersResponse = await fetch(`${API_BASE}/api/orders/available-riders`, {
@@ -2652,15 +2698,10 @@ async function editOrder(orderId) {
         riderSelect.innerHTML = '<option value="">Select Rider</option>';
         if (ridersData.success) {
             ridersData.riders.forEach(rider => {
-                const selected = order.rider_id == rider.id ? 'selected' : '';
+                const selected = freshOrder.rider_id == rider.id ? 'selected' : '';
                 riderSelect.innerHTML += `<option value="${rider.id}" ${selected}>${rider.first_name} ${rider.last_name}</option>`;
             });
         }
-
-        const itemsResponse = await fetch(`${API_BASE}/api/orders/${orderId}/items`, {
-            headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        const itemsData = await itemsResponse.json();
 
         const storeSelect = document.getElementById('orderItemStore');
         storeSelect.innerHTML = '<option value="">Keep Current Store</option>';
@@ -2694,14 +2735,51 @@ async function editOrder(orderId) {
             `).join('');
             
             document.querySelectorAll('.remove-item-btn').forEach(btn => {
-                const newBtn = btn.cloneNode(true);
-                btn.parentNode.replaceChild(newBtn, btn);
-                newBtn.addEventListener('click', function() {
+                btn.addEventListener('click', function() {
                     removeOrderItem(orderId, this.dataset.itemId);
                 });
             });
+
+            document.querySelectorAll('.item-quantity-input').forEach(input => {
+                input.addEventListener('input', function() {
+                    const items = Array.from(document.querySelectorAll('.item-quantity-input')).map(inp => {
+                        const itemId = inp.dataset.itemId;
+                        const originalItem = itemsData.items.find(i => i.id == itemId);
+                        return {
+                            ...originalItem,
+                            quantity: parseInt(inp.value) || 0
+                        };
+                    });
+                    const currentDeliveryFee = document.getElementById('deliveryFeeDisplay').textContent.replace('PKR ', '');
+                    updateOrderSummary(items, currentDeliveryFee);
+                });
+            });
+
+            const uniqueStores = new Set(itemsData.items.map(item => item.store_id).filter(Boolean));
+            const storeCount = uniqueStores.size;
+            
+            // Calculate items subtotal
+            const itemsSubtotal = itemsData.items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+            
+            // Determine the delivery fee to display
+            // Priority: 1. Use stored delivery_fee, 2. Implied from total_amount, 3. Auto-calculate
+            let deliveryFee = calculateDeliveryCharges(storeCount);
+            if (freshOrder && freshOrder.delivery_fee !== undefined && freshOrder.delivery_fee !== null) {
+                deliveryFee = Number(freshOrder.delivery_fee);
+            } else if (freshOrder && freshOrder.total_amount !== undefined && freshOrder.total_amount !== null) {
+                deliveryFee = Math.max(0, Number(freshOrder.total_amount) - itemsSubtotal);
+            }
+            
+            console.log(`[Order ${orderId}] Subtotal: ${itemsSubtotal}, Delivery Fee: ${deliveryFee}, Total: ${itemsSubtotal + deliveryFee}`);
+            
+            updateOrderSummary(itemsData.items, deliveryFee);
+            
+            if (freshOrder?.delivery_fee === undefined && freshOrder?.total_amount === undefined) {
+                showSuccess('Auto-Calculated', `Delivery fee calculated: ${storeCount} store(s) = PKR ${deliveryFee}`);
+            }
         } else {
             itemsContainer.innerHTML = '<p style="color: #718096; text-align: center; margin: 1rem 0;">No items found</p>';
+            updateOrderSummary([], 0);
         }
         
         const addItemBtn = document.getElementById('addItemBtn');
@@ -2723,16 +2801,44 @@ async function editOrder(orderId) {
             if (productsData.success && productsData.products) {
                 productSelect.innerHTML = '<option value="">Choose product...</option>';
                 productsData.products.forEach(product => {
-                    productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}">${product.name} - PKR ${Number(product.price).toFixed(2)}</option>`;
+                    productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}">${product.name} - PKR ${Number(product.price).toFixed(2)} (${product.store_name})</option>`;
                 });
             }
         }
 
-        document.getElementById('orderStatus').value = order.status;
-        document.getElementById('deliveryFee').value = order.delivery_fee || '';
-        document.getElementById('riderLocation').value = order.rider_location || '';
-        document.getElementById('riderLatitude').value = order.rider_latitude || '';
-        document.getElementById('riderLongitude').value = order.rider_longitude || '';
+        const storeSelectDropdown = document.getElementById('orderItemStore');
+        if (storeSelectDropdown) {
+            storeSelectDropdown.addEventListener('change', async function() {
+                const selectedStoreId = this.value;
+                if (!productSelect) return;
+                
+                try {
+                    let query = `${API_BASE}/api/orders/${orderId}/available-products`;
+                    if (selectedStoreId) {
+                        query += `?store_id=${selectedStoreId}`;
+                    }
+                    
+                    const productsRes = await fetch(query, {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    const productsData = await productsRes.json();
+                    
+                    if (productsData.success && productsData.products) {
+                        productSelect.innerHTML = '<option value="">Choose product...</option>';
+                        productsData.products.forEach(product => {
+                            productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}">${product.name} - PKR ${Number(product.price).toFixed(2)} (${product.store_name})</option>`;
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error fetching products for store:', error);
+                }
+            });
+        }
+        
+        document.getElementById('orderStatus').value = freshOrder.status;
+        document.getElementById('riderLocation').value = freshOrder.rider_location || '';
+        document.getElementById('riderLatitude').value = freshOrder.rider_latitude || '';
+        document.getElementById('riderLongitude').value = freshOrder.rider_longitude || '';
 
         document.getElementById('editOrderForm').dataset.orderId = orderId;
 
@@ -2750,13 +2856,14 @@ async function saveOrder() {
 
     const status = formData.get('status');
     const riderId = formData.get('rider_id') || null;
-    const deliveryFee = formData.get('delivery_fee') || null;
     const riderLocation = formData.get('rider_location') || null;
     const riderLatitude = formData.get('rider_latitude') || null;
     const riderLongitude = formData.get('rider_longitude') || null;
     const storeId = formData.get('store_id') || null;
 
     try {
+        console.log(`[saveOrder] Starting save for order ${orderId}`);
+        
         const itemQuantityInputs = document.querySelectorAll('.item-quantity-input');
         let itemsUpdated = false;
         
@@ -2765,6 +2872,7 @@ async function saveOrder() {
                 id: parseInt(input.dataset.itemId),
                 quantity: parseInt(input.value)
             }));
+            console.log(`[saveOrder] Current items:`, items);
             
             const hasChanges = items.some((item, idx) => {
                 const original = currentOrders.find(o => o.id == orderId);
@@ -2801,17 +2909,31 @@ async function saveOrder() {
             });
         }
 
-        if (riderId) {
-            const assignBody = { rider_id: parseInt(riderId) };
-            if (deliveryFee) assignBody.delivery_fee = parseFloat(deliveryFee);
+        const feeRes = await fetch(`${API_BASE}/api/orders/${orderId}/delivery-fee`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({})
+        });
+        const feeData = await feeRes.json();
+        console.log(`[saveOrder] Delivery fee auto-calculated:`, feeData);
+        if (feeData.success) {
+            console.log(`✓ Delivery fee auto-calculated: PKR ${feeData.delivery_fee.toFixed(2)} for ${feeData.store_count} store(s). Order total: PKR ${feeData.total_amount.toFixed(2)}`);
+        } else {
+            console.error('✗ Failed to update delivery fee:', feeData);
+            showError('Warning', 'Delivery fee may not have been updated. Please check.');
+        }
 
+        if (riderId) {
             await fetch(`${API_BASE}/api/orders/${orderId}/assign-rider`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${authToken}`
                 },
-                body: JSON.stringify(assignBody)
+                body: JSON.stringify({ rider_id: parseInt(riderId) })
             });
         }
 
@@ -2845,9 +2967,11 @@ async function saveOrder() {
 async function addOrderItem(orderId) {
     const productSelect = document.getElementById('addItemProduct');
     const quantityInput = document.getElementById('addItemQuantity');
+    const storeSelect = document.getElementById('orderItemStore');
     
     const productId = productSelect.value;
     const quantity = parseInt(quantityInput.value);
+    const storeId = storeSelect?.value || null;
     
     if (!productId) {
         showError('Validation Error', 'Please select a product');
@@ -2866,7 +2990,7 @@ async function addOrderItem(orderId) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`
             },
-            body: JSON.stringify({ product_id: parseInt(productId), quantity })
+            body: JSON.stringify({ product_id: parseInt(productId), quantity, store_id: storeId ? parseInt(storeId) : null })
         });
         
         const data = await response.json();
@@ -2875,7 +2999,9 @@ async function addOrderItem(orderId) {
             showSuccess('Item Added', 'Product added to order successfully!');
             quantityInput.value = '1';
             productSelect.value = '';
-            editOrder(orderId);
+            setTimeout(() => {
+                editOrder(orderId);
+            }, 500);
         } else {
             showError('Error', data.message || 'Failed to add item to order');
         }
@@ -2906,7 +3032,9 @@ async function removeOrderItem(orderId, itemId) {
             } else {
                 showSuccess('Item Removed', 'Item removed from order successfully!');
             }
-            editOrder(orderId);
+            setTimeout(() => {
+                editOrder(orderId);
+            }, 500);
         } else {
             showError('Error', data.message || 'Failed to remove item from order');
         }

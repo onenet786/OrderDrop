@@ -1527,7 +1527,7 @@ document.addEventListener("DOMContentLoaded", function () {
           // Update navigation for riders
           if (navUl) {
             navUl.innerHTML = `
-                            <li>Welcome ${user.first_name}</li>
+                            <li>Welcome ${user.first_name} ${user.last_name}</li>
                             <li><a href="rider.html"><i class="fas fa-motorcycle"></i> Dashboard</a></li>
                             <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
                             <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
@@ -1558,7 +1558,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
                             <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount">0</span></a></li>
                             <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
-                            <li>Welcome ${user.first_name}</li>
+                            <li>Welcome ${user.first_name} ${user.last_name}</li>
                             <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
                             <li><a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                         `;

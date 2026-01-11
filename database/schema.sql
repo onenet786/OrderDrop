@@ -175,10 +175,17 @@ INSERT INTO riders (first_name, last_name, email, phone, password, vehicle_type,
 
 CREATE INDEX idx_products_store_id ON products(store_id);
 CREATE INDEX idx_products_category_id ON products(category_id);
+CREATE INDEX idx_products_is_available ON products(is_available);
+CREATE INDEX idx_products_store_is_available ON products(store_id, is_available);
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_orders_store_id ON orders(store_id);
 CREATE INDEX idx_orders_parent_order_number ON orders(parent_order_number);
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX idx_order_items_product_id ON order_items(product_id);
+CREATE INDEX idx_order_items_store_id ON order_items(store_id);
+CREATE INDEX idx_riders_is_active ON riders(is_active);
+CREATE INDEX idx_riders_is_available ON riders(is_available);
+CREATE INDEX idx_stores_is_active ON stores(is_active);
 
 -- Table: riders_fuel_history
 -- Stores rider fuel entries with start/end meter, distance and cost

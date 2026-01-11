@@ -45,8 +45,7 @@ const config = {
             port: process.env.DB_PORT || 3306,
             connectionLimit: 20,
             debug: false,
-            enableKeepAlive: true,
-            keepAliveInitialDelayMs: 0
+            enableKeepAlive: true
         },
         security: {
             corsOrigin: process.env.ALLOWED_ORIGINS ? 

@@ -213,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Welcome, ${user.firstName}!',
+                            'Welcome, ${user.firstName} ${user.lastName}!',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,

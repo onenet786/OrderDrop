@@ -227,8 +227,7 @@ async function connectDB() {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      enableKeepAlive: true,
-      keepAliveInitialDelayMs: 0,
+      enableKeepAlive: true
     });
     console.log(`Connected to MySQL database pool: ${process.env.DB_NAME}`);
     console.log(`Database host: ${process.env.DB_HOST}:${process.env.DB_PORT}`);
@@ -382,6 +381,37 @@ async function startServer() {
       "Error ensuring products.cost_price column:",
       err && err.message ? err.message : err
     );
+  }
+
+  // Create performance indexes
+  const indexesToCreate = [
+    { table: 'products', index: 'idx_products_is_available', columns: 'is_available' },
+    { table: 'products', index: 'idx_products_store_is_available', columns: 'store_id, is_available' },
+    { table: 'order_items', index: 'idx_order_items_product_id', columns: 'product_id' },
+    { table: 'order_items', index: 'idx_order_items_store_id', columns: 'store_id' },
+    { table: 'riders', index: 'idx_riders_is_active', columns: 'is_active' },
+    { table: 'riders', index: 'idx_riders_is_available', columns: 'is_available' },
+    { table: 'stores', index: 'idx_stores_is_active', columns: 'is_active' }
+  ];
+
+  for (const idx of indexesToCreate) {
+    try {
+      const [indexes] = await pool.execute(
+        "SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1",
+        [process.env.DB_NAME, idx.table, idx.index]
+      );
+      if (!indexes || indexes.length === 0) {
+        await pool.execute(
+          `CREATE INDEX ${idx.index} ON ${idx.table}(${idx.columns})`
+        );
+        console.log(`Created index: ${idx.index}`);
+      }
+    } catch (err) {
+      console.error(
+        `Error ensuring index ${idx.index}:`,
+        err && err.message ? err.message : err
+      );
+    }
   }
 
   console.log("Database connected. Starting HTTP server...");

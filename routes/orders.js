@@ -473,12 +473,12 @@ router.post('/', authenticateToken, async (req, res) => {
 router.get('/available-riders', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const [riders] = await req.db.execute(
-            'SELECT id, first_name, last_name, email, phone, vehicle_type FROM riders WHERE is_active = true ORDER BY first_name ASC'
+            'SELECT id, first_name, last_name, email, phone, vehicle_type FROM riders WHERE is_active = true AND is_available = true ORDER BY first_name ASC LIMIT 500'
         );
 
         res.json({
             success: true,
-            riders
+            riders: riders || []
         });
 
     } catch (error) {
@@ -1059,6 +1059,75 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
     }
 });
 
+// Update delivery fee (Admin only) - Auto-calculates based on unique stores in order
+router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Check if order exists
+        const [orders] = await req.db.execute(
+            'SELECT id, total_amount, delivery_fee as old_delivery_fee FROM orders WHERE id = ?',
+            [id]
+        );
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Order not found'
+            });
+        }
+
+        const order = orders[0];
+        
+        // Get order items to count unique stores
+        const [items] = await req.db.execute(`
+            SELECT DISTINCT store_id FROM order_items WHERE order_id = ?
+        `, [id]);
+        
+        // Count unique stores
+        const storeIds = new Set(items.map(item => item.store_id).filter(Boolean));
+        const storeCount = storeIds.size;
+        
+        // Calculate delivery fee based on number of unique stores
+        // 1 store: 70, 2 stores: 100, 3 stores: 120, 4+ stores: 120 + (count - 3) * 20
+        let delivery_fee = 0;
+        if (storeCount === 1) {
+            delivery_fee = 70;
+        } else if (storeCount === 2) {
+            delivery_fee = 100;
+        } else if (storeCount >= 3) {
+            delivery_fee = 120 + (storeCount - 3) * 20;
+        } else {
+            delivery_fee = 70;
+        }
+        
+        // Recalculate total
+        const itemsSubtotal = Number(order.total_amount) - Number(order.old_delivery_fee);
+        const newTotal = itemsSubtotal + delivery_fee;
+
+        // Update delivery fee and total
+        await req.db.execute(
+            'UPDATE orders SET delivery_fee = ?, total_amount = ? WHERE id = ?',
+            [Number(delivery_fee), newTotal, id]
+        );
+
+        res.json({
+            success: true,
+            message: 'Delivery fee auto-calculated and updated successfully',
+            delivery_fee: parseFloat(delivery_fee),
+            total_amount: newTotal,
+            store_count: storeCount
+        });
+
+    } catch (error) {
+        console.error('Error updating delivery fee:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update delivery fee',
+            error: error.message
+        });
+    }
+});
+
 // Update rider location (Rider or Admin)
 router.put('/:id(\\d+)/rider-location', authenticateToken, [
     body('latitude').optional().isFloat().withMessage('Invalid latitude'),
@@ -1365,54 +1434,6 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
     }
 });
 
-router.get('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const [orders] = await req.db.execute(
-            'SELECT * FROM orders WHERE id = ?',
-            [id]
-        );
-
-        if (orders.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Order not found'
-            });
-        }
-
-        const [items] = await req.db.execute(`
-            SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.store_id,
-                   p.name as product_name, p.image_url,
-                   s.name as store_name
-            FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            LEFT JOIN stores s ON oi.store_id = s.id
-            WHERE oi.order_id = ?
-            ORDER BY oi.id ASC
-        `, [id]);
-
-        const [stores] = await req.db.execute(
-            'SELECT id, name FROM stores WHERE is_active = true ORDER BY name ASC'
-        );
-
-        res.json({
-            success: true,
-            order: orders[0],
-            items: items || [],
-            availableStores: stores || []
-        });
-
-    } catch (error) {
-        console.error('Error fetching order items:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch order items',
-            error: error.message
-        });
-    }
-});
-
 router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
@@ -1446,7 +1467,7 @@ router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res)
             });
         }
 
-        let totalAmount = 0;
+        let itemsSubtotal = 0;
 
         for (const item of items) {
             const { id: itemId, quantity } = item;
@@ -1488,9 +1509,11 @@ router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res)
                     updateValues
                 );
 
-                totalAmount += price * quantity;
+                itemsSubtotal += price * quantity;
             }
         }
+
+        const totalAmount = Number(itemsSubtotal) + Number(order.delivery_fee || 0);
 
         await req.db.execute(
             'UPDATE orders SET total_amount = ? WHERE id = ?',
@@ -1517,7 +1540,7 @@ router.get('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res)
         const { id } = req.params;
 
         const [orders] = await req.db.execute(
-            'SELECT * FROM orders WHERE id = ?',
+            'SELECT id, status, store_id, total_amount, delivery_fee, rider_id, rider_location, rider_latitude, rider_longitude FROM orders WHERE id = ?',
             [id]
         );
 
@@ -1539,9 +1562,13 @@ router.get('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res)
             ORDER BY oi.id ASC
         `, [id]);
 
-        const [stores] = await req.db.execute(
-            'SELECT id, name FROM stores WHERE is_active = true ORDER BY name ASC'
-        );
+        const [stores] = await req.db.execute(`
+            SELECT DISTINCT s.id, s.name
+            FROM stores s
+            INNER JOIN products p ON s.id = p.store_id
+            WHERE s.is_active = true AND p.is_available = true
+            ORDER BY s.name ASC
+        `);
 
         res.json({
             success: true,
@@ -1555,105 +1582,6 @@ router.get('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res)
         res.status(500).json({
             success: false,
             message: 'Failed to fetch order items',
-            error: error.message
-        });
-    }
-});
-
-router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { items, store_id } = req.body;
-
-        if (!Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Items array is required and cannot be empty'
-            });
-        }
-
-        const [orders] = await req.db.execute(
-            'SELECT * FROM orders WHERE id = ?',
-            [id]
-        );
-
-        if (orders.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Order not found'
-            });
-        }
-
-        const order = orders[0];
-
-        if (order.status === 'delivered' || order.status === 'cancelled') {
-            return res.status(400).json({
-                success: false,
-                message: `Cannot update items for ${order.status} orders`
-            });
-        }
-
-        let totalAmount = 0;
-
-        for (const item of items) {
-            const { id: itemId, quantity } = item;
-
-            if (!quantity || quantity < 1) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'All items must have a quantity of at least 1'
-                });
-            }
-
-            if (itemId) {
-                const [existingItems] = await req.db.execute(
-                    'SELECT price FROM order_items WHERE id = ? AND order_id = ?',
-                    [itemId, id]
-                );
-
-                if (existingItems.length === 0) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Invalid item ID'
-                    });
-                }
-
-                const price = existingItems[0].price;
-                const updateFields = ['quantity = ?'];
-                const updateValues = [quantity];
-
-                if (store_id && store_id !== null) {
-                    updateFields.push('store_id = ?');
-                    updateValues.push(store_id);
-                }
-
-                updateValues.push(itemId);
-                updateValues.push(id);
-
-                await req.db.execute(
-                    `UPDATE order_items SET ${updateFields.join(', ')} WHERE id = ? AND order_id = ?`,
-                    updateValues
-                );
-
-                totalAmount += price * quantity;
-            }
-        }
-
-        await req.db.execute(
-            'UPDATE orders SET total_amount = ? WHERE id = ?',
-            [totalAmount, id]
-        );
-
-        res.json({
-            success: true,
-            message: 'Order items updated successfully'
-        });
-
-    } catch (error) {
-        console.error('Error updating order items:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to update order items',
             error: error.message
         });
     }
@@ -1693,7 +1621,7 @@ router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req,
         }
 
         const [products] = await req.db.execute(
-            'SELECT id, price, cost_price FROM products WHERE id = ? AND is_available = true',
+            'SELECT id, price, cost_price, store_id FROM products WHERE id = ? AND is_available = true',
             [product_id]
         );
 
@@ -1707,7 +1635,7 @@ router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req,
         const product = products[0];
         const price = product.price;
 
-        const itemStoreId = store_id || order.store_id || null;
+        const itemStoreId = store_id || order.store_id || product.store_id || null;
 
         const [result] = await req.db.execute(`
             INSERT INTO order_items (order_id, product_id, quantity, price, store_id)
@@ -1719,7 +1647,8 @@ router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req,
             [id]
         );
 
-        const newTotal = currentItems[0]?.total || 0;
+        const itemsSubtotal = Number(currentItems[0]?.total || 0);
+        const newTotal = itemsSubtotal + Number(order.delivery_fee || 0);
         await req.db.execute(
             'UPDATE orders SET total_amount = ? WHERE id = ?',
             [newTotal, id]
@@ -1788,7 +1717,8 @@ router.delete('/:id(\\d+)/items/:itemId(\\d+)', authenticateToken, requireAdmin,
             [id]
         );
 
-        const newTotal = currentItems[0]?.total || 0;
+        const itemsSubtotal = Number(currentItems[0]?.total || 0);
+        const newTotal = itemsSubtotal + Number(order.delivery_fee || 0);
         await req.db.execute(
             'UPDATE orders SET total_amount = ? WHERE id = ?',
             [newTotal, id]
@@ -1825,6 +1755,7 @@ router.delete('/:id(\\d+)/items/:itemId(\\d+)', authenticateToken, requireAdmin,
 router.get('/:id(\\d+)/available-products', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
+        const { store_id } = req.query;
 
         const [orders] = await req.db.execute(
             'SELECT store_id FROM orders WHERE id = ?',
@@ -1838,30 +1769,31 @@ router.get('/:id(\\d+)/available-products', authenticateToken, requireAdmin, asy
             });
         }
 
-        const storeId = orders[0].store_id;
+        const orderStoreId = orders[0].store_id;
+        const filterStoreId = store_id || orderStoreId;
 
         let query = `
-            SELECT p.id, p.name, p.price, p.image_url, s.name as store_name
+            SELECT p.id, p.name, p.price
             FROM products p
-            LEFT JOIN stores s ON p.store_id = s.id
-            WHERE p.is_available = true
+            INNER JOIN stores s ON p.store_id = s.id
+            WHERE p.is_available = true AND s.is_active = true
         `;
         
         const params = [];
         
-        if (storeId) {
+        if (filterStoreId) {
             query += ' AND p.store_id = ?';
-            params.push(storeId);
+            params.push(filterStoreId);
         }
 
-        query += ' ORDER BY s.name ASC, p.name ASC';
+        query += ' ORDER BY p.name ASC LIMIT 1000';
 
         const [products] = await req.db.execute(query, params);
 
         res.json({
             success: true,
             products: products || [],
-            order_store_id: storeId
+            order_store_id: orderStoreId
         });
 
     } catch (error) {
