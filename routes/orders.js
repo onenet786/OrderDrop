@@ -343,7 +343,7 @@ router.post('/', authenticateToken, async (req, res) => {
         } else if (storeCount === 2) {
             delivery_fee = 100;
         } else if (storeCount >= 3) {
-            delivery_fee = 120 + (storeCount - 3) * 20;
+            delivery_fee = 130 + (storeCount - 3) * 30;
         } else {
             delivery_fee = 70; // Fallback
         }
@@ -1158,14 +1158,14 @@ router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (re
         const storeCount = storeIds.size;
         
         // Calculate delivery fee based on number of unique stores
-        // 1 store: 70, 2 stores: 100, 3 stores: 120, 4+ stores: 120 + (count - 3) * 20
+        // 1 store: 70, 2 stores: 100, 3+ stores: 130 + (count - 3) * 30
         let delivery_fee = 0;
         if (storeCount === 1) {
             delivery_fee = 70;
         } else if (storeCount === 2) {
             delivery_fee = 100;
         } else if (storeCount >= 3) {
-            delivery_fee = 120 + (storeCount - 3) * 20;
+            delivery_fee = 130 + (storeCount - 3) * 30;
         } else {
             delivery_fee = 70;
         }

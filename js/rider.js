@@ -65,7 +65,7 @@ function calculateDeliveryFee(storeCount) {
     } else if (storeCount === 2) {
         return 100;
     } else if (storeCount >= 3) {
-        return 120 + (storeCount - 3) * 20;
+        return 130 + (storeCount - 3) * 30;
     } else {
         return 70;
     }

@@ -302,7 +302,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       } else if (stores == 2) {
                                         return 100;
                                       } else if (stores >= 3) {
-                                        return 120 + (stores - 3) * 20;
+                                        return 130 + (stores - 3) * 30;
                                       } else {
                                         return 70;
                                       }

@@ -408,6 +408,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     }
   }
 
+  double _parseDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
+  }
+
   void _logout() {
     Provider.of<AuthProvider>(context, listen: false).logout();
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
@@ -930,13 +938,15 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     'Order #${delivery['order_number']}',
                                     style: const TextStyle(fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
+                                  const SizedBox(height: 6),
                                   Text(
                                     delivery['status']?.toString().toUpperCase() ?? '',
                                     style: TextStyle(
@@ -1171,7 +1181,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                         } else if (stores == 2) {
                           return 100;
                         } else if (stores >= 3) {
-                          return 120 + (stores - 3) * 20;
+                          return 130 + (stores - 3) * 30;
                         } else {
                           return 70;
                         }
@@ -1518,8 +1528,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     }
 
     final stats = _walletStats!;
-    final cashReceived = (stats['cash_received'] as num?)?.toDouble() ?? 0.0;
-    final deliveryFees = (stats['total_delivery_fees'] as num?)?.toDouble() ?? 0.0;
+    final cashReceived = _parseDouble(stats['cash_received']);
+    final deliveryFees = _parseDouble(stats['total_delivery_fees']);
     final paymentSummary = (stats['payment_summary'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
     return Column(
@@ -1563,7 +1573,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ...paymentSummary.map((summary) {
                     final method = summary['payment_method'] ?? 'Unknown';
                     final count = summary['order_count'] ?? 0;
-                    final amount = (summary['total_amount'] as num?)?.toDouble() ?? 0.0;
+                    final amount = _parseDouble(summary['total_amount']);
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Row(

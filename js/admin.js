@@ -2640,7 +2640,7 @@ function calculateDeliveryCharges(uniqueStoreCount) {
     } else if (uniqueStoreCount === 2) {
         return 100;
     } else if (uniqueStoreCount >= 3) {
-        return 120 + (uniqueStoreCount - 3) * 20;
+        return 130 + (uniqueStoreCount - 3) * 30;
     } else {
         return 70;
     }
