@@ -586,17 +586,20 @@ router.get('/rider-cash', async (req, res) => {
         const params = [];
 
         if (rider_id) {
-            whereClause += ' AND rider_id = ?';
+            whereClause += ' AND rcm.rider_id = ?';
             params.push(rider_id);
         }
         if (type) {
-            whereClause += ' AND movement_type = ?';
+            whereClause += ' AND rcm.movement_type = ?';
             params.push(type);
         }
         if (status) {
-            whereClause += ' AND status = ?';
+            whereClause += ' AND rcm.status = ?';
             params.push(status);
         }
+
+        // Only show movements for active riders
+        whereClause += ' AND r.is_active = true';
 
         const [movements] = await req.db.execute(
             `SELECT rcm.*, r.first_name, r.last_name, rb.first_name as recorded_by_name, ab.first_name as approved_by_name
@@ -611,7 +614,9 @@ router.get('/rider-cash', async (req, res) => {
         );
 
         const [countResult] = await req.db.execute(
-            `SELECT COUNT(*) as total FROM rider_cash_movements ${whereClause}`,
+            `SELECT COUNT(*) as total FROM rider_cash_movements rcm
+             LEFT JOIN riders r ON rcm.rider_id = r.id
+             ${whereClause}`,
             params
         );
 

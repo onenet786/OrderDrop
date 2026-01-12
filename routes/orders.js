@@ -502,6 +502,21 @@ router.get('/rider/deliveries', authenticateToken, async (req, res) => {
             });
         }
 
+        const riderId = req.user.id;
+
+        // Check if rider exists and is active
+        const [riders] = await req.db.execute(
+            'SELECT id FROM riders WHERE id = ? AND is_active = true',
+            [riderId]
+        );
+
+        if (riders.length === 0) {
+            return res.status(403).json({
+                success: false,
+                message: 'Rider account is inactive or not found. Access denied.'
+            });
+        }
+
         const { status } = req.query;
         let whereClause = 'o.rider_id = ?';
         if (status === 'assigned') {
@@ -517,7 +532,7 @@ router.get('/rider/deliveries', authenticateToken, async (req, res) => {
             LEFT JOIN stores s ON o.store_id = s.id
             WHERE ${whereClause}
             ORDER BY o.created_at DESC
-        `, [req.user.id]);
+        `, [riderId]);
 
         // Fetch items for each delivery
         for (let delivery of deliveries) {
@@ -633,14 +648,14 @@ router.get('/rider/profile', authenticateToken, async (req, res) => {
         }
 
         const [riders] = await req.db.execute(
-            'SELECT id, first_name, last_name, email, phone, vehicle_type, image_url, id_card_url FROM riders WHERE id = ?',
+            'SELECT id, first_name, last_name, email, phone, vehicle_type, image_url, id_card_url FROM riders WHERE id = ? AND is_active = true',
             [req.user.id]
         );
 
         if (riders.length === 0) {
-            return res.status(404).json({
+            return res.status(403).json({
                 success: false,
-                message: 'Rider not found'
+                message: 'Rider account is inactive or not found. Access denied.'
             });
         }
 
@@ -731,6 +746,19 @@ router.get('/rider/wallet-stats', authenticateToken, async (req, res) => {
 
         const riderId = req.user.id;
         const { period } = req.query; // daily, weekly, monthly
+
+        // Check if rider exists and is active
+        const [riders] = await req.db.execute(
+            'SELECT id FROM riders WHERE id = ? AND is_active = true',
+            [riderId]
+        );
+
+        if (riders.length === 0) {
+            return res.status(403).json({
+                success: false,
+                message: 'Rider account is inactive or not found. Access denied.'
+            });
+        }
 
         let dateCondition = '';
         if (period === 'daily') {

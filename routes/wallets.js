@@ -60,6 +60,19 @@ const recordWalletTransaction = async (db, walletId, type, amount, description, 
 router.get('/balance', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
+        
+        // For riders, verify they are active
+        if (req.user.user_type === 'rider') {
+            const [riders] = await req.db.execute(
+                'SELECT id FROM riders WHERE id = ? AND is_active = true',
+                [userId]
+            );
+            
+            if (riders.length === 0) {
+                return sendError(res, 'Rider account is inactive or not found', 403);
+            }
+        }
+        
         const wallet = await getOrCreateWallet(req.db, userId, req.user.user_type);
 
         return sendSuccess(res, { 
@@ -85,6 +98,19 @@ router.post('/topup', authenticateToken, [
         }
 
         const userId = req.user.id;
+        
+        // For riders, verify they are active
+        if (req.user.user_type === 'rider') {
+            const [riders] = await req.db.execute(
+                'SELECT id FROM riders WHERE id = ? AND is_active = true',
+                [userId]
+            );
+            
+            if (riders.length === 0) {
+                return sendError(res, 'Rider account is inactive or not found', 403);
+            }
+        }
+        
         const { amount, paymentMethod, cardToken, saveCard } = req.body;
 
         const wallet = await getOrCreateWallet(req.db, userId, req.user.user_type);
