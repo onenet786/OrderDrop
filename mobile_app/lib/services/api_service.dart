@@ -36,19 +36,14 @@ class ApiService {
     } else {
       try {
         final errorData = jsonDecode(response.body);
-        throw Exception(
-          errorData['message'] ?? 'API Error: ${response.statusCode}',
-        );
+        throw Exception(errorData['message'] ?? 'API Error: ${response.statusCode}');
       } catch (e) {
         throw Exception('API Error: ${response.statusCode} - ${response.body}');
       }
     }
   }
 
-  static Future<Map<String, dynamic>> login(
-    String email,
-    String password,
-  ) async {
+  static Future<Map<String, dynamic>> login(String email, String password) async {
     final uri = Uri.parse('$baseUrl/api/auth/login');
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
@@ -85,10 +80,7 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> verifyEmail(
-    String email,
-    String code,
-  ) async {
+  static Future<Map<String, dynamic>> verifyEmail(String email, String code) async {
     final uri = Uri.parse('$baseUrl/api/auth/verify-email');
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
@@ -99,9 +91,7 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> resendVerificationCode(
-    String email,
-  ) async {
+  static Future<Map<String, dynamic>> resendVerificationCode(String email) async {
     final uri = Uri.parse('$baseUrl/api/auth/resend-code');
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
@@ -121,14 +111,8 @@ class ApiService {
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'currentPassword': currentPassword,
-        'newPassword': newPassword,
-      }),
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: jsonEncode({'currentPassword': currentPassword, 'newPassword': newPassword}),
     );
     return _handleResponse(response);
   }
@@ -136,20 +120,14 @@ class ApiService {
   static Future<Map<String, dynamic>> getProfile(String token) async {
     final uri = Uri.parse('$baseUrl/api/auth/me');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> deleteAccount(String token) async {
     final uri = Uri.parse('$baseUrl/api/auth/account');
     _logger.d('ApiService: DELETE $uri');
-    final response = await http.delete(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.delete(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
@@ -183,10 +161,7 @@ class ApiService {
   static Future<List<dynamic>> getOrders(String token) async {
     final uri = Uri.parse('$baseUrl/api/orders');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     final data = _handleResponse(response);
     return data['orders'] ?? [];
   }
@@ -194,10 +169,7 @@ class ApiService {
   static Future<List<dynamic>> getMyOrders(String token) async {
     final uri = Uri.parse('$baseUrl/api/orders/my-orders');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     final data = _handleResponse(response);
     return data['orders'] ?? [];
   }
@@ -215,10 +187,7 @@ class ApiService {
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       body: jsonEncode({
         if (storeId != null) 'store_id': storeId,
         'items': items,
@@ -234,20 +203,14 @@ class ApiService {
   static Future<Map<String, dynamic>> getVisitorStats(String token) async {
     final uri = Uri.parse('$baseUrl/api/admin/visitor-stats');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> getRecentActivity(String token) async {
     final uri = Uri.parse('$baseUrl/api/admin/recent-activity');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     final data = _handleResponse(response);
     return data;
   }
@@ -256,27 +219,23 @@ class ApiService {
   static Future<Map<String, dynamic>> getRiderProfile(String token) async {
     final uri = Uri.parse('$baseUrl/api/orders/rider/profile');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
-  static Future<List<dynamic>> getRiderDeliveries(
-    String token,
-    String status,
-  ) async {
-    final uri = Uri.parse(
-      '$baseUrl/api/orders/rider/deliveries?status=$status',
-    );
+  static Future<List<dynamic>> getRiderDeliveries(String token, String status) async {
+    final uri = Uri.parse('$baseUrl/api/orders/rider/deliveries?status=$status');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     final data = _handleResponse(response);
     return data['deliveries'] ?? [];
+  }
+
+  static Future<Map<String, dynamic>> getRiderWalletStats(String token, String period) async {
+    final uri = Uri.parse('$baseUrl/api/orders/rider/wallet-stats?period=$period');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
+    return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> updateOrderStatus(
@@ -288,27 +247,18 @@ class ApiService {
     _logger.d('ApiService: PUT $uri');
     final response = await http.put(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       body: jsonEncode({'status': status}),
     );
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> markOrderAsDelivered(
-    String token,
-    int orderId,
-  ) async {
+  static Future<Map<String, dynamic>> markOrderAsDelivered(String token, int orderId) async {
     final uri = Uri.parse('$baseUrl/api/orders/$orderId/deliver');
     _logger.d('ApiService: PUT $uri');
     final response = await http.put(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
     );
     return _handleResponse(response);
   }
@@ -322,10 +272,7 @@ class ApiService {
     _logger.d('ApiService: PUT $uri');
     final response = await http.put(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       body: jsonEncode({'payment_status': status}),
     );
     return _handleResponse(response);
@@ -335,10 +282,7 @@ class ApiService {
   static Future<Map<String, dynamic>> getWalletBalance(String token) async {
     final uri = Uri.parse('$baseUrl/api/wallet/balance');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
@@ -354,22 +298,14 @@ class ApiService {
     }
     final uri = Uri.parse('$baseUrl/api/wallet/transactions?$query');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> getAutoRechargeSettings(
-    String token,
-  ) async {
+  static Future<Map<String, dynamic>> getAutoRechargeSettings(String token) async {
     final uri = Uri.parse('$baseUrl/api/wallet/auto-recharge');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
@@ -383,15 +319,8 @@ class ApiService {
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'enabled': enabled,
-        'amount': amount,
-        'threshold': threshold,
-      }),
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: jsonEncode({'enabled': enabled, 'amount': amount, 'threshold': threshold}),
     );
     return _handleResponse(response);
   }
@@ -407,10 +336,7 @@ class ApiService {
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       body: jsonEncode({
         'amount': amount,
         'paymentMethod': paymentMethod,
@@ -425,39 +351,24 @@ class ApiService {
   static Future<Map<String, dynamic>> getPaymentMethods(String token) async {
     final uri = Uri.parse('$baseUrl/api/wallet/payment-methods');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> setPrimaryPaymentMethod(
-    String token,
-    int id,
-  ) async {
+  static Future<Map<String, dynamic>> setPrimaryPaymentMethod(String token, int id) async {
     final uri = Uri.parse('$baseUrl/api/wallet/payment-methods/$id/primary');
     _logger.d('ApiService: PUT $uri');
     final response = await http.put(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
     );
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> deletePaymentMethod(
-    String token,
-    int id,
-  ) async {
+  static Future<Map<String, dynamic>> deletePaymentMethod(String token, int id) async {
     final uri = Uri.parse('$baseUrl/api/wallet/payment-methods/$id');
     _logger.d('ApiService: DELETE $uri');
-    final response = await http.delete(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.delete(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
@@ -473,10 +384,7 @@ class ApiService {
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       body: jsonEncode({
         if (recipientId != null) 'recipient_id': recipientId,
         if (email != null) 'email': email,
@@ -492,14 +400,9 @@ class ApiService {
     int limit = 20,
     int offset = 0,
   }) async {
-    final uri = Uri.parse(
-      '$baseUrl/api/wallet/transfers/sent?limit=$limit&offset=$offset',
-    );
+    final uri = Uri.parse('$baseUrl/api/wallet/transfers/sent?limit=$limit&offset=$offset');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
@@ -508,88 +411,55 @@ class ApiService {
     int limit = 20,
     int offset = 0,
   }) async {
-    final uri = Uri.parse(
-      '$baseUrl/api/wallet/transfers/received?limit=$limit&offset=$offset',
-    );
+    final uri = Uri.parse('$baseUrl/api/wallet/transfers/received?limit=$limit&offset=$offset');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> acceptTransfer(
-    String token,
-    int id,
-  ) async {
+  static Future<Map<String, dynamic>> acceptTransfer(String token, int id) async {
     final uri = Uri.parse('$baseUrl/api/wallet/transfers/$id/accept');
     _logger.d('ApiService: POST $uri');
-    final response = await http.post(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.post(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> rejectTransfer(
-    String token,
-    int id, {
-    String? reason,
-  }) async {
+  static Future<Map<String, dynamic>> rejectTransfer(String token, int id, {String? reason}) async {
     final uri = Uri.parse('$baseUrl/api/wallet/transfers/$id/reject');
     _logger.d('ApiService: POST $uri');
     final response = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
       body: jsonEncode({'reason': reason}),
     );
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> cancelTransfer(
-    String token,
-    int id,
-  ) async {
+  static Future<Map<String, dynamic>> cancelTransfer(String token, int id) async {
     final uri = Uri.parse('$baseUrl/api/wallet/transfers/$id/cancel');
     _logger.d('ApiService: POST $uri');
-    final response = await http.post(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.post(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> getInventoryReport(String token) async {
     final uri = Uri.parse('$baseUrl/api/admin/inventory-report');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> getStoreSalesReport(String token) async {
     final uri = Uri.parse('$baseUrl/api/admin/store-sales-report');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     return _handleResponse(response);
   }
 
   static Future<List<dynamic>> getUsers(String token) async {
     final uri = Uri.parse('$baseUrl/api/users');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     final data = _handleResponse(response);
     return data['users'] ?? [];
   }
@@ -597,10 +467,7 @@ class ApiService {
   static Future<List<dynamic>> getStoresForAdmin(String token) async {
     final uri = Uri.parse('$baseUrl/api/stores');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     final data = _handleResponse(response);
     return data['stores'] ?? [];
   }
@@ -608,10 +475,7 @@ class ApiService {
   static Future<List<dynamic>> getProductsForAdmin(String token) async {
     final uri = Uri.parse('$baseUrl/api/products');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     final data = _handleResponse(response);
     return data['products'] ?? [];
   }
@@ -619,10 +483,7 @@ class ApiService {
   static Future<List<dynamic>> getRiders(String token) async {
     final uri = Uri.parse('$baseUrl/api/riders');
     _logger.d('ApiService: GET $uri');
-    final response = await http.get(
-      uri,
-      headers: {'Authorization': 'Bearer $token'},
-    );
+    final response = await http.get(uri, headers: {'Authorization': 'Bearer $token'});
     final data = _handleResponse(response);
     return data['riders'] ?? [];
   }
@@ -636,14 +497,8 @@ class ApiService {
     _logger.d('ApiService: PUT $uri');
     final response = await http.put(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'latitude': latitude,
-        'longitude': longitude,
-      }),
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: jsonEncode({'latitude': latitude, 'longitude': longitude}),
     );
     return _handleResponse(response);
   }

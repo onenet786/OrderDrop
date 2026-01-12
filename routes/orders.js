@@ -719,6 +719,76 @@ router.put('/rider/location', authenticateToken, [
     }
 });
 
+// Get rider wallet stats (Daily, Weekly, Monthly)
+router.get('/rider/wallet-stats', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.user_type !== 'rider') {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Rider only.'
+            });
+        }
+
+        const riderId = req.user.id;
+        const { period } = req.query; // daily, weekly, monthly
+
+        let dateCondition = '';
+        if (period === 'daily') {
+            dateCondition = 'DATE(o.created_at) = CURDATE()';
+        } else if (period === 'weekly') {
+            dateCondition = 'o.created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
+        } else if (period === 'monthly') {
+            dateCondition = 'o.created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
+        } else {
+            dateCondition = 'DATE(o.created_at) = CURDATE()'; // Default to daily
+        }
+
+        // 1. Daily Cash Received (Total amount of orders where payment_method = 'cash' AND payment_status = 'paid')
+        const [cashReceivedResult] = await req.db.execute(`
+            SELECT COALESCE(SUM(total_amount), 0) as total_cash
+            FROM orders o
+            WHERE o.rider_id = ? AND o.payment_method = 'cash' AND o.payment_status = 'paid' AND ${dateCondition}
+        `, [riderId]);
+
+        // 2. Delivery Fees (Total delivery_fee from all delivered orders)
+        const [deliveryFeesResult] = await req.db.execute(`
+            SELECT COALESCE(SUM(delivery_fee), 0) as total_delivery_fees
+            FROM orders o
+            WHERE o.rider_id = ? AND o.status = 'delivered' AND ${dateCondition}
+        `, [riderId]);
+
+        // 3. Payment Summary (Breakdown by payment method)
+        const [summaryResult] = await req.db.execute(`
+            SELECT 
+                payment_method,
+                COUNT(*) as order_count,
+                SUM(total_amount) as total_amount,
+                SUM(delivery_fee) as total_delivery_fees
+            FROM orders o
+            WHERE o.rider_id = ? AND o.status = 'delivered' AND ${dateCondition}
+            GROUP BY payment_method
+        `, [riderId]);
+
+        res.json({
+            success: true,
+            stats: {
+                period,
+                cash_received: cashReceivedResult[0].total_cash,
+                total_delivery_fees: deliveryFeesResult[0].total_delivery_fees,
+                payment_summary: summaryResult
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching rider wallet stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch wallet stats',
+            error: error.message
+        });
+    }
+});
+
 // Get single order details
 router.get('/:id(\\d+)', authenticateToken, async (req, res) => {
     console.log(`[orders] Fetching order details for ID: ${req.params.id}`);

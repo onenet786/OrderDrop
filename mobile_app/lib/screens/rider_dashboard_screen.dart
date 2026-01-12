@@ -27,6 +27,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   String _currentLocation = 'Getting location...';
   double _walletBalance = 0.0;
   Timer? _locationTrackingTimer;
+  String _selectedStatsPeriod = 'daily';
+  Map<String, dynamic>? _walletStats;
+  bool _isLoadingStats = false;
 
   Future<void> _makeCall(String phoneNumber) async {
     final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
@@ -42,9 +45,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     if (await canLaunchUrl(uri)) {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not launch dialer')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Could not launch dialer')));
       }
     } else if (mounted) {
       ScaffoldMessenger.of(
@@ -71,10 +74,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     if (await canLaunchUrl(smsUri)) {
       launched = await launchUrl(smsUri, mode: LaunchMode.externalApplication);
     } else if (await canLaunchUrl(smstoUri)) {
-      launched = await launchUrl(
-        smstoUri,
-        mode: LaunchMode.externalApplication,
-      );
+      launched = await launchUrl(smstoUri, mode: LaunchMode.externalApplication);
     }
 
     if (!launched && mounted) {
@@ -91,9 +91,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not launch WhatsApp')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Could not launch WhatsApp')));
       }
     }
   }
@@ -125,6 +125,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         _loadDeliveries(token, 'completed'),
         _getCurrentLocation(),
         _loadWalletBalance(token),
+        _loadWalletStats(token, 'daily'),
       ]);
     } catch (e) {
       _logger.e('Error loading rider data: $e');
@@ -205,13 +206,43 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     }
   }
 
+  Future<void> _loadWalletStats(String token, String period) async {
+    try {
+      setState(() => _isLoadingStats = true);
+      _logger.d('Loading wallet stats for period: $period');
+      final data = await ApiService.getRiderWalletStats(token, period);
+      _logger.d('Wallet stats API response: $data');
+
+      if (data['success'] != true) {
+        _logger.w('Wallet stats API returned success=false');
+        return;
+      }
+
+      setState(() {
+        _walletStats = data['stats'];
+        _selectedStatsPeriod = period;
+      });
+    } catch (e) {
+      _logger.e('Error loading wallet stats: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to load stats: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingStats = false);
+      }
+    }
+  }
+
   Future<void> _refreshLocation() async {
     setState(() => _currentLocation = 'Updating...');
     await _getCurrentLocation();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location updated successfully!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Location updated successfully!')));
     }
   }
 
@@ -241,9 +272,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
       if (permission == LocationPermission.deniedForever) {
         if (mounted) {
-          setState(
-            () => _currentLocation = 'Location permission permanently denied',
-          );
+          setState(() => _currentLocation = 'Location permission permanently denied');
         }
         return;
       }
@@ -296,14 +325,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 
   void _startLocationTracking() {
-    _locationTrackingTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (timer) async {
-        if (_assignedDeliveries.isNotEmpty) {
-          await _sendLocationToServer();
-        }
-      },
-    );
+    _locationTrackingTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      if (_assignedDeliveries.isNotEmpty) {
+        await _sendLocationToServer();
+      }
+    });
   }
 
   Future<void> _sendLocationToServer() async {
@@ -328,9 +354,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         longitude: position.longitude,
       );
 
-      _logger.d(
-        'Location sent to server: ${position.latitude}, ${position.longitude}',
-      );
+      _logger.d('Location sent to server: ${position.latitude}, ${position.longitude}');
     } catch (e) {
       _logger.e('Error sending location to server: $e');
     }
@@ -343,9 +367,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
       await ApiService.markOrderAsDelivered(token, orderId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order marked as delivered!')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Order marked as delivered!')));
         _loadAllData(); // Refresh list
       }
     } catch (e) {
@@ -366,9 +390,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       await ApiService.updatePaymentStatus(token, orderId, 'paid');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Payment marked as received! Wallet updated.'),
-          ),
+          const SnackBar(content: Text('Payment marked as received! Wallet updated.')),
         );
         _loadAllData();
         await Future.delayed(const Duration(milliseconds: 500));
@@ -388,9 +410,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
   void _logout() {
     Provider.of<AuthProvider>(context, listen: false).logout();
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   @override
@@ -402,8 +422,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAllData),
           IconButton(
             icon: const Icon(Icons.key),
-            onPressed: () =>
-                Navigator.of(context).pushNamed('/change-password'),
+            onPressed: () => Navigator.of(context).pushNamed('/change-password'),
             tooltip: 'Change Password',
           ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
@@ -415,51 +434,50 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
-                // Rider Info Section
-                _buildRiderInfoCard(),
+                  // Rider Info Section
+                  _buildRiderInfoCard(),
 
-                // Tabs
-                TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  labelColor: Colors.blue,
-                  unselectedLabelColor: Colors.grey,
-                  tabs: const [
-                    Tab(text: 'Home'),
-                    Tab(text: 'History'),
-                    Tab(text: 'Wallet'),
-                    Tab(text: 'Profile'),
-                  ],
-                ),
-
-                // Tab Content
-                Expanded(
-                  child: TabBarView(
+                  // Tabs
+                  TabBar(
                     controller: _tabController,
-                    children: [
-                      _buildDeliveriesList(_assignedDeliveries, true),
-                      _buildDeliveriesList(_completedDeliveries, false),
-                      _buildWalletTab(),
-                      _buildProfileTab(),
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    labelColor: Colors.blue,
+                    unselectedLabelColor: Colors.grey,
+                    tabs: const [
+                      Tab(text: 'Home'),
+                      Tab(text: 'History'),
+                      Tab(text: 'Wallet'),
+                      Tab(text: 'Profile'),
                     ],
                   ),
-                ),
-              ],
-              ),
-        ),
-      );
-    }
 
-    Widget _buildRiderInfoCard() {
+                  // Tab Content
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildDeliveriesList(_assignedDeliveries, true),
+                        _buildDeliveriesList(_completedDeliveries, false),
+                        _buildWalletTab(),
+                        _buildProfileTab(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildRiderInfoCard() {
     final name = _riderProfile == null
         ? 'Rider'
         : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
               .trim()
               .isEmpty
         ? (_riderProfile?['first_name'] ?? 'Rider')
-        : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
-              .trim();
+        : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'.trim();
     final vehicle = _riderProfile?['vehicle_type'] ?? 'N/A';
 
     return Card(
@@ -495,11 +513,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               children: [
                 Row(
                   children: [
-                    const Icon(
-                      Icons.directions_bike,
-                      color: Colors.white,
-                      size: 18,
-                    ),
+                    const Icon(Icons.directions_bike, color: Colors.white, size: 18),
                     const SizedBox(width: 8),
                     Text(
                       'Vehicle: $vehicle',
@@ -512,10 +526,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
@@ -630,43 +641,34 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           children: [
             // Header
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(
-                    'Order ${delivery['order_number']}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  icon: const Icon(Icons.info_outline),
-                  color: Colors.blueGrey,
-                  tooltip: 'Order Info',
-                  onPressed: () => _showOrderInfo(delivery),
-                ),
-                const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(status).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _getStatusColor(status)),
-                  ),
-                  child: Text(
-                    status.toUpperCase(),
-                    style: TextStyle(
-                      color: _getStatusColor(status),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Order #${delivery['order_number']}',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(status).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _getStatusColor(status)),
+                        ),
+                        child: Text(
+                          status.toUpperCase(),
+                          style: TextStyle(
+                            color: _getStatusColor(status),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -674,95 +676,53 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             const Divider(),
 
             // Details
-            _buildDetailRow(
-              'Customer',
-              '${delivery['first_name']} ${delivery['last_name']}',
-            ),
-            _buildDetailRow('Store', '${delivery['store_name']}'),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Builder(
-                builder: (context) {
-                  double itemsSubtotal = 0;
-                  final storeIds = <int>{};
-                  final items = delivery['items'] as List? ?? [];
-                  
-                  for (var item in items) {
-                    itemsSubtotal += (double.tryParse(item['price']?.toString() ?? '0') ?? 0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
-                    final storeId = item['store_id'] as int?;
-                    if (storeId != null) storeIds.add(storeId);
-                  }
-                  
-                  double getDeliveryFee(int stores) {
-                    if (stores == 1) {
-                      return 70;
-                    } else if (stores == 2) {
-                      return 100;
-                    } else if (stores >= 3) {
-                      return 120 + (stores - 3) * 20;
-                    } else {
-                      return 70;
-                    }
-                  }
-                  
-                  final numStores = storeIds.isNotEmpty ? storeIds.length : 1;
-                  final deliveryFee = getDeliveryFee(numStores);
-                  
-                  return Column(
+            _buildDetailRow('Customer', '${delivery['first_name']} ${delivery['last_name']}'),
+
+            // Simplified Summary Card
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade100),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Items Subtotal:',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                          Text(
-                            'PKR ${itemsSubtotal.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                          ),
-                        ],
+                      const Text(
+                        'Grand Total',
+                        style: TextStyle(fontSize: 12, color: Colors.blueGrey),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Delivery Fee ($numStores store${numStores > 1 ? 's' : ''}):',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                          Text(
-                            'PKR ${deliveryFee.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Divider(
-                        thickness: 1,
-                        height: 8,
-                        color: Colors.grey[300],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Grand Total:',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            'PKR ${delivery['total_amount']}',
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue),
-                          ),
-                        ],
+                      Text(
+                        'PKR ${delivery['total_amount']}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
                       ),
                     ],
-                  );
-                },
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _showOrderInfo(delivery),
+                    icon: const Icon(Icons.receipt_long, size: 16),
+                    label: const Text('Summary'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(height: 12),
             _buildDetailRow('Address', '${delivery['delivery_address']}'),
             _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
             if (customerPhone.isNotEmpty)
@@ -799,39 +759,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             _buildDetailRow(
               'Payment',
               paymentStatus,
-              valueColor: paymentStatus == 'paid'
-                  ? Colors.green
-                  : Colors.orange,
+              valueColor: paymentStatus == 'paid' ? Colors.green : Colors.orange,
             ),
 
             if (delivery['rider_location'] != null)
               _buildDetailRow('My Location', '${delivery['rider_location']}'),
-
-            const SizedBox(height: 12),
-            const Text(
-              'Items Summary:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blueGrey),
-            ),
-            const SizedBox(height: 4),
-            ...(delivery['items'] as List? ?? []).map<Widget>((item) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Row(
-                  children: [
-                    const Icon(Icons.circle, size: 6, color: Colors.grey),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        "${item['quantity']}x ${item['product_name']} ${item['variant_label'] != null ? '(${item['variant_label']})' : ''}",
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-
-            const SizedBox(height: 16),
 
             // Actions
             if (isAssigned && status == 'out_for_delivery') ...[
@@ -861,16 +793,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     ),
                 ],
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed:
-                      _refreshLocation, // Ideally updates specific order location
-                  icon: const Icon(Icons.location_on),
-                  label: const Text('Update My Location'),
-                ),
-              ),
             ],
           ],
         ),
@@ -888,10 +810,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             width: 80,
             child: Text(
               '$label:',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
             ),
           ),
           Expanded(
@@ -899,9 +818,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               value,
               style: TextStyle(
                 color: valueColor ?? Colors.black87,
-                fontWeight: valueColor != null
-                    ? FontWeight.bold
-                    : FontWeight.normal,
+                fontWeight: valueColor != null ? FontWeight.bold : FontWeight.normal,
               ),
             ),
           ),
@@ -940,16 +857,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         style: OutlinedButton.styleFrom(
           foregroundColor: color,
           side: BorderSide(color: color.withValues(alpha: 0.6)),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           padding: const EdgeInsets.symmetric(horizontal: 10),
         ),
         icon: Icon(icon, size: 18),
-        label: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-        ),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
       ),
     );
   }
@@ -1003,11 +915,13 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     itemBuilder: (context, index) {
                       final delivery = deliveries[index];
                       final items = (delivery['items'] as List?) ?? [];
-                      
+
                       // Filter items for THIS store
-                      final storeItems = items.where((item) => 
-                        (item['store_name'] ?? delivery['store_name']) == storeName
-                      ).toList();
+                      final storeItems = items
+                          .where(
+                            (item) => (item['store_name'] ?? delivery['store_name']) == storeName,
+                          )
+                          .toList();
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -1034,16 +948,21 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                 ],
                               ),
                               const Divider(),
-                              ...storeItems.map((item) => Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 2),
-                                child: Row(
-                                  children: [
-                                    Text('${item['quantity']}x ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    Expanded(child: Text('${item['product_name']}')),
-                                    Text('PKR ${item['price']}'),
-                                  ],
+                              ...storeItems.map(
+                                (item) => Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        '${item['quantity']}x ',
+                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                      Expanded(child: Text('${item['product_name']}')),
+                                      Text('PKR ${item['price']}'),
+                                    ],
+                                  ),
                                 ),
-                              )),
+                              ),
                               const SizedBox(height: 8),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1072,7 +991,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   void _showOrderInfo(Map<String, dynamic> delivery) {
     final items = (delivery['items'] as List?) ?? [];
     final deliveryStoreName = delivery['store_name'] ?? 'Unknown Store';
-    
+
     Map<String, List<dynamic>> itemsByStore = {};
     for (var item in items) {
       final storeName = item['store_name'] ?? deliveryStoreName;
@@ -1081,7 +1000,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       }
       itemsByStore[storeName]!.add(item);
     }
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1105,10 +1024,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       Expanded(
                         child: Text(
                           'Order #${delivery['order_number']}',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                       ),
                       IconButton(
@@ -1119,10 +1035,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ),
                   const SizedBox(height: 12),
                   _buildDetailRow('Status', '${delivery['status']}'),
-                  _buildDetailRow(
-                    'Payment',
-                    '${delivery['payment_status'] ?? 'unknown'}',
-                  ),
+                  _buildDetailRow('Payment', '${delivery['payment_status'] ?? 'unknown'}'),
                   const SizedBox(height: 12),
                   const Divider(),
                   const Text(
@@ -1139,10 +1052,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     '${delivery['first_name'] ?? ''} ${delivery['last_name'] ?? ''}',
                   ),
                   _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
-                  _buildDetailRow(
-                    'Delivery Address',
-                    '${delivery['delivery_address'] ?? 'N/A'}',
-                  ),
+                  _buildDetailRow('Delivery Address', '${delivery['delivery_address'] ?? 'N/A'}'),
                   const SizedBox(height: 12),
                   const Divider(),
                   const Text(
@@ -1157,29 +1067,36 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ...itemsByStore.entries.map((entry) {
                     final storeName = entry.key;
                     final storeItems = entry.value;
+                    double storeSubtotal = 0;
+                    for (var item in storeItems) {
+                      final price = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
+                      final quantity = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
+                      storeSubtotal += price * quantity;
+                    }
+
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue.shade200),
+                            color: Theme.of(context).primaryColor.withAlpha((0.15 * 255).round()),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border(
+                              left: BorderSide(color: Theme.of(context).primaryColor, width: 3),
+                            ),
                           ),
                           child: Text(
                             storeName,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: Colors.blue.shade700,
+                              fontSize: 14,
+                              color: Theme.of(context).primaryColor,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         ...storeItems.map(
                           (item) => Padding(
                             padding: const EdgeInsets.only(bottom: 4, left: 8),
@@ -1188,7 +1105,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                               children: [
                                 Expanded(
                                   child: Text(
-                                    '${item['quantity']}x ${item['product_name'] ?? 'Product'}${item['variant_name'] != null ? ' (${item['variant_name']})' : ''}',
+                                    '${item['quantity']}x ${item['product_name'] ?? 'Product'}${item['variant_label'] != null ? ' (${item['variant_label']})' : ''}',
                                     style: const TextStyle(fontSize: 13),
                                   ),
                                 ),
@@ -1200,7 +1117,26 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                             ),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 12, left: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Subtotal ($storeName):',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'PKR ${storeSubtotal.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     );
                   }),
@@ -1220,13 +1156,15 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       double itemsSubtotal = 0;
                       final storeIds = <int>{};
                       final allItems = (delivery['items'] as List?) ?? [];
-                      
+
                       for (var item in allItems) {
-                        itemsSubtotal += (double.tryParse(item['price']?.toString() ?? '0') ?? 0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
+                        itemsSubtotal +=
+                            (double.tryParse(item['price']?.toString() ?? '0') ?? 0) *
+                            (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
                         final storeId = item['store_id'] as int?;
                         if (storeId != null) storeIds.add(storeId);
                       }
-                      
+
                       double getDeliveryFee(int stores) {
                         if (stores == 1) {
                           return 70;
@@ -1238,10 +1176,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           return 70;
                         }
                       }
-                      
+
                       final numStores = storeIds.isNotEmpty ? storeIds.length : 1;
                       final deliveryFee = getDeliveryFee(numStores);
-                      
+
                       return Column(
                         children: [
                           Row(
@@ -1310,9 +1248,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         children: [
           Card(
             elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
@@ -1346,23 +1282,15 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           ),
                           const SizedBox(width: 8),
                           IconButton(
-                            icon: const Icon(
-                              Icons.refresh,
-                              color: Colors.white,
-                            ),
+                            icon: const Icon(Icons.refresh, color: Colors.white),
                             onPressed: () async {
-                              final token = Provider.of<AuthProvider>(
-                                context,
-                                listen: false,
-                              ).token;
+                              final token = Provider.of<AuthProvider>(context, listen: false).token;
                               if (token != null) {
                                 await _loadWalletBalance(token);
                                 if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Wallet updated'),
-                                    ),
-                                  );
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).showSnackBar(const SnackBar(content: Text('Wallet updated')));
                                 }
                               }
                             },
@@ -1383,10 +1311,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ),
                   const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
@@ -1394,11 +1319,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
-                          Icons.info_outline,
-                          color: Colors.white,
-                          size: 16,
-                        ),
+                        const Icon(Icons.info_outline, color: Colors.white, size: 16),
                         const SizedBox(width: 6),
                         const Text(
                           'Tap refresh to update balance',
@@ -1411,6 +1332,26 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               ),
             ),
           ),
+          const SizedBox(height: 24),
+          const Text(
+            'Financial Statistics',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          _buildPeriodSelector(),
+          const SizedBox(height: 16),
+          if (_isLoadingStats)
+            const Center(child: CircularProgressIndicator())
+          else if (_walletStats != null)
+            _buildStatsCards()
+          else
+            Card(
+              color: Colors.grey.shade50,
+              child: const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: Text('No stats available')),
+              ),
+            ),
           const SizedBox(height: 24),
           _walletBalance == 0
               ? Card(
@@ -1432,10 +1373,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                               const SizedBox(height: 4),
                               const Text(
                                 'Complete deliveries and mark payments as received to earn',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
+                                style: TextStyle(fontSize: 12, color: Colors.grey),
                               ),
                             ],
                           ),
@@ -1461,19 +1399,13 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   const Divider(),
                   _buildWalletInfoRow('Status', 'Active'),
                   const Divider(),
-                  _buildWalletInfoRow(
-                    'Balance',
-                    'PKR ${_walletBalance.toStringAsFixed(2)}',
-                  ),
+                  _buildWalletInfoRow('Balance', 'PKR ${_walletBalance.toStringAsFixed(2)}'),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
-            'How it works',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
+          const Text('How it works', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           Card(
             child: Padding(
@@ -1516,10 +1448,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
-            ),
+            style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.w500),
           ),
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
@@ -1541,10 +1470,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           child: Center(
             child: Text(
               number,
-              style: TextStyle(
-                color: Colors.blue.shade600,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: Colors.blue.shade600, fontWeight: FontWeight.bold),
             ),
           ),
         ),
@@ -1555,14 +1481,159 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             children: [
               Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Text(
-                description,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
+              Text(description, style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPeriodSelector() {
+    return Row(
+      children: [
+        Expanded(
+          child: SegmentedButton<String>(
+            segments: const <ButtonSegment<String>>[
+              ButtonSegment<String>(value: 'daily', label: Text('Daily')),
+              ButtonSegment<String>(value: 'weekly', label: Text('Weekly')),
+              ButtonSegment<String>(value: 'monthly', label: Text('Monthly')),
+            ],
+            selected: <String>{_selectedStatsPeriod},
+            onSelectionChanged: (Set<String> newSelection) async {
+              final token = Provider.of<AuthProvider>(context, listen: false).token;
+              if (token != null) {
+                await _loadWalletStats(token, newSelection.first);
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatsCards() {
+    if (_walletStats == null) {
+      return const SizedBox.shrink();
+    }
+
+    final stats = _walletStats!;
+    final cashReceived = (stats['cash_received'] as num?)?.toDouble() ?? 0.0;
+    final deliveryFees = (stats['total_delivery_fees'] as num?)?.toDouble() ?? 0.0;
+    final paymentSummary = (stats['payment_summary'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                title: 'Cash Received',
+                value: 'PKR ${cashReceived.toStringAsFixed(2)}',
+                icon: Icons.attach_money,
+                backgroundColor: Colors.green.shade50,
+                iconColor: Colors.green,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildStatCard(
+                title: 'Delivery Fees',
+                value: 'PKR ${deliveryFees.toStringAsFixed(2)}',
+                icon: Icons.local_shipping,
+                backgroundColor: Colors.blue.shade50,
+                iconColor: Colors.blue,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (paymentSummary.isNotEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Payment Summary',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  ...paymentSummary.map((summary) {
+                    final method = summary['payment_method'] ?? 'Unknown';
+                    final count = summary['order_count'] ?? 0;
+                    final amount = (summary['total_amount'] as num?)?.toDouble() ?? 0.0;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                method.replaceFirst(method[0], method[0].toUpperCase()),
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                '$count order${count != 1 ? 's' : ''}',
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            'PKR ${amount.toStringAsFixed(2)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color backgroundColor,
+    required Color iconColor,
+  }) {
+    return Card(
+      color: backgroundColor,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Icon(icon, color: iconColor, size: 20),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: iconColor),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1573,9 +1644,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
     // Image tile without label (clean top row)
     Widget imageTile(String? url) {
-      final resolved = (url == null || url.isEmpty)
-          ? null
-          : ApiService.getImageUrl(url);
+      final resolved = (url == null || url.isEmpty) ? null : ApiService.getImageUrl(url);
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Container(
@@ -1601,10 +1670,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
               ),
             ),
             const SizedBox(width: 12),
@@ -1614,9 +1680,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 textAlign: TextAlign.right,
                 style: TextStyle(
                   color: valueColor ?? Colors.black87,
-                  fontWeight: valueColor != null
-                      ? FontWeight.bold
-                      : FontWeight.normal,
+                  fontWeight: valueColor != null ? FontWeight.bold : FontWeight.normal,
                 ),
               ),
             ),
@@ -1625,8 +1689,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       );
     }
 
-    final fullName = '${r?['first_name'] ?? ''} ${r?['last_name'] ?? ''}'
-        .trim();
+    final fullName = '${r?['first_name'] ?? ''} ${r?['last_name'] ?? ''}'.trim();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -1663,10 +1726,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       style: const TextStyle(fontWeight: FontWeight.w500),
                     ),
                   ),
-                  TextButton(
-                    onPressed: _refreshLocation,
-                    child: const Text('Refresh'),
-                  ),
+                  TextButton(onPressed: _refreshLocation, child: const Text('Refresh')),
                 ],
               ),
             ],
