@@ -743,18 +743,18 @@ router.get('/rider/wallet-stats', authenticateToken, async (req, res) => {
             dateCondition = 'DATE(o.created_at) = CURDATE()'; // Default to daily
         }
 
-        // 1. Daily Cash Received (Total amount of orders where payment_method = 'cash' AND payment_status = 'paid' AND status = 'delivered')
+        // 1. Daily Cash Received (Total amount of cash orders - already includes delivery_fee)
         const [cashReceivedResult] = await req.db.execute(`
             SELECT COALESCE(SUM(total_amount), 0) as total_cash
             FROM orders o
             WHERE o.rider_id = ? AND o.payment_method = 'cash' AND o.payment_status = 'paid' AND o.status = 'delivered' AND ${dateCondition}
         `, [riderId]);
 
-        // 2. Delivery Fees (Total delivery_fee from all delivered orders)
+        // 2. Delivery Fees (Only for non-cash orders, since cash orders already include it in total_amount)
         const [deliveryFeesResult] = await req.db.execute(`
             SELECT COALESCE(SUM(delivery_fee), 0) as total_delivery_fees
             FROM orders o
-            WHERE o.rider_id = ? AND o.status = 'delivered' AND ${dateCondition}
+            WHERE o.rider_id = ? AND o.status = 'delivered' AND o.payment_method != 'cash' AND ${dateCondition}
         `, [riderId]);
 
         // 3. Payment Summary (Breakdown by payment method)
@@ -1271,7 +1271,7 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            `SELECT o.id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.payment_status, o.status,
+            `SELECT o.id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.delivery_fee, o.payment_method, o.payment_status, o.status,
                     u.email as user_email, u.first_name as user_first_name
              FROM orders o
              JOIN users u ON o.user_id = u.id
@@ -1386,7 +1386,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
 
         // Check if order exists and user has permission (rider or admin)
         const [orders] = await req.db.execute(
-            `SELECT o.id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.payment_status, o.status,
+            `SELECT o.id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.delivery_fee, o.payment_method, o.payment_status, o.status,
                     u.email as user_email, u.first_name as user_first_name
              FROM orders o
              JOIN users u ON o.user_id = u.id
@@ -1417,6 +1417,13 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
         );
 
         if (payment_status === 'paid' && order.rider_id && order.payment_status !== 'paid') {
+            // Calculate rider earnings based on payment method
+            // For cash: rider gets the full order amount (customer paid cash)
+            // For card/wallet: rider gets only delivery fee (customer already paid card/wallet to store)
+            const riderEarnings = order.payment_method === 'cash' 
+                ? parseFloat(order.total_amount || 0) 
+                : parseFloat(order.delivery_fee || 0);
+            
             const [wallets] = await req.db.execute(
                 'SELECT id, balance FROM wallets WHERE rider_id = ?',
                 [order.rider_id]
@@ -1424,22 +1431,22 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
 
             if (wallets.length > 0) {
                 const wallet = wallets[0];
-                const newBalance = parseFloat(wallet.balance || 0) + parseFloat(order.total_amount || 0);
+                const newBalance = parseFloat(wallet.balance || 0) + riderEarnings;
                 
                 await req.db.execute(
                     'UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?',
-                    [newBalance, order.total_amount, wallet.id]
+                    [newBalance, riderEarnings, wallet.id]
                 );
 
                 await req.db.execute(
                     `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
                      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [wallet.id, 'credit', order.total_amount, `Payment received for order #${id}`, 'order', id, newBalance]
+                    [wallet.id, 'credit', riderEarnings, `Payment received for order #${id}`, 'order', id, newBalance]
                 );
             } else {
                 await req.db.execute(
                     'INSERT INTO wallets (rider_id, user_type, balance, total_credited) VALUES (?, ?, ?, ?)',
-                    [order.rider_id, 'rider', order.total_amount, order.total_amount]
+                    [order.rider_id, 'rider', riderEarnings, riderEarnings]
                 );
 
                 const [newWallets] = await req.db.execute(
@@ -1451,7 +1458,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                     await req.db.execute(
                         `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
                          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                        [newWallets[0].id, 'credit', order.total_amount, `Payment received for order #${id}`, 'order', id, order.total_amount]
+                        [newWallets[0].id, 'credit', riderEarnings, `Payment received for order #${id}`, 'order', id, riderEarnings]
                     );
                 }
             }
