@@ -209,10 +209,12 @@ CREATE TABLE IF NOT EXISTS `riders_fuel_history` (
 -- Wallets table
 CREATE TABLE IF NOT EXISTS wallets (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    user_id INT UNIQUE NOT NULL,
+    user_id INT UNIQUE,
+    rider_id INT UNIQUE,
     balance DECIMAL(10, 2) DEFAULT 0.00,
     total_credited DECIMAL(10, 2) DEFAULT 0.00,
     total_spent DECIMAL(10, 2) DEFAULT 0.00,
+    user_type ENUM('customer', 'rider') DEFAULT 'customer',
     auto_recharge_enabled BOOLEAN DEFAULT FALSE,
     auto_recharge_amount DECIMAL(10, 2) DEFAULT 0.00,
     auto_recharge_threshold DECIMAL(10, 2) DEFAULT 0.00,
@@ -220,7 +222,9 @@ CREATE TABLE IF NOT EXISTS wallets (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_wallets_user_id (user_id)
+    FOREIGN KEY (rider_id) REFERENCES riders(id) ON DELETE CASCADE,
+    INDEX idx_wallets_user_id (user_id),
+    INDEX idx_wallets_rider_id (rider_id)
 );
 
 -- Wallet transactions table
