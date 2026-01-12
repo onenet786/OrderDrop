@@ -743,18 +743,18 @@ router.get('/rider/wallet-stats', authenticateToken, async (req, res) => {
             dateCondition = 'DATE(o.created_at) = CURDATE()'; // Default to daily
         }
 
-        // 1. Daily Cash Received (Total amount of cash orders - already includes delivery_fee)
+        // 1. Daily Cash Received (Items amount only for cash orders, excluding delivery fee)
         const [cashReceivedResult] = await req.db.execute(`
-            SELECT COALESCE(SUM(total_amount), 0) as total_cash
+            SELECT COALESCE(SUM(total_amount - COALESCE(delivery_fee, 0)), 0) as total_cash
             FROM orders o
             WHERE o.rider_id = ? AND o.payment_method = 'cash' AND o.payment_status = 'paid' AND o.status = 'delivered' AND ${dateCondition}
         `, [riderId]);
 
-        // 2. Delivery Fees (Only for non-cash orders, since cash orders already include it in total_amount)
+        // 2. Delivery Fees (All delivered orders regardless of payment method)
         const [deliveryFeesResult] = await req.db.execute(`
             SELECT COALESCE(SUM(delivery_fee), 0) as total_delivery_fees
             FROM orders o
-            WHERE o.rider_id = ? AND o.status = 'delivered' AND o.payment_method != 'cash' AND ${dateCondition}
+            WHERE o.rider_id = ? AND o.status = 'delivered' AND ${dateCondition}
         `, [riderId]);
 
         // 3. Payment Summary (Breakdown by payment method)
