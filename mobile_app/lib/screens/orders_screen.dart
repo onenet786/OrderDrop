@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -21,6 +22,51 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void initState() {
     super.initState();
     _fetchOrders();
+    _setupNotifications();
+  }
+
+  void _setupNotifications() {
+    NotificationService.initialize(
+      onNotification: (data) {
+        _handleNotification(data);
+      },
+    );
+  }
+
+  void _handleNotification(Map<String, dynamic> notification) {
+    if (!mounted) return;
+
+    final message = notification['message'] as String? ?? 'Order update';
+    final type = notification['type'] as String?;
+
+    if (type == 'order_update') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      _fetchOrders();
+    } else if (type == 'payment_status_update') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Payment status updated'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      _fetchOrders();
+    } else if (type == 'order_completed') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      _fetchOrders();
+    }
   }
 
   Future<void> _fetchOrders() async {

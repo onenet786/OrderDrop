@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import 'login_screen.dart';
 
 class RiderDashboardScreen extends StatefulWidget {
@@ -104,6 +105,33 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     _tabController = TabController(length: 4, vsync: this);
     _loadAllData();
     _startLocationTracking();
+    _setupNotifications();
+  }
+
+  void _setupNotifications() {
+    NotificationService.initialize(
+      onNotification: (data) {
+        _handleNotification(data);
+      },
+    );
+  }
+
+  void _handleNotification(Map<String, dynamic> notification) {
+    if (!mounted) return;
+
+    final message = notification['message'] as String? ?? 'New notification';
+    final type = notification['type'] as String?;
+
+    if (type == 'assigned') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      _loadAllData();
+    }
   }
 
   @override

@@ -5,6 +5,7 @@ import 'package:logger/logger.dart';
 import 'dart:convert';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 class AuthProvider with ChangeNotifier {
   final Logger _logger = Logger();
@@ -42,6 +43,11 @@ class AuthProvider with ChangeNotifier {
 
         // Initialize Stripe with public key
         await _initializeStripe(_token!);
+
+        // Connect to Socket.IO for real-time notifications
+        if (_user != null && _user!.id != null) {
+          NotificationService.connect(_user!.id!, _user!.userType ?? 'customer');
+        }
       } else {
         throw Exception(data['message'] ?? 'Login failed');
       }
@@ -92,6 +98,12 @@ class AuthProvider with ChangeNotifier {
         if (_user != null) {
           await prefs.setString('user', jsonEncode(_user!.toJson()));
         }
+
+        // Connect to Socket.IO for real-time notifications
+        if (_user != null && _user!.id != null) {
+          NotificationService.connect(_user!.id!, _user!.userType ?? 'customer');
+        }
+
         return false;
       } else {
         throw Exception(response['message'] ?? 'Registration failed');
@@ -139,6 +151,7 @@ class AuthProvider with ChangeNotifier {
   Future<void> logout() async {
     _token = null;
     _user = null;
+    NotificationService.disconnect();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('user');

@@ -1381,6 +1381,17 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
                 };
                 req.io.to(`user_${order.user_id}`).emit('user_notification', userNotifData);
 
+                // Admin notification
+                const adminNotifData = {
+                    type: 'order_update',
+                    order_id: id,
+                    order_number: order.order_number,
+                    status: 'delivered',
+                    message: `Order ${order.order_number} has been delivered by rider.`,
+                    timestamp: new Date()
+                };
+                req.io.to(`admin_${req.user.id}`).emit('user_notification', adminNotifData);
+
                 // Check if completed (paid + delivered)
                 if (order.payment_status === 'paid') {
                     const completedData = {
@@ -1535,6 +1546,28 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                 };
                 req.io.emit('payment_status_update', paymentUpdateData);
                 req.io.to(`user_${order.user_id}`).emit('payment_status_update', paymentUpdateData);
+
+                // User notification
+                const userPaymentNotif = {
+                    type: 'payment_status_update',
+                    order_id: id,
+                    order_number: order.order_number,
+                    payment_status: payment_status,
+                    message: `Payment received for order ${order.order_number}.`,
+                    timestamp: new Date()
+                };
+                req.io.to(`user_${order.user_id}`).emit('user_notification', userPaymentNotif);
+
+                // Admin notification
+                const adminPaymentNotif = {
+                    type: 'payment_status_update',
+                    order_id: id,
+                    order_number: order.order_number,
+                    payment_status: payment_status,
+                    message: `Payment ${payment_status} for order ${order.order_number}.`,
+                    timestamp: new Date()
+                };
+                req.io.to(`admin_${req.user.id}`).emit('user_notification', adminPaymentNotif);
 
                 // Check if completed (paid + delivered)
                 if (payment_status === 'paid' && order.status === 'delivered') {
