@@ -1,10 +1,10 @@
 import 'package:logger/logger.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'api_service.dart';
 
 class NotificationService {
   static final Logger _logger = Logger();
-  static IO.Socket? _socket;
+  static io.Socket? _socket;
   static Function(Map<String, dynamic>)? _onNotification;
 
   static void initialize({required Function(Map<String, dynamic>) onNotification}) {
@@ -18,9 +18,9 @@ class NotificationService {
     }
 
     try {
-      _socket = IO.io(
+      _socket = io.io(
         ApiService.baseUrl,
-        IO.OptionBuilder()
+        io.OptionBuilder()
             .setTransports(['websocket', 'polling'])
             .enableAutoConnect()
             .enableReconnection()
