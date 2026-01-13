@@ -1079,14 +1079,26 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
         // Set estimated delivery time (current time + 30 minutes)
         const estimatedDelivery = new Date(Date.now() + 30 * 60 * 1000);
 
-        // Recalculate total if delivery fee is updated
+        // Recalculate total based on actual items
+        const [items] = await req.db.execute(
+            'SELECT price, quantity FROM order_items WHERE order_id = ?',
+            [id]
+        );
+
+        let itemsSubtotal = 0;
+        for (const item of items) {
+            itemsSubtotal += (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 0);
+        }
+
         let newTotal = order.total_amount;
         let finalDeliveryFee = order.delivery_fee;
 
         if (delivery_fee !== undefined) {
             finalDeliveryFee = parseFloat(delivery_fee);
-            const itemsSubtotal = order.total_amount - order.delivery_fee;
             newTotal = itemsSubtotal + finalDeliveryFee;
+        } else if (itemsSubtotal > 0) {
+            // Ensure total_amount is correct even if delivery_fee is not being updated
+            newTotal = itemsSubtotal + order.delivery_fee;
         }
 
         // Assign rider and update status
@@ -1176,14 +1188,20 @@ router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (re
 
         const order = orders[0];
         
-        // Get order items to count unique stores
+        // Get order items to count unique stores and calculate items subtotal
         const [items] = await req.db.execute(`
-            SELECT DISTINCT store_id FROM order_items WHERE order_id = ?
+            SELECT DISTINCT store_id, price, quantity FROM order_items WHERE order_id = ?
         `, [id]);
         
         // Count unique stores
         const storeIds = new Set(items.map(item => item.store_id).filter(Boolean));
         const storeCount = storeIds.size;
+        
+        // Calculate items subtotal from actual items
+        let itemsSubtotal = 0;
+        for (const item of items) {
+            itemsSubtotal += (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 0);
+        }
         
         // Calculate delivery fee based on number of unique stores
         // 1 store: 70, 2 stores: 100, 3+ stores: 130 + (count - 3) * 30
@@ -1198,8 +1216,7 @@ router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (re
             delivery_fee = 70;
         }
         
-        // Recalculate total
-        const itemsSubtotal = Number(order.total_amount) - Number(order.old_delivery_fee);
+        // Recalculate total from items subtotal
         const newTotal = itemsSubtotal + delivery_fee;
 
         // Update delivery fee and total

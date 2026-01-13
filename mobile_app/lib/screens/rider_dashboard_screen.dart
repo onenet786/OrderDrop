@@ -1175,8 +1175,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                         if (storeId != null) storeIds.add(storeId);
                       }
 
-                      final numStores = storeIds.isNotEmpty ? storeIds.length : 1;
                       final deliveryFee = double.tryParse(delivery['delivery_fee']?.toString() ?? '0') ?? 0;
+                      final grandTotal = itemsSubtotal + deliveryFee;
 
                       return Column(
                         children: [
@@ -1215,7 +1215,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                               ),
                               Text(
-                                'PKR ${delivery['total_amount']}',
+                                'PKR ${grandTotal.toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
