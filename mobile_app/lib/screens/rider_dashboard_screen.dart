@@ -1175,20 +1175,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                         if (storeId != null) storeIds.add(storeId);
                       }
 
-                      double getDeliveryFee(int stores) {
-                        if (stores == 1) {
-                          return 70;
-                        } else if (stores == 2) {
-                          return 100;
-                        } else if (stores >= 3) {
-                          return 130 + (stores - 3) * 30;
-                        } else {
-                          return 70;
-                        }
-                      }
-
                       final numStores = storeIds.isNotEmpty ? storeIds.length : 1;
-                      final deliveryFee = getDeliveryFee(numStores);
+                      final deliveryFee = double.tryParse(delivery['delivery_fee']?.toString() ?? '0') ?? 0;
 
                       return Column(
                         children: [
@@ -1206,9 +1194,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                'Delivery Fee ($numStores store${numStores > 1 ? 's' : ''}):',
-                                style: const TextStyle(fontSize: 13),
+                              const Text(
+                                'Delivery Fee:',
+                                style: TextStyle(fontSize: 13),
                               ),
                               Text(
                                 'PKR ${deliveryFee.toStringAsFixed(2)}',
