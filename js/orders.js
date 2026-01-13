@@ -101,7 +101,7 @@ async function displayOrders(status = 'pending') {
                     <div class="order-details">
                         <p><strong>Customer:</strong> ${order.first_name || (user ? user.first_name : '')} ${order.last_name || (user ? user.last_name : '')}</p>
                         ${storeHtml}
-                        <p><strong>Total:</strong> PKR ${order.total_amount}</p>
+                        <p><strong>Total:</strong> PKR ${parseFloat(order.total_amount).toFixed(2)}</p>
                         <p><strong>Delivery Address:</strong> ${order.delivery_address}</p>
                         <p><strong>Items:</strong> ${order.items_count || (order.items ? order.items.length : 0)} items</p>
                         ${order.rider_latitude && order.rider_longitude ? 

@@ -1091,14 +1091,14 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
         }
 
         let newTotal = order.total_amount;
-        let finalDeliveryFee = order.delivery_fee;
+        let finalDeliveryFee = parseFloat(order.delivery_fee) || 0;
 
         if (delivery_fee !== undefined) {
             finalDeliveryFee = parseFloat(delivery_fee);
-            newTotal = itemsSubtotal + finalDeliveryFee;
+            newTotal = Number(itemsSubtotal) + Number(finalDeliveryFee);
         } else if (itemsSubtotal > 0) {
             // Ensure total_amount is correct even if delivery_fee is not being updated
-            newTotal = itemsSubtotal + order.delivery_fee;
+            newTotal = parseFloat(itemsSubtotal) + parseFloat(finalDeliveryFee);
         }
 
         // Assign rider and update status

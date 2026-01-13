@@ -2322,7 +2322,7 @@ function displayOrders(orders = currentOrders) {
             <td>${order.order_number}</td>
             <td>${order.first_name} ${order.last_name}</td>
             <td>${order.store_name}</td>
-            <td>PKR ${order.total_amount}</td>
+            <td>PKR ${parseFloat(order.total_amount).toFixed(2)}</td>
             <td><span class="status-${order.status}">${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</span></td>
             <td>${riderName}</td>
             <td>${order.rider_latitude && order.rider_longitude ? 
@@ -2586,14 +2586,15 @@ async function viewOrderDetails(orderId) {
             `;
 
             store.items.forEach(item => {
-                const subtotal = item.price * item.quantity;
+                const price = parseFloat(item.price) || 0;
+                const subtotal = price * item.quantity;
                 html += `
                     <tr style="border-bottom: 1px solid #f9f9f9;">
                         <td style="padding: 8px;">${item.product_name}</td>
                         <td style="padding: 8px;">${item.variant_label || '-'}</td>
                         <td style="padding: 8px;">${item.quantity}</td>
-                        <td style="padding: 8px;">PKR ${item.price}</td>
-                        <td style="padding: 8px;">PKR ${subtotal}</td>
+                        <td style="padding: 8px;">PKR ${price.toFixed(2)}</td>
+                        <td style="padding: 8px;">PKR ${subtotal.toFixed(2)}</td>
                     </tr>
                 `;
             });
@@ -2607,7 +2608,7 @@ async function viewOrderDetails(orderId) {
 
         html += `
             <div class="order-summary-section" style="text-align: right; margin-top: 20px; padding: 15px; background: #f8fafc; border-radius: 8px;">
-                <p><strong>Items Subtotal:</strong> PKR ${(order.total_amount - order.delivery_fee).toFixed(2)}</p>
+                <p><strong>Items Subtotal:</strong> PKR ${(parseFloat(order.total_amount) - parseFloat(order.delivery_fee)).toFixed(2)}</p>
                 <p><strong>Delivery Fee:</strong> PKR ${parseFloat(order.delivery_fee).toFixed(2)}</p>
                 <h3 style="margin: 10px 0 0 0; color: #1e293b;">Total Amount: PKR ${parseFloat(order.total_amount).toFixed(2)}</h3>
             </div>
