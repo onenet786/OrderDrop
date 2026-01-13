@@ -1194,9 +1194,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Delivery Fee:',
-                                style: TextStyle(fontSize: 13),
+                              Text(
+                                'Delivery Fee ($numStores store${numStores > 1 ? 's' : ''}):',
+                                style: const TextStyle(fontSize: 13),
                               ),
                               Text(
                                 'PKR ${deliveryFee.toStringAsFixed(2)}',
