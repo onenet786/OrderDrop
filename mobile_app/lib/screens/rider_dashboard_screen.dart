@@ -1177,6 +1177,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
                       final deliveryFee = double.tryParse(delivery['delivery_fee']?.toString() ?? '0') ?? 0;
                       final grandTotal = itemsSubtotal + deliveryFee;
+                      final numStores = storeIds.isNotEmpty ? storeIds.length : 1;
 
                       return Column(
                         children: [
