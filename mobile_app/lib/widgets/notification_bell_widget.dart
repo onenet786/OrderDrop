@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
-import '../providers/notification_provider.dart' show NotificationProvider, Notification;
+import '../providers/notification_provider.dart' as app_notif;
 
 class NotificationBellWidget extends StatefulWidget {
   const NotificationBellWidget({super.key});
@@ -59,7 +60,7 @@ class _NotificationBellWidgetState extends State<NotificationBellWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationProvider>(
+    return Consumer<app_notif.NotificationProvider>(
       builder: (context, notificationProvider, _) {
         final unreadCount = notificationProvider.unreadCount;
 
@@ -142,7 +143,9 @@ class _NotificationPanelState extends State<_NotificationPanel> {
       final renderBox = context.findRenderObject() as RenderBox?;
       if (renderBox != null) {
         final localPosition = renderBox.globalToLocal(tapPosition);
-        if (!Offset.zero & renderBox.size.contains(localPosition)) {
+        final rect = Offset.zero & renderBox.size;
+        if (rect.contains(localPosition)) {
+          // Tap inside panel; ignore
           return;
         }
       }
@@ -159,7 +162,7 @@ class _NotificationPanelState extends State<_NotificationPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<NotificationProvider>(
+    return Consumer<app_notif.NotificationProvider>(
       builder: (context, notificationProvider, _) {
         final notifications = notificationProvider.notifications;
 
@@ -253,7 +256,7 @@ class _NotificationPanelState extends State<_NotificationPanel> {
 }
 
 class _NotificationItem extends StatelessWidget {
-  final Notification notification;
+  final app_notif.Notification notification;
   final VoidCallback onTap;
 
   const _NotificationItem({
@@ -339,7 +342,7 @@ class _NotificationItem extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: _getIconColor(notification.type).withOpacity(0.1),
+                color: _getIconColor(notification.type).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
