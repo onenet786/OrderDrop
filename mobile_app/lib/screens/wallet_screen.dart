@@ -8,6 +8,7 @@ import '../widgets/transaction_list_item.dart';
 import '../widgets/auto_recharge_settings.dart';
 import '../widgets/payment_method_card.dart';
 import '../widgets/send_money_form.dart';
+import '../widgets/notification_bell_widget.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -399,6 +400,7 @@ class _WalletScreenState extends State<WalletScreen>
         elevation: 0,
         backgroundColor: const Color(0xFF667eea),
         foregroundColor: Colors.white,
+        actions: const [NotificationBellWidget()],
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,

@@ -8,6 +8,7 @@ import 'dart:async';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../widgets/notification_bell_widget.dart';
 import 'login_screen.dart';
 
 class RiderDashboardScreen extends StatefulWidget {
@@ -455,6 +456,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       appBar: AppBar(
         title: const Text('Rider Dashboard'),
         actions: [
+          const NotificationBellWidget(),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAllData),
           IconButton(
             icon: const Icon(Icons.key),

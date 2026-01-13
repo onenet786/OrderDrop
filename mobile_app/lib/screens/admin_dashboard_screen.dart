@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:logger/logger.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/notification_bell_widget.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -132,13 +133,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.notifications_outlined,
-              color: Colors.black87,
-            ),
-            onPressed: () {},
-          ),
+          const NotificationBellWidget(),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: CircleAvatar(

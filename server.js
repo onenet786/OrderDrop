@@ -5,6 +5,7 @@ const mysql = require("mysql2/promise");
 const path = require("path");
 const rateLimit = require("express-rate-limit");
 const morgan = require("morgan");
+const compression = require("compression");
 
 // Load environment variables from .env and allow the .env values to override existing env vars
 const dotenvResult = dotenv.config({ override: true });
@@ -59,7 +60,10 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"],
   },
-  transports: ["polling", "websocket"],
+  transports: ["websocket", "polling"],
+  pingInterval: 60000,
+  pingTimeout: 30000,
+  maxHttpBufferSize: 1e6,
 });
 
 // Export io for use in other files
@@ -107,13 +111,16 @@ io.on("connection", (socket) => {
   });
 });
 
-// Heartbeat for debugging
+// Heartbeat for debugging (only in development)
+const heartbeatInterval = process.env.NODE_ENV === "production" ? 120000 : 60000;
 setInterval(() => {
   if (io) {
     io.emit('heartbeat', { time: new Date() });
-    debugLog(`Heartbeat emitted. Clients connected: ${io.engine.clientsCount}`);
+    if (process.env.NODE_ENV !== "production") {
+      debugLog(`Heartbeat emitted. Clients connected: ${io.engine.clientsCount}`);
+    }
   }
-}, 30000);
+}, heartbeatInterval);
 
 app.get("/health", (req, res) => {
   res.json({
@@ -138,9 +145,24 @@ app.use((req, res, next) => {
   next();
 });
 
-// Request logging
+// Compression middleware - gzip responses for better bandwidth usage
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers["x-no-compression"]) return false;
+    return compression.filter(req, res);
+  }
+}));
+console.log("Response compression enabled.");
+
+// Request logging (less verbose in production)
 if (process.env.NODE_ENV === "production") {
-  app.use(morgan("combined"));
+  app.use(morgan("combined", {
+    skip: (req, res) => {
+      return res.statusCode < 400 && !req.path.startsWith("/api/");
+    }
+  }));
 } else {
   app.use(morgan("dev"));
 }
@@ -247,6 +269,7 @@ let pool;
 async function connectDB() {
   console.log("Attempting to connect to database...");
   try {
+    const connectionLimit = process.env.NODE_ENV === "production" ? 20 : 10;
     pool = await mysql.createPool({
       host: process.env.DB_HOST,
       user: process.env.DB_USER,
@@ -254,13 +277,15 @@ async function connectDB() {
       database: process.env.DB_NAME,
       port: process.env.DB_PORT,
       waitForConnections: true,
-      connectionLimit: 10,
+      connectionLimit: connectionLimit,
       queueLimit: 0,
-      enableKeepAlive: true
+      enableKeepAlive: true,
+      maxIdle: 30000,
+      idleTimeout: 60000
     });
     console.log(`Connected to MySQL database pool: ${process.env.DB_NAME}`);
     console.log(`Database host: ${process.env.DB_HOST}:${process.env.DB_PORT}`);
-    console.log(`Connection pool size: 10`);
+    console.log(`Connection pool size: ${connectionLimit}`);
   } catch (error) {
     console.error("Database connection failed:", error);
     process.exit(1);
@@ -273,12 +298,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Request logging middleware
-app.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.path} - ${req.ip}`);
-  next();
-});
+// Request logging middleware (only in development)
+if (process.env.NODE_ENV !== "production") {
+  app.use((req, res, next) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.path} - ${req.ip}`);
+    next();
+  });
+}
 
 // Routes
 console.log("Setting up API routes...");
@@ -329,16 +356,19 @@ console.log("Setting up frontend static file serving...");
 app.use(express.static(path.join(__dirname)));
 console.log("Frontend static files configured.");
 
-// Disable caching for frontend assets to avoid stale layout/script issues during development
+// Caching strategy for frontend assets
 app.use((req, res, next) => {
-  if (
-    req.path.endsWith(".js") ||
-    req.path.endsWith(".css") ||
-    req.path.endsWith(".html")
-  ) {
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
+  if (req.path.endsWith(".js") || req.path.endsWith(".css") || req.path.endsWith(".html")) {
+    if (process.env.NODE_ENV === "production") {
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("ETag", require("crypto").createHash("md5").update(req.path).digest("hex"));
+    } else {
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    }
+  } else if (req.path.startsWith("/images/") || req.path.startsWith("/uploads/")) {
+    res.setHeader("Cache-Control", "public, max-age=604800");
   }
   next();
 });

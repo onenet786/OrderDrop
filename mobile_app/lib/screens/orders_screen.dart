@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../widgets/notification_bell_widget.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -158,6 +159,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
           },
         ),
         actions: [
+          const NotificationBellWidget(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _fetchOrders,
