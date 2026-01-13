@@ -175,9 +175,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final orderNumber = order['order_number']?.toString() ?? '';
     final isExpanded = _expandedOrders.contains(orderNumber);
     
-    final subtotal = double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0;
     final deliveryFee = double.tryParse(order['delivery_fee']?.toString() ?? '0') ?? 0.0;
-    final grandTotal = subtotal + deliveryFee;
+    final grandTotal = double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0;
+    final subtotal = grandTotal - deliveryFee;
 
     if (isGroup && subOrders != null) {
       return Card(
@@ -193,11 +193,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      runAlignment: WrapAlignment.start,
-                      spacing: 8,
-                      runSpacing: 4,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Order $orderNumber',
@@ -206,6 +203,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                        const SizedBox(height: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
@@ -273,13 +271,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Wrap(
-                          alignment: WrapAlignment.spaceBetween,
-                          runAlignment: WrapAlignment.start,
-                          spacing: 8,
-                          runSpacing: 4,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Flexible(
+                            Expanded(
                               child: Text(
                                 sub['store_name'] ?? 'Store',
                                 style: const TextStyle(fontWeight: FontWeight.w600),
@@ -287,6 +282,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 maxLines: 2,
                               ),
                             ),
+                            const SizedBox(width: 8),
                             _buildStatusBadge(sub['status'] ?? 'pending'),
                           ],
                         ),
@@ -381,11 +377,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    runAlignment: WrapAlignment.start,
-                    spacing: 8,
-                    runSpacing: 4,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Order $orderNumber',
@@ -395,6 +388,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 4),
                       _buildStatusBadge(status),
                     ],
                   ),
