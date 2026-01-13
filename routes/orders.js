@@ -995,12 +995,16 @@ router.put('/:id(\\d+)/status', authenticateToken, requireStoreOwner, [
         // Emit order_status_update event
         try {
             if (req.io) {
-                req.io.emit('order_status_update', {
+                const statusUpdateData = {
                     id: id,
                     order_number: order.order_number,
                     status: status,
+                    user_id: order.user_id,
                     updated_at: new Date()
-                });
+                };
+                req.io.emit('order_status_update', statusUpdateData);
+                req.io.to(`user_${order.user_id}`).emit('order_status_update', statusUpdateData);
+                
                 const fs = require('fs');
                 const path = require('path');
                 const logMsg = `[${new Date().toISOString()}] Status updated: ${order.order_number} -> ${status}. Total clients: ${req.io.engine.clientsCount}\n`;
@@ -1110,8 +1114,7 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
         // Emit order_assigned event
         try {
             if (req.io) {
-                // Admin notification
-                req.io.emit('order_assigned', {
+                const orderData = {
                     id: id,
                     order_number: order.order_number,
                     rider_id: rider_id,
@@ -1120,10 +1123,11 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
                     estimated_delivery_time: estimatedDelivery,
                     delivery_fee: finalDeliveryFee,
                     total_amount: newTotal
-                });
+                };
 
-                // Rider notification
-                req.io.emit('rider_notification', {
+                req.io.emit('order_assigned', orderData);
+
+                req.io.to(`rider_${rider_id}`).emit('rider_notification', {
                     type: 'assigned',
                     rider_id: rider_id,
                     order_id: id,
@@ -1132,8 +1136,7 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
                     timestamp: new Date()
                 });
 
-                // User notification
-                req.io.emit('user_notification', {
+                req.io.to(`user_${order.user_id}`).emit('user_notification', {
                     type: 'order_update',
                     user_id: order.user_id,
                     order_id: id,
@@ -1350,16 +1353,18 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
         try {
             if (req.io) {
                 // Notify User and Admin about delivery
-                req.io.emit('order_status_update', {
+                const statusUpdateData = {
                     id: id,
                     order_number: order.order_number,
                     status: 'delivered',
-                    user_id: order.user_id, // For user filtering
+                    user_id: order.user_id,
                     updated_at: new Date()
-                });
+                };
+                req.io.emit('order_status_update', statusUpdateData);
+                req.io.to(`user_${order.user_id}`).emit('order_status_update', statusUpdateData);
 
                 // User notification
-                req.io.emit('user_notification', {
+                const userNotifData = {
                     type: 'order_update',
                     user_id: order.user_id,
                     order_id: id,
@@ -1367,18 +1372,21 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
                     status: 'delivered',
                     message: `Your order ${order.order_number} has been delivered.`,
                     timestamp: new Date()
-                });
+                };
+                req.io.to(`user_${order.user_id}`).emit('user_notification', userNotifData);
 
                 // Check if completed (paid + delivered)
                 if (order.payment_status === 'paid') {
-                    req.io.emit('order_completed', {
+                    const completedData = {
                         id: id,
                         order_number: order.order_number,
                         user_id: order.user_id,
                         total_amount: order.total_amount,
                         message: `Thank you for choosing ServeNow! Your order ${order.order_number} has been completed and delivered.`,
                         timestamp: new Date()
-                    });
+                    };
+                    req.io.emit('order_completed', completedData);
+                    req.io.to(`user_${order.user_id}`).emit('order_completed', completedData);
 
                     // Send Thanks Email
                     if (order.user_email) {
@@ -1512,24 +1520,28 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
         // Notifications
         try {
             if (req.io) {
-                req.io.emit('payment_status_update', {
+                const paymentUpdateData = {
                     id: id,
                     order_number: order.order_number,
                     payment_status: payment_status,
                     user_id: order.user_id,
                     timestamp: new Date()
-                });
+                };
+                req.io.emit('payment_status_update', paymentUpdateData);
+                req.io.to(`user_${order.user_id}`).emit('payment_status_update', paymentUpdateData);
 
                 // Check if completed (paid + delivered)
                 if (payment_status === 'paid' && order.status === 'delivered') {
-                    req.io.emit('order_completed', {
+                    const completedData = {
                         id: id,
                         order_number: order.order_number,
                         user_id: order.user_id,
                         total_amount: order.total_amount,
                         message: `Thank you for choosing ServeNow! Your order ${order.order_number} has been completed and delivered.`,
                         timestamp: new Date()
-                    });
+                    };
+                    req.io.emit('order_completed', completedData);
+                    req.io.to(`user_${order.user_id}`).emit('order_completed', completedData);
 
                     // Send Thanks Email
                     if (order.user_email) {

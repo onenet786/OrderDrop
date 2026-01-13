@@ -73,6 +73,19 @@ const debugLog = (msg) => {
 
 io.on("connection", (socket) => {
   debugLog(`New client connected: ${socket.id}`);
+  
+  socket.on("identify_user", (data) => {
+    if (data && data.user_id && data.user_type) {
+      const userId = data.user_id;
+      const userType = data.user_type;
+      
+      socket.join(`user_${userId}`);
+      socket.join(`${userType}_${userId}`);
+      
+      debugLog(`Client ${socket.id} joined rooms: user_${userId}, ${userType}_${userId}`);
+    }
+  });
+  
   socket.on("disconnect", () => {
     debugLog(`Client disconnected: ${socket.id}`);
   });

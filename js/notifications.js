@@ -7,6 +7,18 @@
     // Connect to socket server
     const socket = io(API_BASE);
 
+    socket.on('connect', () => {
+        console.log('Socket connected');
+        const user = getCurrentUser();
+        if (user) {
+            socket.emit('identify_user', {
+                user_id: user.id,
+                user_type: user.user_type
+            });
+            console.log(`Identified as user ${user.id} (${user.user_type})`);
+        }
+    });
+
     function playNotificationSound() {
         try {
             // Mixkit notification sound
@@ -26,9 +38,7 @@
         }
     }
 
-    socket.on('connect', () => {
-        console.log('Connected to notification server');
-    });
+
 
     // Admin Notifications: New Order
     socket.on('new_order', (data) => {

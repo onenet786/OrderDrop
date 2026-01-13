@@ -54,6 +54,14 @@ class NotificationProvider with ChangeNotifier {
 
     _socket!.onConnect((_) {
       debugPrint('Socket connected: ${_socket?.id}');
+      
+      if (_authProvider != null && _authProvider!.user != null) {
+        _socket!.emit('identify_user', {
+          'user_id': _authProvider!.user!.id,
+          'user_type': _authProvider!.user!.userType,
+        });
+        debugPrint('Identified user: ${_authProvider!.user!.id}, type: ${_authProvider!.user!.userType}');
+      }
     });
 
     _socket!.onConnectError((data) {
