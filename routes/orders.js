@@ -1125,9 +1125,14 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
                     total_amount: newTotal
                 };
 
+                console.log(`[Orders] Broadcasting order_assigned to all clients`, orderData);
                 req.io.emit('order_assigned', orderData);
 
-                req.io.to(`rider_${rider_id}`).emit('rider_notification', {
+                const riderRoomName = `rider_${rider_id}`;
+                const userRoomName = `user_${order.user_id}`;
+                
+                console.log(`[Orders] Emitting rider_notification to room: ${riderRoomName}`, { rider_id, order_number: order.order_number });
+                req.io.to(riderRoomName).emit('rider_notification', {
                     type: 'assigned',
                     rider_id: rider_id,
                     order_id: id,
@@ -1136,7 +1141,8 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
                     timestamp: new Date()
                 });
 
-                req.io.to(`user_${order.user_id}`).emit('user_notification', {
+                console.log(`[Orders] Emitting user_notification to room: ${userRoomName}`, { user_id: order.user_id, order_number: order.order_number });
+                req.io.to(userRoomName).emit('user_notification', {
                     type: 'order_update',
                     user_id: order.user_id,
                     order_id: id,
@@ -1148,7 +1154,7 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
 
                 const fs = require('fs');
                 const path = require('path');
-                const logMsg = `[${new Date().toISOString()}] Order assigned: ${order.order_number} to ${rider.first_name}. Fee: ${finalDeliveryFee}, Total: ${newTotal}\n`;
+                const logMsg = `[${new Date().toISOString()}] Order assigned: ${order.order_number} to ${rider.first_name}. Sent to rooms: ${riderRoomName}, ${userRoomName}\n`;
                 fs.appendFileSync(path.join(__dirname, '../socket_debug.log'), logMsg);
             }
         } catch (e) {

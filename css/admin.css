@@ -967,3 +967,8 @@ textarea:focus {
     flex-wrap: wrap;
     width: 100%;
 }
+
+.filter-btn-align {
+    align-self: flex-end;
+    margin-bottom: 2px;
+}

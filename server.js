@@ -73,21 +73,37 @@ const debugLog = (msg) => {
 
 io.on("connection", (socket) => {
   debugLog(`New client connected: ${socket.id}`);
+  console.log(`[Socket.IO] New connection: ${socket.id}`);
   
   socket.on("identify_user", (data) => {
-    if (data && data.user_id && data.user_type) {
-      const userId = data.user_id;
-      const userType = data.user_type;
+    console.log(`[Socket.IO] identify_user received from ${socket.id}:`, data);
+    if (data && (data.user_id !== undefined && data.user_id !== null) && data.user_type) {
+      const userId = String(data.user_id);
+      const userType = String(data.user_type);
       
-      socket.join(`user_${userId}`);
-      socket.join(`${userType}_${userId}`);
+      const userRoom = `user_${userId}`;
+      const typeRoom = `${userType}_${userId}`;
       
-      debugLog(`Client ${socket.id} joined rooms: user_${userId}, ${userType}_${userId}`);
+      socket.join(userRoom);
+      socket.join(typeRoom);
+      
+      console.log(`[Socket.IO] Client ${socket.id} joined rooms: "${userRoom}", "${typeRoom}" (User ID: ${userId}, Type: ${userType})`);
+      debugLog(`Client ${socket.id} joined rooms: ${userRoom}, ${typeRoom}`);
+      
+      const allSockets = io.engine.clientsCount || 0;
+      console.log(`[Socket.IO] Total connected clients: ${allSockets}`);
+    } else {
+      console.warn(`[Socket.IO] identify_user missing required fields:`, data);
     }
   });
   
   socket.on("disconnect", () => {
     debugLog(`Client disconnected: ${socket.id}`);
+    console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
+  });
+  
+  socket.on("error", (error) => {
+    console.error(`[Socket.IO] Error from ${socket.id}:`, error);
   });
 });
 

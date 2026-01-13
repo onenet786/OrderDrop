@@ -33,6 +33,26 @@ class NotificationProvider with ChangeNotifier {
     }
   }
 
+  void _identifyUser() {
+    if (_socket == null || !_socket!.connected) {
+      debugPrint('[NotificationProvider] Socket not connected, cannot identify user');
+      return;
+    }
+    
+    if (_authProvider != null && _authProvider!.user != null) {
+      final userId = _authProvider!.user!.id;
+      final userType = _authProvider!.user!.userType;
+      
+      _socket!.emit('identify_user', {
+        'user_id': userId,
+        'user_type': userType,
+      });
+      debugPrint('[NotificationProvider] User identified: ID=$userId, Type=$userType, SocketID=${_socket?.id}');
+    } else {
+      debugPrint('[NotificationProvider] Cannot identify: auth or user not available');
+    }
+  }
+
   void _initSocket() {
     if (_socket != null && _socket!.connected) return;
 
@@ -42,34 +62,40 @@ class NotificationProvider with ChangeNotifier {
       baseUrl = baseUrl.substring(0, baseUrl.length - 1);
     }
 
+    debugPrint('[NotificationProvider] Initializing socket connection to: $baseUrl');
+    
     _socket = socket_io.io(
       baseUrl,
       socket_io.OptionBuilder()
           .setTransports(['polling', 'websocket'])
           .enableAutoConnect()
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(5000)
           .build(),
     );
 
     _socket!.connect();
 
     _socket!.onConnect((_) {
-      debugPrint('Socket connected: ${_socket?.id}');
-      
-      if (_authProvider != null && _authProvider!.user != null) {
-        _socket!.emit('identify_user', {
-          'user_id': _authProvider!.user!.id,
-          'user_type': _authProvider!.user!.userType,
-        });
-        debugPrint('Identified user: ${_authProvider!.user!.id}, type: ${_authProvider!.user!.userType}');
-      }
+      debugPrint('[NotificationProvider] Socket connected: ${_socket?.id}');
+      _identifyUser();
+    });
+    
+    _socket!.onReconnect((_) {
+      debugPrint('[NotificationProvider] Socket reconnected: ${_socket?.id}');
+      _identifyUser();
     });
 
     _socket!.onConnectError((data) {
-      debugPrint('Socket connection error: $data');
+      debugPrint('[NotificationProvider] Socket connection error: $data');
     });
 
     _socket!.onError((data) {
-      debugPrint('Socket error: $data');
+      debugPrint('[NotificationProvider] Socket error: $data');
+    });
+    
+    _socket!.onDisconnect((_) {
+      debugPrint('[NotificationProvider] Socket disconnected');
     });
 
     // Admin Notifications
@@ -121,24 +147,35 @@ class NotificationProvider with ChangeNotifier {
 
     // Rider Notifications
     _socket!.on('rider_notification', (data) {
-      debugPrint('Socket: rider_notification received for rider ${data['rider_id']}');
-      if (_authProvider?.isRider == true &&
-          _authProvider?.user?.id.toString() == data['rider_id'].toString()) {
+      final riderId = data['rider_id'].toString();
+      final currentUserId = _authProvider?.user?.id.toString();
+      debugPrint('[NotificationProvider] rider_notification: received=$riderId, currentUser=$currentUserId, isRider=${_authProvider?.isRider}');
+      
+      if (_authProvider?.isRider == true && currentUserId == riderId) {
+        debugPrint('[NotificationProvider] Showing rider notification');
         _showNotification(
           'New Assignment',
           data['message'] ?? 'You have a new order assignment.',
         );
+      } else {
+        debugPrint('[NotificationProvider] Rider notification filtered out - not matching rider');
       }
     });
 
     // User Notifications
     _socket!.on('user_notification', (data) {
-      debugPrint('Socket: user_notification received for user ${data['user_id']}');
-      if (_authProvider?.user?.id.toString() == data['user_id'].toString()) {
+      final userId = data['user_id'].toString();
+      final currentUserId = _authProvider?.user?.id.toString();
+      debugPrint('[NotificationProvider] user_notification: received=$userId, currentUser=$currentUserId');
+      
+      if (currentUserId == userId) {
+        debugPrint('[NotificationProvider] Showing user notification');
         _showNotification(
           'Order Update',
           data['message'] ?? 'Your order has been updated.',
         );
+      } else {
+        debugPrint('[NotificationProvider] User notification filtered out - not matching user');
       }
     });
 

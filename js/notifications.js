@@ -4,19 +4,34 @@
         return;
     }
 
-    // Connect to socket server
-    const socket = io(API_BASE);
+    // Ensure API_BASE is properly set
+    const socketUrl = API_BASE || window.location.origin;
+    const socket = io(socketUrl, {
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5
+    });
 
-    socket.on('connect', () => {
-        console.log('Socket connected');
+    function emitUserIdentification() {
         const user = getCurrentUser();
-        if (user) {
+        if (user && socket.connected) {
             socket.emit('identify_user', {
                 user_id: user.id,
                 user_type: user.user_type
             });
-            console.log(`Identified as user ${user.id} (${user.user_type})`);
+            console.log(`[Socket] Identified as user ${user.id} (${user.user_type})`, 'Socket ID:', socket.id);
         }
+    }
+
+    socket.on('connect', () => {
+        console.log('[Socket] Connected to server. Socket ID:', socket.id);
+        emitUserIdentification();
+    });
+
+    socket.on('reconnect', () => {
+        console.log('[Socket] Reconnected to server. Socket ID:', socket.id);
+        emitUserIdentification();
     });
 
     function playNotificationSound() {
