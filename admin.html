@@ -2312,6 +2312,23 @@
                 </div>
               </div>
 
+              <!-- Discount Row (Hidden by default, shown based on store terms) -->
+              <div id="productDiscountRow" style="grid-column: span 3; display: none; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="productDiscountType">Discount Type:</label>
+                    <select id="productDiscountType" name="discount_type" style="width: 100%;">
+                      <option value="amount">Fixed Amount (PKR)</option>
+                      <option value="percent">Percentage (%)</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="productDiscountValue">Discount Value:</label>
+                    <input type="number" id="productDiscountValue" name="discount_value" step="0.01" min="0" style="width: 100%;" />
+                  </div>
+                </div>
+              </div>
+
               <!-- Multiple Variants Section -->
               <div id="productSizePricesSection" style="grid-column: span 3; display: none; margin-top: 0.5rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -2349,24 +2366,6 @@
                 <label for="productStock">Stock Quantity:</label>
                 <input type="number" id="productStock" name="stock_quantity" min="0" value="0" style="width: 100%;" />
               </div>
-
-              <!-- Discount Row (Hidden by default, shown based on store terms) -->
-              <div id="productDiscountRow" style="grid-column: span 3; display: none; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                  <div class="form-group" style="margin-bottom: 0;">
-                    <label for="productDiscountType">Discount Type:</label>
-                    <select id="productDiscountType" name="discount_type" style="width: 100%;">
-                      <option value="amount">Fixed Amount (PKR)</option>
-                      <option value="percent">Percentage (%)</option>
-                    </select>
-                  </div>
-                  <div class="form-group" style="margin-bottom: 0;">
-                    <label for="productDiscountValue">Discount Value:</label>
-                    <input type="number" id="productDiscountValue" name="discount_value" step="0.01" min="0" style="width: 100%;" />
-                  </div>
-                </div>
-              </div>
-
               <div class="form-group">
                 <label for="productImageFile">Image Upload:</label>
                 <input type="file" id="productImageFile" name="image_file" accept="image/*" style="width: 100%;" />
@@ -2691,8 +2690,14 @@
                   <p style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #1e293b;" id="itemsSubtotal">PKR 0.00</p>
                 </div>
                 <div>
-                  <p style="margin: 0 0 0.5rem 0; color: #475569; font-size: 0.875rem;">Auto-Calculated Delivery Fee:</p>
-                  <p style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #1e293b;" id="deliveryFeeDisplay">PKR 0.00</p>
+                  <p style="margin: 0 0 0.5rem 0; color: #475569; font-size: 0.875rem;">Delivery Fee (PKR) - Editable:</p>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    id="orderDeliveryFee" 
+                    name="delivery_fee" 
+                    style="font-size: 1.125rem; font-weight: 600; color: #1e293b; width: 100%; border: 1px solid #bfdbfe; border-radius: 4px; padding: 0.5rem; background: #fff;"
+                  />
                 </div>
               </div>
               <div style="border-top: 2px solid #bfdbfe; margin-top: 1rem; padding-top: 1rem;">

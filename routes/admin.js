@@ -1017,7 +1017,14 @@ router.get("/wallets", authenticateToken, requireAdmin, async (req, res) => {
     const offsetVal = (pageVal - 1) * limitVal;
 
     let query =
-      "SELECT w.*, u.email, u.first_name, u.last_name FROM wallets w JOIN users u ON w.user_id = u.id WHERE 1=1";
+      `SELECT w.*, 
+              COALESCE(u.email, r.email) as email, 
+              COALESCE(u.first_name, r.first_name, r.full_name) as first_name, 
+              COALESCE(u.last_name, r.last_name) as last_name 
+       FROM wallets w 
+       LEFT JOIN users u ON w.user_id = u.id 
+       LEFT JOIN riders r ON w.rider_id = r.id 
+       WHERE 1=1`;
     const params = [];
 
     if (minBalance) {

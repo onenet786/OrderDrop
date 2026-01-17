@@ -25,15 +25,30 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
         const hasFullName = await hasColumn(req.db, 'riders', 'full_name');
         let sql;
         if (hasFullName) {
-            sql = 'SELECT id, full_name, email, phone, vehicle_type, license_number, is_available, is_active, father_name, image_url, id_card_url, id_card_num, created_at FROM riders ORDER BY full_name ASC';
+            sql = `SELECT r.id, r.full_name, r.email, r.phone, r.vehicle_type, r.license_number, 
+                          r.is_available, r.is_active, r.father_name, r.image_url, r.id_card_url, 
+                          r.id_card_num, r.created_at, w.balance as wallet_balance 
+                   FROM riders r 
+                   LEFT JOIN wallets w ON r.id = w.rider_id 
+                   ORDER BY r.full_name ASC`;
         } else {
-            sql = 'SELECT id, first_name, last_name, email, phone, vehicle_type, license_number, is_available, is_active, father_name, image_url, id_card_url, id_card_num, created_at FROM riders ORDER BY first_name ASC';
+            sql = `SELECT r.id, r.first_name, r.last_name, r.email, r.phone, r.vehicle_type, 
+                          r.license_number, r.is_available, r.is_active, r.father_name, r.image_url, 
+                          r.id_card_url, r.id_card_num, r.created_at, w.balance as wallet_balance 
+                   FROM riders r 
+                   LEFT JOIN wallets w ON r.id = w.rider_id 
+                   ORDER BY r.first_name ASC`;
         }
         const [riders] = await req.db.execute(sql);
 
+        const formattedRiders = riders.map(rider => ({
+            ...rider,
+            wallet_balance: rider.wallet_balance || 0
+        }));
+
         res.json({
             success: true,
-            riders
+            riders: formattedRiders
         });
     } catch (error) {
         console.error('Error fetching riders:', error);

@@ -637,6 +637,59 @@ router.get('/rider-cash', async (req, res) => {
     }
 });
 
+// Helper function to get or create rider wallet
+async function getOrCreateRiderWallet(db, riderId) {
+    const [wallets] = await db.execute(
+        `SELECT id, balance, total_credited, total_spent FROM wallets WHERE rider_id = ?`,
+        [riderId]
+    );
+
+    if (!wallets.length) {
+        await db.execute(
+            'INSERT INTO wallets (rider_id, user_type, balance) VALUES (?, ?, ?)',
+            [riderId, 'rider', 0]
+        );
+        
+        const [newWallet] = await db.execute(
+            'SELECT id, balance, total_credited, total_spent FROM wallets WHERE rider_id = ?',
+            [riderId]
+        );
+        return newWallet[0];
+    }
+    return wallets[0];
+}
+
+// Helper function to record wallet transaction and update balance
+async function recordRiderWalletTransaction(db, riderId, type, amount, description, movementId, movementType) {
+    const wallet = await getOrCreateRiderWallet(db, riderId);
+    const newBalance = type === 'credit' 
+        ? parseFloat(wallet.balance || 0) + parseFloat(amount)
+        : parseFloat(wallet.balance || 0) - parseFloat(amount);
+
+    // Update wallet balance
+    if (type === 'credit') {
+        await db.execute(
+            'UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?',
+            [newBalance, amount, wallet.id]
+        );
+    } else {
+        await db.execute(
+            'UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?',
+            [newBalance, amount, wallet.id]
+        );
+    }
+
+    // Record wallet transaction
+    await db.execute(
+        `INSERT INTO wallet_transactions 
+         (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [wallet.id, type, amount, description, 'rider_cash_movement', movementId, newBalance]
+    );
+
+    return { walletId: wallet.id, newBalance };
+}
+
 router.post('/rider-cash', [
     body('rider_id').isInt({ min: 1 }),
     body('movement_type').isIn(['cash_collection', 'cash_submission', 'advance', 'settlement', 'adjustment']),
@@ -663,6 +716,31 @@ router.post('/rider-cash', [
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
             [movement_number, rider_id, movement_date, movement_type, amount, description || null, reference_type || null, reference_id || null, req.user.id, notes || null]
         );
+
+        // Auto-update wallet for advances (credit to rider wallet)
+        if (movement_type === 'advance') {
+            await recordRiderWalletTransaction(
+                req.db, 
+                rider_id, 
+                'credit', 
+                amount, 
+                `Cash advance via ${movement_number}`, 
+                result.insertId,
+                movement_type
+            );
+        }
+        // Auto-update wallet for adjustments (could be credit or debit)
+        else if (movement_type === 'adjustment' && parseFloat(amount) > 0) {
+            await recordRiderWalletTransaction(
+                req.db, 
+                rider_id, 
+                'credit', 
+                amount, 
+                `Adjustment credit via ${movement_number}`, 
+                result.insertId,
+                movement_type
+            );
+        }
 
         res.status(201).json({
             success: true,
@@ -698,23 +776,84 @@ router.put('/rider-cash/:id', [
         const { id } = req.params;
         const { status, amount, description } = req.body;
 
+        // Get current movement to check status transition
+        const [movements] = await req.db.execute(
+            'SELECT * FROM rider_cash_movements WHERE id = ?',
+            [id]
+        );
+
+        if (!movements.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'Movement not found'
+            });
+        }
+
+        const movement = movements[0];
         const updates = [];
         const params = [];
 
-        if (amount) {
+        if (amount && amount !== movement.amount) {
             updates.push('amount = ?');
             params.push(amount);
         }
-        if (description) {
+        if (description !== undefined) {
             updates.push('description = ?');
             params.push(description);
         }
-        if (status) {
+        if (status && status !== movement.status) {
+            // Validate status transitions
+            if (movement.status === 'approved' && status !== 'cancelled') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Cannot change status of approved movement'
+                });
+            }
+
             updates.push('status = ?');
             params.push(status);
+            
             if (status === 'approved') {
                 updates.push('approved_by = ?, approved_at = NOW()');
                 params.push(req.user.id);
+
+                // Handle wallet updates based on movement type
+                const effectiveAmount = amount || movement.amount;
+                
+                if (movement.movement_type === 'cash_submission') {
+                    // Debit from rider wallet when cash submission is approved
+                    await recordRiderWalletTransaction(
+                        req.db,
+                        movement.rider_id,
+                        'debit',
+                        effectiveAmount,
+                        `Cash submission via ${movement.movement_number}`,
+                        movement.id,
+                        movement.movement_type
+                    );
+                } else if (movement.movement_type === 'settlement') {
+                    // Debit from rider wallet for settlements
+                    await recordRiderWalletTransaction(
+                        req.db,
+                        movement.rider_id,
+                        'debit',
+                        effectiveAmount,
+                        `Settlement via ${movement.movement_number}`,
+                        movement.id,
+                        movement.movement_type
+                    );
+                } else if (movement.movement_type === 'cash_collection') {
+                    // Credit to rider wallet for cash collections (rider collected from customer)
+                    await recordRiderWalletTransaction(
+                        req.db,
+                        movement.rider_id,
+                        'credit',
+                        effectiveAmount,
+                        `Cash collection via ${movement.movement_number}`,
+                        movement.id,
+                        movement.movement_type
+                    );
+                }
             }
         }
 

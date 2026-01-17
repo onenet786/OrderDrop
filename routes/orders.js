@@ -1182,6 +1182,7 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
 router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
+        const { delivery_fee: manual_delivery_fee } = req.body;
 
         // Check if order exists
         const [orders] = await req.db.execute(
@@ -1197,14 +1198,10 @@ router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (re
 
         const order = orders[0];
         
-        // Get order items to count unique stores and calculate items subtotal
+        // Get order items to calculate items subtotal
         const [items] = await req.db.execute(`
             SELECT DISTINCT store_id, price, quantity FROM order_items WHERE order_id = ?
         `, [id]);
-        
-        // Count unique stores
-        const storeIds = new Set(items.map(item => item.store_id).filter(Boolean));
-        const storeCount = storeIds.size;
         
         // Calculate items subtotal from actual items
         let itemsSubtotal = 0;
@@ -1212,17 +1209,30 @@ router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (re
             itemsSubtotal += (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 0);
         }
         
-        // Calculate delivery fee based on number of unique stores
-        // 1 store: 70, 2 stores: 100, 3+ stores: 130 + (count - 3) * 30
-        let delivery_fee = 0;
-        if (storeCount === 1) {
-            delivery_fee = 70;
-        } else if (storeCount === 2) {
-            delivery_fee = 100;
-        } else if (storeCount >= 3) {
-            delivery_fee = 130 + (storeCount - 3) * 30;
+        let delivery_fee;
+        let is_manual = false;
+
+        if (manual_delivery_fee !== undefined && manual_delivery_fee !== null) {
+            delivery_fee = parseFloat(manual_delivery_fee);
+            if (isNaN(delivery_fee)) {
+                return res.status(400).json({ success: false, message: 'Invalid delivery fee provided' });
+            }
+            is_manual = true;
         } else {
-            delivery_fee = 70;
+            // Count unique stores for auto-calculation
+            const storeIds = new Set(items.map(item => item.store_id).filter(Boolean));
+            const storeCount = storeIds.size;
+            
+            // Calculate delivery fee based on number of unique stores
+            if (storeCount === 1) {
+                delivery_fee = 70;
+            } else if (storeCount === 2) {
+                delivery_fee = 100;
+            } else if (storeCount >= 3) {
+                delivery_fee = 130 + (storeCount - 3) * 30;
+            } else {
+                delivery_fee = 70;
+            }
         }
         
         // Recalculate total from items subtotal
@@ -1236,10 +1246,9 @@ router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (re
 
         res.json({
             success: true,
-            message: 'Delivery fee auto-calculated and updated successfully',
+            message: is_manual ? 'Delivery fee updated manually' : 'Delivery fee auto-calculated and updated successfully',
             delivery_fee: parseFloat(delivery_fee),
-            total_amount: newTotal,
-            store_count: storeCount
+            total_amount: newTotal
         });
 
     } catch (error) {

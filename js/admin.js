@@ -2657,14 +2657,14 @@ function updateOrderSummary(items, deliveryFee) {
     const grandTotal = itemsSubtotal + deliveryFeeNum;
     
     const itemsSubtotalEl = document.getElementById('itemsSubtotal');
-    const deliveryFeeDisplayEl = document.getElementById('deliveryFeeDisplay');
+    const deliveryFeeInput = document.getElementById('orderDeliveryFee');
     const totalAmountInput = document.getElementById('orderTotalAmount');
     
     if (itemsSubtotalEl) {
         itemsSubtotalEl.textContent = `PKR ${itemsSubtotal.toFixed(2)}`;
     }
-    if (deliveryFeeDisplayEl) {
-        deliveryFeeDisplayEl.textContent = `PKR ${deliveryFeeNum.toFixed(2)}`;
+    if (deliveryFeeInput) {
+        deliveryFeeInput.value = deliveryFeeNum.toFixed(2);
     }
     if (totalAmountInput) {
         totalAmountInput.value = grandTotal.toFixed(2);
@@ -2751,9 +2751,45 @@ async function editOrder(orderId) {
                             quantity: parseInt(inp.value) || 0
                         };
                     });
-                    const currentDeliveryFee = document.getElementById('deliveryFeeDisplay').textContent.replace('PKR ', '');
+                    const currentDeliveryFee = document.getElementById('orderDeliveryFee').value;
                     updateOrderSummary(items, currentDeliveryFee);
                 });
+            });
+
+            document.getElementById('orderDeliveryFee').addEventListener('input', function() {
+                const items = Array.from(document.querySelectorAll('.item-quantity-input')).map(inp => {
+                    const itemId = inp.dataset.itemId;
+                    const originalItem = itemsData.items.find(i => i.id == itemId);
+                    return {
+                        ...originalItem,
+                        quantity: parseInt(inp.value) || 0
+                    };
+                });
+                updateOrderSummary(items, this.value);
+            });
+
+            document.getElementById('orderTotalAmount').addEventListener('input', function() {
+                const totalAmount = parseFloat(this.value) || 0;
+                const items = Array.from(document.querySelectorAll('.item-quantity-input')).map(inp => {
+                    const itemId = inp.dataset.itemId;
+                    const originalItem = itemsData.items.find(i => i.id == itemId);
+                    return {
+                        ...originalItem,
+                        quantity: parseInt(inp.value) || 0
+                    };
+                });
+                const itemsSubtotal = items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+                const deliveryFee = Math.max(0, totalAmount - itemsSubtotal);
+                
+                const deliveryFeeInput = document.getElementById('orderDeliveryFee');
+                if (deliveryFeeInput) {
+                    deliveryFeeInput.value = deliveryFee.toFixed(2);
+                }
+                
+                const itemsSubtotalEl = document.getElementById('itemsSubtotal');
+                if (itemsSubtotalEl) {
+                    itemsSubtotalEl.textContent = `PKR ${itemsSubtotal.toFixed(2)}`;
+                }
             });
 
             const uniqueStores = new Set(itemsData.items.map(item => item.store_id).filter(Boolean));
@@ -2910,18 +2946,19 @@ async function saveOrder() {
             });
         }
 
+        const deliveryFeeValue = document.getElementById('orderDeliveryFee').value;
         const feeRes = await fetch(`${API_BASE}/api/orders/${orderId}/delivery-fee`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`
             },
-            body: JSON.stringify({})
+            body: JSON.stringify({ delivery_fee: parseFloat(deliveryFeeValue) })
         });
         const feeData = await feeRes.json();
-        console.log(`[saveOrder] Delivery fee auto-calculated:`, feeData);
+        console.log(`[saveOrder] Delivery fee updated:`, feeData);
         if (feeData.success) {
-            console.log(`✓ Delivery fee auto-calculated: PKR ${feeData.delivery_fee.toFixed(2)} for ${feeData.store_count} store(s). Order total: PKR ${feeData.total_amount.toFixed(2)}`);
+            console.log(`✓ Delivery fee updated: PKR ${feeData.delivery_fee.toFixed(2)}. Order total: PKR ${feeData.total_amount.toFixed(2)}`);
         } else {
             console.error('✗ Failed to update delivery fee:', feeData);
             showError('Warning', 'Delivery fee may not have been updated. Please check.');
@@ -3786,7 +3823,8 @@ function setProductStoreTerms(stores) {
 }
 
 function isDiscountPaymentTerm(term) {
-    return String(term || '').toLowerCase().includes('with discount');
+    const t = String(term || '').toLowerCase().trim();
+    return t === 'cash only' || t === 'credit';
 }
 
 function recalcProductCost() {
