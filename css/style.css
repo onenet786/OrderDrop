@@ -51,6 +51,7 @@ h5 { font-size: 1.25rem; }
 /* Modern Header and Navigation */
 header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
     position: sticky;

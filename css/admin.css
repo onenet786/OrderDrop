@@ -45,6 +45,27 @@
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Global Scrollbar Styles for cross-browser consistency */
+/* Note: scrollbar-color is not supported in Chrome < 121, Safari, and Samsung Internet */
+/* Chrome, Edge, and Safari */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--bg-body);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--secondary);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 /* Reset & Base */
 * {
   box-sizing: border-box;
@@ -157,6 +178,7 @@ button {
 .logo span {
     background: var(--primary-gradient);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -359,6 +381,7 @@ img, video, canvas, svg {
   font-weight: 800;
   background: var(--primary-gradient);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   margin-bottom: 0.5rem;
 }
@@ -436,26 +459,6 @@ img, video, canvas, svg {
   border: 1px solid var(--border-color);
   width: 100%;
   max-width: 100%;
-  
-  /* Match products page scroll behavior */
-  scrollbar-width: thin;
-  scrollbar-color: var(--secondary) var(--bg-body);
-}
-
-/* Custom Scrollbar for tables */
-.table-container::-webkit-scrollbar {
-  height: 8px;
-}
-.table-container::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 4px;
-}
-.table-container::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-.table-container::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
 }
 
 table {
@@ -663,6 +666,7 @@ textarea:focus {
   z-index: 1000;
   align-items: center;
   justify-content: center;
+  -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
 }
 .modal[style*="display: block"] {

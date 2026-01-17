@@ -109,13 +109,37 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        store['store_name'] ?? 'Unknown',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            store['name'] ?? store['store_name'] ?? 'Unknown',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          _buildStatusBadge(store),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.access_time, size: 14, color: Colors.green),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatTime(store['opening_time']),
+                            style: TextStyle(fontSize: 14, color: Colors.blue[600], fontWeight: FontWeight.w500),
+                          ),
+                          const SizedBox(width: 12),
+                          const Icon(Icons.timer_off, size: 14, color: Colors.red),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatTime(store['closing_time']),
+                            style: TextStyle(fontSize: 14, color: Colors.blue[600], fontWeight: FontWeight.w500),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -169,6 +193,67 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
         ),
       ),
     );
+  }
+
+  bool _checkIsOpen(dynamic openTimeStr, dynamic closeTimeStr) {
+    if (openTimeStr == null || closeTimeStr == null) return false;
+
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay.fromDateTime(now);
+
+      TimeOfDay parseTime(String timeStr) {
+        final parts = timeStr.split(':');
+        return TimeOfDay(
+          hour: int.parse(parts[0]),
+          minute: int.parse(parts[1]),
+        );
+      }
+
+      final openTime = parseTime(openTimeStr.toString());
+      final closeTime = parseTime(closeTimeStr.toString());
+
+      final double nowDouble = currentTime.hour + currentTime.minute / 60.0;
+      final double openDouble = openTime.hour + openTime.minute / 60.0;
+      final double closeDouble = closeTime.hour + closeTime.minute / 60.0;
+
+      if (openDouble <= closeDouble) {
+        return nowDouble >= openDouble && nowDouble <= closeDouble;
+      } else {
+        // Handle overnight hours (e.g., 22:00 - 04:00)
+        return nowDouble >= openDouble || nowDouble <= closeDouble;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Widget _buildStatusBadge(dynamic store) {
+    final bool isOpen = _checkIsOpen(store['opening_time'], store['closing_time']);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isOpen ? Colors.green : Colors.red,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        isOpen ? 'OPEN' : 'CLOSED',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(dynamic time) {
+    if (time == null) return '--:--';
+    final parts = time.toString().split(':');
+    if (parts.length >= 2) {
+      return '${parts[0]}:${parts[1]}';
+    }
+    return time.toString();
   }
 
   Widget _buildInfoColumn(String label, String value) {

@@ -429,6 +429,7 @@ textarea:focus {
   z-index: 1000;
   align-items: center;
   justify-content: center;
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
 .modal[style*="display: block"] {
@@ -610,6 +611,80 @@ textarea:focus {
 .badge-refund {
   background: #f1f5f9;
   color: #475569;
+}
+
+#cartCount {
+  display: none;
+}
+
+/* Order Confirmation Styles */
+.confirmation-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirmation-card {
+  background: var(--bg-surface);
+  padding: 3rem;
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  max-width: 600px;
+  width: 100%;
+}
+
+.confirmation-icon {
+  font-size: 4rem;
+  color: var(--success);
+  margin-bottom: 1.5rem;
+}
+
+.confirmation-card h2 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: var(--text-main);
+}
+
+.confirmation-card p {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
+.order-details-box {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: #f8fafc;
+  border-radius: var(--border-radius);
+  text-align: left;
+  display: none;
+}
+
+.order-details-box h4 {
+  margin-bottom: 1rem;
+  color: var(--text-main);
+}
+
+.order-item-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.order-item-row.total {
+  margin-top: 1rem;
+  font-weight: 700;
+  border-bottom: none;
+}
+
+.confirmation-actions {
+  margin-top: 2rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 /* Hand Serving Cart Style (Adapted for User Panel) */

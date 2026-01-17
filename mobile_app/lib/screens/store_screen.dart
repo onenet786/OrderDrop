@@ -185,21 +185,30 @@ class _StoreScreenState extends State<StoreScreen> {
                       children: [
                         if (ApiService.getImageUrl(store['image_url'])
                             .isNotEmpty)
-                          Image.network(
-                            ApiService.getImageUrl(store['image_url']),
-                            height: 200,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                            errorBuilder:
-                                (ctx, err, _) => Container(
-                                  height: 200,
-                                  color: Colors.grey[300],
-                                  child: const Icon(
-                                    Icons.store,
-                                    size: 80,
-                                    color: Colors.grey,
-                                  ),
-                                ),
+                          Stack(
+                            children: [
+                              Image.network(
+                                ApiService.getImageUrl(store['image_url']),
+                                height: 200,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorBuilder:
+                                    (ctx, err, _) => Container(
+                                      height: 200,
+                                      color: Colors.grey[300],
+                                      child: const Icon(
+                                        Icons.store,
+                                        size: 80,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                              ),
+                              Positioned(
+                                top: 12,
+                                right: 12,
+                                child: _buildStatusButton(store),
+                              ),
+                            ],
                           ),
                         Padding(
                           padding: const EdgeInsets.all(16.0),
@@ -232,7 +241,41 @@ class _StoreScreenState extends State<StoreScreen> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.access_time,
+                                    size: 16,
+                                    color: Colors.green,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Open: ${_formatTimeOnly(store['opening_time'])}',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  const Icon(
+                                    Icons.timer_off,
+                                    size: 16,
+                                    color: Colors.red,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Close: ${_formatTimeOnly(store['closing_time'])}',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
                               if (store['rating'] != null)
                                 Row(
                                   children: [
@@ -312,6 +355,67 @@ class _StoreScreenState extends State<StoreScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  String _formatTimeOnly(dynamic time) {
+    if (time == null) return '--:--';
+    final parts = time.toString().split(':');
+    if (parts.length >= 2) {
+      return '${parts[0]}:${parts[1]}';
+    }
+    return time.toString();
+  }
+
+  bool _checkIsOpen(dynamic openTimeStr, dynamic closeTimeStr) {
+    if (openTimeStr == null || closeTimeStr == null) return false;
+
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay.fromDateTime(now);
+
+      TimeOfDay parseTime(String timeStr) {
+        final parts = timeStr.split(':');
+        return TimeOfDay(
+          hour: int.parse(parts[0]),
+          minute: int.parse(parts[1]),
+        );
+      }
+
+      final openTime = parseTime(openTimeStr.toString());
+      final closeTime = parseTime(closeTimeStr.toString());
+
+      final double nowDouble = currentTime.hour + currentTime.minute / 60.0;
+      final double openDouble = openTime.hour + openTime.minute / 60.0;
+      final double closeDouble = closeTime.hour + closeTime.minute / 60.0;
+
+      if (openDouble <= closeDouble) {
+        return nowDouble >= openDouble && nowDouble <= closeDouble;
+      } else {
+        // Handle overnight hours (e.g., 22:00 - 04:00)
+        return nowDouble >= openDouble || nowDouble <= closeDouble;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Widget _buildStatusButton(dynamic store) {
+    final bool isOpen = _checkIsOpen(store['opening_time'], store['closing_time']);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: isOpen ? Colors.green : Colors.red,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        isOpen ? 'OPEN' : 'CLOSED',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+        ),
       ),
     );
   }

@@ -376,21 +376,30 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(15),
-                ),
-                child: Image.network(
-                  ApiService.getImageUrl(store['image_url']),
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (ctx, err, _) => Container(
-                    color: Colors.grey[300],
-                    child: const Center(
-                      child: Icon(Icons.store, size: 40, color: Colors.grey),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(15),
+                    ),
+                    child: Image.network(
+                      ApiService.getImageUrl(store['image_url']),
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (ctx, err, _) => Container(
+                        color: Colors.grey[300],
+                        child: const Center(
+                          child: Icon(Icons.store, size: 40, color: Colors.grey),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: _buildStatusBadge(store),
+                  ),
+                ],
               ),
             ),
             Padding(
@@ -429,6 +438,40 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.access_time,
+                        size: 12,
+                        color: Colors.green,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        _formatTimeOnly(store['opening_time']),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.timer_off,
+                        size: 12,
+                        color: Colors.red,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        _formatTimeOnly(store['closing_time']),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -437,4 +480,66 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  String _formatTimeOnly(dynamic time) {
+    if (time == null) return '--:--';
+    final parts = time.toString().split(':');
+    if (parts.length >= 2) {
+      return '${parts[0]}:${parts[1]}';
+    }
+    return time.toString();
+  }
+
+  bool _checkIsOpen(dynamic openTimeStr, dynamic closeTimeStr) {
+    if (openTimeStr == null || closeTimeStr == null) return false;
+
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay.fromDateTime(now);
+
+      TimeOfDay parseTime(String timeStr) {
+        final parts = timeStr.split(':');
+        return TimeOfDay(
+          hour: int.parse(parts[0]),
+          minute: int.parse(parts[1]),
+        );
+      }
+
+      final openTime = parseTime(openTimeStr.toString());
+      final closeTime = parseTime(closeTimeStr.toString());
+
+      final double nowDouble = currentTime.hour + currentTime.minute / 60.0;
+      final double openDouble = openTime.hour + openTime.minute / 60.0;
+      final double closeDouble = closeTime.hour + closeTime.minute / 60.0;
+
+      if (openDouble <= closeDouble) {
+        return nowDouble >= openDouble && nowDouble <= closeDouble;
+      } else {
+        // Handle overnight hours (e.g., 22:00 - 04:00)
+        return nowDouble >= openDouble || nowDouble <= closeDouble;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Widget _buildStatusBadge(dynamic store) {
+    final bool isOpen = _checkIsOpen(store['opening_time'], store['closing_time']);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isOpen ? Colors.green : Colors.red,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        isOpen ? 'OPEN' : 'CLOSED',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+
 }
