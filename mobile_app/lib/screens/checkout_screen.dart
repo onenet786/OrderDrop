@@ -126,6 +126,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
+  bool _checkIsOpen(dynamic openTimeStr, dynamic closeTimeStr) {
+    if (openTimeStr == null || closeTimeStr == null) return false;
+
+    try {
+      final now = DateTime.now();
+      final currentTime = TimeOfDay.fromDateTime(now);
+
+      TimeOfDay parseTime(String timeStr) {
+        final parts = timeStr.split(':');
+        return TimeOfDay(
+          hour: int.parse(parts[0]),
+          minute: int.parse(parts[1]),
+        );
+      }
+
+      final openTime = parseTime(openTimeStr.toString());
+      final closeTime = parseTime(closeTimeStr.toString());
+
+      final double nowDouble = currentTime.hour + currentTime.minute / 60.0;
+      final double openDouble = openTime.hour + openTime.minute / 60.0;
+      final double closeDouble = closeTime.hour + closeTime.minute / 60.0;
+
+      if (openDouble <= closeDouble) {
+        return nowDouble >= openDouble && nowDouble <= closeDouble;
+      } else {
+        // Handle overnight hours (e.g., 22:00 - 04:00)
+        return nowDouble >= openDouble || nowDouble <= closeDouble;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<void> _submitOrder() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -133,6 +166,54 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
     if (cart.items.isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Check if stores are open
+    try {
+      final uniqueStoreIds =
+          cart.items.map((e) => e.product.storeId).whereType<int>().toSet();
+
+      for (final storeId in uniqueStoreIds) {
+        final data = await ApiService.getStoreDetails(storeId);
+        if (data['success'] == true) {
+          final store = data['store'];
+          if (!_checkIsOpen(store['opening_time'], store['closing_time'])) {
+            if (!mounted) return;
+            setState(() {
+              _isLoading = false;
+            });
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Store Closed'),
+                content: Text(
+                  'The store "${store['name']}" is currently closed. You cannot place orders at this time.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(ctx).pop(); // Close dialog
+                      Navigator.of(context).pushNamedAndRemoveUntil(
+                        '/home',
+                        (route) => false,
+                      );
+                    },
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking store status: $e');
+    }
 
     if (_paymentMethod == 'wallet' && _walletBalance != null) {
       if (_walletBalance! < cart.totalAmount) {

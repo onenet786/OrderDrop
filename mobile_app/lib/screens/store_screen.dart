@@ -57,8 +57,32 @@ class _StoreScreenState extends State<StoreScreen> {
   void _addToCart(
     BuildContext context,
     Product product,
-    ProductVariant? variant,
-  ) {
+    ProductVariant? variant, {
+    required bool isOpen,
+  }) {
+    if (!isOpen) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Store Closed'),
+          content: const Text(
+            'This store is currently closed. You cannot place orders at this time.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop(); // Close dialog
+                Navigator.of(context).pop(); // Go back to main store screen
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final cart = Provider.of<CartProvider>(context, listen: false);
 
     if (product.stockQuantity <= 0) {
@@ -155,6 +179,7 @@ class _StoreScreenState extends State<StoreScreen> {
           }
 
           final store = data['store'];
+          final bool isOpen = _checkIsOpen(store['opening_time'], store['closing_time']);
           final productsList = data['products'] as List<dynamic>? ?? [];
           final products = productsList
               .map((json) => Product.fromJson(json))
@@ -332,6 +357,7 @@ class _StoreScreenState extends State<StoreScreen> {
                                     context,
                                     product,
                                     crossAxisCount,
+                                    isOpen,
                                   ),
                                 ),
                               );
@@ -424,6 +450,7 @@ class _StoreScreenState extends State<StoreScreen> {
     BuildContext context,
     Product product,
     int crossAxisCount,
+    bool isOpen,
   ) {
     final variants = product.sizeVariants;
     final selectedVariant =
@@ -574,7 +601,7 @@ class _StoreScreenState extends State<StoreScreen> {
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () =>
-                              _addToCart(context, product, selectedVariant),
+                              _addToCart(context, product, selectedVariant, isOpen: isOpen),
                           style: ElevatedButton.styleFrom(
                             padding: EdgeInsets.zero,
                             backgroundColor: Colors.blueAccent,
@@ -735,7 +762,7 @@ class _StoreScreenState extends State<StoreScreen> {
                       elevation: 0,
                     ),
                     onPressed: product.isAvailable
-                        ? () => _addToCart(context, product, selectedVariant)
+                        ? () => _addToCart(context, product, selectedVariant, isOpen: isOpen)
                         : null,
                     child: Text(
                       product.isAvailable ? 'ADD' : 'N/A',
