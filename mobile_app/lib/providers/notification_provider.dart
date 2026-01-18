@@ -121,10 +121,17 @@ class NotificationProvider with ChangeNotifier {
   void _initSocket() {
     if (_socket != null && _socket!.connected) return;
 
-    // Ensure we don't have trailing slash for socket.io
+    // Normalize base URL to origin for socket.io (strip any path like /api)
     String baseUrl = ApiService.baseUrl;
-    if (baseUrl.endsWith('/')) {
-      baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+    try {
+      final uri = Uri.parse(baseUrl);
+      final origin = '${uri.scheme.isEmpty ? 'http' : uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+      baseUrl = origin.endsWith('/') ? origin.substring(0, origin.length - 1) : origin;
+    } catch (e) {
+      debugPrint('[NotificationProvider] Invalid baseUrl "$baseUrl", using as-is. Error: $e');
+      if (baseUrl.endsWith('/')) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+      }
     }
 
     debugPrint('[NotificationProvider] Initializing socket connection to: $baseUrl');
@@ -132,10 +139,12 @@ class NotificationProvider with ChangeNotifier {
     _socket = socket_io.io(
       baseUrl,
       socket_io.OptionBuilder()
-          .setTransports(['polling', 'websocket'])
+          .setTransports(['websocket', 'polling'])
           .enableAutoConnect()
+          .enableReconnection()
           .setReconnectionDelay(1000)
           .setReconnectionDelayMax(5000)
+          .setReconnectionAttempts(20)
           .build(),
     );
 
@@ -150,9 +159,12 @@ class NotificationProvider with ChangeNotifier {
       debugPrint('[NotificationProvider] Socket reconnected: ${_socket?.id}');
       _identifyUser();
     });
+    _socket!.onReconnectAttempt((attempt) {
+      debugPrint('[NotificationProvider] Socket reconnect attempt: $attempt to $baseUrl');
+    });
 
     _socket!.onConnectError((data) {
-      debugPrint('[NotificationProvider] Socket connection error: $data');
+      debugPrint('[NotificationProvider] Socket connection error to $baseUrl: $data');
     });
 
     _socket!.onError((data) {
