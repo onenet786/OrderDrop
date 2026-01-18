@@ -335,6 +335,57 @@ router.post('/', authenticateToken, async (req, res) => {
             itemsSubtotal += unitPrice * quantity;
         }
 
+        // Enforce store open/closed hours before proceeding
+        const storeIdArray = Array.from(storeIds).filter(Boolean);
+        if (storeIdArray.length > 0) {
+            const placeholders = storeIdArray.map(() => '?').join(',');
+            const [storeRows] = await req.db.execute(
+                `SELECT id, name, opening_time, closing_time, is_active FROM stores WHERE id IN (${placeholders})`,
+                storeIdArray
+            );
+
+            const now = new Date();
+            const nowDouble = now.getHours() + now.getMinutes() / 60.0;
+            const parseTimeStr = (t) => {
+                if (!t) return null;
+                const parts = String(t).split(':');
+                const h = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10);
+                if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+                return h + (m / 60.0);
+            };
+
+            for (const s of storeRows) {
+                if (!s.is_active) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Store "${s.name}" is not active at the moment. Please try later.`
+                    });
+                }
+                const openD = parseTimeStr(s.opening_time);
+                const closeD = parseTimeStr(s.closing_time);
+                if (openD === null || closeD === null) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Store "${s.name}" is currently closed.`
+                    });
+                }
+                let isOpen;
+                if (openD <= closeD) {
+                    isOpen = nowDouble >= openD && nowDouble <= closeD;
+                } else {
+                    // Overnight hours (e.g., 22:00 - 04:00)
+                    isOpen = nowDouble >= openD || nowDouble <= closeD;
+                }
+                if (!isOpen) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Store "${s.name}" is currently closed. Please order during open hours.`
+                    });
+                }
+            }
+        }
+
         // Calculate delivery fee based on number of unique stores
         const storeCount = storeIds.size;
         let delivery_fee = 0;
