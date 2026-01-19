@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireStoreOwner } = require('../middleware/auth');
 const { sendOrderThanksEmail } = require('../services/emailService');
+const { sendNotification } = require('../utils/notificationHelper');
 
 const router = express.Router();
 

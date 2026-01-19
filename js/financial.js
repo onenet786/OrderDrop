@@ -945,7 +945,7 @@ function viewReport(reportId) {
     const report = currentReports.find(r => r.id === reportId);
     if (!report) return;
 
-    alert(`Report: ${report.report_number}\nType: ${report.report_type}\nIncome: ₨ ${report.total_income}\nExpense: ₨ ${report.total_expense}\nNet Profit: ₨ ${report.net_profit}`);
+    showInfo('Report Details', `Report: ${report.report_number}<br>Type: ${report.report_type}<br>Income: ₨ ${report.total_income}<br>Expense: ₨ ${report.total_expense}<br>Net Profit: ₨ ${report.net_profit}`, 5000);
 }
 
 function editPaymentVoucher(id) {
@@ -971,7 +971,7 @@ function editExpense(id) {
 function viewTransaction(id) {
     const transaction = currentTransactions.find(t => t.id === id);
     if (transaction) {
-        alert(`Transaction: ${transaction.transaction_number}\nType: ${transaction.transaction_type}\nAmount: ₨ ${transaction.amount}\nStatus: ${transaction.status}`);
+        showInfo('Transaction Details', `Transaction: ${transaction.transaction_number}<br>Type: ${transaction.transaction_type}<br>Amount: ₨ ${transaction.amount}<br>Status: ${transaction.status}`, 5000);
     }
 }
 

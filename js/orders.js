@@ -151,14 +151,14 @@ async function updateOrderStatus(orderId, status) {
 
         const data = await response.json();
         if (data.success) {
-            alert('Order status updated successfully!');
+            showSuccess('Status Updated', 'Order status updated successfully!');
             displayOrders('pending');
         } else {
-            alert('Failed to update order status: ' + data.message);
+            showError('Update Failed', 'Failed to update order status: ' + data.message);
         }
     } catch (error) {
         console.error('Error updating order status:', error);
-        alert('Failed to update order status.');
+        showError('Update Failed', 'Failed to update order status.');
     }
 }
 
@@ -211,13 +211,13 @@ async function assignRider(orderId) {
                 select.appendChild(option);
             });
         } else {
-            alert('Failed to load available riders');
+            showError('Error', 'Failed to load available riders');
             modal.remove();
             return;
         }
     } catch (error) {
         console.error('Error loading riders:', error);
-        alert('Failed to load available riders');
+        showError('Error', 'Failed to load available riders');
         modal.remove();
         return;
     }
@@ -226,7 +226,7 @@ async function assignRider(orderId) {
     document.getElementById('assignRiderBtn').addEventListener('click', async function() {
         const riderId = document.getElementById('riderSelect').value;
         if (!riderId) {
-            alert('Please select a rider');
+            showWarning('Required', 'Please select a rider');
             return;
         }
 
@@ -242,15 +242,15 @@ async function assignRider(orderId) {
 
             const data = await response.json();
             if (data.success) {
-                alert('Rider assigned successfully!');
+                showSuccess('Assigned', 'Rider assigned successfully!');
                 modal.remove();
                 displayOrders('pending');
             } else {
-                alert('Failed to assign rider: ' + data.message);
+                showError('Assignment Failed', 'Failed to assign rider: ' + data.message);
             }
         } catch (error) {
             console.error('Error assigning rider:', error);
-            alert('Failed to assign rider.');
+            showError('Assignment Failed', 'Failed to assign rider.');
         }
     });
 }
@@ -285,14 +285,14 @@ async function updateRiderLocation(orderId) {
 
         const data = await response.json();
         if (data.success) {
-            alert('Rider location updated successfully!');
+            showSuccess('Location Updated', 'Rider location updated successfully!');
             displayOrders('pending');
         } else {
-            alert('Failed to update rider location: ' + data.message);
+            showError('Update Failed', 'Failed to update rider location: ' + data.message);
         }
     } catch (error) {
         console.error('Error updating rider location:', error);
-        alert('Failed to update rider location.');
+        showError('Update Failed', 'Failed to update rider location.');
     }
 }
 
@@ -310,21 +310,21 @@ async function markAsDelivered(orderId) {
 
         const data = await response.json();
         if (data.success) {
-            alert('Order marked as delivered successfully! Customer has been notified.');
+            showSuccess('Delivered', 'Order marked as delivered successfully! Customer has been notified.');
             displayOrders('pending');
         } else {
-            alert('Failed to mark order as delivered: ' + data.message);
+            showError('Update Failed', 'Failed to mark order as delivered: ' + data.message);
         }
     } catch (error) {
         console.error('Error marking order as delivered:', error);
-        alert('Failed to mark order as delivered.');
+        showError('Update Failed', 'Failed to mark order as delivered.');
     }
 }
 
 // View order details
 function viewOrderDetails(orderId) {
-    // For now, just alert
-    alert('Order details for ID: ' + orderId);
+    // For now, just show info toast
+    showInfo('Order Details', 'Order details for ID: ' + orderId);
 }
 
 // Initialize orders page
@@ -332,7 +332,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check if user is logged in
     const userData = localStorage.getItem('serveNowUser');
     if (!userData) {
-        alert('Please login first.');
+        showWarning('Authentication Required', 'Please login first.');
         window.location.href = 'login.html';
         return;
     }

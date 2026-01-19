@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:logger/logger.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
+import '../services/notifier.dart';
 import '../widgets/notification_bell_widget.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -593,44 +594,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _showActivityDetails(Map<String, dynamic> activity) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(activity['title'] ?? 'Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (activity['details'] != null)
-                ...(activity['details'] as Map<String, dynamic>).entries.map(
-                  (e) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          width: 100,
-                          child: Text(
-                            '${e.key}:',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        Expanded(child: Text('${e.value ?? "N/A"}')),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+    String detailsStr = '';
+    if (activity['details'] != null) {
+      detailsStr = (activity['details'] as Map<String, dynamic>)
+          .entries
+          .map((e) => '${e.key}: ${e.value ?? "N/A"}')
+          .join('\n');
+    }
+
+    Notifier.info(
+      context,
+      '${activity['title'] ?? "Activity Details"}\n$detailsStr',
+      duration: const Duration(seconds: 5),
     );
   }
 

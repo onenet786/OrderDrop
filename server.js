@@ -49,6 +49,7 @@ const sizeRoutes = require("./routes/sizes");
 const paymentRoutes = require("./routes/payments");
 const walletRoutes = require("./routes/wallets");
 const financialRoutes = require("./routes/financial");
+const notificationRoutes = require("./routes/notifications");
 const { logError } = require("./utils/debugLogger");
 const http = require("http");
 const { Server } = require("socket.io");

@@ -555,7 +555,7 @@ async function markDelivered(orderId) {
         }
     } catch (error) {
         console.error('Error marking delivery as completed:', error);
-        alert('Failed to mark delivery as completed.');
+        showError('Delivery Error', 'Failed to mark delivery as completed.');
     }
 }
 
@@ -853,7 +853,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 locationElement.textContent = 'Location unavailable - ' + error.message;
                 locationElement.style.color = '#e53e3e';
             }
-            alert('Location access failed: ' + error.message + '\n\nPlease enable location permissions and refresh the page.');
+            showError('Location Error', 'Location access failed: ' + error.message + '<br><br>Please enable location permissions and refresh the page.', 10000);
         });
 
     // Start location tracking (will handle errors internally)

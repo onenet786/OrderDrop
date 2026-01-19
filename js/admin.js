@@ -6254,7 +6254,7 @@ async function viewPaymentDetails(paymentId) {
         
         if (data.success) {
             const payment = data.payment;
-            alert(`Payment Details\n\nID: ${payment.id}\nOrder: #${payment.order_id}\nCustomer: ${payment.first_name} ${payment.last_name}\nAmount: PKR ${payment.amount}\nMethod: ${payment.payment_method}\nStatus: ${payment.status}\nDate: ${new Date(payment.created_at).toLocaleString()}`);
+            showInfo('Payment Details', `ID: ${payment.id}<br>Order: #${payment.order_id}<br>Customer: ${payment.first_name} ${payment.last_name}<br>Amount: PKR ${payment.amount}<br>Method: ${payment.payment_method}<br>Status: ${payment.status}<br>Date: ${new Date(payment.created_at).toLocaleString()}`, 6000);
         }
     } catch (error) {
         console.error('View payment details error:', error);
@@ -6370,8 +6370,8 @@ async function viewWalletDetails(walletId) {
         
         if (data.success) {
             const wallet = data.wallet;
-            const txList = data.recent_transactions.slice(0, 5).map(tx => `  • ${tx.type.toUpperCase()}: PKR ${tx.amount} - ${tx.description}`).join('\n');
-            alert(`Wallet Details\n\nID: ${wallet.id}\nUser: ${wallet.first_name} ${wallet.last_name}\nBalance: PKR ${wallet.balance}\nTotal Credited: PKR ${wallet.total_credited}\nTotal Spent: PKR ${wallet.total_spent}\n\nRecent Transactions:\n${txList || 'No transactions'}`);
+            const txList = data.recent_transactions.slice(0, 5).map(tx => `  • ${tx.type.toUpperCase()}: PKR ${tx.amount} - ${tx.description}`).join('<br>');
+            showInfo('Wallet Details', `ID: ${wallet.id}<br>User: ${wallet.first_name} ${wallet.last_name}<br>Balance: PKR ${wallet.balance}<br>Total Credited: PKR ${wallet.total_credited}<br>Total Spent: PKR ${wallet.total_spent}<br><br><b>Recent Transactions:</b><br>${txList || 'No transactions'}`, 8000);
         }
     } catch (error) {
         console.error('View wallet details error:', error);

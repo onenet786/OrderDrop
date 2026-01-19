@@ -21,6 +21,18 @@ class Notification {
     required this.timestamp,
     this.unread = true,
   });
+
+  factory Notification.fromJson(Map<String, dynamic> json) {
+    return Notification(
+      id: json['id'],
+      title: json['title'],
+      message: json['message'],
+      type: json['type'] ?? 'info',
+      icon: json['icon'] ?? 'info',
+      timestamp: DateTime.parse(json['timestamp']),
+      unread: json['unread'] ?? true,
+    );
+  }
 }
 
 class NotificationProvider with ChangeNotifier {

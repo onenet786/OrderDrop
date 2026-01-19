@@ -185,27 +185,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             setState(() {
               _isLoading = false;
             });
-            showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Store Closed'),
-                content: Text(
-                  'The store "${store['name']}" is currently closed. You cannot place orders at this time.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(ctx).pop(); // Close dialog
-                      Navigator.of(context).pushNamedAndRemoveUntil(
-                        '/home',
-                        (route) => false,
-                      );
-                    },
-                    child: const Text('OK'),
-                  ),
-                ],
-              ),
+            Notifier.error(
+              context,
+              'The store "${store['name']}" is currently closed. You cannot place orders at this time.',
+              duration: const Duration(seconds: 4),
+            );
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/home',
+              (route) => false,
             );
             return;
           }
@@ -275,26 +262,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (!mounted) return;
 
-      // Show success dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Order Placed!'),
-          content: const Text('Your order has been successfully placed.'),
-          actions: [
-            TextButton(
-              child: const Text('View Orders'),
-              onPressed: () {
-                Navigator.of(ctx).pop(); // Close dialog
-                Navigator.of(
-                  context,
-                ).pushNamedAndRemoveUntil('/orders', (route) => false);
-              },
-            ),
-          ],
-        ),
+      // Show success toast and redirect
+      Notifier.success(
+        context,
+        'Your order has been successfully placed.',
+        duration: const Duration(seconds: 3),
       );
+      Navigator.of(context).pushNamedAndRemoveUntil('/orders', (route) => false);
     } catch (e) {
       if (!mounted) return;
       Notifier.error(context, 'Failed to place order: $e');

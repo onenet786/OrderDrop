@@ -61,25 +61,13 @@ class _StoreScreenState extends State<StoreScreen> {
     required bool isOpen,
   }) {
     if (!isOpen) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Store Closed'),
-          content: const Text(
-            'This store is currently closed. You cannot place orders at this time.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop(); // Close dialog
-                Navigator.of(context).pop(); // Go back to main store screen
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+      if (!mounted) return;
+      Notifier.error(
+        context,
+        'This store is currently closed. You cannot place orders at this time.',
+        duration: const Duration(seconds: 4),
       );
+      Navigator.of(context).pop(); // Go back to main home screen
       return;
     }
 
