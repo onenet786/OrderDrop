@@ -1,4 +1,10 @@
 (function() {
+    // Prevent duplicate initialization when the script is loaded multiple times
+    if (window.__serveNowNotificationsInitialized) {
+        console.warn('[Notifications] Already initialized — skipping duplicate init.');
+        return;
+    }
+    window.__serveNowNotificationsInitialized = true;
     if (typeof io === 'undefined') {
         console.warn('Socket.IO client not loaded. Real-time notifications unavailable.');
         return;
@@ -109,6 +115,21 @@
             unread: true
         };
 
+        // Suppress rapid duplicate notifications: ignore if same title+message
+        // was added very recently (within DUPLICATE_WINDOW_MS)
+        const DUPLICATE_WINDOW_MS = 5000; // 5 seconds
+        const now = Date.now();
+        const foundRecent = notificationsStore.some(n => {
+            try {
+                const nTime = n.timestamp instanceof Date ? n.timestamp.getTime() : new Date(n.timestamp).getTime();
+                return n.title === title && n.message === message && (now - nTime) < DUPLICATE_WINDOW_MS;
+            } catch (e) {
+                return false;
+            }
+        });
+
+        if (foundRecent) return; // ignore duplicate
+
         notificationsStore.unshift(notification);
 
         // Keep only last 20 notifications
@@ -180,6 +201,14 @@
     }
 
 
+
+    // Remove any existing handlers to prevent duplicates
+    socket.off('new_order');
+    socket.off('rider_notification');
+    socket.off('user_notification');
+    socket.off('order_status_update');
+    socket.off('payment_status_update');
+    socket.off('order_completed');
 
     // Admin Notifications: New Order
     socket.on('new_order', (data) => {

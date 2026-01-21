@@ -2,7 +2,6 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireStoreOwner } = require('../middleware/auth');
 const { sendOrderThanksEmail } = require('../services/emailService');
-const { sendNotification } = require('../utils/notificationHelper');
 
 const router = express.Router();
 
@@ -1044,7 +1043,7 @@ router.put('/:id(\\d+)/status', authenticateToken, requireStoreOwner, [
             [status, id]
         );
 
-        // Emit order_status_update event
+        // Emit order_status_update event - only to specific rooms to avoid duplicates
         try {
             if (req.io) {
                 const statusUpdateData = {
@@ -1054,7 +1053,7 @@ router.put('/:id(\\d+)/status', authenticateToken, requireStoreOwner, [
                     user_id: order.user_id,
                     updated_at: new Date()
                 };
-                req.io.emit('order_status_update', statusUpdateData);
+                // Send to user room only (avoid duplicate by not sending to all)
                 req.io.to(`user_${order.user_id}`).emit('order_status_update', statusUpdateData);
                 
                 const fs = require('fs');
@@ -1416,10 +1415,10 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
             ['delivered', id]
         );
 
-        // Notifications
+        // Notifications - only to specific rooms to avoid duplicates
         try {
             if (req.io) {
-                // Notify User and Admin about delivery
+                // Status update to user room only (not to all)
                 const statusUpdateData = {
                     id: id,
                     order_number: order.order_number,
@@ -1427,7 +1426,6 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
                     user_id: order.user_id,
                     updated_at: new Date()
                 };
-                req.io.emit('order_status_update', statusUpdateData);
                 req.io.to(`user_${order.user_id}`).emit('order_status_update', statusUpdateData);
 
                 // User notification
@@ -1463,7 +1461,7 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
                         message: `Thank you for choosing ServeNow! Your order ${order.order_number} has been completed and delivered.`,
                         timestamp: new Date()
                     };
-                    req.io.emit('order_completed', completedData);
+                    // Send to user room only (not to all)
                     req.io.to(`user_${order.user_id}`).emit('order_completed', completedData);
 
                     // Send Thanks Email
@@ -1595,7 +1593,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
             }
         }
 
-        // Notifications
+        // Notifications - only to specific rooms to avoid duplicates
         try {
             if (req.io) {
                 const paymentUpdateData = {
@@ -1605,7 +1603,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                     user_id: order.user_id,
                     timestamp: new Date()
                 };
-                req.io.emit('payment_status_update', paymentUpdateData);
+                // Send to user room only (not to all)
                 req.io.to(`user_${order.user_id}`).emit('payment_status_update', paymentUpdateData);
 
                 // User notification
@@ -1640,7 +1638,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                         message: `Thank you for choosing ServeNow! Your order ${order.order_number} has been completed and delivered.`,
                         timestamp: new Date()
                     };
-                    req.io.emit('order_completed', completedData);
+                    // Send to user room only (not to all)
                     req.io.to(`user_${order.user_id}`).emit('order_completed', completedData);
 
                     // Send Thanks Email
