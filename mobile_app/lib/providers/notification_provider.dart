@@ -348,7 +348,7 @@ class NotificationProvider with ChangeNotifier {
           ),
           backgroundColor: Colors.green.shade700,
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 10),
           showCloseIcon: true,
         ),
       );
