@@ -53,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _filteredStores = results[0];
           _categories = [
             {'id': null, 'name': 'All'},
-            ...results[1]
+            ...results[1],
           ];
           _isLoading = false;
         });
@@ -178,171 +178,185 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              // User Login Data Section
-              Selector<AuthProvider, User?>(
-                selector: (_, auth) => auth.user,
-                builder: (context, user, child) {
-                  if (user == null) return const SizedBox.shrink();
-                  return Container(
-                    margin: const EdgeInsets.all(16),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.blueAccent,
-                      borderRadius: BorderRadius.circular(15),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.blueAccent.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          'Welcome, ${user.firstName} ${user.lastName}!',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                // User Login Data Section
+                Selector<AuthProvider, User?>(
+                  selector: (_, auth) => auth.user,
+                  builder: (context, user, child) {
+                    if (user == null) return const SizedBox.shrink();
+                    return Container(
+                      margin: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blueAccent,
+                        borderRadius: BorderRadius.circular(15),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.blueAccent.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 22,
-                              backgroundColor: Colors.white,
-                              child: Text(
-                                user.firstName.isNotEmpty
-                                    ? user.firstName.substring(0, 1).toUpperCase()
-                                    : 'U',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.blueAccent,
-                                  fontWeight: FontWeight.bold,
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Welcome, ${user.firstName} ${user.lastName}!',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 22,
+                                backgroundColor: Colors.white,
+                                child: Text(
+                                  user.firstName.isNotEmpty
+                                      ? user.firstName
+                                            .substring(0, 1)
+                                            .toUpperCase()
+                                      : 'U',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.blueAccent,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const Spacer(),
-                            IconButton(
-                              icon: const Icon(Icons.key, color: Colors.white),
-                              onPressed: () {
-                                Navigator.of(context).pushNamed('/change-password');
-                              },
-                              tooltip: 'Change Password',
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                              const Spacer(),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.key,
+                                  color: Colors.white,
+                                ),
+                                onPressed: () {
+                                  Navigator.of(
+                                    context,
+                                  ).pushNamed('/change-password');
+                                },
+                                tooltip: 'Change Password',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
 
-              // Search Section
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search stores...',
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                      borderSide: BorderSide.none,
+                // Search Section
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search stores...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[200],
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                      ),
                     ),
-                    filled: true,
-                    fillColor: Colors.grey[200],
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                   ),
                 ),
-              ),
 
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text(
-                      'Browse\nStores',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    if (_categories.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
                       const Text(
-                        'Category wise',
+                        'Browse\nStores',
                         style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.w500,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              if (_categories.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: TabBar(
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    onTap: (index) {
-                      _fetchStoresByCategory(_categories[index]['id']);
-                    },
-                    tabs: _categories.map((cat) {
-                      return Tab(text: cat['name']);
-                    }).toList(),
-                    labelColor: Colors.blueAccent,
-                    unselectedLabelColor: Colors.grey,
-                    indicatorColor: Colors.blueAccent,
-                    dividerColor: Colors.transparent,
+                      const Spacer(),
+                      if (_categories.isNotEmpty)
+                        const Text(
+                          'Category wise',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
 
-              const SizedBox(height: 10),
+                const SizedBox(height: 10),
 
-              // Store Grid
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.only(top: 50.0),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_errorMessage != null)
-                Center(child: Text('Error: $_errorMessage'))
-              else if (_filteredStores.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(40.0),
-                    child: Text('No stores found in this category'),
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      childAspectRatio: 0.75, // Adjusted for 2-line name
-                      crossAxisSpacing: 10,
-                      mainAxisSpacing: 10,
+                if (_categories.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: TabBar(
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
+                      onTap: (index) {
+                        _fetchStoresByCategory(_categories[index]['id']);
+                      },
+                      tabs: _categories.map((cat) {
+                        return Tab(text: cat['name']);
+                      }).toList(),
+                      labelColor: Colors.blueAccent,
+                      unselectedLabelColor: Colors.grey,
+                      indicatorColor: Colors.blueAccent,
+                      dividerColor: Colors.transparent,
                     ),
-                    itemCount: _filteredStores.length,
-                    itemBuilder: (context, index) {
-                      final store = _filteredStores[index];
-                      return _buildStoreCard(store);
-                    },
                   ),
-                ),
-              const SizedBox(height: 20),
-            ],
+
+                const SizedBox(height: 10),
+
+                // Store Grid
+                if (_isLoading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 50.0),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_errorMessage != null)
+                  Center(child: Text('Error: $_errorMessage'))
+                else if (_filteredStores.isEmpty)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(40.0),
+                      child: Text('No stores found in this category'),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        childAspectRatio: 0.75, // Adjusted for 2-line name
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                      ),
+                      itemCount: _filteredStores.length,
+                      itemBuilder: (context, index) {
+                        final store = _filteredStores[index];
+                        return _buildStoreCard(store);
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 20),
+              ],
             ),
           ),
         ),
@@ -375,31 +389,54 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Status indicator above the image
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              decoration: BoxDecoration(
+                color:
+                    _checkIsOpen(store['opening_time'], store['closing_time'])
+                    ? Colors.green.shade100
+                    : Colors.red.shade100,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(15),
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  _checkIsOpen(store['opening_time'], store['closing_time'])
+                      ? '🟢 OPEN'
+                      : '🔴 CLOSED',
+                  style: TextStyle(
+                    color:
+                        _checkIsOpen(
+                          store['opening_time'],
+                          store['closing_time'],
+                        )
+                        ? Colors.green.shade800
+                        : Colors.red.shade800,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ),
             Expanded(
-              child: Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(15),
-                    ),
-                    child: Image.network(
-                      ApiService.getImageUrl(store['image_url']),
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (ctx, err, _) => Container(
-                        color: Colors.grey[300],
-                        child: const Center(
-                          child: Icon(Icons.store, size: 40, color: Colors.grey),
-                        ),
-                      ),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(15),
+                ),
+                child: Image.network(
+                  ApiService.getImageUrl(store['image_url']),
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (ctx, err, _) => Container(
+                    color: Colors.grey[300],
+                    child: const Center(
+                      child: Icon(Icons.store, size: 40, color: Colors.grey),
                     ),
                   ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: _buildStatusBadge(store),
-                  ),
-                ],
+                ),
               ),
             ),
             Padding(
@@ -456,11 +493,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Icon(
-                        Icons.timer_off,
-                        size: 12,
-                        color: Colors.red,
-                      ),
+                      const Icon(Icons.timer_off, size: 12, color: Colors.red),
                       const SizedBox(width: 2),
                       Text(
                         _formatTimeOnly(store['closing_time']),
@@ -522,24 +555,4 @@ class _HomeScreenState extends State<HomeScreen> {
       return false;
     }
   }
-
-  Widget _buildStatusBadge(dynamic store) {
-    final bool isOpen = _checkIsOpen(store['opening_time'], store['closing_time']);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: isOpen ? Colors.green : Colors.red,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        isOpen ? 'OPEN' : 'CLOSED',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 10,
-        ),
-      ),
-    );
-  }
-
 }

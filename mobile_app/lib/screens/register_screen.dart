@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/notifier.dart';
 import 'verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -55,9 +56,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Registration failed: ${e.toString()}')),
-      );
+      if (mounted) {
+        Notifier.error(context, e.toString());
+      }
     }
   }
 

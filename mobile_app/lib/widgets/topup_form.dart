@@ -65,7 +65,7 @@ class _TopupFormState extends State<TopupForm> {
 
     final amount = double.tryParse(_amountController.text);
     if (amount == null || amount <= 0) {
-      Notifier.error(context, 'Please enter a valid amount');
+      Notifier.error(context, 'Please enter a valid amount', sanitize: false);
       return;
     }
 
@@ -117,7 +117,9 @@ class _TopupFormState extends State<TopupForm> {
             const SizedBox(height: 8),
             TextFormField(
               controller: _amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: InputDecoration(
                 hintText: 'Enter amount (PKR)',
                 prefixText: 'PKR ',
@@ -177,7 +179,9 @@ class _TopupFormState extends State<TopupForm> {
                     if (index == widget.savedPaymentMethods.length) {
                       return _buildNewCardOption();
                     }
-                    return _buildSavedCardOption(widget.savedPaymentMethods[index]);
+                    return _buildSavedCardOption(
+                      widget.savedPaymentMethods[index],
+                    );
                   },
                 ),
               ),
@@ -222,10 +226,7 @@ class _TopupFormState extends State<TopupForm> {
                 },
                 title: const Text(
                   'Save this card for future payments',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF333333),
-                  ),
+                  style: TextStyle(fontSize: 13, color: Color(0xFF333333)),
                 ),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
@@ -236,11 +237,17 @@ class _TopupFormState extends State<TopupForm> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFF0F1FF),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF667eea).withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: const Color(0xFF667eea).withValues(alpha: 0.3),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.security, color: Color(0xFF667eea), size: 20),
+                    const Icon(
+                      Icons.security,
+                      color: Color(0xFF667eea),
+                      size: 20,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -289,8 +296,9 @@ class _TopupFormState extends State<TopupForm> {
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
                         ),
                       )
                     : const Text(
@@ -316,7 +324,9 @@ class _TopupFormState extends State<TopupForm> {
       child: Container(
         decoration: BoxDecoration(
           border: Border.all(
-            color: isSelected ? const Color(0xFF667eea) : const Color(0xFFDDDDDD),
+            color: isSelected
+                ? const Color(0xFF667eea)
+                : const Color(0xFFDDDDDD),
             width: isSelected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(8),
@@ -328,7 +338,9 @@ class _TopupFormState extends State<TopupForm> {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: isSelected ? const Color(0xFF667eea) : const Color(0xFF666666),
+              color: isSelected
+                  ? const Color(0xFF667eea)
+                  : const Color(0xFF666666),
             ),
           ),
         ),
@@ -350,7 +362,9 @@ class _TopupFormState extends State<TopupForm> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           border: Border.all(
-            color: isSelected ? const Color(0xFF667eea) : const Color(0xFFDDDDDD),
+            color: isSelected
+                ? const Color(0xFF667eea)
+                : const Color(0xFFDDDDDD),
             width: isSelected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(8),
@@ -365,7 +379,9 @@ class _TopupFormState extends State<TopupForm> {
                 Icon(
                   Icons.credit_card,
                   size: 20,
-                  color: isSelected ? const Color(0xFF667eea) : Colors.grey[600],
+                  color: isSelected
+                      ? const Color(0xFF667eea)
+                      : Colors.grey[600],
                 ),
                 const Spacer(),
                 if (pm.isPrimary)
@@ -382,14 +398,18 @@ class _TopupFormState extends State<TopupForm> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
-                color: isSelected ? const Color(0xFF667eea) : const Color(0xFF333333),
+                color: isSelected
+                    ? const Color(0xFF667eea)
+                    : const Color(0xFF333333),
               ),
             ),
             Text(
               pm.cardBrand?.toUpperCase() ?? 'CARD',
               style: TextStyle(
                 fontSize: 11,
-                color: isSelected ? const Color(0xFF667eea).withValues(alpha: 0.7) : Colors.grey[600],
+                color: isSelected
+                    ? const Color(0xFF667eea).withValues(alpha: 0.7)
+                    : Colors.grey[600],
               ),
             ),
           ],
@@ -411,7 +431,9 @@ class _TopupFormState extends State<TopupForm> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           border: Border.all(
-            color: isSelected ? const Color(0xFF667eea) : const Color(0xFFDDDDDD),
+            color: isSelected
+                ? const Color(0xFF667eea)
+                : const Color(0xFFDDDDDD),
             width: isSelected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(8),
@@ -432,14 +454,18 @@ class _TopupFormState extends State<TopupForm> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
-                color: isSelected ? const Color(0xFF667eea) : const Color(0xFF333333),
+                color: isSelected
+                    ? const Color(0xFF667eea)
+                    : const Color(0xFF333333),
               ),
             ),
             Text(
               'Add a new card',
               style: TextStyle(
                 fontSize: 11,
-                color: isSelected ? const Color(0xFF667eea).withValues(alpha: 0.7) : Colors.grey[600],
+                color: isSelected
+                    ? const Color(0xFF667eea).withValues(alpha: 0.7)
+                    : Colors.grey[600],
               ),
             ),
           ],

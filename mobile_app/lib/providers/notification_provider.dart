@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import '../services/api_service.dart';
+import '../services/notifier.dart';
 import 'auth_provider.dart';
 
 class Notification {
@@ -39,7 +40,7 @@ class NotificationProvider with ChangeNotifier {
   socket_io.Socket? _socket;
   final GlobalKey<NavigatorState> navigatorKey;
   AuthProvider? _authProvider;
-  
+
   final List<Notification> _notifications = [];
   static const int _maxNotifications = 20;
 
@@ -65,7 +66,7 @@ class NotificationProvider with ChangeNotifier {
     );
 
     _notifications.insert(0, notification);
-    
+
     if (_notifications.length > _maxNotifications) {
       _notifications.removeRange(_maxNotifications, _notifications.length);
     }
@@ -112,21 +113,27 @@ class NotificationProvider with ChangeNotifier {
 
   void _identifyUser() {
     if (_socket == null || !_socket!.connected) {
-      debugPrint('[NotificationProvider] Socket not connected, cannot identify user');
+      debugPrint(
+        '[NotificationProvider] Socket not connected, cannot identify user',
+      );
       return;
     }
-    
+
     if (_authProvider != null && _authProvider!.user != null) {
       final userId = _authProvider!.user!.id;
       final userType = _authProvider!.user!.userType;
-      
+
       _socket!.emit('identify_user', {
         'user_id': userId,
         'user_type': userType,
       });
-      debugPrint('[NotificationProvider] User identified: ID=$userId, Type=$userType, SocketID=${_socket?.id}');
+      debugPrint(
+        '[NotificationProvider] User identified: ID=$userId, Type=$userType, SocketID=${_socket?.id}',
+      );
     } else {
-      debugPrint('[NotificationProvider] Cannot identify: auth or user not available');
+      debugPrint(
+        '[NotificationProvider] Cannot identify: auth or user not available',
+      );
     }
   }
 
@@ -137,17 +144,24 @@ class NotificationProvider with ChangeNotifier {
     String baseUrl = ApiService.baseUrl;
     try {
       final uri = Uri.parse(baseUrl);
-      final origin = '${uri.scheme.isEmpty ? 'http' : uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
-      baseUrl = origin.endsWith('/') ? origin.substring(0, origin.length - 1) : origin;
+      final origin =
+          '${uri.scheme.isEmpty ? 'http' : uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+      baseUrl = origin.endsWith('/')
+          ? origin.substring(0, origin.length - 1)
+          : origin;
     } catch (e) {
-      debugPrint('[NotificationProvider] Invalid baseUrl "$baseUrl", using as-is. Error: $e');
+      debugPrint(
+        '[NotificationProvider] Invalid baseUrl "$baseUrl", using as-is. Error: $e',
+      );
       if (baseUrl.endsWith('/')) {
         baseUrl = baseUrl.substring(0, baseUrl.length - 1);
       }
     }
 
-    debugPrint('[NotificationProvider] Initializing socket connection to: $baseUrl');
-    
+    debugPrint(
+      '[NotificationProvider] Initializing socket connection to: $baseUrl',
+    );
+
     _socket = socket_io.io(
       baseUrl,
       socket_io.OptionBuilder()
@@ -166,23 +180,27 @@ class NotificationProvider with ChangeNotifier {
       debugPrint('[NotificationProvider] Socket connected: ${_socket?.id}');
       _identifyUser();
     });
-    
+
     _socket!.onReconnect((_) {
       debugPrint('[NotificationProvider] Socket reconnected: ${_socket?.id}');
       _identifyUser();
     });
     _socket!.onReconnectAttempt((attempt) {
-      debugPrint('[NotificationProvider] Socket reconnect attempt: $attempt to $baseUrl');
+      debugPrint(
+        '[NotificationProvider] Socket reconnect attempt: $attempt to $baseUrl',
+      );
     });
 
     _socket!.onConnectError((data) {
-      debugPrint('[NotificationProvider] Socket connection error to $baseUrl: $data');
+      debugPrint(
+        '[NotificationProvider] Socket connection error to $baseUrl: $data',
+      );
     });
 
     _socket!.onError((data) {
       debugPrint('[NotificationProvider] Socket error: $data');
     });
-    
+
     _socket!.onDisconnect((_) {
       debugPrint('[NotificationProvider] Socket disconnected');
     });
@@ -192,7 +210,8 @@ class NotificationProvider with ChangeNotifier {
       if (_authProvider?.isAdmin == true) {
         addNotification(
           title: 'New User Registered',
-          message: '${data['first_name']} ${data['last_name']} (${data['user_type']}) has joined.',
+          message:
+              '${data['first_name']} ${data['last_name']} (${data['user_type']}) has joined.',
           type: 'success',
           icon: 'person_add',
         );
@@ -204,7 +223,8 @@ class NotificationProvider with ChangeNotifier {
       if (_authProvider?.isAdmin == true) {
         addNotification(
           title: 'New Order Placed',
-          message: 'Order #${data['order_number']} received. Total: PKR ${data['total_amount']}',
+          message:
+              'Order #${data['order_number']} received. Total: PKR ${data['total_amount']}',
           type: 'success',
           icon: 'shopping_bag',
         );
@@ -216,7 +236,8 @@ class NotificationProvider with ChangeNotifier {
       if (_authProvider?.isAdmin == true) {
         addNotification(
           title: 'Order Assigned',
-          message: 'Order #${data['order_number']} assigned to ${data['rider_name']}',
+          message:
+              'Order #${data['order_number']} assigned to ${data['rider_name']}',
           type: 'info',
           icon: 'assignment',
         );
@@ -224,25 +245,30 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('order_status_update', (data) {
-      debugPrint('Socket: order_status_update received for user ${data['user_id']}');
+      debugPrint(
+        'Socket: order_status_update received for user ${data['user_id']}',
+      );
       if (_authProvider?.isAdmin == true) {
         String icon = 'schedule';
         if (data['status'] == 'delivered') icon = 'check_circle';
         if (data['status'] == 'confirmed') icon = 'check';
-        
+
         addNotification(
-          title: 'Order ${data['status']?.toString().toUpperCase() ?? 'UPDATED'}',
+          title:
+              'Order ${data['status']?.toString().toUpperCase() ?? 'UPDATED'}',
           message: 'Order #${data['order_number']}',
           type: 'info',
           icon: icon,
         );
-      } else if (_authProvider?.user?.id.toString() == data['user_id'].toString()) {
+      } else if (_authProvider?.user?.id.toString() ==
+          data['user_id'].toString()) {
         String icon = 'schedule';
         if (data['status'] == 'delivered') icon = 'check_circle';
         if (data['status'] == 'confirmed') icon = 'check';
-        
+
         addNotification(
-          title: 'Order ${data['status']?.toString().toUpperCase() ?? 'UPDATED'}',
+          title:
+              'Order ${data['status']?.toString().toUpperCase() ?? 'UPDATED'}',
           message: 'Your order #${data['order_number']}',
           type: 'info',
           icon: icon,
@@ -253,8 +279,10 @@ class NotificationProvider with ChangeNotifier {
     _socket!.on('rider_notification', (data) {
       final riderId = data['rider_id'].toString();
       final currentUserId = _authProvider?.user?.id.toString();
-      debugPrint('[NotificationProvider] rider_notification: received=$riderId, currentUser=$currentUserId, isRider=${_authProvider?.isRider}');
-      
+      debugPrint(
+        '[NotificationProvider] rider_notification: received=$riderId, currentUser=$currentUserId, isRider=${_authProvider?.isRider}',
+      );
+
       if (_authProvider?.isRider == true && currentUserId == riderId) {
         debugPrint('[NotificationProvider] Showing rider notification');
         addNotification(
@@ -264,15 +292,19 @@ class NotificationProvider with ChangeNotifier {
           icon: 'assignment_turned_in',
         );
       } else {
-        debugPrint('[NotificationProvider] Rider notification filtered out - not matching rider');
+        debugPrint(
+          '[NotificationProvider] Rider notification filtered out - not matching rider',
+        );
       }
     });
 
     _socket!.on('user_notification', (data) {
       final userId = data['user_id'].toString();
       final currentUserId = _authProvider?.user?.id.toString();
-      debugPrint('[NotificationProvider] user_notification: received=$userId, currentUser=$currentUserId');
-      
+      debugPrint(
+        '[NotificationProvider] user_notification: received=$userId, currentUser=$currentUserId',
+      );
+
       if (currentUserId == userId) {
         debugPrint('[NotificationProvider] Showing user notification');
         addNotification(
@@ -282,22 +314,29 @@ class NotificationProvider with ChangeNotifier {
           icon: 'inventory_2',
         );
       } else {
-        debugPrint('[NotificationProvider] User notification filtered out - not matching user');
+        debugPrint(
+          '[NotificationProvider] User notification filtered out - not matching user',
+        );
       }
     });
 
     _socket!.on('payment_status_update', (data) {
-      debugPrint('Socket: payment_status_update received for user ${data['user_id']}');
+      debugPrint(
+        'Socket: payment_status_update received for user ${data['user_id']}',
+      );
       if (_authProvider?.isAdmin == true) {
         addNotification(
-          title: 'Payment ${data['payment_status'] == 'paid' ? 'Received' : 'Update'}',
+          title:
+              'Payment ${data['payment_status'] == 'paid' ? 'Received' : 'Update'}',
           message: 'Order #${data['order_number']}',
           type: data['payment_status'] == 'paid' ? 'success' : 'info',
           icon: data['payment_status'] == 'paid' ? 'check_circle' : 'payment',
         );
-      } else if (_authProvider?.user?.id.toString() == data['user_id'].toString()) {
+      } else if (_authProvider?.user?.id.toString() ==
+          data['user_id'].toString()) {
         addNotification(
-          title: 'Payment ${data['payment_status'] == 'paid' ? 'Received' : 'Update'}',
+          title:
+              'Payment ${data['payment_status'] == 'paid' ? 'Received' : 'Update'}',
           message: 'Order #${data['order_number']}',
           type: data['payment_status'] == 'paid' ? 'success' : 'info',
           icon: data['payment_status'] == 'paid' ? 'check_circle' : 'payment',
@@ -306,7 +345,9 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('order_completed', (data) {
-      debugPrint('Socket: order_completed received for user ${data['user_id']}');
+      debugPrint(
+        'Socket: order_completed received for user ${data['user_id']}',
+      );
       if (_authProvider?.isAdmin == true) {
         addNotification(
           title: 'Order Fully Completed',
@@ -314,10 +355,12 @@ class NotificationProvider with ChangeNotifier {
           type: 'success',
           icon: 'task_alt',
         );
-      } else if (_authProvider?.user?.id.toString() == data['user_id'].toString()) {
+      } else if (_authProvider?.user?.id.toString() ==
+          data['user_id'].toString()) {
         addNotification(
           title: 'Order Completed',
-          message: data['message'] ?? 'Your order has been delivered. Thank you!',
+          message:
+              data['message'] ?? 'Your order has been delivered. Thank you!',
           type: 'success',
           icon: 'check_circle',
         );
@@ -330,27 +373,10 @@ class NotificationProvider with ChangeNotifier {
   void _showNotification(String title, String message) {
     final context = navigatorKey.currentContext;
     if (context != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              Text(message, style: const TextStyle(color: Colors.white)),
-            ],
-          ),
-          backgroundColor: Colors.green.shade700,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 10),
-          showCloseIcon: true,
-        ),
+      Notifier.info(
+        context,
+        '$title: $message',
+        duration: const Duration(seconds: 10),
       );
     }
   }

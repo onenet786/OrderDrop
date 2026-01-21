@@ -173,8 +173,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     // Check if stores are open
     try {
-      final uniqueStoreIds =
-          cart.items.map((e) => e.product.storeId).whereType<int>().toSet();
+      final uniqueStoreIds = cart.items
+          .map((e) => e.product.storeId)
+          .whereType<int>()
+          .toSet();
 
       for (final storeId in uniqueStoreIds) {
         final data = await ApiService.getStoreDetails(storeId);
@@ -189,11 +191,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               context,
               'The store "${store['name']}" is currently closed. You cannot place orders at this time.',
               duration: const Duration(seconds: 4),
+              sanitize: false,
             );
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/home',
-              (route) => false,
-            );
+            Navigator.of(
+              context,
+            ).pushNamedAndRemoveUntil('/home', (route) => false);
             return;
           }
         }
@@ -208,6 +210,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         Notifier.error(
           context,
           'Insufficient wallet balance. Need PKR ${(cart.totalAmount - _walletBalance!).toStringAsFixed(2)} more.',
+          sanitize: false,
         );
         return;
       }
@@ -239,9 +242,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       String combinedInstructions = _instructionsController.text;
       if (_nameController.text.isNotEmpty || _phoneController.text.isNotEmpty) {
-        String contactInfo = 'Contact: ${_nameController.text} (${_phoneController.text})';
-        combinedInstructions = combinedInstructions.isEmpty 
-            ? contactInfo 
+        String contactInfo =
+            'Contact: ${_nameController.text} (${_phoneController.text})';
+        combinedInstructions = combinedInstructions.isEmpty
+            ? contactInfo
             : '$contactInfo\n$combinedInstructions';
       }
 
@@ -268,7 +272,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'Your order has been successfully placed.',
         duration: const Duration(seconds: 3),
       );
-      Navigator.of(context).pushNamedAndRemoveUntil('/orders', (route) => false);
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/orders', (route) => false);
     } catch (e) {
       if (!mounted) return;
       Notifier.error(context, 'Failed to place order: $e');
@@ -350,7 +356,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     }
 
                                     final numStores = itemsByStore.length;
-                                    
+
                                     double getDeliveryFee(int stores) {
                                       if (stores == 1) {
                                         return 70;
@@ -362,27 +368,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         return 70;
                                       }
                                     }
-                                    
-                                    final deliveryFee = getDeliveryFee(numStores);
-                                    double grandTotal = cart.totalAmount + deliveryFee;
+
+                                    final deliveryFee = getDeliveryFee(
+                                      numStores,
+                                    );
+                                    double grandTotal =
+                                        cart.totalAmount + deliveryFee;
 
                                     List<Widget> allChildren = [];
-                                    
+
                                     for (var entry in itemsByStore.entries) {
-                                      double storeSubtotal = entry.value.fold(0.0, (sum, item) => sum + item.total);
-                                      
+                                      double storeSubtotal = entry.value.fold(
+                                        0.0,
+                                        (sum, item) => sum + item.total,
+                                      );
+
                                       allChildren.add(
                                         Padding(
-                                          padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                                          padding: const EdgeInsets.only(
+                                            top: 8.0,
+                                            bottom: 8.0,
+                                          ),
                                           child: Container(
                                             width: double.infinity,
                                             padding: const EdgeInsets.all(8),
                                             decoration: BoxDecoration(
-                                              color: Theme.of(context).primaryColor.withAlpha((0.15 * 255).round()),
-                                              borderRadius: BorderRadius.circular(4),
+                                              color: Theme.of(context)
+                                                  .primaryColor
+                                                  .withAlpha(
+                                                    (0.15 * 255).round(),
+                                                  ),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
                                               border: Border(
                                                 left: BorderSide(
-                                                  color: Theme.of(context).primaryColor,
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).primaryColor,
                                                   width: 3,
                                                 ),
                                               ),
@@ -392,37 +414,50 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                               style: TextStyle(
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 14,
-                                                color: Theme.of(context).primaryColor,
+                                                color: Theme.of(
+                                                  context,
+                                                ).primaryColor,
                                               ),
                                             ),
                                           ),
                                         ),
                                       );
-                                      
+
                                       for (var item in entry.value) {
                                         allChildren.add(
                                           Padding(
-                                            padding: const EdgeInsets.symmetric(vertical: 6.0),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 6.0,
+                                            ),
                                             child: Row(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Expanded(
                                                   child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
                                                     children: [
                                                       Text(
                                                         item.product.name,
-                                                        style: const TextStyle(fontWeight: FontWeight.w500),
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
                                                         maxLines: 2,
-                                                        overflow: TextOverflow.ellipsis,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
                                                       Text(
-                                                        item.variantLabel != null
+                                                        item.variantLabel !=
+                                                                null
                                                             ? '${item.variantLabel} • ${item.quantity} x PKR ${item.unitPrice}'
                                                             : '${item.quantity} x PKR ${item.unitPrice}',
                                                         style: TextStyle(
                                                           fontSize: 12,
-                                                          color: Colors.grey[600],
+                                                          color:
+                                                              Colors.grey[600],
                                                         ),
                                                       ),
                                                     ],
@@ -440,13 +475,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           ),
                                         );
                                       }
-                                      
+
                                       allChildren.add(
                                         Padding(
-                                          padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
+                                          padding: const EdgeInsets.only(
+                                            top: 8.0,
+                                            bottom: 4.0,
+                                          ),
                                           child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Expanded(
                                                 child: Text(
@@ -454,7 +494,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.w600,
                                                   ),
-                                                  overflow: TextOverflow.ellipsis,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                   maxLines: 2,
                                                 ),
                                               ),
@@ -469,18 +510,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           ),
                                         ),
                                       );
-                                      
-                                      allChildren.add(const Divider(height: 12));
+
+                                      allChildren.add(
+                                        const Divider(height: 12),
+                                      );
                                     }
-                                    
+
                                     allChildren.add(const SizedBox(height: 8));
-                                    
+
                                     allChildren.add(
                                       Padding(
-                                        padding: const EdgeInsets.only(bottom: 8.0),
+                                        padding: const EdgeInsets.only(
+                                          bottom: 8.0,
+                                        ),
                                         child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Expanded(
                                               child: Text(
@@ -506,7 +553,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         ),
                                       ),
                                     );
-                                    
+
                                     allChildren.add(
                                       Container(
                                         padding: const EdgeInsets.only(top: 8),
@@ -519,8 +566,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           ),
                                         ),
                                         child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Expanded(
                                               child: const Text(
@@ -539,16 +588,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w700,
-                                                color: Theme.of(context).colorScheme.primary,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.primary,
                                               ),
                                             ),
                                           ],
                                         ),
                                       ),
                                     );
-                                    
+
                                     return Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: allChildren,
                                     );
                                   },

@@ -66,6 +66,7 @@ class _StoreScreenState extends State<StoreScreen> {
         context,
         'This store is currently closed. You cannot place orders at this time.',
         duration: const Duration(seconds: 4),
+        sanitize: false,
       );
       Navigator.of(context).pop(); // Go back to main home screen
       return;
@@ -80,9 +81,10 @@ class _StoreScreenState extends State<StoreScreen> {
 
     // Check if adding more exceeds stock
     final existingItem = cart.items.firstWhere(
-      (item) => item.product.id == product.id && 
-                item.variant?.sizeId == variant?.sizeId && 
-                item.variant?.unitId == variant?.unitId,
+      (item) =>
+          item.product.id == product.id &&
+          item.variant?.sizeId == variant?.sizeId &&
+          item.variant?.unitId == variant?.unitId,
       orElse: () => CartItem(product: product, quantity: 0),
     );
 
@@ -167,7 +169,10 @@ class _StoreScreenState extends State<StoreScreen> {
           }
 
           final store = data['store'];
-          final bool isOpen = _checkIsOpen(store['opening_time'], store['closing_time']);
+          final bool isOpen = _checkIsOpen(
+            store['opening_time'],
+            store['closing_time'],
+          );
           final productsList = data['products'] as List<dynamic>? ?? [];
           final products = productsList
               .map((json) => Product.fromJson(json))
@@ -184,151 +189,189 @@ class _StoreScreenState extends State<StoreScreen> {
             onRefresh: _refresh,
             child: CustomScrollView(
               slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (ApiService.getImageUrl(store['image_url'])
-                            .isNotEmpty)
-                          Stack(
-                            children: [
-                              Image.network(
-                                ApiService.getImageUrl(store['image_url']),
-                                height: 200,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder:
-                                    (ctx, err, _) => Container(
-                                      height: 200,
-                                      color: Colors.grey[300],
-                                      child: const Icon(
-                                        Icons.store,
-                                        size: 80,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                              ),
-                              Positioned(
-                                top: 12,
-                                right: 12,
-                                child: _buildStatusButton(store),
-                              ),
-                            ],
-                          ),
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                store['name'],
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.location_on,
-                                    size: 16,
-                                    color: Colors.grey,
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (ApiService.getImageUrl(
+                            store['image_url'],
+                          ).isNotEmpty)
+                            Column(
+                              children: [
+                                // Status indicator above the image
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
                                   ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
+                                  decoration: BoxDecoration(
+                                    color:
+                                        _checkIsOpen(
+                                          store['opening_time'],
+                                          store['closing_time'],
+                                        )
+                                        ? Colors.green.shade100
+                                        : Colors.red.shade100,
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(15),
+                                      topRight: Radius.circular(15),
+                                    ),
+                                  ),
+                                  child: Center(
                                     child: Text(
-                                      store['location'],
-                                      style: const TextStyle(
-                                        color: Colors.grey,
+                                      _checkIsOpen(
+                                            store['opening_time'],
+                                            store['closing_time'],
+                                          )
+                                          ? '🟢 OPEN'
+                                          : '🔴 CLOSED',
+                                      style: TextStyle(
+                                        color:
+                                            _checkIsOpen(
+                                              store['opening_time'],
+                                              store['closing_time'],
+                                            )
+                                            ? Colors.green.shade800
+                                            : Colors.red.shade800,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.access_time,
-                                    size: 16,
-                                    color: Colors.green,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Open: ${_formatTimeOnly(store['opening_time'])}',
-                                    style: const TextStyle(
+                                ),
+                                Image.network(
+                                  ApiService.getImageUrl(store['image_url']),
+                                  height: 200,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (ctx, err, _) => Container(
+                                    height: 200,
+                                    color: Colors.grey[300],
+                                    child: const Icon(
+                                      Icons.store,
+                                      size: 80,
                                       color: Colors.grey,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  const SizedBox(width: 16),
-                                  const Icon(
-                                    Icons.timer_off,
-                                    size: 16,
-                                    color: Colors.red,
+                                ),
+                              ],
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  store['name'],
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Close: ${_formatTimeOnly(store['closing_time'])}',
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              if (store['rating'] != null)
+                                ),
+                                const SizedBox(height: 8),
                                 Row(
                                   children: [
                                     const Icon(
-                                      Icons.star,
+                                      Icons.location_on,
                                       size: 16,
-                                      color: Colors.amber,
+                                      color: Colors.grey,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        store['location'],
+                                        style: const TextStyle(
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.access_time,
+                                      size: 16,
+                                      color: Colors.green,
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      '${store['rating']}',
+                                      'Open: ${_formatTimeOnly(store['opening_time'])}',
                                       style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    const Icon(
+                                      Icons.timer_off,
+                                      size: 16,
+                                      color: Colors.red,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Close: ${_formatTimeOnly(store['closing_time'])}',
+                                      style: const TextStyle(
+                                        color: Colors.grey,
+                                        fontSize: 14,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ],
                                 ),
-                            ],
+                                const SizedBox(height: 8),
+                                if (store['rating'] != null)
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.star,
+                                        size: 16,
+                                        color: Colors.amber,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${store['rating']}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Text(
-                    'Products',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Text(
+                      'Products',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 10)),
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, rowIndex) {
+                const SliverToBoxAdapter(child: SizedBox(height: 10)),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate((context, rowIndex) {
                       final rowItems = chunkedProducts[rowIndex];
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
@@ -359,13 +402,11 @@ class _StoreScreenState extends State<StoreScreen> {
                           ],
                         ),
                       );
-                    },
-                    childCount: chunkedProducts.length,
+                    }, childCount: chunkedProducts.length),
                   ),
                 ),
-              ),
-              const SliverPadding(padding: EdgeInsets.only(bottom: 50)),
-            ],
+                const SliverPadding(padding: EdgeInsets.only(bottom: 50)),
+              ],
             ),
           );
         },
@@ -415,25 +456,6 @@ class _StoreScreenState extends State<StoreScreen> {
     }
   }
 
-  Widget _buildStatusButton(dynamic store) {
-    final bool isOpen = _checkIsOpen(store['opening_time'], store['closing_time']);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: isOpen ? Colors.green : Colors.red,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        isOpen ? 'OPEN' : 'CLOSED',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 14,
-        ),
-      ),
-    );
-  }
-
   Widget _buildProductCard(
     BuildContext context,
     Product product,
@@ -441,17 +463,16 @@ class _StoreScreenState extends State<StoreScreen> {
     bool isOpen,
   ) {
     final variants = product.sizeVariants;
-    final selectedVariant =
-        variants.isNotEmpty
-            ? (() {
-              final selectedKey = _selectedVariantKeyByProductId[product.id];
-              if (selectedKey == null) return variants.first;
-              return variants.firstWhere(
-                (v) => _variantKey(v) == selectedKey,
-                orElse: () => variants.first,
-              );
-            })()
-            : null;
+    final selectedVariant = variants.isNotEmpty
+        ? (() {
+            final selectedKey = _selectedVariantKeyByProductId[product.id];
+            if (selectedKey == null) return variants.first;
+            return variants.firstWhere(
+              (v) => _variantKey(v) == selectedKey,
+              orElse: () => variants.first,
+            );
+          })()
+        : null;
     final displayPrice = selectedVariant?.price ?? product.price;
 
     if (crossAxisCount == 1) {
@@ -473,10 +494,8 @@ class _StoreScreenState extends State<StoreScreen> {
                       ? Image.network(
                           ApiService.getImageUrl(product.imageUrl),
                           fit: BoxFit.cover,
-                          errorBuilder: (ctx, err, _) => const Icon(
-                            Icons.image_not_supported,
-                            size: 30,
-                          ),
+                          errorBuilder: (ctx, err, _) =>
+                              const Icon(Icons.image_not_supported, size: 30),
                         )
                       : Container(
                           color: Colors.grey[200],
@@ -546,13 +565,15 @@ class _StoreScreenState extends State<StoreScreen> {
                               runSpacing: 4,
                               children: variants.map((v) {
                                 final key = _variantKey(v);
-                                final isSelected = selectedVariant != null &&
+                                final isSelected =
+                                    selectedVariant != null &&
                                     _variantKey(selectedVariant) == key;
                                 return InkWell(
                                   onTap: () {
                                     setState(() {
                                       _selectedVariantKeyByProductId[product
-                                          .id] = key;
+                                              .id] =
+                                          key;
                                     });
                                   },
                                   child: Row(
@@ -588,14 +609,20 @@ class _StoreScreenState extends State<StoreScreen> {
                         height: 32,
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () =>
-                              _addToCart(context, product, selectedVariant, isOpen: isOpen),
+                          onPressed: () => _addToCart(
+                            context,
+                            product,
+                            selectedVariant,
+                            isOpen: isOpen,
+                          ),
                           style: ElevatedButton.styleFrom(
                             padding: EdgeInsets.zero,
                             backgroundColor: Colors.blueAccent,
                             foregroundColor: Colors.white,
                             textStyle: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.bold),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           child: const Text('Add to Cart'),
                         ),
@@ -629,10 +656,8 @@ class _StoreScreenState extends State<StoreScreen> {
                       ApiService.getImageUrl(product.imageUrl),
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      errorBuilder: (ctx, err, _) => const Icon(
-                        Icons.image_not_supported,
-                        size: 30,
-                      ),
+                      errorBuilder: (ctx, err, _) =>
+                          const Icon(Icons.image_not_supported, size: 30),
                     )
                   : Container(
                       color: Colors.grey[200],
@@ -678,8 +703,7 @@ class _StoreScreenState extends State<StoreScreen> {
                     onChanged: (value) {
                       if (value != null) {
                         setState(() {
-                          _selectedVariantKeyByProductId[product.id] =
-                              value;
+                          _selectedVariantKeyByProductId[product.id] = value;
                         });
                       }
                     },
@@ -689,13 +713,13 @@ class _StoreScreenState extends State<StoreScreen> {
                       alignment: WrapAlignment.start,
                       children: variants.map((v) {
                         final key = _variantKey(v);
-                        final isSelected = selectedVariant != null &&
+                        final isSelected =
+                            selectedVariant != null &&
                             _variantKey(selectedVariant) == key;
                         return InkWell(
                           onTap: () {
                             setState(() {
-                              _selectedVariantKeyByProductId[product.id] =
-                                  key;
+                              _selectedVariantKeyByProductId[product.id] = key;
                             });
                           },
                           child: Column(
@@ -709,10 +733,8 @@ class _StoreScreenState extends State<StoreScreen> {
                                   materialTapTargetSize:
                                       MaterialTapTargetSize.shrinkWrap,
                                   visualDensity: const VisualDensity(
-                                    horizontal:
-                                        VisualDensity.minimumDensity,
-                                    vertical:
-                                        VisualDensity.minimumDensity,
+                                    horizontal: VisualDensity.minimumDensity,
+                                    vertical: VisualDensity.minimumDensity,
                                   ),
                                 ),
                               ),
@@ -750,7 +772,12 @@ class _StoreScreenState extends State<StoreScreen> {
                       elevation: 0,
                     ),
                     onPressed: product.isAvailable
-                        ? () => _addToCart(context, product, selectedVariant, isOpen: isOpen)
+                        ? () => _addToCart(
+                            context,
+                            product,
+                            selectedVariant,
+                            isOpen: isOpen,
+                          )
                         : null,
                     child: Text(
                       product.isAvailable ? 'ADD' : 'N/A',

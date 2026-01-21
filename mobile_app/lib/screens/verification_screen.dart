@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/notifier.dart';
 
 class VerificationScreen extends StatefulWidget {
   final String email;
@@ -40,9 +41,9 @@ class _VerificationScreenState extends State<VerificationScreen> {
       // Assuming route '/' is login or landing
       
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      if (mounted) {
+        Notifier.error(context, e.toString());
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -57,9 +58,9 @@ class _VerificationScreenState extends State<VerificationScreen> {
         const SnackBar(content: Text('Verification code sent!')),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      if (mounted) {
+        Notifier.error(context, e.toString());
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

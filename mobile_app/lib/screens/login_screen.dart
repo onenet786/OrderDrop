@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/notifier.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -35,9 +36,9 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.of(context).pushReplacementNamed('/home');
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Login failed: ${e.toString()}')));
+      if (mounted) {
+        Notifier.error(context, e.toString());
+      }
     }
   }
 
@@ -182,9 +183,22 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: () {
                               Navigator.of(context).pushNamed('/register');
                             },
-                            child: const Text(
-                              'Don\'t have an account? Register here',
-                              style: TextStyle(color: Colors.blueAccent),
+                            child: RichText(
+                              text: const TextSpan(
+                                text: 'Don\'t have an account? ',
+                                style: TextStyle(color: Colors.blueAccent),
+                                children: [
+                                  TextSpan(
+                                    text: 'Register here',
+                                    style: TextStyle(
+                                      color: Color.fromARGB(255, 8, 91, 233),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ],
