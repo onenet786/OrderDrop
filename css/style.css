@@ -716,6 +716,52 @@ body.image-fit-fill .product-image img { object-fit: fill !important; }
     padding: 1.5rem;
     position: relative;
     z-index: 2;
+    overflow: hidden;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Variant selector styles - prevent overflow */
+.variant-selector {
+    overflow: hidden;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.variant-selector-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.variant-options {
+    overflow: hidden;
+    flex-wrap: wrap;
+}
+
+.variant-option {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.variant-option span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+    max-width: 100%;
+}
+
+.variant-price {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.variant-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .product-card h4 {
