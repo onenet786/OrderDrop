@@ -169,10 +169,7 @@ class _StoreScreenState extends State<StoreScreen> {
           }
 
           final store = data['store'];
-          final bool isOpen = _checkIsOpen(
-            store['opening_time'],
-            store['closing_time'],
-          );
+          final bool isOpen = store['is_open'] == true || store['is_open'] == 1;
           final productsList = data['products'] as List<dynamic>? ?? [];
           final products = productsList
               .map((json) => Product.fromJson(json))
@@ -214,10 +211,7 @@ class _StoreScreenState extends State<StoreScreen> {
                                   ),
                                   decoration: BoxDecoration(
                                     color:
-                                        _checkIsOpen(
-                                          store['opening_time'],
-                                          store['closing_time'],
-                                        )
+                                        isOpen
                                         ? Colors.green.shade100
                                         : Colors.red.shade100,
                                     borderRadius: const BorderRadius.only(
@@ -227,18 +221,12 @@ class _StoreScreenState extends State<StoreScreen> {
                                   ),
                                   child: Center(
                                     child: Text(
-                                      _checkIsOpen(
-                                            store['opening_time'],
-                                            store['closing_time'],
-                                          )
+                                      isOpen
                                           ? '🟢 OPEN'
                                           : '🔴 CLOSED',
                                       style: TextStyle(
                                         color:
-                                            _checkIsOpen(
-                                              store['opening_time'],
-                                              store['closing_time'],
-                                            )
+                                            isOpen
                                             ? Colors.green.shade800
                                             : Colors.red.shade800,
                                         fontWeight: FontWeight.bold,
@@ -423,38 +411,6 @@ class _StoreScreenState extends State<StoreScreen> {
     return time.toString();
   }
 
-  bool _checkIsOpen(dynamic openTimeStr, dynamic closeTimeStr) {
-    if (openTimeStr == null || closeTimeStr == null) return false;
-
-    try {
-      final now = DateTime.now();
-      final currentTime = TimeOfDay.fromDateTime(now);
-
-      TimeOfDay parseTime(String timeStr) {
-        final parts = timeStr.split(':');
-        return TimeOfDay(
-          hour: int.parse(parts[0]),
-          minute: int.parse(parts[1]),
-        );
-      }
-
-      final openTime = parseTime(openTimeStr.toString());
-      final closeTime = parseTime(closeTimeStr.toString());
-
-      final double nowDouble = currentTime.hour + currentTime.minute / 60.0;
-      final double openDouble = openTime.hour + openTime.minute / 60.0;
-      final double closeDouble = closeTime.hour + closeTime.minute / 60.0;
-
-      if (openDouble <= closeDouble) {
-        return nowDouble >= openDouble && nowDouble <= closeDouble;
-      } else {
-        // Handle overnight hours (e.g., 22:00 - 04:00)
-        return nowDouble >= openDouble || nowDouble <= closeDouble;
-      }
-    } catch (e) {
-      return false;
-    }
-  }
 
   Widget _buildProductCard(
     BuildContext context,

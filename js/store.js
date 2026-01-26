@@ -36,13 +36,24 @@ function displayStoreInfo(store) {
         }
     }
     
+    const isOpen = store.is_open === true || store.is_open === 1;
+    
     document.getElementById('storeInfo').innerHTML = `
-        <img src="${logoSrc}" alt="${store.name}" class="store-logo" onerror="this.src='/images/servenow.png'">
-        <div class="store-info">
-            <h2>${store.name}</h2>
-            <p><i class="fas fa-map-marker-alt"></i> ${store.location || 'Location not available'}</p>
-            <p><i class="fas fa-star"></i> ${(parseFloat(store.rating) || 0).toFixed(1)} Rating</p>
-            <p><i class="fas fa-clock"></i> ${store.delivery_time || '30-45'} min delivery</p>
+        <div class="store-banner-header">
+            <div class="store-status-badge ${isOpen ? 'status-open' : 'status-closed'}">
+                <i class="fas ${isOpen ? 'fa-door-open' : 'fa-door-closed'}"></i>
+                ${isOpen ? 'Open' : 'Closed'}
+            </div>
+            <div class="store-banner-content">
+                <img src="${logoSrc}" alt="${store.name}" class="store-logo" onerror="this.onerror=null;this.src='/images/servenow.png'">
+                <div class="store-info">
+                    <h2>${store.name}</h2>
+                    <p><i class="fas fa-map-marker-alt"></i> ${store.location || 'Location not available'}</p>
+                    <p><i class="fas fa-star"></i> ${(parseFloat(store.rating) || 0).toFixed(1)} Rating</p>
+                    <p><i class="fas fa-clock"></i> ${store.delivery_time || '30-45'} min delivery</p>
+                    <p><i class="fas fa-business-time"></i> ${store.opening_time || '--:--'} - ${store.closing_time || '--:--'}</p>
+                </div>
+            </div>
         </div>
     `;
 }

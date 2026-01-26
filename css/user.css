@@ -1019,11 +1019,18 @@ textarea:focus {
   overflow-x: auto;
   gap: 20px;
   padding: 60px 5px 20px; /* Top padding for strings */
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
   width: 100%;
 }
+  
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .horizontal-scroll-container::-webkit-scrollbar {
+    display: none;
+  }
 
+
+/* Hide scrollbar for Chrome, Safari and Opera */
 .horizontal-scroll-container::-webkit-scrollbar {
   display: none;
 }
@@ -1334,18 +1341,50 @@ textarea:focus {
 /* Store View */
 .store-banner {
   background: var(--bg-surface);
-  padding: 2rem;
+  padding: 0;
   border-radius: 12px;
   box-shadow: var(--shadow);
+  margin-bottom: 2rem;
+  overflow: hidden;
+}
+
+.store-banner-header {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.store-banner-content {
   display: flex;
   align-items: center;
   gap: 2rem;
-  margin-bottom: 2rem;
+  padding: 2rem;
+}
+
+.store-status-badge {
+  padding: 0.75rem 2rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.status-open {
+  background-color: #ecfdf5;
+  color: #059669;
+}
+
+.status-closed {
+  background-color: #fef2f2;
+  color: #dc2626;
 }
 
 .store-banner img {
-  width: 120px;
-  height: 120px;
+  width: 150px;
+  height: 150px;
   border-radius: 12px;
   object-fit: cover;
   box-shadow: var(--shadow);
@@ -1366,9 +1405,10 @@ textarea:focus {
 }
 
 @media (max-width: 768px) {
-  .store-banner {
+  .store-banner-content {
     flex-direction: column;
     text-align: center;
+    gap: 1.5rem;
   }
   .store-info p {
     justify-content: center;
