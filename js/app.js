@@ -798,8 +798,13 @@ function buildStoreCardHtml(store) {
   const ratingText = formatStoreRatingValue(store && store.rating);
   const deliveryText = store && store.delivery_time ? store.delivery_time : "—";
   const id = store && store.id ? store.id : "";
+  const isOpen = store && (store.is_open === true || store.is_open === 1);
 
   return `
+        <div class="store-status-badge ${isOpen ? 'status-open' : 'status-closed'}">
+            <i class="fas ${isOpen ? 'fa-door-open' : 'fa-door-closed'}"></i>
+            ${isOpen ? 'Open' : 'Closed'}
+        </div>
         <img src="${imageSrc}" alt="${safeAlt}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackImg}'">
         <div class="store-card-content">
             <h4>${store && store.name ? store.name : "Store"}</h4>
