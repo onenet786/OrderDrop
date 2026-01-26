@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - ServeNow</title>
+    <link rel="stylesheet" href="css/user.css?v=4">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="icon" type="image/png" href="images/servenow.png">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="images/servenow.png" alt="ServeNow" onerror="this.src='https://placehold.co/32x32/667eea/ffffff?text=SN'">
+                    <span>ServeNow</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
+                    <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+                    <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
+                    <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount" class="badge badge-credit" style="display: none;">0</span></a></li>
+                    <li><a href="profile.html" class="active"><i class="fas fa-user"></i> Profile</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Header -->
+        <header class="app-header">
+            <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar navigation" title="Toggle sidebar navigation">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-right">
+                <div class="user-profile">
+                    <span id="welcomeName">Welcome</span>
+                    <button id="logoutBtn" class="btn btn-small" style="margin-left: 1rem; color: var(--danger);" title="Logout" aria-label="Logout"><i class="fas fa-sign-out-alt"></i></button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-content">
+            <div id="toastContainer" class="toast-container"></div>
+
+            <div class="container" style="max-width: 800px; margin: 0 auto; padding: 2rem;">
+                <h2 style="margin-bottom: 2rem;"><i class="fas fa-user-circle"></i> My Profile</h2>
+
+                <!-- Change Password Section -->
+                <div class="card" style="background: white; padding: 2rem; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 2rem;">
+                    <h3 style="margin-bottom: 1.5rem;"><i class="fas fa-lock"></i> Change Password</h3>
+                    <form id="changePasswordForm">
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label for="currentPassword">Current Password</label>
+                            <input type="password" id="currentPassword" name="currentPassword" required placeholder="Enter current password" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label for="newPassword">New Password</label>
+                            <input type="password" id="newPassword" name="newPassword" required placeholder="Minimum 6 characters" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 1.5rem;">
+                            <label for="confirmNewPassword">Confirm New Password</label>
+                            <input type="password" id="confirmNewPassword" name="confirmNewPassword" required placeholder="Repeat new password" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-key"></i> Update Password
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <footer class="app-footer">
+                <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
+            </footer>
+        </main>
+    </div>
+
+    <script src="js/app.js?v=9"></script>
+    <script>
+        // Check if logged in
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('serveNowToken');
+            if (!token) {
+                window.location.href = 'login.html';
+                return;
+            }
+
+            // Populate welcome name
+            const userStr = localStorage.getItem('serveNowUser');
+            if (userStr) {
+                const user = JSON.parse(userStr);
+                document.getElementById('welcomeName').textContent = `Welcome, ${user.first_name}`;
+            }
+        });
+
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            localStorage.removeItem('serveNowToken');
+            localStorage.removeItem('serveNowUser');
+            window.location.href = 'login.html';
+        });
+
+        // Change Password Form
+        const changePasswordForm = document.getElementById('changePasswordForm');
+        if (changePasswordForm) {
+            changePasswordForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const currentPassword = document.getElementById('currentPassword').value;
+                const newPassword = document.getElementById('newPassword').value;
+                const confirmNewPassword = document.getElementById('confirmNewPassword').value;
+
+                if (newPassword !== confirmNewPassword) {
+                    showWarning('Mismatch', 'New passwords do not match.');
+                    return;
+                }
+
+                if (newPassword.length < 6) {
+                    showWarning('Too Short', 'New password must be at least 6 characters.');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`${API_BASE}/api/auth/change-password`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+                        },
+                        body: JSON.stringify({ currentPassword, newPassword })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        showSuccess('Success', data.message);
+                        changePasswordForm.reset();
+                    } else {
+                        showError('Error', data.message);
+                    }
+                } catch (error) {
+                    console.error('Change password error:', error);
+                    showError('Error', 'Something went wrong. Please try again.');
+                }
+            });
+        }
+
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const appSidebar = document.getElementById('appSidebar');
+        if (sidebarToggle && appSidebar) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appSidebar.classList.toggle('active');
+            });
+        }
+    </script>
+</body>
+</html>

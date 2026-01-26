@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { body, validationResult } = require("express-validator");
-const { sendVerificationEmail } = require("../services/emailService");
+const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/emailService");
 const { authenticateToken } = require("../middleware/auth");
 
 const router = express.Router();
@@ -12,6 +12,213 @@ const router = express.Router();
 function isTrue(v) {
   return v === true || v === 1 || v === "1";
 }
+
+// Forgot Password
+router.post(
+  "/forgot-password",
+  [
+    body("email")
+      .isEmail()
+      .normalizeEmail()
+      .withMessage("Please provide a valid email"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const { email } = req.body;
+
+      // Check users table
+      const [users] = await req.db.execute(
+        "SELECT id FROM users WHERE email = ? AND is_active = true",
+        [email]
+      );
+
+      // Check riders table
+      const [riders] = await req.db.execute(
+        "SELECT id FROM riders WHERE email = ? AND is_active = true",
+        [email]
+      );
+
+      if (users.length === 0 && riders.length === 0) {
+        // SECURITY: Don't reveal if email exists, but for UX we might.
+        // The requirement says "via email address he added at registration time"
+        return res.status(404).json({
+          success: false,
+          message: "No account found with that email address.",
+        });
+      }
+
+      const token = crypto.randomBytes(20).toString("hex");
+      const expires = new Date(Date.now() + 3600000); // 1 hour
+
+      if (users.length > 0) {
+        await req.db.execute(
+          "UPDATE users SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?",
+          [token, expires, users[0].id]
+        );
+      } else if (riders.length > 0) {
+        await req.db.execute(
+          "UPDATE riders SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?",
+          [token, expires, riders[0].id]
+        );
+      }
+
+      await sendPasswordResetEmail(email, token);
+
+      return res.json({
+        success: true,
+        message: "Password reset link has been sent to your email.",
+      });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to process forgot password request.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Reset Password
+router.post(
+  "/reset-password",
+  [
+    body("token").notEmpty().withMessage("Token is required"),
+    body("password")
+      .isLength({ min: 6 })
+      .withMessage("Password must be at least 6 characters"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const { token, password } = req.body;
+
+      // Find user or rider with this token
+      const [users] = await req.db.execute(
+        "SELECT id FROM users WHERE reset_password_token = ? AND reset_password_expires > NOW()",
+        [token]
+      );
+
+      const [riders] = await req.db.execute(
+        "SELECT id FROM riders WHERE reset_password_token = ? AND reset_password_expires > NOW()",
+        [token]
+      );
+
+      if (users.length === 0 && riders.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Password reset token is invalid or has expired.",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      if (users.length > 0) {
+        await req.db.execute(
+          "UPDATE users SET password = ?, reset_password_token = NULL, reset_password_expires = NULL WHERE id = ?",
+          [hashedPassword, users[0].id]
+        );
+      } else if (riders.length > 0) {
+        await req.db.execute(
+          "UPDATE riders SET password = ?, reset_password_token = NULL, reset_password_expires = NULL WHERE id = ?",
+          [hashedPassword, riders[0].id]
+        );
+      }
+
+      return res.json({
+        success: true,
+        message: "Password has been reset successfully.",
+      });
+    } catch (error) {
+      console.error("Reset password error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to reset password.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Change Password (Authenticated)
+router.post(
+  "/change-password",
+  authenticateToken,
+  [
+    body("currentPassword").notEmpty().withMessage("Current password is required"),
+    body("newPassword")
+      .isLength({ min: 6 })
+      .withMessage("New password must be at least 6 characters"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const { currentPassword, newPassword } = req.body;
+      const userId = req.user.id;
+      const userType = req.user.user_type;
+
+      let user;
+      if (userType === "rider") {
+        const [riders] = await req.db.execute("SELECT * FROM riders WHERE id = ?", [userId]);
+        user = riders[0];
+      } else {
+        const [users] = await req.db.execute("SELECT * FROM users WHERE id = ?", [userId]);
+        user = users[0];
+      }
+
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ success: false, message: "Incorrect current password" });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      if (userType === "rider") {
+        await req.db.execute("UPDATE riders SET password = ? WHERE id = ?", [hashedPassword, userId]);
+      } else {
+        await req.db.execute("UPDATE users SET password = ? WHERE id = ?", [hashedPassword, userId]);
+      }
+
+      return res.json({ success: true, message: "Password updated successfully" });
+    } catch (error) {
+      console.error("Change password error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to change password.",
+        error: error.message,
+      });
+    }
+  }
+);
 
 // Register user
 router.post(

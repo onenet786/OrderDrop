@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import '../services/api_service.dart';
-import '../services/notifier.dart';
 import 'auth_provider.dart';
 
 class Notification {
@@ -373,10 +372,27 @@ class NotificationProvider with ChangeNotifier {
   void _showNotification(String title, String message) {
     final context = navigatorKey.currentContext;
     if (context != null) {
-      Notifier.info(
-        context,
-        '$title: $message',
-        duration: const Duration(seconds: 10),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              Text(message, style: const TextStyle(color: Colors.white)),
+            ],
+          ),
+          backgroundColor: Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          showCloseIcon: true,
+        ),
       );
     }
   }

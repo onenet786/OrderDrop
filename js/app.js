@@ -134,8 +134,149 @@ function showInfo(title, message, duration = 3000) {
 let currentUser = null;
 let authToken = localStorage.getItem("serveNowToken");
 
+// Navigation management
+function updateNavigation() {
+  const token = localStorage.getItem("serveNowToken");
+  const userStr = localStorage.getItem("serveNowUser");
+  const navUl = document.querySelector("nav ul");
+  const welcomeName = document.getElementById("welcomeName");
+  
+  if (!navUl) return;
+
+  const currentPage = window.location.pathname.toLowerCase();
+  const isLoginPage = currentPage.includes("login.html");
+  const isRegisterPage = currentPage.includes("register.html");
+
+  if (token && userStr) {
+    let user;
+    try {
+      user = JSON.parse(userStr);
+    } catch (e) {
+      console.error("Error parsing user data:", e);
+      return;
+    }
+
+    // Role-based redirects
+    if (user.user_type === "rider") {
+      if (currentPage.includes("admin.html") || isLoginPage || isRegisterPage) {
+        window.location.href = "rider.html";
+        return;
+      }
+    } else if (user.user_type === "customer" || user.user_type === "store_owner") {
+      if (currentPage.includes("admin.html") || currentPage.includes("rider.html") || isLoginPage || isRegisterPage) {
+        window.location.href = "index.html";
+        return;
+      }
+    } else if (user.user_type === "admin") {
+      if (isLoginPage || isRegisterPage) {
+        window.location.href = "admin.html";
+        return;
+      }
+    }
+
+    // Update Sidebar Navigation
+    // For riders, we might want a different set of links
+    if (user.user_type === "rider") {
+        navUl.innerHTML = `
+            <li class="nav-dynamic">Welcome ${user.first_name}</li>
+            <li><a href="rider.html"><i class="fas fa-motorcycle"></i> Dashboard</a></li>
+            <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+            <li><a href="profile.html"><i class="fas fa-user"></i> Profile</a></li>
+            <li><a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+        `;
+    } else {
+        // Standard user navigation
+        // We want to keep the existing links but maybe toggle login/register
+        const links = Array.from(navUl.querySelectorAll('li'));
+        links.forEach(li => {
+            const a = li.querySelector('a');
+            if (a) {
+                const href = a.getAttribute('href');
+                if (href === 'login.html' || href === 'register.html') {
+                    li.style.display = 'none';
+                } else {
+                    li.style.display = 'block';
+                }
+            }
+        });
+
+        // Add Profile and Logout if not present
+        if (!navUl.querySelector('a[href="profile.html"]')) {
+            const profileLi = document.createElement('li');
+            profileLi.className = 'nav-dynamic';
+            profileLi.innerHTML = `<a href="profile.html"><i class="fas fa-user"></i> Profile</a>`;
+            navUl.appendChild(profileLi);
+        }
+        
+        if (!navUl.querySelector('.nav-logout')) {
+            const logoutLi = document.createElement('li');
+            logoutLi.className = 'nav-dynamic nav-logout';
+            logoutLi.innerHTML = `<a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> Logout</a>`;
+            navUl.appendChild(logoutLi);
+        }
+    }
+
+    // Update Header Welcome
+    if (welcomeName) {
+      welcomeName.textContent = `Welcome, ${user.first_name || 'User'}`;
+    }
+    
+    // Header Logout Button
+    const userProfileDiv = document.querySelector('.user-profile');
+    if (userProfileDiv && !document.getElementById('headerLogoutBtn')) {
+        const logoutBtn = document.createElement('button');
+        logoutBtn.id = 'headerLogoutBtn';
+        logoutBtn.className = 'btn btn-small';
+        logoutBtn.style.marginLeft = '1rem';
+        logoutBtn.style.color = 'var(--danger)';
+        logoutBtn.title = 'Logout';
+        logoutBtn.setAttribute('aria-label', 'Logout');
+        logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i>';
+        logoutBtn.onclick = logout;
+        userProfileDiv.appendChild(logoutBtn);
+    }
+
+  } else {
+    // Not logged in
+    const links = Array.from(navUl.querySelectorAll('li'));
+    links.forEach(li => {
+        const a = li.querySelector('a');
+        if (a) {
+            const href = a.getAttribute('href');
+            if (href === 'login.html' || href === 'register.html') {
+                li.style.display = 'block';
+            }
+            // Hide protected links if necessary, or just leave them (server will handle)
+        }
+    });
+    
+    // Remove dynamic items
+    navUl.querySelectorAll('.nav-dynamic').forEach(el => el.remove());
+
+    if (welcomeName) {
+      welcomeName.textContent = 'Welcome';
+    }
+    document.getElementById('headerLogoutBtn')?.remove();
+  }
+}
+
+// Global Sidebar Toggle logic
+document.addEventListener('click', (e) => {
+    const sidebar = document.getElementById('appSidebar');
+    const toggle = document.getElementById('sidebarToggle');
+    
+    if (!sidebar) return;
+
+    if (toggle && (toggle === e.target || toggle.contains(e.target))) {
+        sidebar.classList.toggle('active');
+    } else if (!sidebar.contains(e.target) && sidebar.classList.contains('active')) {
+        sidebar.classList.remove('active');
+    }
+});
+
 // Apply saved image-fit preference (so preview matches admin choice)
 window.addEventListener("DOMContentLoaded", function () {
+  updateNavigation();
   try {
     const fit = localStorage.getItem("productImageFit");
     if (fit) {
@@ -253,6 +394,7 @@ async function loadHeaderWalletBalance() {
 
 // Trigger home categories load on DOM ready (safe to call on any page)
 window.addEventListener("DOMContentLoaded", function () {
+  updateNavigation();
   try {
     loadHomeCategories();
   } catch (e) {
