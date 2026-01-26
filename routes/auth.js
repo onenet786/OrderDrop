@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { body, validationResult } = require("express-validator");
-const { sendVerificationEmail, sendPasswordResetEmail, sendPasswordResetOTP } = require("../services/emailService");
+const { sendVerificationEmail, sendPasswordResetOTP } = require("../services/emailService");
 const { authenticateToken } = require("../middleware/auth");
 
 const router = express.Router();
