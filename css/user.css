@@ -1144,13 +1144,24 @@ textarea:focus {
   z-index: -1;
 }
 
-.store-card img,
 .category-card img,
 .product-card img {
   width: 100%;
   height: 200px;
   object-fit: cover;
   border-radius: 12px 12px 0 0;
+}
+
+.store-card .store-image-container img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+}
+
+.store-card img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
 }
 
 .store-card-content,
@@ -1361,6 +1372,18 @@ textarea:focus {
   padding: 2rem;
 }
 
+.store-status-container {
+  width: 100%;
+}
+
+.store-image-container {
+  overflow: hidden;
+}
+
+.store-card .store-image-container {
+  width: 100%;
+}
+
 .store-status-badge {
   padding: 0.75rem 2rem;
   font-size: 0.9rem;
@@ -1370,6 +1393,7 @@ textarea:focus {
   align-items: center;
   gap: 0.75rem;
   border-bottom: 1px solid rgba(0,0,0,0.05);
+  border-radius: 12px 12px 0 0;
 }
 
 .status-open {

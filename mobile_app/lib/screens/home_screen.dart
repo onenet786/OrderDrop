@@ -391,10 +391,10 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status indicator above the image
+            // First Row: Status indicator (separate container, small font)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.symmetric(vertical: 4),
               decoration: BoxDecoration(
                 color: isOpen ? Colors.green.shade100 : Colors.red.shade100,
                 borderRadius: const BorderRadius.vertical(
@@ -407,16 +407,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(
                     color: isOpen ? Colors.green.shade800 : Colors.red.shade800,
                     fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                    fontSize: 8,
                   ),
                 ),
               ),
             ),
+            // Second Row: Store image container (best fit image)
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(15),
-                ),
                 child: Image.network(
                   ApiService.getImageUrl(store['image_url']),
                   width: double.infinity,
@@ -430,8 +428,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+            // Rest of the card: info
             Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: const EdgeInsets.all(8.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -441,18 +440,18 @@ class _HomeScreenState extends State<HomeScreen> {
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Row(
                     children: [
                       const Icon(
                         Icons.location_on,
-                        size: 14,
+                        size: 12,
                         color: Colors.grey,
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 2),
                       Expanded(
                         child: Text(
                           store['location'],
@@ -466,30 +465,30 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Row(
                     children: [
                       const Icon(
                         Icons.access_time,
-                        size: 12,
+                        size: 10,
                         color: Colors.green,
                       ),
                       const SizedBox(width: 2),
                       Text(
                         _formatTimeOnly(store['opening_time']),
                         style: const TextStyle(
-                          fontSize: 11,
+                          fontSize: 9,
                           color: Colors.grey,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      const Icon(Icons.timer_off, size: 12, color: Colors.red),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.timer_off, size: 10, color: Colors.red),
                       const SizedBox(width: 2),
                       Text(
                         _formatTimeOnly(store['closing_time']),
                         style: const TextStyle(
-                          fontSize: 11,
+                          fontSize: 9,
                           color: Colors.grey,
                           fontWeight: FontWeight.bold,
                         ),

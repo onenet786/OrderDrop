@@ -40,12 +40,16 @@ function displayStoreInfo(store) {
     
     document.getElementById('storeInfo').innerHTML = `
         <div class="store-banner-header">
-            <div class="store-status-badge ${isOpen ? 'status-open' : 'status-closed'}">
-                <i class="fas ${isOpen ? 'fa-door-open' : 'fa-door-closed'}"></i>
-                ${isOpen ? 'Open' : 'Closed'}
+            <div class="store-status-container">
+                <div class="store-status-badge ${isOpen ? 'status-open' : 'status-closed'}">
+                    <i class="fas ${isOpen ? 'fa-door-open' : 'fa-door-closed'}"></i>
+                    ${isOpen ? 'Open' : 'Closed'}
+                </div>
             </div>
             <div class="store-banner-content">
-                <img src="${logoSrc}" alt="${store.name}" class="store-logo" onerror="this.onerror=null;this.src='/images/servenow.png'">
+                <div class="store-image-container">
+                    <img src="${logoSrc}" alt="${store.name}" class="store-logo" onerror="this.onerror=null;this.src='/images/servenow.png'">
+                </div>
                 <div class="store-info">
                     <h2>${store.name}</h2>
                     <p><i class="fas fa-map-marker-alt"></i> ${store.location || 'Location not available'}</p>

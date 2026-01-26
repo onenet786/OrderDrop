@@ -189,52 +189,44 @@ class _StoreScreenState extends State<StoreScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Card(
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (ApiService.getImageUrl(
-                            store['image_url'],
-                          ).isNotEmpty)
-                            Column(
-                              children: [
-                                // Status indicator above the image
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        isOpen
-                                        ? Colors.green.shade100
-                                        : Colors.red.shade100,
-                                    borderRadius: const BorderRadius.only(
-                                      topLeft: Radius.circular(15),
-                                      topRight: Radius.circular(15),
-                                    ),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      isOpen
-                                          ? '🟢 OPEN'
-                                          : '🔴 CLOSED',
-                                      style: TextStyle(
-                                        color:
-                                            isOpen
-                                            ? Colors.green.shade800
-                                            : Colors.red.shade800,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
+                    child: Column(
+                      children: [
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Status indicator on a separate row inside the card
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isOpen
+                                      ? Colors.green.shade100
+                                      : Colors.red.shade100,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    isOpen ? '🟢 OPEN' : '🔴 CLOSED',
+                                    style: TextStyle(
+                                      color: isOpen
+                                          ? Colors.green.shade800
+                                          : Colors.red.shade800,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 10,
                                     ),
                                   ),
                                 ),
+                              ),
+                              if (ApiService.getImageUrl(
+                                store['image_url'],
+                              ).isNotEmpty)
                                 Image.network(
                                   ApiService.getImageUrl(store['image_url']),
                                   height: 200,
@@ -250,96 +242,96 @@ class _StoreScreenState extends State<StoreScreen> {
                                     ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  store['name'],
-                                  style: const TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
+                              Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Icon(
-                                      Icons.location_on,
-                                      size: 16,
-                                      color: Colors.grey,
+                                    Text(
+                                      store['name'],
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
-                                    const SizedBox(width: 4),
-                                    Expanded(
-                                      child: Text(
-                                        store['location'],
-                                        style: const TextStyle(
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.location_on,
+                                          size: 16,
                                           color: Colors.grey,
                                         ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.access_time,
-                                      size: 16,
-                                      color: Colors.green,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Open: ${_formatTimeOnly(store['opening_time'])}',
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    const Icon(
-                                      Icons.timer_off,
-                                      size: 16,
-                                      color: Colors.red,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Close: ${_formatTimeOnly(store['closing_time'])}',
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                if (store['rating'] != null)
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.star,
-                                        size: 16,
-                                        color: Colors.amber,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${store['rating']}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            store['location'],
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
                                         ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.access_time,
+                                          size: 16,
+                                          color: Colors.green,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Open: ${_formatTimeOnly(store['opening_time'])}',
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        const Icon(
+                                          Icons.timer_off,
+                                          size: 16,
+                                          color: Colors.red,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Close: ${_formatTimeOnly(store['closing_time'])}',
+                                          style: const TextStyle(
+                                            color: Colors.grey,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (store['rating'] != null)
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.star,
+                                            size: 16,
+                                            color: Colors.amber,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${store['rating']}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                              ],
-                            ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
