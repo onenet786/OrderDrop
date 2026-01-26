@@ -137,6 +137,22 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<void> forgotPassword(String email) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await ApiService.forgotPassword(email);
+      if (response['success'] != true) {
+        throw Exception(response['message'] ?? 'Failed to send reset link');
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> logout() async {
     _token = null;
     _user = null;

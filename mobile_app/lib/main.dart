@@ -19,6 +19,7 @@ import 'screens/manage_riders_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/change_password_screen.dart';
+import 'screens/forgot_password_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -80,6 +81,7 @@ class MyApp extends StatelessWidget {
           '/manage-users': (context) => const ManageUsersScreen(),
           '/manage-riders': (context) => const ManageRidersScreen(),
           '/change-password': (context) => const ChangePasswordScreen(),
+          '/forgot-password': (context) => const ForgotPasswordScreen(),
         },
       ),
     );

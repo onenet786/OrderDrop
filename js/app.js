@@ -1611,6 +1611,8 @@ document.addEventListener("DOMContentLoaded", function () {
     "cart.html",
     "login.html",
     "register.html",
+    "forgot-password.html",
+    "reset-password.html",
     "data-deletion.html",
   ];
   const isPublic =

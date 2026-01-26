@@ -4,16 +4,15 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/notifier.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   Future<void> _submit() async {
@@ -23,18 +22,12 @@ class _LoginScreenState extends State<LoginScreen> {
       await Provider.of<AuthProvider>(
         context,
         listen: false,
-      ).login(_emailController.text, _passwordController.text);
+      ).forgotPassword(_emailController.text);
 
       if (!mounted) return;
 
-      final auth = Provider.of<AuthProvider>(context, listen: false);
-      if (auth.isAdmin) {
-        Navigator.of(context).pushReplacementNamed('/admin');
-      } else if (auth.isRider) {
-        Navigator.of(context).pushReplacementNamed('/rider');
-      } else {
-        Navigator.of(context).pushReplacementNamed('/home');
-      }
+      Notifier.success(context, 'Reset link sent to your email');
+      Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
         Notifier.error(context, e.toString());
@@ -88,11 +81,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text(
-                            'Login to ServeNow',
+                            'Forgot Password',
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
                               color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Enter your email to receive a password reset link',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.black54,
                             ),
                           ),
                           const SizedBox(height: 20),
@@ -121,53 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             validator: (value) =>
                                 value!.isEmpty ? 'Please enter email' : null,
                           ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _passwordController,
-                            style: const TextStyle(color: Colors.black87),
-                            decoration: const InputDecoration(
-                              labelText: 'Password',
-                              labelStyle: TextStyle(color: Colors.black54),
-                              border: OutlineInputBorder(
-                                borderSide: BorderSide(color: Colors.black26),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: Colors.black26),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: Colors.blueAccent,
-                                ),
-                              ),
-                              prefixIcon: Icon(
-                                Icons.lock,
-                                color: Colors.black54,
-                              ),
-                            ),
-                            obscureText: true,
-                            validator: (value) =>
-                                value!.isEmpty ? 'Please enter password' : null,
-                          ),
                           const SizedBox(height: 24),
-                          SizedBox(
-                            width: double.infinity,
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: () {
-                                  Navigator.of(context).pushNamed('/forgot-password');
-                                },
-                                child: const Text(
-                                  'Forgot Password?',
-                                  style: TextStyle(
-                                    color: Colors.blueAccent,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
                           SizedBox(
                             width: double.infinity,
                             height: 50,
@@ -187,7 +143,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           color: Colors.white,
                                         )
                                       : const Text(
-                                          'Login',
+                                          'Send Reset Link',
                                           style: TextStyle(
                                             fontSize: 18,
                                             color: Colors.white,
@@ -200,23 +156,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 16),
                           TextButton(
                             onPressed: () {
-                              Navigator.of(context).pushNamed('/register');
+                              Navigator.of(context).pop();
                             },
-                            child: RichText(
-                              text: const TextSpan(
-                                text: 'Don\'t have an account? ',
-                                style: TextStyle(color: Colors.blueAccent),
-                                children: [
-                                  TextSpan(
-                                    text: 'Register here',
-                                    style: TextStyle(
-                                      color: Color.fromARGB(255, 8, 91, 233),
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      decoration: TextDecoration.underline,
-                                    ),
-                                  ),
-                                ],
+                            child: const Text(
+                              'Back to Login',
+                              style: TextStyle(
+                                color: Colors.blueAccent,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
