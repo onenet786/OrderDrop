@@ -153,6 +153,40 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<String> verifyResetOTP(String email, String otp) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await ApiService.verifyResetOTP(email, otp);
+      if (response['success'] == true) {
+        return response['reset_token'];
+      } else {
+        throw Exception(response['message'] ?? 'Failed to verify OTP');
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> resetPassword(String token, String newPassword) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final response = await ApiService.resetPassword(token, newPassword);
+      if (response['success'] != true) {
+        throw Exception(response['message'] ?? 'Failed to reset password');
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> logout() async {
     _token = null;
     _user = null;

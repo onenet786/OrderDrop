@@ -3,36 +3,38 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/notifier.dart';
-import 'otp_reset_verification_screen.dart';
 
-class ForgotPasswordScreen extends StatefulWidget {
-  const ForgotPasswordScreen({super.key});
+class ResetPasswordScreen extends StatefulWidget {
+  final String token;
+  const ResetPasswordScreen({super.key, required this.token});
 
   @override
-  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+  State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
 }
 
-class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  final _emailController = TextEditingController();
+class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_passwordController.text != _confirmPasswordController.text) {
+      Notifier.error(context, 'Passwords do not match');
+      return;
+    }
+
     try {
-      await Provider.of<AuthProvider>(
-        context,
-        listen: false,
-      ).forgotPassword(_emailController.text);
-
-      if (!mounted) return;
-
-      Notifier.success(context, 'Reset OTP sent to your email');
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (ctx) => OTPResetVerificationScreen(email: _emailController.text),
-        ),
+      await Provider.of<AuthProvider>(context, listen: false).resetPassword(
+        widget.token,
+        _passwordController.text,
       );
+      
+      if (!mounted) return;
+      
+      Notifier.success(context, 'Password reset successfully!');
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       if (mounted) {
         Notifier.error(context, e.toString());
@@ -86,7 +88,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text(
-                            'Forgot Password',
+                            'Reset Password',
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -95,38 +97,37 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           ),
                           const SizedBox(height: 10),
                           const Text(
-                            'Enter your email to receive a 6-digit verification code',
+                            'Set your new password below',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.black54,
-                            ),
+                            style: TextStyle(fontSize: 14, color: Colors.black54),
                           ),
                           const SizedBox(height: 20),
                           TextFormField(
-                            controller: _emailController,
+                            controller: _passwordController,
+                            obscureText: true,
                             style: const TextStyle(color: Colors.black87),
                             decoration: const InputDecoration(
-                              labelText: 'Email Address',
+                              labelText: 'New Password',
                               labelStyle: TextStyle(color: Colors.black54),
-                              border: OutlineInputBorder(
-                                borderSide: BorderSide(color: Colors.black26),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderSide: BorderSide(color: Colors.black26),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(
-                                  color: Colors.blueAccent,
-                                ),
-                              ),
-                              prefixIcon: Icon(
-                                Icons.email,
-                                color: Colors.black54,
-                              ),
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.lock, color: Colors.black54),
                             ),
                             validator: (value) =>
-                                value!.isEmpty ? 'Please enter email' : null,
+                                value!.length < 6 ? 'Minimum 6 characters' : null,
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _confirmPasswordController,
+                            obscureText: true,
+                            style: const TextStyle(color: Colors.black87),
+                            decoration: const InputDecoration(
+                              labelText: 'Confirm Password',
+                              labelStyle: TextStyle(color: Colors.black54),
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.lock_outline, color: Colors.black54),
+                            ),
+                            validator: (value) =>
+                                value!.isEmpty ? 'Please confirm password' : null,
                           ),
                           const SizedBox(height: 24),
                           SizedBox(
@@ -144,32 +145,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                                     ),
                                   ),
                                   child: isLoading
-                                      ? const CircularProgressIndicator(
-                                          color: Colors.white,
-                                        )
+                                      ? const CircularProgressIndicator(color: Colors.white)
                                       : const Text(
-                                          'Send Verification Code',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            color: Colors.white,
-                                          ),
+                                          'Update Password',
+                                          style: TextStyle(fontSize: 18, color: Colors.white),
                                         ),
                                 );
                               },
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                            },
-                            child: const Text(
-                              'Back to Login',
-                              style: TextStyle(
-                                color: Colors.blueAccent,
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
                             ),
                           ),
                         ],

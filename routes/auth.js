@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { body, validationResult } = require("express-validator");
-const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/emailService");
+const { sendVerificationEmail, sendPasswordResetEmail, sendPasswordResetOTP } = require("../services/emailService");
 const { authenticateToken } = require("../middleware/auth");
 
 const router = express.Router();
@@ -56,32 +56,103 @@ router.post(
         });
       }
 
-      const token = crypto.randomBytes(20).toString("hex");
-      const expires = new Date(Date.now() + 3600000); // 1 hour
+      const otp = crypto.randomInt(100000, 999999).toString();
+      const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
       if (users.length > 0) {
         await req.db.execute(
           "UPDATE users SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?",
-          [token, expires, users[0].id]
+          [otp, expires, users[0].id]
         );
       } else if (riders.length > 0) {
         await req.db.execute(
           "UPDATE riders SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?",
-          [token, expires, riders[0].id]
+          [otp, expires, riders[0].id]
         );
       }
 
-      await sendPasswordResetEmail(email, token);
+      await sendPasswordResetOTP(email, otp);
 
       return res.json({
         success: true,
-        message: "Password reset link has been sent to your email.",
+        message: "Password reset OTP has been sent to your email.",
       });
     } catch (error) {
       console.error("Forgot password error:", error);
       return res.status(500).json({
         success: false,
         message: "Failed to process forgot password request.",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Verify Reset OTP
+router.post(
+  "/verify-reset-otp",
+  [
+    body("email").isEmail().withMessage("Valid email is required"),
+    body("otp").isLength({ min: 6, max: 6 }).withMessage("Valid 6-digit OTP is required"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const { email, otp } = req.body;
+
+      // Check users
+      const [users] = await req.db.execute(
+        "SELECT id FROM users WHERE email = ? AND reset_password_token = ? AND reset_password_expires > NOW()",
+        [email, otp]
+      );
+
+      // Check riders
+      const [riders] = await req.db.execute(
+        "SELECT id FROM riders WHERE email = ? AND reset_password_token = ? AND reset_password_expires > NOW()",
+        [email, otp]
+      );
+
+      if (users.length === 0 && riders.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or expired OTP.",
+        });
+      }
+
+      // Generate a temporary secure token for the password reset step
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+      if (users.length > 0) {
+        await req.db.execute(
+          "UPDATE users SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?",
+          [resetToken, expires, users[0].id]
+        );
+      } else {
+        await req.db.execute(
+          "UPDATE riders SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?",
+          [resetToken, expires, riders[0].id]
+        );
+      }
+
+      return res.json({
+        success: true,
+        message: "OTP verified successfully.",
+        reset_token: resetToken,
+      });
+    } catch (error) {
+      console.error("Verify OTP error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to verify OTP.",
         error: error.message,
       });
     }

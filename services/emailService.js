@@ -159,25 +159,19 @@ async function sendOrderThanksEmail(email, userName, orderNumber) {
 }
 
 /**
- * Send password reset email
+ * Send password reset OTP
  * @param {string} email 
- * @param {string} token 
+ * @param {string} otp 
  */
-async function sendPasswordResetEmail(email, token) {
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password.html?token=${token}`;
-    const subject = 'Password Reset Request - ServeNow';
-    const text = `You are receiving this email because you (or someone else) have requested the reset of the password for your account.\n\nPlease click on the following link, or paste this into your browser to complete the process:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.\n`;
+async function sendPasswordResetOTP(email, otp) {
+    const subject = 'Your Password Reset OTP - ServeNow';
+    const text = `Your password reset OTP is: ${otp}. It will expire in 10 minutes.`;
     const html = `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
             <h2>Password Reset Request</h2>
-            <p>You requested a password reset for your ServeNow account.</p>
-            <p>Please click the button below to reset your password:</p>
-            <div style="text-align: center; margin: 30px 0;">
-                <a href="${resetUrl}" style="background-color: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">Reset Password</a>
-            </div>
-            <p>If the button doesn't work, you can copy and paste the following link into your browser:</p>
-            <p>${resetUrl}</p>
-            <p>This link will expire in 1 hour.</p>
+            <p>Please use the following OTP to reset your password:</p>
+            <h1 style="color: #667eea; letter-spacing: 5px;">${otp}</h1>
+            <p>This code will expire in 10 minutes.</p>
             <p>If you didn't request this, please ignore this email.</p>
         </div>
     `;
@@ -191,17 +185,17 @@ async function sendPasswordResetEmail(email, token) {
                 text: text,
                 html: html
             });
-            console.log(`Password reset email sent to ${email}`);
+            console.log(`Password reset OTP sent to ${email}`);
             return true;
         } catch (error) {
-            console.error('Error sending password reset email:', error);
+            console.error('Error sending password reset OTP:', error);
             return false;
         }
     } else {
-        console.warn('Email credentials not found. Logging reset link to console.');
+        console.warn('Email credentials not found. Logging OTP to console.');
         console.log('----------------------------------------');
         console.log(`[MOCK EMAIL] To: ${email}`);
-        console.log(`[MOCK EMAIL] Reset URL: ${resetUrl}`);
+        console.log(`[MOCK EMAIL] Reset OTP: ${otp}`);
         console.log('----------------------------------------');
         return true;
     }
@@ -211,5 +205,5 @@ module.exports = {
     sendVerificationEmail,
     sendDeletionRequestEmail,
     sendOrderThanksEmail,
-    sendPasswordResetEmail
+    sendPasswordResetOTP
 };

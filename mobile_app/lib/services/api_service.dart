@@ -113,6 +113,28 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> verifyResetOTP(String email, String otp) async {
+    final uri = Uri.parse('$baseUrl/api/auth/verify-reset-otp');
+    _logger.d('ApiService: POST $uri');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'email': email, 'otp': otp}),
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> resetPassword(String token, String newPassword) async {
+    final uri = Uri.parse('$baseUrl/api/auth/reset-password');
+    _logger.d('ApiService: POST $uri');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'token': token, 'password': newPassword}),
+    );
+    return _handleResponse(response);
+  }
+
   static Future<Map<String, dynamic>> changePassword(
     String token,
     String currentPassword,
