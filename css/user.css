@@ -1379,7 +1379,7 @@ textarea:focus {
 }
 
 .store-image-container {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .store-card .store-image-container {
@@ -1409,12 +1409,14 @@ textarea:focus {
 }
 
 .store-banner img {
-  max-width: 200px;
-  width: 100%;
-  height: auto;
-  max-height: 200px;
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  width: auto;
+  height: auto !important;
+  max-height: 300px;
   border-radius: 12px;
-  object-fit: contain;
+  object-fit: contain !important;
   box-shadow: var(--shadow);
 }
 
