@@ -1367,8 +1367,10 @@ textarea:focus {
 
 .store-banner-content {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 2rem;
+  text-align: center;
+  gap: 1.5rem;
   padding: 2rem;
 }
 
@@ -1407,10 +1409,12 @@ textarea:focus {
 }
 
 .store-banner img {
-  width: 150px;
-  height: 150px;
+  max-width: 200px;
+  width: 100%;
+  height: auto;
+  max-height: 200px;
   border-radius: 12px;
-  object-fit: cover;
+  object-fit: contain;
   box-shadow: var(--shadow);
 }
 
@@ -1425,18 +1429,12 @@ textarea:focus {
   margin-bottom: 0.25rem;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
 }
 
 @media (max-width: 768px) {
-  .store-banner-content {
-    flex-direction: column;
-    text-align: center;
-    gap: 1.5rem;
-  }
-  .store-info p {
-    justify-content: center;
-  }
+  /* Store banner content already column and centered globally */
 }
 
 /* Order Confirmation */
