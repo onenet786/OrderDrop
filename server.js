@@ -91,6 +91,11 @@ io.on("connection", (socket) => {
       socket.join(userRoom);
       socket.join(typeRoom);
       
+      if (userType === 'admin') {
+        socket.join('admins');
+        console.log(`[Socket.IO] Admin ${socket.id} joined "admins" room`);
+      }
+      
       console.log(`[Socket.IO] Client ${socket.id} joined rooms: "${userRoom}", "${typeRoom}" (User ID: ${userId}, Type: ${userType})`);
       debugLog(`Client ${socket.id} joined rooms: ${userRoom}, ${typeRoom}`);
       

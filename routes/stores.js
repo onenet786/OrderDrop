@@ -52,6 +52,31 @@ async function loadProductSizeVariants(db, productIds) {
     }
 }
 
+// Helper to calculate if store is open based on current time
+const calculateIsOpen = (opening_time, closing_time) => {
+    if (!opening_time || !closing_time) return false;
+    try {
+        const now = new Date();
+        const nowTime = now.getHours() + now.getMinutes() / 60.0;
+        
+        const parseTime = (t) => {
+            const [h, m] = t.split(':').map(Number);
+            return h + m / 60.0;
+        };
+        const start = parseTime(opening_time);
+        const end = parseTime(closing_time);
+        
+        if (start <= end) {
+            return nowTime >= start && nowTime <= end;
+        } else {
+            // Overnight case: e.g., 22:00 to 02:00
+            return nowTime >= start || nowTime <= end;
+        }
+    } catch (e) {
+        return false;
+    }
+};
+
 // Get all stores (optionally filter by category via products)
 router.get('/', async (req, res) => {
     try {
@@ -127,7 +152,7 @@ router.get('/', async (req, res) => {
                 description: store.description,
                 image_url: store.cover_image || null,
                 is_active: store.is_active,
-                is_open: store.is_open === 1 || store.is_open === true,
+                is_open: calculateIsOpen(store.opening_time, store.closing_time),
                 priority: store.priority || null,
                 owner_id: store.owner_id || null,
                 owner_email: store.owner_email || null,
@@ -200,7 +225,7 @@ router.get('/:id', async (req, res) => {
                 owner_id: store.owner_id,
                 category_id: store.category_id || null,
                 image_url: store.cover_image || null,
-                is_open: store.is_open === 1 || store.is_open === true,
+                is_open: calculateIsOpen(store.opening_time, store.closing_time),
                 priority: store.priority || null,
                 owner_email: store.owner_email || null,
                 owner_name: store.owner_name || null

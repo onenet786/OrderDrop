@@ -249,7 +249,7 @@
     // User Notifications
     socket.on('user_notification', (data) => {
         const user = getCurrentUser();
-        if (user && user.id == data.user_id) {
+        if (user && (user.id == data.user_id || user.user_type === 'admin')) {
             addNotification(
                 'Order Update',
                 data.message,

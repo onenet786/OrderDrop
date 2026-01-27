@@ -179,7 +179,7 @@ router.get('/test-notification', (req, res) => {
 
         logEvent(`Attempting to emit TEST notification. req.io present: ${!!req.io}`);
         if (req.io) {
-            req.io.emit('new_order', {
+            req.io.to('admins').emit('new_order', {
                 id: 0,
                 order_number: 'TEST-SOCKET',
                 total_amount: 0.00,
@@ -483,7 +483,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
             logEvent(`Order Created: ${order_number} (ID: ${orderId}). req.io present: ${!!req.io}`);
             if (req.io) {
-                req.io.emit('new_order', {
+                req.io.to('admins').emit('new_order', {
                     id: orderId,
                     order_number: order_number,
                     total_amount: grandTotal,
@@ -1055,6 +1055,7 @@ router.put('/:id(\\d+)/status', authenticateToken, requireStoreOwner, [
                 };
                 // Send to user room only (avoid duplicate by not sending to all)
                 req.io.to(`user_${order.user_id}`).emit('order_status_update', statusUpdateData);
+                req.io.to('admins').emit('order_status_update', statusUpdateData);
                 
                 const fs = require('fs');
                 const path = require('path');
@@ -1176,8 +1177,8 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
                     total_amount: newTotal
                 };
 
-                console.log(`[Orders] Broadcasting order_assigned to all clients`, orderData);
-                req.io.emit('order_assigned', orderData);
+                console.log(`[Orders] Broadcasting order_assigned to admins`, orderData);
+                req.io.to('admins').emit('order_assigned', orderData);
 
                 const riderRoomName = `rider_${rider_id}`;
                 const userRoomName = `user_${order.user_id}`;
@@ -1427,6 +1428,7 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
                     updated_at: new Date()
                 };
                 req.io.to(`user_${order.user_id}`).emit('order_status_update', statusUpdateData);
+                req.io.to('admins').emit('order_status_update', statusUpdateData);
 
                 // User notification
                 const userNotifData = {
@@ -1449,7 +1451,7 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
                     message: `Order ${order.order_number} has been delivered by rider.`,
                     timestamp: new Date()
                 };
-                req.io.to(`admin_${req.user.id}`).emit('user_notification', adminNotifData);
+                req.io.to('admins').emit('user_notification', adminNotifData);
 
                 // Check if completed (paid + delivered)
                 if (order.payment_status === 'paid') {
@@ -1463,6 +1465,7 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
                     };
                     // Send to user room only (not to all)
                     req.io.to(`user_${order.user_id}`).emit('order_completed', completedData);
+                    req.io.to('admins').emit('order_completed', completedData);
 
                     // Send Thanks Email
                     if (order.user_email) {
@@ -1605,6 +1608,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                 };
                 // Send to user room only (not to all)
                 req.io.to(`user_${order.user_id}`).emit('payment_status_update', paymentUpdateData);
+                req.io.to('admins').emit('payment_status_update', paymentUpdateData);
 
                 // User notification
                 const userPaymentNotif = {
@@ -1626,7 +1630,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                     message: `Payment ${payment_status} for order ${order.order_number}.`,
                     timestamp: new Date()
                 };
-                req.io.to(`admin_${req.user.id}`).emit('user_notification', adminPaymentNotif);
+                req.io.to('admins').emit('user_notification', adminPaymentNotif);
 
                 // Check if completed (paid + delivered)
                 if (payment_status === 'paid' && order.status === 'delivered') {
@@ -1640,6 +1644,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                     };
                     // Send to user room only (not to all)
                     req.io.to(`user_${order.user_id}`).emit('order_completed', completedData);
+                    req.io.to('admins').emit('order_completed', completedData);
 
                     // Send Thanks Email
                     if (order.user_email) {
