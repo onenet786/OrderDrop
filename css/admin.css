@@ -79,20 +79,29 @@ body {
   color: var(--text-main);
   line-height: 1.6;
   width: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
+  height: 100vh;
+  overflow: hidden;
 }
 
 html, body {
   max-width: 100vw;
-  overflow-x: hidden;
+  height: 100vh;
+  overflow: hidden;
 }
 .app-layout {
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: row;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
 }
 .app-content {
-  width: 100%;
-  max-width: none;
+  flex: 1;
+  min-width: 0;
+  padding: 2rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: var(--bg-body);
   display: flex;
   flex-direction: column;
 }
@@ -127,14 +136,6 @@ button {
   border: none;
   background: none;
   font-family: inherit;
-}
-
-/* Layout Grid */
-.app-layout {
-  display: flex;
-  flex-direction: row;
-  min-height: 100vh;
-  width: 100%;
 }
 
 /* Sidebar */
@@ -312,17 +313,6 @@ button {
   display: flex;
   align-items: center;
   gap: 1.5rem;
-}
-
-/* Main Content */
-.app-content {
-  flex: 1;
-  min-width: 0;
-  padding: 2rem;
-  overflow-y: auto;
-  overflow-x: hidden;
-  background-color: var(--bg-body);
-  width: calc(100% - var(--sidebar-width));
 }
 
 h2 {
@@ -868,19 +858,18 @@ textarea:focus {
 /* Responsive */
 @media (max-width: 1024px) {
   .app-layout {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "header"
-      "content";
+    flex-direction: column;
   }
   .app-sidebar {
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
+    height: 100vh;
     width: var(--sidebar-width);
     transform: translateX(-100%);
     box-shadow: 20px 0 50px rgba(0,0,0,0.3);
+    z-index: 2000;
   }
   .app-sidebar.active {
     transform: translateX(0);
@@ -893,7 +882,9 @@ textarea:focus {
   .app-content {
     margin-top: var(--header-height);
     width: 100%;
+    height: calc(100vh - var(--header-height));
     padding: 1rem;
+    overflow-y: auto;
   }
 }
 
