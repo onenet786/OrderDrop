@@ -182,7 +182,8 @@ function updateNavigation() {
             <li><a href="rider.html"><i class="fas fa-motorcycle"></i> Dashboard</a></li>
             <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
             <li><a href="profile.html"><i class="fas fa-user"></i> Profile</a></li>
-            <li><a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+            <li class="nav-dynamic"><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
+            <li class="nav-dynamic nav-logout"><a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
         `;
     } else {
         // Standard user navigation
@@ -206,6 +207,14 @@ function updateNavigation() {
             profileLi.className = 'nav-dynamic';
             profileLi.innerHTML = `<a href="profile.html"><i class="fas fa-user"></i> Profile</a>`;
             navUl.appendChild(profileLi);
+        }
+
+        // Add Change Password if not present
+        if (!navUl.querySelector('a[onclick*="showChangePasswordModal"]')) {
+            const pwdLi = document.createElement('li');
+            pwdLi.className = 'nav-dynamic';
+            pwdLi.innerHTML = `<a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a>`;
+            navUl.appendChild(pwdLi);
         }
         
         if (!navUl.querySelector('.nav-logout')) {
@@ -1659,76 +1668,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   // Update nav if logged in - handle different user types
   else if (token) {
-    const userData = localStorage.getItem("serveNowUser");
-    if (userData) {
-      try {
-        const user = JSON.parse(userData);
-        const navUl = document.querySelector("nav ul");
-
-        // Handle rider navigation separately
-        if (user.user_type === "rider") {
-          // Redirect to rider dashboard if on admin page or login/register
-          const currentPage = window.location.pathname.toLowerCase();
-          if (
-            currentPage.includes("admin.html") ||
-            isLoginPage ||
-            isRegisterPage
-          ) {
-            window.location.href = "rider.html";
-            return;
-          }
-          // Update navigation for riders
-          if (navUl) {
-            navUl.innerHTML = `
-                            <li>Welcome ${user.first_name} ${user.last_name}</li>
-                            <li><a href="rider.html"><i class="fas fa-motorcycle"></i> Dashboard</a></li>
-                            <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
-                            <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
-                            <li><a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
-                        `;
-          }
-        }
-        // Update navigation for customers and store owners
-        else if (
-          user.user_type === "customer" ||
-          user.user_type === "store_owner"
-        ) {
-          // Redirect away from role-specific dashboards
-          const currentPage = window.location.pathname.toLowerCase();
-          if (
-            currentPage.includes("admin.html") ||
-            currentPage.includes("rider.html") ||
-            isLoginPage ||
-            isRegisterPage
-          ) {
-            window.location.href = "index.html";
-            return;
-          }
-          if (navUl) {
-            navUl.innerHTML = `
-                            <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
-                            <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
-                            <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
-                            <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount">0</span></a></li>
-                            <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
-                            <li>Welcome ${user.first_name} ${user.last_name}</li>
-                            <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
-                            <li><a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
-                        `;
-          }
-        }
-        // Handle admin navigation
-        else if (user.user_type === "admin") {
-          // Only redirect if on login/register (allow them to view rider dashboard if they want, or any other page)
-          if (isLoginPage || isRegisterPage) {
-            window.location.href = "admin.html";
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("Error parsing user data:", error);
-      }
-    }
+    updateNavigation();
   }
 
   updateCartCount();
