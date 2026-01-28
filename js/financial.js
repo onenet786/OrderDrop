@@ -90,8 +90,8 @@ async function loadFinancialDashboard() {
         if (data.success) {
             document.getElementById('totalIncomeAmount').textContent = `₨ ${parseFloat(data.stats.income).toFixed(2)}`;
             document.getElementById('totalExpenseAmount').textContent = `₨ ${parseFloat(data.stats.expense).toFixed(2)}`;
-            document.getElementById('totalCommissionsAmount').textContent = `₨ ${parseFloat(data.stats.settlement).toFixed(2)}`;
-            const netProfit = data.stats.income - data.stats.expense - data.stats.settlement;
+            document.getElementById('totalSettlementsAmount').textContent = `₨ ${parseFloat(data.stats.settlement).toFixed(2)}`;
+            const netProfit = data.stats.income - (data.stats.expense + data.stats.settlement + (data.stats.refund || 0));
             document.getElementById('netProfitAmount').textContent = `₨ ${parseFloat(netProfit).toFixed(2)}`;
             document.getElementById('paymentVouchersAmount').textContent = `₨ ${parseFloat(data.stats.paymentVouchers).toFixed(2)}`;
             document.getElementById('receiptVouchersAmount').textContent = `₨ ${parseFloat(data.stats.receiptVouchers).toFixed(2)}`;
@@ -1075,7 +1075,7 @@ function downloadReport(reportId) {
         ['Period To', report.period_to || '-'],
         ['Total Income', `₨ ${parseFloat(report.total_income).toFixed(2)}`],
         ['Total Expense', `₨ ${parseFloat(report.total_expense).toFixed(2)}`],
-        ['Total Commissions', `₨ ${parseFloat(report.total_commissions).toFixed(2)}`],
+        ['Total Settlements', `₨ ${parseFloat(report.total_commissions).toFixed(2)}`],
         ['Net Profit', `₨ ${parseFloat(report.net_profit).toFixed(2)}`],
         ['Generated Date', new Date(report.created_at).toLocaleDateString()]
     ]
@@ -1104,7 +1104,7 @@ function viewReport(reportId) {
         <strong>Period:</strong> ${report.period_from ? new Date(report.period_from).toLocaleDateString() : '-'} to ${report.period_to ? new Date(report.period_to).toLocaleDateString() : '-'}<br>
         <strong>Total Income:</strong> ₨ ${parseFloat(report.total_income).toFixed(2)}<br>
         <strong>Total Expense:</strong> ₨ ${parseFloat(report.total_expense).toFixed(2)}<br>
-        <strong>Total Commissions:</strong> ₨ ${parseFloat(report.total_commissions).toFixed(2)}<br>
+        <strong>Total Settlements:</strong> ₨ ${parseFloat(report.total_commissions).toFixed(2)}<br>
         <strong>Net Profit:</strong> ₨ ${parseFloat(report.net_profit).toFixed(2)}<br>
         <strong>Generated:</strong> ${new Date(report.created_at).toLocaleString()}
     `;
