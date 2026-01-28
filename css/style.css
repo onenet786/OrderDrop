@@ -999,7 +999,8 @@ footer {
     border-radius: var(--border-radius-sm);
     border: 1px solid rgba(255, 255, 255, 0.8);
     position: relative;
-    overflow: hidden;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 .order-details::before,

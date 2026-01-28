@@ -621,7 +621,7 @@ function createOrGetOrderInfoModal() {
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 700px;">
             <span class="close" onclick="closeOrderInfoModal()">&times;</span>
-            <div id="orderInfoBody"></div>
+            <div id="orderInfoBody" class="modal-body"></div>
         </div>
     `;
     document.body.appendChild(modal);

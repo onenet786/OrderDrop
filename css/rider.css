@@ -326,10 +326,19 @@ tr:hover {
   background-color: #059669;
 }
 
-.order-actions {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+.order-details {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 5px;
+}
+
+.order-details::-webkit-scrollbar {
+  width: 4px;
+}
+
+.order-details::-webkit-scrollbar-thumb {
+  background: var(--primary-light);
+  border-radius: 4px;
 }
 
 .order-actions .btn {

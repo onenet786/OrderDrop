@@ -652,6 +652,21 @@ textarea:focus {
   font-size: 1.1rem;
 }
 
+.order-details {
+  max-height: 350px;
+  overflow-y: auto;
+  padding-right: 5px;
+}
+
+.order-details::-webkit-scrollbar {
+  width: 4px;
+}
+
+.order-details::-webkit-scrollbar-thumb {
+  background: var(--primary-light);
+  border-radius: 4px;
+}
+
 .order-details-box {
   margin-top: 2rem;
   padding: 1.5rem;
@@ -659,6 +674,8 @@ textarea:focus {
   border-radius: var(--border-radius);
   text-align: left;
   display: none;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .order-details-box h4 {
@@ -1227,12 +1244,20 @@ textarea:focus {
   margin: 0 auto;
 }
 
-.checkout-form,
+.checkout-form {
+  background: var(--bg-surface);
+  padding: 2rem;
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow);
+}
+
 .order-summary {
   background: var(--bg-surface);
   padding: 2rem;
   border-radius: var(--border-radius);
   box-shadow: var(--shadow);
+  max-height: 500px;
+  overflow-y: auto;
 }
 
 .checkout-form h3,
@@ -1470,6 +1495,8 @@ textarea:focus {
   margin: 2rem 0;
   text-align: left;
   border: 1px solid var(--border-color);
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .order-item-row {
