@@ -1594,6 +1594,37 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                     );
                 }
             }
+
+            // Create rider cash movement for cash payments to show in financial menu
+            if (order.payment_method === 'cash') {
+                try {
+                    const movementDate = new Date().toISOString().split('T')[0];
+                    const dateStr = movementDate.replace(/-/g, '');
+                    const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
+                    const movementNumber = `RCM-${dateStr}-${randomStr}`;
+                    
+                    await req.db.execute(
+                        `INSERT INTO rider_cash_movements 
+                         (movement_number, rider_id, movement_date, movement_type, amount, description, reference_type, reference_id, status, recorded_by)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            movementNumber, 
+                            order.rider_id, 
+                            movementDate, 
+                            'cash_collection', 
+                            order.total_amount, 
+                            `Cash collection for Order #${order.order_number}`, 
+                            'order', 
+                            id, 
+                            'completed',
+                            req.user.user_type === 'admin' ? req.user.id : null
+                        ]
+                    );
+                } catch (err) {
+                    console.error('Error creating rider cash movement:', err);
+                    // Don't fail the whole request if financial recording fails, but log it
+                }
+            }
         }
 
         // Notifications - only to specific rooms to avoid duplicates
