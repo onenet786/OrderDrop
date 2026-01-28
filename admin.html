@@ -2863,6 +2863,7 @@
           </button>
         </div>
         <form id="paymentVoucherForm">
+          <input type="hidden" id="paymentVoucherId" name="id" />
           <div class="form-group">
             <label>Payee Name</label>
             <input type="text" id="payeeName" name="payeeName" required />
@@ -2926,6 +2927,7 @@
           </button>
         </div>
         <form id="receiptVoucherForm">
+          <input type="hidden" id="receiptVoucherId" name="id" />
           <div class="form-group">
             <label>Payer Name</label>
             <input type="text" id="payerName" name="payerName" required />
@@ -2988,6 +2990,7 @@
           </button>
         </div>
         <form id="transactionForm">
+          <input type="hidden" id="transactionId" name="id" />
           <div class="form-group">
             <label>Amount (₨)</label>
             <input
@@ -3049,9 +3052,12 @@
           </button>
         </div>
         <form id="riderCashForm">
+          <input type="hidden" id="riderCashId" name="id" />
           <div class="form-group">
-            <label>Rider ID</label>
-            <input type="number" id="riderId" name="riderId" required />
+            <label>Rider</label>
+            <select id="riderId" name="riderId" required>
+              <option value="">-- Select Rider --</option>
+            </select>
           </div>
           <div class="form-group">
             <label>Movement Type</label>
@@ -3104,6 +3110,7 @@
           </button>
         </div>
         <form id="storeSettlementForm">
+          <input type="hidden" id="storeSettlementId" name="id" />
           <div class="form-group">
             <label>Store</label>
             <select id="settlementStoreSelect" name="storeId" required>
@@ -3209,6 +3216,7 @@
           </button>
         </div>
         <form id="expenseForm">
+          <input type="hidden" id="expenseId" name="id" />
           <div class="form-group">
             <label>Amount (₨)</label>
             <input

@@ -787,7 +787,7 @@ textarea:focus {
 }
 
 /* Status Badges */
-.status-active, .status-available, .status-verified, .status-delivered {
+.status-active, .status-available, .status-verified, .status-delivered, .status-completed, .status-approved, .status-paid, .status-received, .status-success {
     background-color: #def7ec;
     color: #03543f;
     padding: 0.25rem 0.75rem;
@@ -796,7 +796,7 @@ textarea:focus {
     font-weight: 600;
     text-transform: uppercase;
 }
-.status-inactive, .status-unavailable, .status-pending, .status-cancelled {
+.status-inactive, .status-unavailable, .status-pending, .status-cancelled, .status-failed, .status-rejected, .status-draft {
     background-color: #fde8e8;
     color: #9b1c1c;
     padding: 0.25rem 0.75rem;
@@ -805,6 +805,32 @@ textarea:focus {
     font-weight: 600;
     text-transform: uppercase;
 }
+.status-refunded, .status-adjustment, .status-settlement {
+    background-color: #e1effe;
+    color: #1e429f;
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: baseline;
+    border-radius: 0.25rem;
+}
+.badge-income { background-color: #10b981; color: white; }
+.badge-expense { background-color: #ef4444; color: white; }
+.badge-settlement { background-color: #3b82f6; color: white; }
+.badge-refund { background-color: #f59e0b; color: white; }
+.badge-adjustment { background-color: #6b7280; color: white; }
 
 /* Priority Badges */
 .priority-badge {

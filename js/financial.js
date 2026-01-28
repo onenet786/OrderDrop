@@ -459,169 +459,278 @@ function displayReports(reports) {
 }
 
 function createPaymentVoucher() {
-    document.getElementById('paymentVoucherForm').reset();
+    const form = document.getElementById('paymentVoucherForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('paymentVoucherId');
+    if (idInput) idInput.value = '';
+    
+    document.querySelector('#paymentVoucherModal h2').textContent = 'Create Payment Voucher';
+    document.querySelector('#paymentVoucherModal .btn-primary').textContent = 'Create Voucher';
+    
     formChangedState['paymentVoucherModal'] = false;
     openModal('paymentVoucherModal');
 }
 
 async function submitPaymentVoucher() {
+    const id = document.getElementById('paymentVoucherId').value;
     const payeeName = document.getElementById('payeeName').value;
     const payeeType = document.getElementById('payeeType').value;
     const amount = parseFloat(document.getElementById('paymentAmount').value);
     const purpose = document.getElementById('paymentPurpose').value;
     const paymentMethod = document.getElementById('paymentMethodPV').value;
 
+    const payload = {
+        payee_name: payeeName,
+        payee_type: payeeType,
+        amount,
+        purpose,
+        description: '',
+        payment_method: paymentMethod,
+        check_number: null,
+        bank_details: null
+    };
+
     try {
-        const response = await fetch(`${API_BASE}/api/financial/payment-vouchers`, {
-            method: 'POST',
+        const url = id ? `${API_BASE}/api/financial/payment-vouchers/${id}` : `${API_BASE}/api/financial/payment-vouchers`;
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             },
-            body: JSON.stringify({
-                payee_name: payeeName,
-                payee_type: payeeType,
-                amount,
-                purpose,
-                description: '',
-                payment_method: paymentMethod,
-                check_number: null,
-                bank_details: null
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         if (data.success) {
-            showSuccess('Success', 'Payment voucher created successfully');
+            showSuccess('Success', id ? 'Payment voucher updated' : 'Payment voucher created successfully');
             closeModal('paymentVoucherModal');
             loadPaymentVouchers();
         } else {
             showError('Error', data.message);
         }
     } catch (error) {
-        console.error('Error creating payment voucher:', error);
-        showError('Error', 'Failed to create payment voucher');
+        console.error('Error submitting payment voucher:', error);
+        showError('Error', 'Failed to save payment voucher');
     }
 }
 
+function editPaymentVoucher(id) {
+    const voucher = currentPaymentVouchers.find(v => v.id === id);
+    if (!voucher) return;
+
+    document.getElementById('paymentVoucherId').value = voucher.id;
+    document.getElementById('payeeName').value = voucher.payee_name;
+    document.getElementById('payeeType').value = voucher.payee_type;
+    document.getElementById('paymentAmount').value = voucher.amount;
+    document.getElementById('paymentPurpose').value = voucher.purpose || '';
+    document.getElementById('paymentMethodPV').value = voucher.payment_method;
+
+    document.querySelector('#paymentVoucherModal h2').textContent = 'Edit Payment Voucher';
+    document.querySelector('#paymentVoucherModal .btn-primary').textContent = 'Update Voucher';
+
+    formChangedState['paymentVoucherModal'] = false;
+    openModal('paymentVoucherModal');
+}
+
 function createReceiptVoucher() {
-    document.getElementById('receiptVoucherForm').reset();
+    const form = document.getElementById('receiptVoucherForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('receiptVoucherId');
+    if (idInput) idInput.value = '';
+    
+    document.querySelector('#receiptVoucherModal h2').textContent = 'Create Receipt Voucher';
+    document.querySelector('#receiptVoucherModal .btn-primary').textContent = 'Create Voucher';
+    
     formChangedState['receiptVoucherModal'] = false;
     openModal('receiptVoucherModal');
 }
 
 async function submitReceiptVoucher() {
+    const id = document.getElementById('receiptVoucherId').value;
     const payerName = document.getElementById('payerName').value;
     const payerType = document.getElementById('payerType').value;
     const amount = parseFloat(document.getElementById('receiptAmount').value);
     const description = document.getElementById('receiptDescription').value;
     const paymentMethod = document.getElementById('paymentMethodRV').value;
 
+    const payload = {
+        payer_name: payerName,
+        payer_type: payerType,
+        amount,
+        description,
+        details: '',
+        payment_method: paymentMethod,
+        check_number: null,
+        bank_details: null
+    };
+
     try {
-        const response = await fetch(`${API_BASE}/api/financial/receipt-vouchers`, {
-            method: 'POST',
+        const url = id ? `${API_BASE}/api/financial/receipt-vouchers/${id}` : `${API_BASE}/api/financial/receipt-vouchers`;
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             },
-            body: JSON.stringify({
-                payer_name: payerName,
-                payer_type: payerType,
-                amount,
-                description,
-                details: '',
-                payment_method: paymentMethod,
-                check_number: null,
-                bank_details: null
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         if (data.success) {
-            showSuccess('Success', 'Receipt voucher created successfully');
+            showSuccess('Success', id ? 'Receipt voucher updated' : 'Receipt voucher created successfully');
             closeModal('receiptVoucherModal');
             loadReceiptVouchers();
         } else {
             showError('Error', data.message);
         }
     } catch (error) {
-        console.error('Error creating receipt voucher:', error);
-        showError('Error', 'Failed to create receipt voucher');
+        console.error('Error submitting receipt voucher:', error);
+        showError('Error', 'Failed to save receipt voucher');
     }
 }
 
+function editReceiptVoucher(id) {
+    const voucher = currentReceiptVouchers.find(v => v.id === id);
+    if (!voucher) return;
+
+    document.getElementById('receiptVoucherId').value = voucher.id;
+    document.getElementById('payerName').value = voucher.payer_name;
+    document.getElementById('payerType').value = voucher.payer_type;
+    document.getElementById('receiptAmount').value = voucher.amount;
+    document.getElementById('receiptDescription').value = voucher.description || '';
+    document.getElementById('paymentMethodRV').value = voucher.payment_method;
+
+    document.querySelector('#receiptVoucherModal h2').textContent = 'Edit Receipt Voucher';
+    document.querySelector('#receiptVoucherModal .btn-primary').textContent = 'Update Voucher';
+
+    formChangedState['receiptVoucherModal'] = false;
+    openModal('receiptVoucherModal');
+}
+
 function createTransaction() {
-    document.getElementById('transactionForm').reset();
+    const form = document.getElementById('transactionForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('transactionId');
+    if (idInput) idInput.value = '';
+
+    document.querySelector('#transactionModal h2').textContent = 'Record Transaction';
+    document.querySelector('#transactionModal .btn-primary').textContent = 'Record Transaction';
+
     formChangedState['transactionModal'] = false;
     openModal('transactionModal');
 }
 
 async function submitTransaction() {
+    const id = document.getElementById('transactionId').value;
     const amount = parseFloat(document.getElementById('transactionAmount').value);
     const type = document.getElementById('transactionType').value;
     const description = document.getElementById('transactionDescription').value;
     const paymentMethod = document.getElementById('transactionPaymentMethod').value;
 
+    const payload = {
+        transaction_type: type,
+        amount,
+        description,
+        payment_method: paymentMethod,
+        category: null
+    };
+
     try {
-        const response = await fetch(`${API_BASE}/api/financial/transactions`, {
-            method: 'POST',
+        const url = id ? `${API_BASE}/api/financial/transactions/${id}` : `${API_BASE}/api/financial/transactions`;
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             },
-            body: JSON.stringify({
-                transaction_type: type,
-                amount,
-                description,
-                payment_method: paymentMethod,
-                category: null
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         if (data.success) {
-            showSuccess('Success', 'Transaction recorded successfully');
+            showSuccess('Success', id ? 'Transaction updated' : 'Transaction recorded successfully');
             closeModal('transactionModal');
             loadTransactions();
         } else {
             showError('Error', data.message);
         }
     } catch (error) {
-        console.error('Error creating transaction:', error);
-        showError('Error', 'Failed to create transaction');
+        console.error('Error submitting transaction:', error);
+        showError('Error', 'Failed to save transaction');
     }
 }
 
 function createRiderCash() {
     document.getElementById('riderCashForm').reset();
+    document.getElementById('riderCashId').value = '';
     formChangedState['riderCashModal'] = false;
+    document.querySelector('#riderCashModal h2').textContent = 'Record Rider Cash Movement';
+    document.querySelector('#riderCashModal .btn-primary').textContent = 'Record Movement';
+    populateRidersDropdown();
     openModal('riderCashModal');
 }
 
+async function populateRidersDropdown() {
+    try {
+        const response = await fetch(`${API_BASE}/api/riders`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        
+        const select = document.getElementById('riderId');
+        if (select && data.riders) {
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">-- Select Rider --</option>';
+            data.riders.forEach(rider => {
+                const option = document.createElement('option');
+                option.value = rider.id;
+                option.textContent = `${rider.first_name} ${rider.last_name} (${rider.phone})`;
+                select.appendChild(option);
+            });
+            if (currentValue) select.value = currentValue;
+        }
+    } catch (error) {
+        console.error('Error populating riders dropdown:', error);
+    }
+}
+
 async function submitRiderCash() {
+    const id = document.getElementById('riderCashId').value;
     const riderId = parseInt(document.getElementById('riderId').value);
     const movementType = document.getElementById('movementType').value;
     const amount = parseFloat(document.getElementById('riderCashAmount').value);
     const description = document.getElementById('riderCashDescription').value;
 
+    const payload = {
+        rider_id: riderId,
+        movement_type: movementType,
+        amount,
+        description
+    };
+
     try {
-        const response = await fetch(`${API_BASE}/api/financial/rider-cash`, {
-            method: 'POST',
+        const url = id ? `${API_BASE}/api/financial/rider-cash/${id}` : `${API_BASE}/api/financial/rider-cash`;
+        const method = id ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             },
-            body: JSON.stringify({
-                rider_id: riderId,
-                movement_type: movementType,
-                amount,
-                description
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         if (data.success) {
-            showSuccess('Success', 'Cash movement recorded successfully');
+            showSuccess('Success', id ? 'Rider cash movement updated' : 'Cash movement recorded successfully');
             closeModal('riderCashModal');
             loadRiderCash();
         } else {
@@ -634,114 +743,158 @@ async function submitRiderCash() {
 }
 
 function createStoreSettlement() {
-    document.getElementById('storeSettlementForm').reset();
+    const form = document.getElementById('storeSettlementForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('storeSettlementId');
+    if (idInput) idInput.value = '';
+
+    document.querySelector('#storeSettlementModal h2').textContent = 'Create Store Settlement';
+    document.querySelector('#storeSettlementModal .btn-primary').textContent = 'Create Settlement';
+
     formChangedState['storeSettlementModal'] = false;
     populateStoresDropdown();
     openModal('storeSettlementModal');
 }
 
-async function populateStoresDropdown() {
-    try {
-        const response = await fetch(`${API_BASE}/api/stores?admin=1`, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
-        });
-        const data = await response.json();
-        
-        const select = document.getElementById('settlementStoreSelect');
-        if (select && data.stores) {
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">-- Select Store --</option>';
-            data.stores.forEach(store => {
-                const option = document.createElement('option');
-                option.value = store.id;
-                option.textContent = store.name;
-                select.appendChild(option);
-            });
-            if (currentValue) select.value = currentValue;
-        }
-    } catch (error) {
-        console.error('Error populating stores dropdown:', error);
-    }
-}
-
 async function submitStoreSettlement() {
+    const id = document.getElementById('storeSettlementId').value;
     const storeId = parseInt(document.getElementById('settlementStoreSelect').value);
     const netAmount = parseFloat(document.getElementById('settlementAmount').value);
     const paymentMethod = document.getElementById('settlementPaymentMethod').value;
     const periodFrom = document.getElementById('periodFrom').value || null;
     const periodTo = document.getElementById('periodTo').value || null;
 
+    const payload = {
+        store_id: storeId,
+        net_amount: netAmount,
+        payment_method: paymentMethod,
+        period_from: periodFrom,
+        period_to: periodTo
+    };
+
     try {
-        const response = await fetch(`${API_BASE}/api/financial/store-settlements`, {
-            method: 'POST',
+        const url = id ? `${API_BASE}/api/financial/store-settlements/${id}` : `${API_BASE}/api/financial/store-settlements`;
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             },
-            body: JSON.stringify({
-                store_id: storeId,
-                net_amount: netAmount,
-                payment_method: paymentMethod,
-                period_from: periodFrom,
-                period_to: periodTo
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         if (data.success) {
-            showSuccess('Success', 'Settlement created successfully');
+            showSuccess('Success', id ? 'Settlement updated' : 'Settlement created successfully');
             closeModal('storeSettlementModal');
             loadStoreSettlements();
         } else {
             showError('Error', data.message);
         }
     } catch (error) {
-        console.error('Error creating settlement:', error);
-        showError('Error', 'Failed to create settlement');
+        console.error('Error submitting settlement:', error);
+        showError('Error', 'Failed to save settlement');
     }
 }
 
+function editStoreSettlement(id) {
+    const settlement = currentStoreSettlements.find(s => s.id === id);
+    if (!settlement) return;
+
+    document.getElementById('storeSettlementId').value = settlement.id;
+    document.getElementById('settlementStoreSelect').value = settlement.store_id;
+    document.getElementById('settlementAmount').value = settlement.net_amount;
+    document.getElementById('settlementPaymentMethod').value = settlement.payment_method;
+    
+    if (settlement.period_from) {
+        document.getElementById('periodFrom').value = settlement.period_from.split('T')[0];
+    }
+    if (settlement.period_to) {
+        document.getElementById('periodTo').value = settlement.period_to.split('T')[0];
+    }
+
+    document.querySelector('#storeSettlementModal h2').textContent = 'Edit Store Settlement';
+    document.querySelector('#storeSettlementModal .btn-primary').textContent = 'Update Settlement';
+
+    formChangedState['storeSettlementModal'] = false;
+    populateStoresDropdown();
+    openModal('storeSettlementModal');
+}
+
 function createExpense() {
-    document.getElementById('expenseForm').reset();
+    const form = document.getElementById('expenseForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('expenseId');
+    if (idInput) idInput.value = '';
+
+    document.querySelector('#expenseModal h2').textContent = 'Record Expense';
+    document.querySelector('#expenseModal .btn-primary').textContent = 'Record Expense';
+
     formChangedState['expenseModal'] = false;
     openModal('expenseModal');
 }
 
 async function submitExpense() {
+    const id = document.getElementById('expenseId').value;
     const category = document.getElementById('expenseCategory').value;
     const description = document.getElementById('expenseDescription').value;
     const amount = parseFloat(document.getElementById('expenseAmount').value);
     const vendorName = document.getElementById('vendorName').value;
     const paymentMethod = document.getElementById('expensePaymentMethod').value;
 
+    const payload = {
+        category,
+        description,
+        amount,
+        vendor_name: vendorName,
+        payment_method: paymentMethod
+    };
+
     try {
-        const response = await fetch(`${API_BASE}/api/financial/expenses`, {
-            method: 'POST',
+        const url = id ? `${API_BASE}/api/financial/expenses/${id}` : `${API_BASE}/api/financial/expenses`;
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
             },
-            body: JSON.stringify({
-                category,
-                description,
-                amount,
-                vendor_name: vendorName,
-                payment_method: paymentMethod
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
         if (data.success) {
-            showSuccess('Success', 'Expense recorded successfully');
+            showSuccess('Success', id ? 'Expense updated' : 'Expense recorded successfully');
             closeModal('expenseModal');
             loadExpenses();
         } else {
             showError('Error', data.message);
         }
     } catch (error) {
-        console.error('Error recording expense:', error);
-        showError('Error', 'Failed to record expense');
+        console.error('Error submitting expense:', error);
+        showError('Error', 'Failed to save expense');
     }
+}
+
+function editExpense(id) {
+    const expense = currentExpenses.find(e => e.id === id);
+    if (!expense) return;
+
+    document.getElementById('expenseId').value = expense.id;
+    document.getElementById('expenseCategory').value = expense.category;
+    document.getElementById('expenseDescription').value = expense.description || '';
+    document.getElementById('expenseAmount').value = expense.amount;
+    document.getElementById('vendorName').value = expense.vendor_name || '';
+    document.getElementById('expensePaymentMethod').value = expense.payment_method;
+
+    document.querySelector('#expenseModal h2').textContent = 'Edit Expense';
+    document.querySelector('#expenseModal .btn-primary').textContent = 'Update Expense';
+
+    formChangedState['expenseModal'] = false;
+    openModal('expenseModal');
 }
 
 async function approvePaymentVoucher(id) {
@@ -945,33 +1098,67 @@ function viewReport(reportId) {
     const report = currentReports.find(r => r.id === reportId);
     if (!report) return;
 
-    showInfo('Report Details', `Report: ${report.report_number}<br>Type: ${report.report_type}<br>Income: ₨ ${report.total_income}<br>Expense: ₨ ${report.total_expense}<br>Net Profit: ₨ ${report.net_profit}`, 5000);
-}
-
-function editPaymentVoucher(id) {
-    showInfo('Edit', 'Edit functionality coming soon');
-}
-
-function editReceiptVoucher(id) {
-    showInfo('Edit', 'Edit functionality coming soon');
+    const details = `
+        <strong>Number:</strong> ${report.report_number}<br>
+        <strong>Type:</strong> ${report.report_type.replace(/_/g, ' ')}<br>
+        <strong>Period:</strong> ${report.period_from ? new Date(report.period_from).toLocaleDateString() : '-'} to ${report.period_to ? new Date(report.period_to).toLocaleDateString() : '-'}<br>
+        <strong>Total Income:</strong> ₨ ${parseFloat(report.total_income).toFixed(2)}<br>
+        <strong>Total Expense:</strong> ₨ ${parseFloat(report.total_expense).toFixed(2)}<br>
+        <strong>Total Commissions:</strong> ₨ ${parseFloat(report.total_commissions).toFixed(2)}<br>
+        <strong>Net Profit:</strong> ₨ ${parseFloat(report.net_profit).toFixed(2)}<br>
+        <strong>Generated:</strong> ${new Date(report.created_at).toLocaleString()}
+    `;
+    showInfo('Report Details', details, 15000);
 }
 
 function editRiderCash(id) {
-    showInfo('Edit', 'Edit functionality coming soon');
+    const movement = currentRiderCash.find(m => m.id === id);
+    if (!movement) return;
+
+    document.getElementById('riderCashId').value = movement.id;
+    document.getElementById('riderId').value = movement.rider_id;
+    document.getElementById('movementType').value = movement.movement_type;
+    document.getElementById('riderCashAmount').value = movement.amount;
+    document.getElementById('riderCashDescription').value = movement.description || '';
+
+    document.querySelector('#riderCashModal h2').textContent = 'Edit Rider Cash Movement';
+    document.querySelector('#riderCashModal .btn-primary').textContent = 'Update Movement';
+
+    formChangedState['riderCashModal'] = false;
+    populateRidersDropdown();
+    openModal('riderCashModal');
 }
 
-function editStoreSettlement(id) {
-    showInfo('Edit', 'Edit functionality coming soon');
-}
+function editTransaction(id) {
+    const transaction = currentTransactions.find(t => t.id === id);
+    if (!transaction) return;
 
-function editExpense(id) {
-    showInfo('Edit', 'Edit functionality coming soon');
+    document.getElementById('transactionId').value = transaction.id;
+    document.getElementById('transactionAmount').value = transaction.amount;
+    document.getElementById('transactionType').value = transaction.transaction_type;
+    document.getElementById('transactionDescription').value = transaction.description || '';
+    document.getElementById('transactionPaymentMethod').value = transaction.payment_method;
+
+    document.querySelector('#transactionModal h2').textContent = 'Edit Transaction';
+    document.querySelector('#transactionModal .btn-primary').textContent = 'Update Transaction';
+
+    formChangedState['transactionModal'] = false;
+    openModal('transactionModal');
 }
 
 function viewTransaction(id) {
     const transaction = currentTransactions.find(t => t.id === id);
     if (transaction) {
-        showInfo('Transaction Details', `Transaction: ${transaction.transaction_number}<br>Type: ${transaction.transaction_type}<br>Amount: ₨ ${transaction.amount}<br>Status: ${transaction.status}`, 5000);
+        const details = `
+            <strong>Number:</strong> ${transaction.transaction_number}<br>
+            <strong>Type:</strong> ${transaction.transaction_type}<br>
+            <strong>Amount:</strong> ₨ ${parseFloat(transaction.amount).toFixed(2)}<br>
+            <strong>Method:</strong> ${transaction.payment_method}<br>
+            <strong>Status:</strong> <span class="status-${transaction.status}">${transaction.status}</span><br>
+            <strong>Description:</strong> ${transaction.description || '-'}<br>
+            <strong>Date:</strong> ${new Date(transaction.created_at).toLocaleString()}
+        `;
+        showInfo('Transaction Details', details, 10000);
     }
 }
 
