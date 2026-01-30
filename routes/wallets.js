@@ -171,7 +171,8 @@ router.post('/topup', authenticateToken, [
             related_entity_id: userId,
             reference_type: 'wallet_transaction',
             reference_id: transactionId,
-            created_by: userId
+            created_by: userId,
+            notes: `Customer's Balance: ${amount} (Cr.) Cash In hand : ${amount} ( Dr.)`
         });
 
         if (saveCard && paymentIntent.payment_method) {

@@ -1524,4 +1524,289 @@ router.post('/reports/generate', [
     }
 });
 
+// ===== CUSTOM REPORTS =====
+
+// Rider Report
+router.get('/reports/rider/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { start_date, end_date } = req.query;
+        let dateFilter = '';
+        let params = [id];
+
+        if (start_date && end_date) {
+            dateFilter = ' AND created_at BETWEEN ? AND ?';
+            params.push(start_date, end_date);
+        }
+
+        // i. Number of Orders (Delivered, Cancelled, Pending)
+        const [orderStats] = await req.db.execute(
+            `SELECT status, COUNT(*) as count FROM orders WHERE rider_id = ? ${dateFilter} GROUP BY status`,
+            params
+        );
+
+        // ii. Reviews and Ratings (Placeholder as table doesn't exist yet, but checking stores for pattern)
+        // For now returning default
+        const ratings = { average: 0, total_reviews: 0 };
+
+        // iv. Payment in Credit
+        // Usually means orders paid via Card/Wallet where Rider gets credited in their wallet
+        const [creditPayments] = await req.db.execute(
+            `SELECT SUM(amount) as total FROM wallet_transactions wt
+             JOIN wallets w ON wt.wallet_id = w.id
+             WHERE w.rider_id = ? AND wt.type = 'credit' AND wt.reference_type = 'order' ${dateFilter.replace('created_at', 'wt.created_at')}`,
+            params
+        );
+
+        // v. Kilometers Travelled
+        const [kmStats] = await req.db.execute(
+            `SELECT SUM(distance) as total_km FROM riders_fuel_history WHERE rider_id = ? ${dateFilter.replace('created_at', 'entry_date')}`,
+            params
+        );
+
+        res.json({
+            success: true,
+            report: {
+                rider_id: id,
+                orders: orderStats,
+                ratings,
+                payment_in_credit: parseFloat(creditPayments[0]?.total || 0),
+                km_travelled: parseFloat(kmStats[0]?.total_km || 0)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching rider report:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch rider report', error: error.message });
+    }
+});
+
+// Store Report
+router.get('/reports/store/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { start_date, end_date } = req.query;
+        let dateFilter = '';
+        let params = [id];
+
+        if (start_date && end_date) {
+            dateFilter = ' AND created_at BETWEEN ? AND ?';
+            params.push(start_date, end_date);
+        }
+
+        // i. Number of Purchases (Product-wise)
+        const [productStats] = await req.db.execute(
+            `SELECT p.name, SUM(oi.quantity) as total_quantity, SUM(oi.price * oi.quantity) as total_amount
+             FROM order_items oi
+             JOIN products p ON oi.product_id = p.id
+             JOIN orders o ON oi.order_id = o.id
+             WHERE oi.store_id = ? ${dateFilter.replace('created_at', 'o.created_at')}
+             GROUP BY p.id, p.name`,
+            params
+        );
+
+        // ii. Total Purchases after Less Discount
+        const [totalStats] = await req.db.execute(
+            `SELECT SUM(total_amount) as total_gross FROM orders WHERE store_id = ? AND status = 'delivered' ${dateFilter}`,
+            params
+        );
+
+        res.json({
+            success: true,
+            report: {
+                store_id: id,
+                product_wise_purchases: productStats,
+                total_purchases: parseFloat(totalStats[0]?.total_gross || 0)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching store report:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch store report', error: error.message });
+    }
+});
+
+// ===== JOURNAL VOUCHERS (JNV) =====
+
+router.get('/journal-vouchers', async (req, res) => {
+    try {
+        const [vouchers] = await req.db.execute(
+            `SELECT j.*, u.first_name as prepared_by_name FROM journal_vouchers j
+             LEFT JOIN users u ON j.prepared_by = u.id ORDER BY j.voucher_date DESC`
+        );
+        res.json({ success: true, vouchers });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.post('/journal-vouchers', [
+    body('voucher_date').isDate(),
+    body('total_amount').isFloat({ min: 0 }),
+    body('entries').isArray().isLength({ min: 2 })
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+
+        const { voucher_date, description, reference_number, total_amount, entries } = req.body;
+        const voucher_number = generateVoucherNumber('JNV');
+
+        const [result] = await req.db.execute(
+            `INSERT INTO journal_vouchers (voucher_number, voucher_date, description, reference_number, total_amount, prepared_by)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [voucher_number, voucher_date, description, reference_number, total_amount, req.user.id]
+        );
+
+        const jnv_id = result.insertId;
+
+        for (const entry of entries) {
+            await req.db.execute(
+                `INSERT INTO journal_voucher_entries (jnv_id, account_name, entity_type, entity_id, entry_type, amount, description)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [jnv_id, entry.account_name, entry.entity_type, entry.entity_id, entry.entry_type, entry.amount, entry.description]
+            );
+        }
+
+        res.status(201).json({ success: true, message: 'Journal Voucher created successfully', voucher_number });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Platform Summary Report
+router.get('/reports/platform-summary', async (req, res) => {
+    try {
+        const { start_date, end_date } = req.query;
+        let dateFilter = '';
+        let params = [];
+
+        if (start_date && end_date) {
+            dateFilter = ' WHERE created_at BETWEEN ? AND ?';
+            params.push(start_date, end_date);
+        }
+
+        const [orders] = await req.db.execute(
+            `SELECT COUNT(*) as total_orders, SUM(total_amount) as gross_sales, SUM(delivery_fee) as total_delivery_fees 
+             FROM orders ${dateFilter}`,
+            params
+        );
+
+        const [stores] = await req.db.execute('SELECT COUNT(*) as active_stores FROM stores WHERE is_active = true');
+        const [riders] = await req.db.execute('SELECT COUNT(*) as active_riders FROM riders WHERE is_active = true');
+        const [users] = await req.db.execute('SELECT COUNT(*) as total_customers FROM users WHERE user_type = \'customer\'');
+
+        res.json({
+            success: true,
+            report: {
+                ...orders[0],
+                active_stores: stores[0].active_stores,
+                active_riders: riders[0].active_riders,
+                total_customers: users[0].total_customers
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Top Selling Products Report
+router.get('/reports/top-products', async (req, res) => {
+    try {
+        const { limit = 10 } = req.query;
+        const [products] = await req.db.execute(
+            `SELECT p.name, s.name as store_name, SUM(oi.quantity) as total_sold, SUM(oi.price * oi.quantity) as total_revenue
+             FROM order_items oi
+             JOIN products p ON oi.product_id = p.id
+             JOIN stores s ON p.store_id = s.id
+             GROUP BY p.id, p.name, s.name
+             ORDER BY total_sold DESC
+             LIMIT ?`,
+            [parseInt(limit)]
+        );
+        res.json({ success: true, products });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Rider Performance Ranking
+router.get('/reports/rider-performance', async (req, res) => {
+    try {
+        const [riders] = await req.db.execute(
+            `SELECT r.id, r.first_name, r.last_name, 
+                    COUNT(o.id) as total_deliveries, 
+                    SUM(o.total_amount) as total_cash_handled,
+                    (SELECT SUM(distance) FROM riders_fuel_history WHERE rider_id = r.id) as total_km
+             FROM riders r
+             LEFT JOIN orders o ON r.id = o.rider_id AND o.status = 'delivered'
+             GROUP BY r.id, r.first_name, r.last_name
+             ORDER BY total_deliveries DESC`
+        );
+        res.json({ success: true, riders });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Store Performance Ranking
+router.get('/reports/store-performance', async (req, res) => {
+    try {
+        const [stores] = await req.db.execute(
+            `SELECT s.id, s.name, s.rating, 
+                    COUNT(o.id) as total_orders, 
+                    SUM(o.total_amount) as total_sales
+             FROM stores s
+             LEFT JOIN orders o ON s.id = o.store_id AND o.status = 'delivered'
+             GROUP BY s.id, s.name, s.rating
+             ORDER BY total_sales DESC`
+        );
+        res.json({ success: true, stores });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Cash Flow Analysis (Rider Collections vs Submissions)
+router.get('/reports/cash-flow', async (req, res) => {
+    try {
+        const [collections] = await req.db.execute(
+            `SELECT SUM(amount) as total FROM rider_cash_movements WHERE movement_type = 'cash_collection' AND status = 'completed'`
+        );
+        const [submissions] = await req.db.execute(
+            `SELECT SUM(amount) as total FROM rider_cash_movements WHERE movement_type = 'cash_submission' AND status = 'completed'`
+        );
+        const [vouchers] = await req.db.execute(
+            `SELECT SUM(amount) as total FROM cash_receipt_vouchers WHERE status = 'received'`
+        );
+
+        res.json({
+            success: true,
+            summary: {
+                total_rider_collections: parseFloat(collections[0]?.total || 0),
+                total_rider_submissions: parseFloat(submissions[0]?.total || 0),
+                total_other_receipts: parseFloat(vouchers[0]?.total || 0),
+                pending_with_riders: parseFloat(collections[0]?.total || 0) - parseFloat(submissions[0]?.total || 0)
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Category Wise Sales Report
+router.get('/reports/category-sales', async (req, res) => {
+    try {
+        const [categories] = await req.db.execute(
+            `SELECT c.name, COUNT(oi.id) as items_sold, SUM(oi.price * oi.quantity) as revenue
+             FROM order_items oi
+             JOIN products p ON oi.product_id = p.id
+             JOIN categories c ON p.category_id = c.id
+             GROUP BY c.id, c.name
+             ORDER BY revenue DESC`
+        );
+        res.json({ success: true, categories });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;

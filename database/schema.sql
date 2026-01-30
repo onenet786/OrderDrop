@@ -424,6 +424,40 @@ CREATE TABLE IF NOT EXISTS store_settlements (
     INDEX idx_ss_status (status)
 );
 
+-- Journal Vouchers (JNV) table
+CREATE TABLE IF NOT EXISTS journal_vouchers (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    voucher_number VARCHAR(50) UNIQUE NOT NULL,
+    voucher_date DATE NOT NULL,
+    description TEXT,
+    reference_number VARCHAR(100),
+    total_amount DECIMAL(12, 2) NOT NULL,
+    status ENUM('draft', 'posted', 'cancelled') DEFAULT 'draft',
+    prepared_by INT,
+    approved_by INT,
+    posted_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (prepared_by) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_jnv_status (status),
+    INDEX idx_jnv_voucher_date (voucher_date)
+);
+
+-- Journal Voucher Entries table
+CREATE TABLE IF NOT EXISTS journal_voucher_entries (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    jnv_id INT NOT NULL,
+    account_name VARCHAR(100) NOT NULL,
+    entity_type ENUM('customer', 'store', 'rider', 'vendor', 'other') DEFAULT 'other',
+    entity_id INT,
+    entry_type ENUM('debit', 'credit') NOT NULL,
+    amount DECIMAL(12, 2) NOT NULL,
+    description TEXT,
+    FOREIGN KEY (jnv_id) REFERENCES journal_vouchers(id) ON DELETE CASCADE,
+    INDEX idx_jnv_entry_entity (entity_type, entity_id)
+);
+
 -- Admin Expenses table
 CREATE TABLE IF NOT EXISTS admin_expenses (
     id INT PRIMARY KEY AUTO_INCREMENT,

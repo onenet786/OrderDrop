@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireStoreOwner } = require('../middleware/auth');
 const { sendOrderThanksEmail } = require('../services/emailService');
+const { recordFinancialTransaction } = require('../utils/dbHelpers');
 
 const router = express.Router();
 
@@ -1561,12 +1562,46 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
         );
 
         if (payment_status === 'paid' && order.rider_id && order.payment_status !== 'paid') {
-            // Calculate rider earnings based on payment method
-            // For cash: rider gets the full order amount (customer paid cash)
-            // For card/wallet: rider gets only delivery fee (customer already paid card/wallet to store)
-            const riderEarnings = order.payment_method === 'cash' 
-                ? parseFloat(order.total_amount || 0) 
-                : parseFloat(order.delivery_fee || 0);
+            // New Financial Management Logic for Basic Delivery of Goods
+            // Store: 100 (Cr.), Delivery Charges: 70 (Cr.), Rider: 170 (Dr.)
+            const orderTotal = parseFloat(order.total_amount || 0);
+            const deliveryFee = parseFloat(order.delivery_fee || 0);
+            const storeAmount = orderTotal - deliveryFee;
+
+            // 1. Credit the Store (Payable to store)
+            await recordFinancialTransaction(req.db, {
+                transaction_type: 'settlement', // Using settlement for store payable
+                category: 'store_payable',
+                description: `Store Credit for Order #${order.order_number}`,
+                amount: storeAmount,
+                payment_method: order.payment_method,
+                related_entity_type: 'store',
+                related_entity_id: order.store_id,
+                reference_type: 'order',
+                reference_id: id,
+                created_by: req.user.id,
+                notes: 'Store: 100 (Cr.)'
+            });
+
+            // 2. Credit Delivery Charges (Income)
+            await recordFinancialTransaction(req.db, {
+                transaction_type: 'income',
+                category: 'delivery_charges',
+                description: `Delivery Charges for Order #${order.order_number}`,
+                amount: deliveryFee,
+                payment_method: order.payment_method,
+                related_entity_type: 'rider',
+                related_entity_id: order.rider_id,
+                reference_type: 'order',
+                reference_id: id,
+                created_by: req.user.id,
+                notes: 'Delivery Charges: 70 (Cr.)'
+            });
+
+            // 3. Debit the Rider (Receivable from rider if cash, or just tracking balance)
+            // If it's cash, rider is Dr for total amount. If card/wallet, rider is not Dr for total.
+            // But per user request: Rider's Balance: 170 (Dr.)
+            const riderDrAmount = orderTotal;
             
             const [wallets] = await req.db.execute(
                 'SELECT id, balance FROM wallets WHERE rider_id = ?',
@@ -1575,22 +1610,25 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
 
             if (wallets.length > 0) {
                 const wallet = wallets[0];
-                const newBalance = parseFloat(wallet.balance || 0) + riderEarnings;
+                // For cash: debit the wallet (reduce balance if it represents company's liability to rider)
+                // In this system, wallet.balance seems to be what the company owes the rider.
+                // If rider collects cash, company owes them LESS. So we subtract.
+                const newBalance = parseFloat(wallet.balance || 0) - riderDrAmount;
                 
                 await req.db.execute(
-                    'UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?',
-                    [newBalance, riderEarnings, wallet.id]
+                    'UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?',
+                    [newBalance, riderDrAmount, wallet.id]
                 );
 
                 await req.db.execute(
                     `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
                      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [wallet.id, 'credit', riderEarnings, `Payment received for order #${id}`, 'order', id, newBalance]
+                    [wallet.id, 'debit', riderDrAmount, `Cash collection for order #${order.order_number}`, 'order', id, newBalance]
                 );
             } else {
                 await req.db.execute(
-                    'INSERT INTO wallets (rider_id, user_type, balance, total_credited) VALUES (?, ?, ?, ?)',
-                    [order.rider_id, 'rider', riderEarnings, riderEarnings]
+                    'INSERT INTO wallets (rider_id, user_type, balance, total_spent) VALUES (?, ?, ?, ?)',
+                    [order.rider_id, 'rider', -riderDrAmount, riderDrAmount]
                 );
 
                 const [newWallets] = await req.db.execute(
@@ -1602,12 +1640,27 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                     await req.db.execute(
                         `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
                          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                        [newWallets[0].id, 'credit', riderEarnings, `Payment received for order #${id}`, 'order', id, riderEarnings]
+                        [newWallets[0].id, 'debit', riderDrAmount, `Cash collection for order #${order.order_number}`, 'order', id, -riderDrAmount]
                     );
                 }
             }
 
-            // Create rider cash movement for cash payments to show in financial menu
+            // Record Rider Dr in financial_transactions
+            await recordFinancialTransaction(req.db, {
+                transaction_type: 'adjustment',
+                category: 'rider_receivable',
+                description: `Rider Debit for Order #${order.order_number}`,
+                amount: riderDrAmount,
+                payment_method: order.payment_method,
+                related_entity_type: 'rider',
+                related_entity_id: order.rider_id,
+                reference_type: 'order',
+                reference_id: id,
+                created_by: req.user.id,
+                notes: `Rider's Balance: ${riderDrAmount} (Dr.)`
+            });
+
+            // Create rider cash movement for cash payments
             if (order.payment_method === 'cash') {
                 try {
                     const movementDate = new Date().toISOString().split('T')[0];
