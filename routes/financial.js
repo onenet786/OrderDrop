@@ -546,7 +546,7 @@ router.post('/receipt-vouchers', [
 
 router.put('/receipt-vouchers/:id', [
     body('amount').optional().isFloat({ min: 0.01 }),
-    body('status').optional().isIn(['draft', 'pending', 'received', 'cancelled'])
+    body('status').optional().isIn(['draft', 'pending', 'approved', 'received', 'cancelled'])
 ], async (req, res) => {
     try {
         const errors = validationResult(req);

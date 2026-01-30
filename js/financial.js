@@ -95,7 +95,7 @@ async function loadFinancialDashboard() {
             document.getElementById('netProfitAmount').textContent = `₨ ${parseFloat(netProfit).toFixed(2)}`;
             document.getElementById('paymentVouchersAmount').textContent = `₨ ${parseFloat(data.stats.paymentVouchers).toFixed(2)}`;
             document.getElementById('receiptVouchersAmount').textContent = `₨ ${parseFloat(data.stats.receiptVouchers).toFixed(2)}`;
-            document.getElementById('riderCashAmount').textContent = `₨ ${parseFloat(data.stats.riderCashSubmitted).toFixed(2)}`;
+            document.getElementById('totalRiderCashAmount').textContent = `₨ ${parseFloat(data.stats.riderCashSubmitted).toFixed(2)}`;
         }
     } catch (error) {
         console.error('Error loading financial dashboard:', error);
@@ -705,7 +705,7 @@ async function submitRiderCash() {
     const id = document.getElementById('riderCashId').value;
     const riderId = parseInt(document.getElementById('riderId').value);
     const movementType = document.getElementById('movementType').value;
-    const amount = parseFloat(document.getElementById('riderCashAmount').value);
+    const amount = parseFloat(document.getElementById('riderCashAmountInput').value);
     const description = document.getElementById('riderCashDescription').value;
 
     const payload = {
@@ -1118,7 +1118,7 @@ function editRiderCash(id) {
     document.getElementById('riderCashId').value = movement.id;
     document.getElementById('riderId').value = movement.rider_id;
     document.getElementById('movementType').value = movement.movement_type;
-    document.getElementById('riderCashAmount').value = movement.amount;
+    document.getElementById('riderCashAmountInput').value = movement.amount;
     document.getElementById('riderCashDescription').value = movement.description || '';
 
     document.querySelector('#riderCashModal h2').textContent = 'Edit Rider Cash Movement';
