@@ -449,7 +449,7 @@ CREATE TABLE IF NOT EXISTS journal_voucher_entries (
     id INT PRIMARY KEY AUTO_INCREMENT,
     jnv_id INT NOT NULL,
     account_name VARCHAR(100) NOT NULL,
-    entity_type ENUM('customer', 'store', 'rider', 'vendor', 'other') DEFAULT 'other',
+    entity_type ENUM('customer', 'store', 'rider', 'vendor', 'platform', 'other') DEFAULT 'other',
     entity_id INT,
     entry_type ENUM('debit', 'credit') NOT NULL,
     amount DECIMAL(12, 2) NOT NULL,
@@ -487,7 +487,7 @@ CREATE TABLE IF NOT EXISTS admin_expenses (
 CREATE TABLE IF NOT EXISTS financial_reports (
     id INT PRIMARY KEY AUTO_INCREMENT,
     report_number VARCHAR(50) UNIQUE NOT NULL,
-    report_type ENUM('daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'custom') NOT NULL,
+    report_type ENUM('daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'custom') NOT NULL,
     period_from DATE,
     period_to DATE,
     total_income DECIMAL(12, 2) DEFAULT 0.00,
@@ -500,4 +500,22 @@ CREATE TABLE IF NOT EXISTS financial_reports (
     FOREIGN KEY (generated_by) REFERENCES users(id) ON DELETE SET NULL,
     INDEX idx_fr_report_type (report_type),
     INDEX idx_fr_period_from (period_from)
+);
+
+-- Payments table
+CREATE TABLE IF NOT EXISTS payments (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    order_id INT NOT NULL,
+    user_id INT NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
+    payment_method VARCHAR(50) NOT NULL,
+    gateway VARCHAR(50),
+    transaction_id VARCHAR(255),
+    status ENUM('pending', 'success', 'failed', 'refunded') DEFAULT 'pending',
+    error_message TEXT,
+    metadata JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

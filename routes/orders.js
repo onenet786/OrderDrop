@@ -1570,7 +1570,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
 
             // 1. Credit the Store (Payable to store)
             await recordFinancialTransaction(req.db, {
-                transaction_type: 'settlement', // Using settlement for store payable
+                transaction_type: 'adjustment', // Using adjustment for payable, settlement is for actual payout
                 category: 'store_payable',
                 description: `Store Credit for Order #${order.order_number}`,
                 amount: storeAmount,
@@ -1583,19 +1583,20 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                 notes: 'Store: 100 (Cr.)'
             });
 
-            // 2. Credit Delivery Charges (Income)
+            // 2. Credit Total Order Amount (Income)
+            // We record the full amount as income, and payouts to stores/riders as settlements/expenses
             await recordFinancialTransaction(req.db, {
                 transaction_type: 'income',
-                category: 'delivery_charges',
-                description: `Delivery Charges for Order #${order.order_number}`,
-                amount: deliveryFee,
+                category: 'order_revenue',
+                description: `Total Revenue for Order #${order.order_number}`,
+                amount: orderTotal,
                 payment_method: order.payment_method,
                 related_entity_type: 'rider',
                 related_entity_id: order.rider_id,
                 reference_type: 'order',
                 reference_id: id,
                 created_by: req.user.id,
-                notes: 'Delivery Charges: 70 (Cr.)'
+                notes: `Gross Income: ${orderTotal} (Cr.)`
             });
 
             // 3. Debit the Rider (Receivable from rider if cash, or just tracking balance)

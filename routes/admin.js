@@ -850,6 +850,73 @@ router.post(
 
 // ===== PAYMENT MANAGEMENT (ADMIN) =====
 
+// Payment statistics for admin dashboard
+router.get(
+  "/payments/stats",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const [totalResult] = await req.db.execute(
+        "SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments"
+      );
+      const [successResult] = await req.db.execute(
+        'SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments WHERE status = "success"'
+      );
+      const [pendingResult] = await req.db.execute(
+        'SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments WHERE status = "pending"'
+      );
+      const [failedResult] = await req.db.execute(
+        'SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments WHERE status = "failed"'
+      );
+      const [methodStats] = await req.db.execute(
+        'SELECT payment_method, COUNT(*) as count, SUM(amount) as total FROM payments WHERE status = "success" GROUP BY payment_method'
+      );
+      const [todayStats] = await req.db.execute(
+        'SELECT COUNT(*) as count, SUM(amount) as total FROM payments WHERE status = "success" AND DATE(created_at) = CURDATE()'
+      );
+
+      return res.json({
+        success: true,
+        stats: {
+          total: {
+            total: Number(totalResult[0].total),
+            total_amount: Number(totalResult[0].total_amount || 0),
+          },
+          successful: {
+            total: Number(successResult[0].total),
+            total_amount: Number(successResult[0].total_amount || 0),
+          },
+          pending: {
+            total: Number(pendingResult[0].total),
+            total_amount: Number(pendingResult[0].total_amount || 0),
+          },
+          failed: {
+            total: Number(failedResult[0].total),
+            total_amount: Number(failedResult[0].total_amount || 0),
+          },
+          today: {
+            count: Number(todayStats[0].count),
+            total: Number(todayStats[0].total || 0),
+          },
+          by_method: methodStats.map((m) => ({
+            payment_method: m.payment_method,
+            count: Number(m.count),
+            total: Number(m.total || 0),
+          })),
+        },
+      });
+    } catch (error) {
+      console.error("Payment stats error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch payment stats",
+        error: error.message,
+      });
+    }
+  }
+);
+
 // Get all payments with filters and pagination
 router.get("/payments", authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -940,74 +1007,53 @@ router.get(
   }
 );
 
-// Payment statistics for admin dashboard
+// ===== WALLET MANAGEMENT (ADMIN) =====
+
+// Wallet statistics for admin dashboard
 router.get(
-  "/payments/stats",
+  "/wallets/stats",
   authenticateToken,
   requireAdmin,
   async (req, res) => {
     try {
-      const [totalResult] = await req.db.execute(
-        "SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments"
+      const [totalStats] = await req.db.execute(
+        "SELECT COUNT(*) as total_wallets, SUM(balance) as total_balance, AVG(balance) as avg_balance FROM wallets"
       );
-      const [successResult] = await req.db.execute(
-        'SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments WHERE status = "success"'
+      const [activeStats] = await req.db.execute(
+        "SELECT COUNT(*) as count FROM wallets WHERE balance > 0"
       );
-      const [pendingResult] = await req.db.execute(
-        'SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments WHERE status = "pending"'
+      const [autoRechargeStats] = await req.db.execute(
+        "SELECT COUNT(*) as count FROM wallets WHERE auto_recharge_enabled = TRUE"
       );
-      const [failedResult] = await req.db.execute(
-        'SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments WHERE status = "failed"'
-      );
-      const [methodStats] = await req.db.execute(
-        'SELECT payment_method, COUNT(*) as count, SUM(amount) as total FROM payments WHERE status = "success" GROUP BY payment_method'
-      );
-      const [todayStats] = await req.db.execute(
-        'SELECT COUNT(*) as count, SUM(amount) as total FROM payments WHERE status = "success" AND DATE(created_at) = CURDATE()'
+      const [transactionStats] = await req.db.execute(
+        'SELECT COUNT(*) as total_transactions, SUM(CASE WHEN type = "credit" THEN amount ELSE 0 END) as total_credited, SUM(CASE WHEN type = "debit" THEN amount ELSE 0 END) as total_spent FROM wallet_transactions'
       );
 
       return res.json({
         success: true,
         stats: {
-          total: {
-            total: Number(totalResult[0].total),
-            total_amount: Number(totalResult[0].total_amount || 0),
+          total_wallets: Number(totalStats[0].total_wallets),
+          total_balance: Number(totalStats[0].total_balance || 0),
+          avg_balance: Number(totalStats[0].avg_balance || 0),
+          active_wallets: Number(activeStats[0].count),
+          with_auto_recharge: Number(autoRechargeStats[0].count),
+          transactions: {
+            total_transactions: Number(transactionStats[0].total_transactions),
+            total_credited: Number(transactionStats[0].total_credited || 0),
+            total_spent: Number(transactionStats[0].total_spent || 0),
           },
-          successful: {
-            total: Number(successResult[0].total),
-            total_amount: Number(successResult[0].total_amount || 0),
-          },
-          pending: {
-            total: Number(pendingResult[0].total),
-            total_amount: Number(pendingResult[0].total_amount || 0),
-          },
-          failed: {
-            total: Number(failedResult[0].total),
-            total_amount: Number(failedResult[0].total_amount || 0),
-          },
-          today: {
-            count: Number(todayStats[0].count),
-            total: Number(todayStats[0].total || 0),
-          },
-          by_method: methodStats.map((m) => ({
-            payment_method: m.payment_method,
-            count: Number(m.count),
-            total: Number(m.total || 0),
-          })),
         },
       });
     } catch (error) {
-      console.error("Payment stats error:", error);
+      console.error("Wallet stats error:", error);
       return res.status(500).json({
         success: false,
-        message: "Failed to fetch payment stats",
+        message: "Failed to fetch wallet stats",
         error: error.message,
       });
     }
   }
 );
-
-// ===== WALLET MANAGEMENT (ADMIN) =====
 
 // Get all wallets with pagination
 router.get("/wallets", authenticateToken, requireAdmin, async (req, res) => {
@@ -1190,52 +1236,6 @@ router.post(
       return res.status(500).json({
         success: false,
         message: "Failed to adjust wallet",
-        error: error.message,
-      });
-    }
-  }
-);
-
-// Wallet statistics for admin dashboard
-router.get(
-  "/wallets/stats",
-  authenticateToken,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const [totalStats] = await req.db.execute(
-        "SELECT COUNT(*) as total_wallets, SUM(balance) as total_balance, AVG(balance) as avg_balance FROM wallets"
-      );
-      const [activeStats] = await req.db.execute(
-        "SELECT COUNT(*) as count FROM wallets WHERE balance > 0"
-      );
-      const [autoRechargeStats] = await req.db.execute(
-        "SELECT COUNT(*) as count FROM wallets WHERE auto_recharge_enabled = TRUE"
-      );
-      const [transactionStats] = await req.db.execute(
-        'SELECT COUNT(*) as total_transactions, SUM(CASE WHEN type = "credit" THEN amount ELSE 0 END) as total_credited, SUM(CASE WHEN type = "debit" THEN amount ELSE 0 END) as total_spent FROM wallet_transactions'
-      );
-
-      return res.json({
-        success: true,
-        stats: {
-          total_wallets: Number(totalStats[0].total_wallets),
-          total_balance: Number(totalStats[0].total_balance || 0),
-          avg_balance: Number(totalStats[0].avg_balance || 0),
-          active_wallets: Number(activeStats[0].count),
-          with_auto_recharge: Number(autoRechargeStats[0].count),
-          transactions: {
-            total_transactions: Number(transactionStats[0].total_transactions),
-            total_credited: Number(transactionStats[0].total_credited || 0),
-            total_spent: Number(transactionStats[0].total_spent || 0),
-          },
-        },
-      });
-    } catch (error) {
-      console.error("Wallet stats error:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to fetch wallet stats",
         error: error.message,
       });
     }

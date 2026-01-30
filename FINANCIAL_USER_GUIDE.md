@@ -73,6 +73,10 @@ The dashboard gives you a bird's-eye view of the platform's health.
 ### Reports
 You can generate summaries for any period (Daily, Weekly, Monthly). These reports take a snapshot of the Master Ledger so you can see exactly where the money went.
 
+- **Rider Reports**: Detailed view of each rider's performance, including total assigned/delivered/cancelled orders, delivery fees earned, and cash collection status (how much cash they have collected from customers vs. how much they have submitted to the office).
+- **Store Reports**: Comprehensive breakdown of store financials, showing total orders fulfilled, total earnings (excluding delivery fees), total amount already paid out, and the pending settlement balance.
+- **Exporting**: All reports can be exported to CSV format for use in spreadsheet software like Excel or Google Sheets.
+
 ---
 
 ## Best Practices for Users

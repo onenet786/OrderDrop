@@ -790,12 +790,12 @@ router.post('/rider-cash', [
             [movement_number, rider_id, movement_date, movement_type, amount, description || null, reference_type || null, reference_id || null, req.user.id, notes || null]
         );
 
-        // Auto-update wallet for advances (credit to rider wallet)
+        // Auto-update wallet for advances (debit to rider wallet as they now owe the company)
         if (movement_type === 'advance') {
             await recordRiderWalletTransaction(
                 req.db, 
                 rider_id, 
-                'credit', 
+                'debit', 
                 amount, 
                 `Cash advance via ${movement_number}`, 
                 result.insertId,
@@ -896,45 +896,50 @@ router.put('/rider-cash/:id', [
                 let descriptionPrefix = '';
 
                 if (movement.movement_type === 'cash_submission') {
-                    // Debit from rider wallet when cash submission is approved
-                    await recordRiderWalletTransaction(
-                        req.db,
-                        movement.rider_id,
-                        'debit',
-                        effectiveAmount,
-                        `Cash submission via ${movement.movement_number}`,
-                        movement.id,
-                        movement.movement_type
-                    );
-                    transactionType = 'income';
-                    descriptionPrefix = 'Rider Cash Submission';
-                } else if (movement.movement_type === 'settlement') {
-                    // Debit from rider wallet for settlements
-                    await recordRiderWalletTransaction(
-                        req.db,
-                        movement.rider_id,
-                        'debit',
-                        effectiveAmount,
-                        `Settlement via ${movement.movement_number}`,
-                        movement.id,
-                        movement.movement_type
-                    );
-                    transactionType = 'settlement';
-                    descriptionPrefix = 'Rider Settlement';
-                } else if (movement.movement_type === 'cash_collection') {
-                    // Credit to rider wallet for cash collections (rider collected from customer)
+                    // Credit to rider wallet when cash submission is approved (reduces debt)
                     await recordRiderWalletTransaction(
                         req.db,
                         movement.rider_id,
                         'credit',
                         effectiveAmount,
-                        `Cash collection via ${movement.movement_number}`,
+                        `Cash submission via ${movement.movement_number}`,
                         movement.id,
                         movement.movement_type
                     );
-                    // Internal movement, no external financial transaction
+                    // This is clearing a receivable, not new income, but we'll record it as adjustment
+                    transactionType = 'adjustment';
+                    descriptionPrefix = 'Rider Cash Submission';
+                } else if (movement.movement_type === 'settlement') {
+                    // Credit to rider wallet for settlements (earnings)
+                    await recordRiderWalletTransaction(
+                        req.db,
+                        movement.rider_id,
+                        'credit',
+                        effectiveAmount,
+                        `Settlement via ${movement.movement_number}`,
+                        movement.id,
+                        movement.movement_type
+                    );
+                    // Rider settlement is an expense/payout for the platform
+                    transactionType = 'settlement';
+                    descriptionPrefix = 'Rider Settlement';
+                } else if (movement.movement_type === 'cash_collection') {
+                    // Debit from rider wallet for cash collections (rider collected from customer)
+                    // ONLY if not already handled by orders route
+                    if (movement.reference_type !== 'order') {
+                        await recordRiderWalletTransaction(
+                            req.db,
+                            movement.rider_id,
+                            'debit',
+                            effectiveAmount,
+                            `Cash collection via ${movement.movement_number}`,
+                            movement.id,
+                            movement.movement_type
+                        );
+                    }
+                    // Internal movement, already recorded as income/receivable at order time
                 } else if (movement.movement_type === 'advance') {
-                    // Advances are already credited to wallet on POST, but they are expenses
+                    // Advances are already debited on POST
                     transactionType = 'expense';
                     descriptionPrefix = 'Rider Advance';
                 }
@@ -1185,6 +1190,15 @@ router.put('/store-settlements/:id', [
     }
 });
 
+router.get('/expenses/categories', async (req, res) => {
+    try {
+        const [categories] = await req.db.execute('SELECT DISTINCT category FROM admin_expenses ORDER BY category');
+        res.json({ success: true, categories: categories.map(c => c.category) });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 router.get('/expenses', async (req, res) => {
     try {
         const { category, status, page = 1, limit = 20 } = req.query;
@@ -1422,7 +1436,7 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'custom']),
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'custom']),
     body('period_from').optional().isISO8601(),
     body('period_to').optional().isISO8601()
 ], async (req, res) => {
@@ -1439,50 +1453,122 @@ router.post('/reports/generate', [
         const { report_type, period_from, period_to } = req.body;
         const report_number = generateVoucherNumber('RPT');
 
-        const dateFilter = period_from && period_to ? 'AND ft.created_at BETWEEN ? AND ?' : '';
+        let reportData = {};
+        let total_income = 0, total_expense = 0, total_settlements = 0, total_refunds = 0, total_adjustments = 0;
+
+        const dateFilterFT = period_from && period_to ? 'AND ft.created_at BETWEEN ? AND ?' : '';
         const dateParams = period_from && period_to ? [period_from, period_to] : [];
 
+        // Base financial summary (always useful)
         const [transactions] = await req.db.execute(
-            `SELECT transaction_type, SUM(amount) as total FROM financial_transactions ft WHERE 1=1 ${dateFilter} GROUP BY transaction_type`,
+            `SELECT transaction_type, SUM(amount) as total FROM financial_transactions ft WHERE 1=1 ${dateFilterFT} GROUP BY transaction_type`,
             dateParams
         );
-
-        let total_income = 0, total_expense = 0, total_settlements = 0, total_refunds = 0, total_adjustments = 0;
 
         transactions.forEach(t => {
             const amount = parseFloat(t.total || 0);
             switch (t.transaction_type) {
-                case 'income':
-                    total_income += amount;
-                    break;
-                case 'expense':
-                    total_expense += amount;
-                    break;
-                case 'settlement':
-                    total_settlements += amount;
-                    break;
-                case 'refund':
-                    total_refunds += amount;
-                    break;
-                case 'adjustment':
-                    total_adjustments += amount; // This is vague, but let's assume adjustments are tracked separately
-                    break;
+                case 'income': total_income += amount; break;
+                case 'expense': total_expense += amount; break;
+                case 'settlement': total_settlements += amount; break;
+                case 'refund': total_refunds += amount; break;
+                case 'adjustment': total_adjustments += amount; break;
             }
         });
 
-        const net_profit = total_income - total_expense - total_settlements - total_refunds;
+        if (report_type === 'rider_cash_report') {
+            const riderDateFilter = period_from && period_to ? 'AND movement_date BETWEEN ? AND ?' : '';
+            const [movements] = await req.db.execute(
+                `SELECT rcm.*, r.first_name, r.last_name 
+                 FROM rider_cash_movements rcm
+                 JOIN riders r ON rcm.rider_id = r.id
+                 WHERE 1=1 ${riderDateFilter}
+                 ORDER BY movement_date DESC`,
+                dateParams
+            );
+            
+            const [summary] = await req.db.execute(
+                `SELECT movement_type, SUM(amount) as total 
+                 FROM rider_cash_movements 
+                 WHERE 1=1 ${riderDateFilter} 
+                 GROUP BY movement_type`,
+                dateParams
+            );
 
-        const reportData = {
-            transactions: transactions.map(t => ({ type: t.transaction_type, total: t.total })),
-            summary: { 
-                total_income, 
-                total_expense, 
-                total_settlements, 
-                total_refunds,
-                total_adjustments,
-                net_profit 
+            reportData = {
+                type: 'rider_cash',
+                movements,
+                summary: summary.reduce((acc, curr) => {
+                    acc[curr.movement_type] = curr.total;
+                    return acc;
+                }, {})
+            };
+        } else if (report_type === 'general_voucher') {
+            const jnvDateFilter = period_from && period_to ? 'AND voucher_date BETWEEN ? AND ?' : '';
+            const [vouchers] = await req.db.execute(
+                `SELECT jnv.*, u.first_name as prepared_by_name 
+                 FROM journal_vouchers jnv
+                 LEFT JOIN users u ON jnv.prepared_by = u.id
+                 WHERE 1=1 ${jnvDateFilter}
+                 ORDER BY voucher_date DESC`,
+                dateParams
+            );
+
+            // Get entries for these vouchers
+            for (let v of vouchers) {
+                const [entries] = await req.db.execute(
+                    `SELECT * FROM journal_voucher_entries WHERE jnv_id = ?`,
+                    [v.id]
+                );
+                v.entries = entries;
             }
-        };
+
+            reportData = {
+                type: 'general_voucher',
+                vouchers
+            };
+        } else if (report_type === 'store_financials') {
+            const orderDateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const [financials] = await req.db.execute(
+                `SELECT 
+                    s.name as store_name,
+                    SUM(oi.quantity * oi.price) as total_sales,
+                    SUM(oi.quantity * p.cost_price) as total_cost,
+                    SUM(oi.quantity * (oi.price - p.cost_price)) as estimated_profit
+                 FROM order_items oi
+                 JOIN orders o ON oi.order_id = o.id
+                 JOIN products p ON oi.product_id = p.id
+                 JOIN stores s ON oi.store_id = s.id
+                 WHERE o.status = 'delivered' ${orderDateFilter}
+                 GROUP BY s.id, s.name`,
+                dateParams
+            );
+
+            reportData = {
+                type: 'store_financials',
+                stores: financials,
+                overall: financials.reduce((acc, curr) => {
+                    acc.total_sales += parseFloat(curr.total_sales || 0);
+                    acc.total_cost += parseFloat(curr.total_cost || 0);
+                    acc.total_profit += parseFloat(curr.estimated_profit || 0);
+                    return acc;
+                }, { total_sales: 0, total_cost: 0, total_profit: 0 })
+            };
+        } else {
+            reportData = {
+                transactions: transactions.map(t => ({ type: t.transaction_type, total: t.total })),
+                summary: { 
+                    total_income, 
+                    total_expense, 
+                    total_settlements, 
+                    total_refunds,
+                    total_adjustments,
+                    net_profit: total_income - total_expense - total_settlements - total_refunds
+                }
+            };
+        }
+
+        const net_profit = total_income - total_expense - total_settlements - total_refunds;
 
         const [result] = await req.db.execute(
             `INSERT INTO financial_reports 
@@ -1638,6 +1724,33 @@ router.get('/journal-vouchers', async (req, res) => {
     }
 });
 
+router.get('/journal-vouchers/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [vouchers] = await req.db.execute(
+            `SELECT j.*, u.first_name as prepared_by_name, ab.first_name as approved_by_name 
+             FROM journal_vouchers j
+             LEFT JOIN users u ON j.prepared_by = u.id 
+             LEFT JOIN users ab ON j.approved_by = ab.id
+             WHERE j.id = ?`,
+            [id]
+        );
+
+        if (vouchers.length === 0) {
+            return res.status(404).json({ success: false, message: 'Journal Voucher not found' });
+        }
+
+        const [entries] = await req.db.execute(
+            `SELECT * FROM journal_voucher_entries WHERE jnv_id = ?`,
+            [id]
+        );
+
+        res.json({ success: true, voucher: vouchers[0], entries });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 router.post('/journal-vouchers', [
     body('voucher_date').isDate(),
     body('total_amount').isFloat({ min: 0 }),
@@ -1667,6 +1780,67 @@ router.post('/journal-vouchers', [
         }
 
         res.status(201).json({ success: true, message: 'Journal Voucher created successfully', voucher_number });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.post('/journal-vouchers/:id/post', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [vouchers] = await req.db.execute('SELECT * FROM journal_vouchers WHERE id = ?', [id]);
+        
+        if (vouchers.length === 0) return res.status(404).json({ success: false, message: 'Voucher not found' });
+        const voucher = vouchers[0];
+
+        if (voucher.status !== 'draft') {
+            return res.status(400).json({ success: false, message: `Cannot post voucher with status: ${voucher.status}` });
+        }
+
+        const [entries] = await req.db.execute('SELECT * FROM journal_voucher_entries WHERE jnv_id = ?', [id]);
+        if (entries.length === 0) return res.status(400).json({ success: false, message: 'Voucher has no entries' });
+
+        // Update voucher status
+        await req.db.execute(
+            'UPDATE journal_vouchers SET status = \'posted\', approved_by = ?, posted_at = NOW() WHERE id = ?',
+            [req.user.id, id]
+        );
+
+        // Post each entry to the master ledger
+        for (const entry of entries) {
+            await recordFinancialTransaction(req.db, {
+                transaction_type: 'adjustment',
+                category: 'journal_entry',
+                description: entry.description || voucher.description || `JNV Posting: ${entry.account_name}`,
+                amount: entry.amount,
+                payment_method: 'bank_transfer', // JNVs are usually non-cash/bank
+                related_entity_type: entry.entity_type,
+                related_entity_id: entry.entity_id,
+                reference_type: 'journal_voucher_entry',
+                reference_id: entry.id,
+                created_by: req.user.id,
+                notes: `Voucher: ${voucher.voucher_number} | Type: ${entry.entry_type.toUpperCase()}`
+            });
+        }
+
+        res.json({ success: true, message: 'Journal Voucher posted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.put('/journal-vouchers/:id/cancel', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [vouchers] = await req.db.execute('SELECT status FROM journal_vouchers WHERE id = ?', [id]);
+        
+        if (vouchers.length === 0) return res.status(404).json({ success: false, message: 'Voucher not found' });
+        if (vouchers[0].status === 'posted') {
+            return res.status(400).json({ success: false, message: 'Cannot cancel a posted voucher' });
+        }
+
+        await req.db.execute('UPDATE journal_vouchers SET status = \'cancelled\' WHERE id = ?', [id]);
+        res.json({ success: true, message: 'Journal Voucher cancelled successfully' });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -1804,6 +1978,92 @@ router.get('/reports/category-sales', async (req, res) => {
              ORDER BY revenue DESC`
         );
         res.json({ success: true, categories });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Detailed Rider Report
+router.get('/reports/riders-detailed', async (req, res) => {
+    try {
+        const { start_date, end_date, rider_id } = req.query;
+        let dateFilter = '';
+        let riderFilter = '';
+        let params = [];
+
+        if (start_date && end_date) {
+            dateFilter = ' AND o.created_at BETWEEN ? AND ?';
+            params.push(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
+        }
+
+        if (rider_id && rider_id !== 'all') {
+            riderFilter = ' WHERE r.id = ?';
+            params.push(rider_id);
+        }
+
+        const [riders] = await req.db.execute(
+            `SELECT 
+                r.id, 
+                r.first_name, 
+                r.last_name, 
+                r.email, 
+                r.phone,
+                COUNT(o.id) as total_assigned,
+                COUNT(CASE WHEN o.status = 'delivered' THEN 1 END) as total_delivered,
+                COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) as total_cancelled,
+                SUM(CASE WHEN o.status = 'delivered' THEN o.delivery_fee ELSE 0 END) as total_fees,
+                COALESCE((SELECT SUM(amount) FROM rider_cash_movements WHERE rider_id = r.id AND movement_type = 'cash_collection' AND status = 'completed'), 0) as cash_collection,
+                COALESCE((SELECT SUM(amount) FROM rider_cash_movements WHERE rider_id = r.id AND movement_type = 'cash_submission' AND status = 'completed'), 0) as cash_submission
+            FROM riders r
+            LEFT JOIN orders o ON r.id = o.rider_id ${dateFilter}
+            ${riderFilter}
+            GROUP BY r.id, r.first_name, r.last_name, r.email, r.phone
+            ORDER BY total_delivered DESC`,
+            params
+        );
+        res.json({ success: true, riders });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Detailed Store Report
+router.get('/reports/stores-detailed', async (req, res) => {
+    try {
+        const { start_date, end_date, store_id } = req.query;
+        let dateFilter = '';
+        let storeFilter = '';
+        let params = [];
+
+        if (start_date && end_date) {
+            dateFilter = ' AND o.created_at BETWEEN ? AND ?';
+            params.push(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
+        }
+
+        if (store_id && store_id !== 'all') {
+            storeFilter = ' WHERE s.id = ?';
+            params.push(store_id);
+        }
+
+        const [stores] = await req.db.execute(
+            `SELECT 
+                s.id, 
+                s.name, 
+                s.email, 
+                s.phone,
+                COUNT(DISTINCT o.id) as total_orders,
+                SUM(CASE WHEN o.status = 'delivered' THEN oi.price * oi.quantity ELSE 0 END) as total_earnings,
+                COALESCE((SELECT SUM(net_amount) FROM store_settlements WHERE store_id = s.id AND status = 'paid'), 0) as total_paid,
+                COALESCE((SELECT SUM(oi2.price * oi2.quantity) FROM order_items oi2 JOIN orders o2 ON oi2.order_id = o2.id WHERE oi2.store_id = s.id AND o2.status = 'delivered'), 0) - COALESCE((SELECT SUM(net_amount) FROM store_settlements WHERE store_id = s.id AND status = 'paid'), 0) as pending_settlement
+            FROM stores s
+            LEFT JOIN order_items oi ON s.id = oi.store_id
+            LEFT JOIN orders o ON oi.order_id = o.id ${dateFilter}
+            ${storeFilter}
+            GROUP BY s.id, s.name, s.email, s.phone
+            ORDER BY total_earnings DESC`,
+            params
+        );
+        res.json({ success: true, stores });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

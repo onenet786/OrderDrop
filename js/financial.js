@@ -5,8 +5,11 @@ let currentRiderCash = [];
 let currentStoreSettlements = [];
 let currentExpenses = [];
 let currentReports = [];
+let currentJournalVouchers = [];
+let lastRiderData = [];
+let lastStoreData = [];
 
-const financialModalIds = ['paymentVoucherModal', 'receiptVoucherModal', 'transactionModal', 'riderCashModal', 'storeSettlementModal', 'expenseModal'];
+const financialModalIds = ['paymentVoucherModal', 'receiptVoucherModal', 'transactionModal', 'riderCashModal', 'storeSettlementModal', 'expenseModal', 'journalVoucherModal'];
 const formChangedState = {};
 
 function openModal(modalId) {
@@ -34,6 +37,288 @@ function trackFormChanges(formId, modalId) {
     form.addEventListener('input', () => {
         formChangedState[modalId] = true;
     });
+}
+
+async function loadJournalVouchers() {
+    try {
+        const status = document.getElementById('journalVoucherStatusFilter')?.value || '';
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+
+        const response = await fetch(`${API_BASE}/api/financial/journal-vouchers?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            currentJournalVouchers = data.vouchers || [];
+            displayJournalVouchers(currentJournalVouchers);
+        }
+    } catch (error) {
+        console.error('Error loading journal vouchers:', error);
+        showError('Load Error', 'Failed to load journal vouchers');
+    }
+}
+
+function displayJournalVouchers(vouchers) {
+    const tbody = document.getElementById('journalVouchersTableBody');
+    tbody.innerHTML = '';
+
+    vouchers.forEach(v => {
+        const row = document.createElement('tr');
+        const date = new Date(v.voucher_date).toLocaleDateString();
+        row.innerHTML = `
+            <td>${v.voucher_number}</td>
+            <td>${date}</td>
+            <td>${v.description || '-'}</td>
+            <td>${v.reference_number || '-'}</td>
+            <td>₨ ${parseFloat(v.total_amount).toFixed(2)}</td>
+            <td><span class="status-${v.status}">${v.status}</span></td>
+            <td>${v.prepared_by_name || '-'}</td>
+            <td>
+                <button class="btn-small btn-info" onclick="viewJournalVoucher(${v.id})">View</button>
+                ${v.status === 'draft' ? `<button class="btn-small btn-primary" onclick="postJournalVoucher(${v.id})">Post</button>` : ''}
+                ${v.status === 'draft' ? `<button class="btn-small btn-danger" onclick="cancelJournalVoucher(${v.id})">Cancel</button>` : ''}
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    if (vouchers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">No journal vouchers found</td></tr>';
+    }
+}
+
+function createJournalVoucher() {
+    const form = document.getElementById('journalVoucherForm');
+    if (form) form.reset();
+    document.getElementById('journalVoucherId').value = '';
+    document.getElementById('jnvEntriesBody').innerHTML = '';
+    document.getElementById('jnvDebitTotal').textContent = '0.00';
+    document.getElementById('jnvCreditTotal').textContent = '0.00';
+    document.getElementById('jnvDebitTotal').parentElement.style.color = 'inherit';
+    document.getElementById('jnvDate').valueAsDate = new Date();
+    
+    // Add two initial rows
+    addJnvEntryRow();
+    addJnvEntryRow();
+
+    formChangedState['journalVoucherModal'] = false;
+    openModal('journalVoucherModal');
+}
+
+function addJnvEntryRow(data = null) {
+    const tbody = document.getElementById('jnvEntriesBody');
+    const row = document.createElement('tr');
+    row.className = 'jnv-entry-row';
+    
+    row.innerHTML = `
+        <td><input type="text" class="form-control jnv-account" placeholder="e.g. Sales, Cash" value="${data ? data.account_name : ''}" required></td>
+        <td>
+            <select class="form-control jnv-entity-type">
+                <option value="platform" ${data?.entity_type === 'platform' ? 'selected' : ''}>Platform</option>
+                <option value="rider" ${data?.entity_type === 'rider' ? 'selected' : ''}>Rider</option>
+                <option value="store" ${data?.entity_type === 'store' ? 'selected' : ''}>Store</option>
+                <option value="customer" ${data?.entity_type === 'customer' ? 'selected' : ''}>Customer</option>
+                <option value="vendor" ${data?.entity_type === 'vendor' ? 'selected' : ''}>Vendor</option>
+                <option value="other" ${data?.entity_type === 'other' ? 'selected' : ''}>Other</option>
+            </select>
+        </td>
+        <td><input type="number" class="form-control jnv-entity-id" placeholder="ID" value="${data ? data.entity_id : ''}"></td>
+        <td>
+            <select class="form-control jnv-entry-type">
+                <option value="debit" ${data?.entry_type === 'debit' ? 'selected' : ''}>Debit</option>
+                <option value="credit" ${data?.entry_type === 'credit' ? 'selected' : ''}>Credit</option>
+            </select>
+        </td>
+        <td><input type="number" class="form-control jnv-amount" step="0.01" min="0" placeholder="0.00" value="${data ? data.amount : ''}" required></td>
+        <td><input type="text" class="form-control jnv-row-desc" placeholder="Detail" value="${data ? data.description || '' : ''}"></td>
+        <td><button type="button" class="btn-small btn-danger" onclick="this.closest('tr').remove(); calculateJnvTotals();"><i class="fas fa-trash"></i></button></td>
+    `;
+    
+    tbody.appendChild(row);
+    
+    // Add listeners for total calculation
+    row.querySelector('.jnv-amount').addEventListener('input', calculateJnvTotals);
+    row.querySelector('.jnv-entry-type').addEventListener('change', calculateJnvTotals);
+}
+
+function calculateJnvTotals() {
+    let debitTotal = 0;
+    let creditTotal = 0;
+    
+    document.querySelectorAll('.jnv-entry-row').forEach(row => {
+        const amount = parseFloat(row.querySelector('.jnv-amount').value) || 0;
+        const type = row.querySelector('.jnv-entry-type').value;
+        
+        if (type === 'debit') debitTotal += amount;
+        else creditTotal += amount;
+    });
+    
+    document.getElementById('jnvDebitTotal').textContent = debitTotal.toFixed(2);
+    document.getElementById('jnvCreditTotal').textContent = creditTotal.toFixed(2);
+    
+    // Highlight if imbalanced
+    const totalCell = document.getElementById('jnvDebitTotal').parentElement;
+    if (debitTotal !== creditTotal) {
+        totalCell.style.color = 'red';
+    } else {
+        totalCell.style.color = 'inherit';
+    }
+    
+    return { debitTotal, creditTotal };
+}
+
+async function submitJournalVoucher() {
+    const { debitTotal, creditTotal } = calculateJnvTotals();
+    
+    if (debitTotal !== creditTotal) {
+        showError('Imbalanced Voucher', 'Total Debits must equal Total Credits');
+        return;
+    }
+    
+    if (debitTotal <= 0) {
+        showError('Invalid Amount', 'Voucher amount must be greater than zero');
+        return;
+    }
+
+    const entries = [];
+    document.querySelectorAll('.jnv-entry-row').forEach(row => {
+        entries.push({
+            account_name: row.querySelector('.jnv-account').value,
+            entity_type: row.querySelector('.jnv-entity-type').value,
+            entity_id: row.querySelector('.jnv-entity-id').value || null,
+            entry_type: row.querySelector('.jnv-entry-type').value,
+            amount: parseFloat(row.querySelector('.jnv-amount').value),
+            description: row.querySelector('.jnv-row-desc').value
+        });
+    });
+
+    const payload = {
+        voucher_date: document.getElementById('jnvDate').value,
+        reference_number: document.getElementById('jnvReference').value,
+        description: document.getElementById('jnvDescription').value,
+        total_amount: debitTotal,
+        entries
+    };
+
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/journal-vouchers`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Journal Voucher created as draft');
+            closeModal('journalVoucherModal');
+            loadJournalVouchers();
+        } else {
+            showError('Error', data.message);
+        }
+    } catch (error) {
+        console.error('Error submitting JNV:', error);
+        showError('Error', 'Failed to save journal voucher');
+    }
+}
+
+async function postJournalVoucher(id) {
+    if (!confirm('Are you sure you want to post this voucher to the master ledger? This action cannot be undone.')) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/journal-vouchers/${id}/post`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Voucher posted successfully');
+            loadJournalVouchers();
+        } else {
+            showError('Error', data.message);
+        }
+    } catch (error) {
+        showError('Error', 'Failed to post voucher');
+    }
+}
+
+async function cancelJournalVoucher(id) {
+    if (!confirm('Are you sure you want to cancel this draft voucher?')) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/journal-vouchers/${id}/cancel`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Voucher cancelled');
+            loadJournalVouchers();
+        } else {
+            showError('Error', data.message);
+        }
+    } catch (error) {
+        showError('Error', 'Failed to cancel voucher');
+    }
+}
+
+async function viewJournalVoucher(id) {
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/journal-vouchers/${id}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            const v = data.voucher;
+            const entries = data.entries;
+            
+            let entryRows = entries.map(e => `
+                <tr>
+                    <td>${e.account_name}</td>
+                    <td>${e.entity_type}</td>
+                    <td>${e.entity_id || '-'}</td>
+                    <td><span class="badge badge-${e.entry_type}">${e.entry_type.toUpperCase()}</span></td>
+                    <td>₨ ${parseFloat(e.amount).toFixed(2)}</td>
+                    <td>${e.description || '-'}</td>
+                </tr>
+            `).join('');
+            
+            const details = `
+                <div style="margin-bottom: 1rem;">
+                    <strong>Voucher #:</strong> ${v.voucher_number}<br>
+                    <strong>Date:</strong> ${new Date(v.voucher_date).toLocaleDateString()}<br>
+                    <strong>Status:</strong> <span class="status-${v.status}">${v.status}</span><br>
+                    <strong>Description:</strong> ${v.description || '-'}<br>
+                    <strong>Ref #:</strong> ${v.reference_number || '-'}<br>
+                    <strong>Prepared By:</strong> ${v.prepared_by_name || '-'}<br>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Account</th>
+                                <th>Entity</th>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Amount</th>
+                                <th>Desc</th>
+                            </tr>
+                        </thead>
+                        <tbody>${entryRows}</tbody>
+                    </table>
+                </div>
+            `;
+            
+            showInfo('Journal Voucher Details', details, 20000);
+        }
+    } catch (error) {
+        showError('Error', 'Failed to load voucher details');
+    }
 }
 
 function initializeFinancialForms() {
@@ -73,6 +358,16 @@ function initializeFinancialForms() {
     });
     trackFormChanges('expenseForm', 'expenseModal');
     
+    document.getElementById('journalVoucherForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await submitJournalVoucher();
+    });
+    trackFormChanges('journalVoucherForm', 'journalVoucherModal');
+    
+    document.getElementById('addJnvEntryRowBtn')?.addEventListener('click', () => {
+        addJnvEntryRow();
+    });
+
     document.getElementById('generateReportForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         await submitGenerateReport();
@@ -667,13 +962,13 @@ async function submitTransaction() {
     }
 }
 
-function createRiderCash() {
+async function createRiderCash() {
     document.getElementById('riderCashForm').reset();
     document.getElementById('riderCashId').value = '';
     formChangedState['riderCashModal'] = false;
     document.querySelector('#riderCashModal h2').textContent = 'Record Rider Cash Movement';
     document.querySelector('#riderCashModal .btn-primary').textContent = 'Record Movement';
-    populateRidersDropdown();
+    await populateRidersDropdown();
     openModal('riderCashModal');
 }
 
@@ -698,6 +993,30 @@ async function populateRidersDropdown() {
         }
     } catch (error) {
         console.error('Error populating riders dropdown:', error);
+    }
+}
+
+async function populateStoresDropdown() {
+    try {
+        const response = await fetch(`${API_BASE}/api/stores?admin=1`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        
+        const select = document.getElementById('settlementStoreSelect');
+        if (select && data.stores) {
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">-- Select Store --</option>';
+            data.stores.forEach(store => {
+                const option = document.createElement('option');
+                option.value = store.id;
+                option.textContent = store.name;
+                select.appendChild(option);
+            });
+            if (currentValue) select.value = currentValue;
+        }
+    } catch (error) {
+        console.error('Error populating stores dropdown:', error);
     }
 }
 
@@ -742,7 +1061,7 @@ async function submitRiderCash() {
     }
 }
 
-function createStoreSettlement() {
+async function createStoreSettlement() {
     const form = document.getElementById('storeSettlementForm');
     if (form) form.reset();
     const idInput = document.getElementById('storeSettlementId');
@@ -752,7 +1071,7 @@ function createStoreSettlement() {
     document.querySelector('#storeSettlementModal .btn-primary').textContent = 'Create Settlement';
 
     formChangedState['storeSettlementModal'] = false;
-    populateStoresDropdown();
+    await populateStoresDropdown();
     openModal('storeSettlementModal');
 }
 
@@ -799,12 +1118,12 @@ async function submitStoreSettlement() {
     }
 }
 
-function editStoreSettlement(id) {
+async function editStoreSettlement(id) {
     const settlement = currentStoreSettlements.find(s => s.id === id);
     if (!settlement) return;
 
     document.getElementById('storeSettlementId').value = settlement.id;
-    document.getElementById('settlementStoreSelect').value = settlement.store_id;
+    
     document.getElementById('settlementAmount').value = settlement.net_amount;
     document.getElementById('settlementPaymentMethod').value = settlement.payment_method;
     
@@ -819,7 +1138,8 @@ function editStoreSettlement(id) {
     document.querySelector('#storeSettlementModal .btn-primary').textContent = 'Update Settlement';
 
     formChangedState['storeSettlementModal'] = false;
-    populateStoresDropdown();
+    await populateStoresDropdown();
+    document.getElementById('settlementStoreSelect').value = settlement.store_id;
     openModal('storeSettlementModal');
 }
 
@@ -1068,7 +1388,7 @@ function downloadReport(reportId) {
     const report = currentReports.find(r => r.id === reportId);
     if (!report) return;
 
-    const csvContent = [
+    let csvRows = [
         ['Report Number', report.report_number],
         ['Report Type', report.report_type],
         ['Period From', report.period_from || '-'],
@@ -1077,9 +1397,39 @@ function downloadReport(reportId) {
         ['Total Expense', `₨ ${parseFloat(report.total_expense).toFixed(2)}`],
         ['Total Settlements', `₨ ${parseFloat(report.total_commissions).toFixed(2)}`],
         ['Net Profit', `₨ ${parseFloat(report.net_profit).toFixed(2)}`],
-        ['Generated Date', new Date(report.created_at).toLocaleDateString()]
-    ]
-        .map(row => row.join(','))
+        ['Generated Date', new Date(report.created_at).toLocaleDateString()],
+        [] // Empty row separator
+    ];
+
+    let data;
+    try {
+        data = typeof report.data === 'string' ? JSON.parse(report.data) : report.data;
+    } catch (e) {
+        data = null;
+    }
+
+    if (data && data.type === 'rider_cash') {
+        csvRows.push(['Rider Cash Movements']);
+        csvRows.push(['Rider', 'Date', 'Type', 'Amount', 'Description']);
+        data.movements.forEach(m => {
+            csvRows.push([`${m.first_name} ${m.last_name}`, new Date(m.movement_date).toLocaleDateString(), m.movement_type, m.amount, m.description || '']);
+        });
+    } else if (data && data.type === 'store_financials') {
+        csvRows.push(['Store Financials (Cost Analysis)']);
+        csvRows.push(['Store Name', 'Total Sales', 'Total Cost', 'Estimated Profit']);
+        data.stores.forEach(s => {
+            csvRows.push([s.store_name, s.total_sales, s.total_cost, s.estimated_profit]);
+        });
+    } else if (data && data.type === 'general_voucher') {
+        csvRows.push(['Journal Vouchers']);
+        csvRows.push(['Voucher #', 'Date', 'Description', 'Amount', 'Reference']);
+        data.vouchers.forEach(v => {
+            csvRows.push([v.voucher_number, new Date(v.voucher_date).toLocaleDateString(), v.description || '', v.total_amount, v.reference_number || '']);
+        });
+    }
+
+    const csvContent = csvRows
+        .map(row => row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(','))
         .join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -1098,25 +1448,82 @@ function viewReport(reportId) {
     const report = currentReports.find(r => r.id === reportId);
     if (!report) return;
 
+    let data;
+    try {
+        data = typeof report.data === 'string' ? JSON.parse(report.data) : report.data;
+    } catch (e) {
+        data = null;
+    }
+
+    let extraDetails = '';
+    if (data && data.type === 'rider_cash') {
+        extraDetails = '<h3>Rider Cash Movements</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Type</th><th>Amount</th></tr></thead><tbody>';
+        data.movements.forEach(m => {
+            extraDetails += `<tr><td>${m.first_name} ${m.last_name}</td><td>${new Date(m.movement_date).toLocaleDateString()}</td><td>${m.movement_type}</td><td>₨ ${parseFloat(m.amount).toFixed(2)}</td></tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+    } else if (data && data.type === 'store_financials') {
+        extraDetails = '<h3>Store Financials</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Store</th><th>Sales</th><th>Cost</th><th>Profit</th></tr></thead><tbody>';
+        data.stores.forEach(s => {
+            extraDetails += `<tr><td>${s.store_name}</td><td>₨ ${parseFloat(s.total_sales).toFixed(2)}</td><td>₨ ${parseFloat(s.total_cost).toFixed(2)}</td><td>₨ ${parseFloat(s.estimated_profit).toFixed(2)}</td></tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+    } else if (data && data.type === 'general_voucher') {
+        extraDetails = '<h3>Journal Vouchers</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Voucher #</th><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>';
+        data.vouchers.forEach(v => {
+            extraDetails += `<tr><td>${v.voucher_number}</td><td>${new Date(v.voucher_date).toLocaleDateString()}</td><td>${v.description || '-'}</td><td>₨ ${parseFloat(v.total_amount).toFixed(2)}</td></tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+    }
+
     const details = `
-        <strong>Number:</strong> ${report.report_number}<br>
-        <strong>Type:</strong> ${report.report_type.replace(/_/g, ' ')}<br>
-        <strong>Period:</strong> ${report.period_from ? new Date(report.period_from).toLocaleDateString() : '-'} to ${report.period_to ? new Date(report.period_to).toLocaleDateString() : '-'}<br>
-        <strong>Total Income:</strong> ₨ ${parseFloat(report.total_income).toFixed(2)}<br>
-        <strong>Total Expense:</strong> ₨ ${parseFloat(report.total_expense).toFixed(2)}<br>
-        <strong>Total Settlements:</strong> ₨ ${parseFloat(report.total_commissions).toFixed(2)}<br>
-        <strong>Net Profit:</strong> ₨ ${parseFloat(report.net_profit).toFixed(2)}<br>
-        <strong>Generated:</strong> ${new Date(report.created_at).toLocaleString()}
+        <div class="report-summary">
+            <strong>Number:</strong> ${report.report_number}<br>
+            <strong>Type:</strong> ${report.report_type.replace(/_/g, ' ')}<br>
+            <strong>Period:</strong> ${report.period_from ? new Date(report.period_from).toLocaleDateString() : '-'} to ${report.period_to ? new Date(report.period_to).toLocaleDateString() : '-'}<br>
+            <hr>
+            <strong>Total Income:</strong> ₨ ${parseFloat(report.total_income).toFixed(2)}<br>
+            <strong>Total Expense:</strong> ₨ ${parseFloat(report.total_expense).toFixed(2)}<br>
+            <strong>Total Settlements:</strong> ₨ ${parseFloat(report.total_commissions).toFixed(2)}<br>
+            <strong>Net Profit:</strong> ₨ ${parseFloat(report.net_profit).toFixed(2)}<br>
+            <strong>Generated:</strong> ${new Date(report.created_at).toLocaleString()}
+        </div>
+        ${extraDetails}
     `;
-    showInfo('Report Details', details, 15000);
+
+    // Create a modal instead of showInfo for better presentation of tables
+    const modalId = 'reportViewModal';
+    let modal = document.getElementById(modalId);
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = modalId;
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 800px;">
+                <div class="modal-header">
+                    <h3>Report Details</h3>
+                    <span class="close" onclick="document.getElementById('${modalId}').classList.remove('show')">&times;</span>
+                </div>
+                <div class="modal-body" id="${modalId}Body"></div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="document.getElementById('${modalId}').classList.remove('show')">Close</button>
+                    <button class="btn btn-primary" id="${modalId}Download">Download CSV</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    document.getElementById(`${modalId}Body`).innerHTML = details;
+    document.getElementById(`${modalId}Download`).onclick = () => downloadReport(reportId);
+    modal.classList.add('show');
 }
 
-function editRiderCash(id) {
+async function editRiderCash(id) {
     const movement = currentRiderCash.find(m => m.id === id);
     if (!movement) return;
 
     document.getElementById('riderCashId').value = movement.id;
-    document.getElementById('riderId').value = movement.rider_id;
     document.getElementById('movementType').value = movement.movement_type;
     document.getElementById('riderCashAmountInput').value = movement.amount;
     document.getElementById('riderCashDescription').value = movement.description || '';
@@ -1125,7 +1532,8 @@ function editRiderCash(id) {
     document.querySelector('#riderCashModal .btn-primary').textContent = 'Update Movement';
 
     formChangedState['riderCashModal'] = false;
-    populateRidersDropdown();
+    await populateRidersDropdown();
+    document.getElementById('riderId').value = movement.rider_id;
     openModal('riderCashModal');
 }
 
@@ -1186,6 +1594,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const expenseStatusFilter = document.getElementById('expenseStatusFilter');
     const clearExpenseFiltersBtn = document.getElementById('clearExpenseFiltersBtn');
     const addExpenseBtn = document.getElementById('addExpenseBtn');
+    const journalVoucherStatusFilter = document.getElementById('journalVoucherStatusFilter');
+    const clearJournalVoucherFiltersBtn = document.getElementById('clearJournalVoucherFiltersBtn');
+    const addJournalVoucherBtn = document.getElementById('addJournalVoucherBtn');
     const reportTypeFilter = document.getElementById('reportTypeFilter');
     const generateReportBtn = document.getElementById('generateReportBtn');
     const exportReportBtn = document.getElementById('exportReportBtn');
@@ -1240,9 +1651,29 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     if (addExpenseBtn) addExpenseBtn.addEventListener('click', createExpense);
 
+    if (journalVoucherStatusFilter) journalVoucherStatusFilter.addEventListener('change', loadJournalVouchers);
+    if (clearJournalVoucherFiltersBtn) clearJournalVoucherFiltersBtn.addEventListener('click', () => {
+        if (journalVoucherStatusFilter) journalVoucherStatusFilter.value = '';
+        loadJournalVouchers();
+    });
+    if (addJournalVoucherBtn) addJournalVoucherBtn.addEventListener('click', createJournalVoucher);
+
     if (reportTypeFilter) reportTypeFilter.addEventListener('change', loadFinancialReports);
     const generateFinancialReportBtn = document.getElementById('generateFinancialReportBtn');
     if (generateFinancialReportBtn) generateFinancialReportBtn.addEventListener('click', generateFinancialReport);
+    
+    const generateRiderReportBtn = document.getElementById('generateRiderReportBtn');
+    if (generateRiderReportBtn) generateRiderReportBtn.addEventListener('click', loadRiderReports);
+
+    const generateStoreReportBtn = document.getElementById('generateStoreReportBtn');
+    if (generateStoreReportBtn) generateStoreReportBtn.addEventListener('click', loadStoreReports);
+
+    const exportRiderReportBtn = document.getElementById('exportRiderReportBtn');
+    if (exportRiderReportBtn) exportRiderReportBtn.addEventListener('click', exportRiderReport);
+
+    const exportStoreReportBtn = document.getElementById('exportStoreReportBtn');
+    if (exportStoreReportBtn) exportStoreReportBtn.addEventListener('click', exportStoreReport);
+
     if (exportReportBtn) exportReportBtn.addEventListener('click', () => {
         if (currentReports.length > 0) {
             downloadReport(currentReports[0].id);
@@ -1253,6 +1684,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     initializeFinancialForms();
     initializePersistentModalHandlers();
+    initializeFinancialManagement();
 });
 
 function initializePersistentModalHandlers() {
@@ -1278,6 +1710,253 @@ function initializeFinancialManagement() {
     loadReceiptVouchers();
     loadRiderCash();
     loadStoreSettlements();
+    loadJournalVouchers();
     loadExpenses();
     loadFinancialReports();
+    loadRiderReports();
+    loadStoreReports();
+    populateReportFilters();
+    setupPeriodFilters();
+}
+
+async function populateReportFilters() {
+    // Ensure riders are loaded
+    // Accessing currentRiders from admin.js scope
+    if (typeof currentRiders === 'undefined' || currentRiders.length === 0) {
+        if (typeof loadRiders === 'function') {
+            await loadRiders();
+        }
+    }
+    
+    const riderSelect = document.getElementById('riderReportSelect');
+    if (riderSelect && typeof currentRiders !== 'undefined') {
+        riderSelect.innerHTML = '<option value="all">All Riders</option>';
+        currentRiders.forEach(r => {
+            const option = document.createElement('option');
+            option.value = r.id;
+            option.textContent = `${r.first_name} ${r.last_name}`;
+            riderSelect.appendChild(option);
+        });
+    }
+
+    // Ensure stores are loaded
+    if (typeof currentStores === 'undefined' || currentStores.length === 0) {
+        if (typeof loadStores === 'function') {
+            await loadStores();
+        }
+    }
+
+    const storeSelect = document.getElementById('storeReportSelect');
+    if (storeSelect && typeof currentStores !== 'undefined') {
+        storeSelect.innerHTML = '<option value="all">All Stores</option>';
+        currentStores.forEach(s => {
+            const option = document.createElement('option');
+            option.value = s.id;
+            option.textContent = s.name;
+            storeSelect.appendChild(option);
+        });
+    }
+}
+
+function setupPeriodFilters() {
+    const setDatesForPeriod = (period, startEl, endEl) => {
+        const today = new Date();
+        let startDate = new Date();
+        let endDate = new Date();
+
+        switch (period) {
+            case 'daily':
+                startDate = today;
+                endDate = today;
+                break;
+            case 'weekly':
+                startDate.setDate(today.getDate() - today.getDay());
+                endDate.setDate(startDate.getDate() + 6);
+                break;
+            case 'monthly':
+                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                break;
+            default:
+                return;
+        }
+
+        const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        document.getElementById(startEl).value = formatDate(startDate);
+        document.getElementById(endEl).value = formatDate(endDate);
+    };
+
+    document.getElementById('riderReportPeriod')?.addEventListener('change', function() {
+        setDatesForPeriod(this.value, 'riderReportStartDate', 'riderReportEndDate');
+    });
+
+    document.getElementById('storeReportPeriod')?.addEventListener('change', function() {
+        setDatesForPeriod(this.value, 'storeReportStartDate', 'storeReportEndDate');
+    });
+}
+
+async function loadRiderReports() {
+    try {
+        const start_date = document.getElementById('riderReportStartDate')?.value;
+        const end_date = document.getElementById('riderReportEndDate')?.value;
+        const rider_id = document.getElementById('riderReportSelect')?.value || 'all';
+        
+        const params = new URLSearchParams();
+        if (start_date) params.append('start_date', start_date);
+        if (end_date) params.append('end_date', end_date);
+        if (rider_id) params.append('rider_id', rider_id);
+
+        const response = await fetch(`${API_BASE}/api/financial/reports/riders-detailed?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            lastRiderData = data.riders;
+            displayRiderReports(data.riders);
+        }
+    } catch (error) {
+        console.error('Error loading rider reports:', error);
+    }
+}
+
+function displayRiderReports(riders) {
+    const tbody = document.getElementById('riderReportsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    riders.forEach(r => {
+        const feesEarned = parseFloat(r.total_fees || 0);
+        const cashCollection = parseFloat(r.cash_collection || 0);
+        const cashSubmission = parseFloat(r.cash_submission || 0);
+        const pendingCash = cashCollection - cashSubmission;
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${r.first_name} ${r.last_name}</td>
+            <td>${r.email}<br>${r.phone || '-'}</td>
+            <td>${r.total_assigned}</td>
+            <td>${r.total_delivered}</td>
+            <td>${r.total_cancelled}</td>
+            <td>₨ ${feesEarned.toFixed(2)}</td>
+            <td>₨ ${cashCollection.toFixed(2)}</td>
+            <td>₨ ${cashSubmission.toFixed(2)}</td>
+            <td style="font-weight: bold; color: ${pendingCash > 0 ? 'red' : (pendingCash < 0 ? 'blue' : 'green')}">₨ ${pendingCash.toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+async function loadStoreReports() {
+    try {
+        const start_date = document.getElementById('storeReportStartDate')?.value;
+        const end_date = document.getElementById('storeReportEndDate')?.value;
+        const store_id = document.getElementById('storeReportSelect')?.value || 'all';
+        
+        const params = new URLSearchParams();
+        if (start_date) params.append('start_date', start_date);
+        if (end_date) params.append('end_date', end_date);
+        if (store_id) params.append('store_id', store_id);
+
+        const response = await fetch(`${API_BASE}/api/financial/reports/stores-detailed?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            lastStoreData = data.stores;
+            displayStoreReports(data.stores);
+        }
+    } catch (error) {
+        console.error('Error loading store reports:', error);
+    }
+}
+
+function displayStoreReports(stores) {
+    const tbody = document.getElementById('storeReportsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    stores.forEach(s => {
+        const earnings = parseFloat(s.total_earnings || 0);
+        const paid = parseFloat(s.total_paid || 0);
+        const pending = parseFloat(s.pending_settlement || 0);
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${s.name}</td>
+            <td>${s.email}<br>${s.phone || '-'}</td>
+            <td>${s.total_orders}</td>
+            <td>₨ ${earnings.toFixed(2)}</td>
+            <td>₨ ${paid.toFixed(2)}</td>
+            <td style="color: ${pending > 0 ? 'orange' : 'inherit'}">₨ ${pending.toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function exportRiderReport() {
+    if (!lastRiderData || lastRiderData.length === 0) {
+        showWarning('No Data', 'No rider report data to export. Generate a report first.');
+        return;
+    }
+
+    const headers = ['Rider Name', 'Email', 'Phone', 'Assigned', 'Delivered', 'Cancelled', 'Fees Earned', 'Cash Collected', 'Cash Submitted', 'Pending Cash'];
+    const rows = lastRiderData.map(r => {
+        const cashCollection = parseFloat(r.cash_collection || 0);
+        const cashSubmission = parseFloat(r.cash_submission || 0);
+        return [
+            `${r.first_name} ${r.last_name}`,
+            r.email,
+            r.phone || '',
+            r.total_assigned,
+            r.total_delivered,
+            r.total_cancelled,
+            parseFloat(r.total_fees || 0).toFixed(2),
+            cashCollection.toFixed(2),
+            cashSubmission.toFixed(2),
+            (cashCollection - cashSubmission).toFixed(2)
+        ];
+    });
+
+    downloadCSV('rider_financial_report.csv', headers, rows);
+}
+
+function exportStoreReport() {
+    if (!lastStoreData || lastStoreData.length === 0) {
+        showWarning('No Data', 'No store report data to export. Generate a report first.');
+        return;
+    }
+
+    const headers = ['Store Name', 'Email', 'Phone', 'Total Orders', 'Total Earnings', 'Total Paid', 'Pending Settlement'];
+    const rows = lastStoreData.map(s => [
+        s.name,
+        s.email,
+        s.phone || '',
+        s.total_orders,
+        parseFloat(s.total_earnings || 0).toFixed(2),
+        parseFloat(s.total_paid || 0).toFixed(2),
+        parseFloat(s.pending_settlement || 0).toFixed(2)
+    ]);
+
+    downloadCSV('store_financial_report.csv', headers, rows);
+}
+
+function downloadCSV(filename, headers, rows) {
+    let csvContent = "data:text/csv;charset=utf-8," 
+        + headers.join(",") + "\n"
+        + rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }

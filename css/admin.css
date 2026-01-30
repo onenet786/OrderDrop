@@ -1008,3 +1008,35 @@ textarea:focus {
     align-self: flex-end;
     margin-bottom: 2px;
 }
+
+/* Report View Detail Modal Styles */
+.report-summary {
+    background: #f8fafc;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+}
+
+.report-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+}
+
+.report-detail-table th,
+.report-detail-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.report-detail-table th {
+    background: #f1f5f9;
+    font-weight: 600;
+}
+
+.report-detail-table tr:hover {
+    background: #f8fafc;
+}

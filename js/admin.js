@@ -719,6 +719,11 @@ function initializeAdmin() {
     const runSingleDiagnosticBtn = document.getElementById('runSingleDiagnosticBtn');
     if (runSingleDiagnosticBtn) runSingleDiagnosticBtn.addEventListener('click', runSingleDiagnostic);
 
+    if (typeof initializeFinancialForms === 'function') {
+        initializeFinancialForms();
+    }
+}
+
 document.addEventListener('click', function(e) {
     try {
         const t = e.target;
@@ -866,8 +871,6 @@ try {
         window.addEventListener('scroll', reposition, true);
     }
 } catch (e) { /* ignore */ }
-
-}
 
 // Image Fit removed
 
@@ -1176,6 +1179,14 @@ function switchTab(tabName) {
         case 'inventory-report':
             loadInventoryReport();
             break;
+        case 'rider-reports':
+            if (typeof populateReportFilters === 'function') populateReportFilters();
+            if (typeof loadRiderReports === 'function') loadRiderReports();
+            break;
+        case 'store-reports':
+            if (typeof populateReportFilters === 'function') populateReportFilters();
+            if (typeof loadStoreReports === 'function') loadStoreReports();
+            break;
         case 'db-backup':
             // Load list of available backups when backup tab is opened
             loadBackups();
@@ -1200,6 +1211,9 @@ function switchTab(tabName) {
             break;
         case 'expenses':
             if (typeof window['loadExpenses'] === 'function') window['loadExpenses']();
+            break;
+        case 'journal-vouchers':
+            if (typeof window['loadJournalVouchers'] === 'function') window['loadJournalVouchers']();
             break;
         case 'financial-reports':
             if (typeof window['loadFinancialReports'] === 'function') window['loadFinancialReports']();
@@ -5762,15 +5776,19 @@ function updateSortIndicator(header, column, tableType) {
 
 // Update other load functions to store data and initialize sorting
 function loadStores() {
-    fetch(`${API_BASE}/api/stores?admin=1`)
+    return fetch(`${API_BASE}/api/stores?admin=1`)
     .then(response => response.json())
     .then(data => {
         currentStores = data.stores || [];
         displayStores(currentStores);
         initializeTableSorting('stores');
         attachStoreFilterListeners();
+        return currentStores;
     })
-    .catch(error => console.error('Error loading stores:', error));
+    .catch(error => {
+        console.error('Error loading stores:', error);
+        throw error;
+    });
 }
 
 function attachStoreFilterListeners() {
@@ -5993,7 +6011,7 @@ function displayCategories(categories) {
 }
 
 function loadRiders() {
-    fetch(`${API_BASE}/api/riders`, {
+    return fetch(`${API_BASE}/api/riders`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
     })
     .then(response => response.json())
@@ -6001,8 +6019,12 @@ function loadRiders() {
         currentRiders = data.riders || [];
         displayRiders(currentRiders);
         initializeTableSorting('riders');
+        return currentRiders;
     })
-    .catch(error => console.error('Error loading riders:', error));
+    .catch(error => {
+        console.error('Error loading riders:', error);
+        throw error;
+    });
 }
 
 function displayRiders(riders) {
