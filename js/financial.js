@@ -1906,7 +1906,7 @@ function exportRiderReport() {
         return;
     }
 
-    const headers = ['Rider Name', 'Email', 'Phone', 'Assigned', 'Delivered', 'Cancelled', 'Fees Earned', 'Cash Collected', 'Cash Submitted', 'Pending Cash'];
+    const headers = ['Rider Name', 'Email', 'Phone', 'Assigned', 'Delivered', 'Cancelled', 'delivery charges', 'Cash Collected', 'Cash Submitted', 'Pending Cash'];
     const rows = lastRiderData.map(r => {
         const cashCollection = parseFloat(r.cash_collection || 0);
         const cashSubmission = parseFloat(r.cash_submission || 0);

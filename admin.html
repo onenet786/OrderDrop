@@ -1696,7 +1696,7 @@
                   <th>Assigned</th>
                   <th>Delivered</th>
                   <th>Cancelled</th>
-                  <th>Fees Earned</th>
+                  <th>delivery charges</th>
                   <th>Cash Collected</th>
                   <th>Cash Submitted</th>
                   <th>Pending Cash</th>
@@ -2306,7 +2306,7 @@
           <span class="close" data-modal="addStoreModal">&times;</span>
         </div>
         <div class="modal-body" style="padding: 0; overflow: visible;">
-          <form id="addStoreForm">
+          <form id="addStoreForm" action="/api/stores" method="POST">
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
               <div class="form-group">
                 <label for="storeName">Store Name:</label>
@@ -2404,7 +2404,7 @@
           <span class="close" data-modal="setPriorityModal">&times;</span>
         </div>
         <div class="modal-body" style="padding: 0;">
-          <form id="setPriorityForm">
+          <form id="setPriorityForm" action="/api/stores/priority" method="POST">
             <div style="margin-bottom: 1.5rem;">
               <p style="color: #718096; margin-bottom: 1rem;"><strong id="priorityStoreName"></strong> - Set priority (1-5) for top stores. Only one store can have each priority level.</p>
             </div>

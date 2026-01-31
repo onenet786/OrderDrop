@@ -265,7 +265,10 @@ function updateNavigation() {
     if (welcomeName) {
       welcomeName.textContent = 'Welcome';
     }
-    document.getElementById('headerLogoutBtn')?.remove();
+    const headerLogoutBtn = document.getElementById('headerLogoutBtn');
+    if (headerLogoutBtn) {
+      headerLogoutBtn.remove();
+    }
   }
 }
 
