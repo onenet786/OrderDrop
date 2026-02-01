@@ -1599,51 +1599,62 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
                 notes: `Gross Income: ${orderTotal} (Cr.)`
             });
 
-            // 3. Debit the Rider (Receivable from rider if cash, or just tracking balance)
-            // If it's cash, rider is Dr for total amount. If card/wallet, rider is not Dr for total.
-            // But per user request: Rider's Balance: 170 (Dr.)
-            const riderDrAmount = orderTotal;
+            // 3. Update Rider Wallet
+            // Logic: Credit Delivery Fee (Earnings) - Debit Cash Collected (Liability)
+            // Balance = What Company Owes Rider.
+            // +Delivery Fee (Company owes Rider)
+            // -Cash Collected (Rider owes Company)
+            const deliveryFee = parseFloat(order.delivery_fee || 0);
+            const isCash = order.payment_method === 'cash';
+            const cashCollected = isCash ? parseFloat(order.total_amount || 0) : 0;
             
+            // Get or Create Wallet
             const [wallets] = await req.db.execute(
                 'SELECT id, balance FROM wallets WHERE rider_id = ?',
                 [order.rider_id]
             );
 
-            if (wallets.length > 0) {
-                const wallet = wallets[0];
-                // For cash: debit the wallet (reduce balance if it represents company's liability to rider)
-                // In this system, wallet.balance seems to be what the company owes the rider.
-                // If rider collects cash, company owes them LESS. So we subtract.
-                const newBalance = parseFloat(wallet.balance || 0) - riderDrAmount;
-                
-                await req.db.execute(
-                    'UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?',
-                    [newBalance, riderDrAmount, wallet.id]
-                );
+            let walletId;
+            let currentBalance = 0;
 
+            if (wallets.length > 0) {
+                walletId = wallets[0].id;
+                currentBalance = parseFloat(wallets[0].balance || 0);
+            } else {
+                await req.db.execute(
+                    'INSERT INTO wallets (rider_id, user_type, balance) VALUES (?, ?, ?)',
+                    [order.rider_id, 'rider', 0]
+                );
+                const [newWallets] = await req.db.execute('SELECT id FROM wallets WHERE rider_id = ?', [order.rider_id]);
+                walletId = newWallets[0].id;
+            }
+
+            // 3a. Credit Delivery Fee
+            if (deliveryFee > 0) {
+                currentBalance += deliveryFee;
+                await req.db.execute(
+                    'UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?',
+                    [currentBalance, deliveryFee, walletId]
+                );
                 await req.db.execute(
                     `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
                      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [wallet.id, 'debit', riderDrAmount, `Cash collection for order #${order.order_number}`, 'order', id, newBalance]
+                    [walletId, 'credit', deliveryFee, `Delivery fee for order #${order.order_number}`, 'order', id, currentBalance]
                 );
-            } else {
+            }
+
+            // 3b. Debit Cash Collected
+            if (cashCollected > 0) {
+                currentBalance -= cashCollected;
                 await req.db.execute(
-                    'INSERT INTO wallets (rider_id, user_type, balance, total_spent) VALUES (?, ?, ?, ?)',
-                    [order.rider_id, 'rider', -riderDrAmount, riderDrAmount]
+                    'UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?',
+                    [currentBalance, cashCollected, walletId]
                 );
-
-                const [newWallets] = await req.db.execute(
-                    'SELECT id FROM wallets WHERE rider_id = ?',
-                    [order.rider_id]
+                await req.db.execute(
+                    `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [walletId, 'debit', cashCollected, `Cash collection for order #${order.order_number}`, 'order', id, currentBalance]
                 );
-
-                if (newWallets.length > 0) {
-                    await req.db.execute(
-                        `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                        [newWallets[0].id, 'debit', riderDrAmount, `Cash collection for order #${order.order_number}`, 'order', id, -riderDrAmount]
-                    );
-                }
             }
 
             // Record Rider Dr in financial_transactions

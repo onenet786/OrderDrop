@@ -457,8 +457,8 @@ async function displayRiderDeliveries(status = 'assigned', containerId = 'delive
                         ${delivery.phone ? `
                         <div class="contact-actions" style="margin: 8px 0; display: flex; gap: 8px; flex-wrap: wrap;">
                             <a class="btn btn-small" style="background:#2563eb;color:#fff;" href="tel:${delivery.phone}"><i class="fa fa-phone"></i> Call</a>
-                            <a class="btn btn-small" style="background:#16a34a;color:#fff;" href="https://wa.me/${(delivery.phone || '').replace(/[^0-9]/g, '')}" target="_blank" rel="noopener"><i class="fa fa-whatsapp"></i> WhatsApp</a>
                             <a class="btn btn-small" style="background:#f59e0b;color:#fff;" href="sms:${delivery.phone}"><i class="fa fa-sms"></i> SMS</a>
+                            <a class="btn btn-small" style="background:#16a34a;color:#fff;" href="https://wa.me/${(delivery.phone || '').replace(/[^0-9]/g, '')}" target="_blank" rel="noopener"><i class="fa fa-whatsapp"></i> WhatsApp</a>
                         </div>
                         ` : ''}
                         <p><strong>Payment Status:</strong> <span class="payment-status">${delivery.payment_status}</span></p>

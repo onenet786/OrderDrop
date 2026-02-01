@@ -47,9 +47,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     if (await canLaunchUrl(uri)) {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok && mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not launch dialer')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch dialer')),
+        );
       }
     } else if (mounted) {
       ScaffoldMessenger.of(
@@ -76,7 +76,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     if (await canLaunchUrl(smsUri)) {
       launched = await launchUrl(smsUri, mode: LaunchMode.externalApplication);
     } else if (await canLaunchUrl(smstoUri)) {
-      launched = await launchUrl(smstoUri, mode: LaunchMode.externalApplication);
+      launched = await launchUrl(
+        smstoUri,
+        mode: LaunchMode.externalApplication,
+      );
     }
 
     if (!launched && mounted) {
@@ -93,9 +96,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not launch WhatsApp')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch WhatsApp')),
+        );
       }
     }
   }
@@ -276,9 +279,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     setState(() => _currentLocation = 'Updating...');
     await _getCurrentLocation();
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Location updated successfully!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location updated successfully!')),
+      );
     }
   }
 
@@ -308,7 +311,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
       if (permission == LocationPermission.deniedForever) {
         if (mounted) {
-          setState(() => _currentLocation = 'Location permission permanently denied');
+          setState(
+            () => _currentLocation = 'Location permission permanently denied',
+          );
         }
         return;
       }
@@ -361,7 +366,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 
   void _startLocationTracking() {
-    _locationTrackingTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+    _locationTrackingTimer = Timer.periodic(const Duration(seconds: 30), (
+      timer,
+    ) async {
       if (_assignedDeliveries.isNotEmpty) {
         await _sendLocationToServer();
       }
@@ -390,7 +397,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         longitude: position.longitude,
       );
 
-      _logger.d('Location sent to server: ${position.latitude}, ${position.longitude}');
+      _logger.d(
+        'Location sent to server: ${position.latitude}, ${position.longitude}',
+      );
     } catch (e) {
       _logger.e('Error sending location to server: $e');
     }
@@ -403,9 +412,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
       await ApiService.markOrderAsDelivered(token, orderId);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Order marked as delivered!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Order marked as delivered!')),
+        );
         _loadAllData(); // Refresh list
       }
     } catch (e) {
@@ -426,7 +435,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       await ApiService.updatePaymentStatus(token, orderId, 'paid');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment marked as received! Wallet updated.')),
+          const SnackBar(
+            content: Text('Payment marked as received! Wallet updated.'),
+          ),
         );
         _loadAllData();
         await Future.delayed(const Duration(milliseconds: 500));
@@ -454,7 +465,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
   void _logout() {
     Provider.of<AuthProvider>(context, listen: false).logout();
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   @override
@@ -467,7 +480,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAllData),
           IconButton(
             icon: const Icon(Icons.key),
-            onPressed: () => Navigator.of(context).pushNamed('/change-password'),
+            onPressed: () =>
+                Navigator.of(context).pushNamed('/change-password'),
             tooltip: 'Change Password',
           ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
@@ -522,7 +536,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               .trim()
               .isEmpty
         ? (_riderProfile?['first_name'] ?? 'Rider')
-        : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'.trim();
+        : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
+              .trim();
     final vehicle = _riderProfile?['vehicle_type'] ?? 'N/A';
 
     return Card(
@@ -558,7 +573,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.directions_bike, color: Colors.white, size: 18),
+                    const Icon(
+                      Icons.directions_bike,
+                      color: Colors.white,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Vehicle: $vehicle',
@@ -571,7 +590,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
@@ -694,11 +716,17 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     children: [
                       Text(
                         'Order #${delivery['order_number']}',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: _getStatusColor(status).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -721,7 +749,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             const Divider(),
 
             // Details
-            _buildDetailRow('Customer', '${delivery['first_name']} ${delivery['last_name']}'),
+            _buildDetailRow(
+              'Customer',
+              '${delivery['first_name']} ${delivery['last_name']}',
+            ),
 
             // Simplified Summary Card
             const SizedBox(height: 8),
@@ -759,7 +790,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -772,39 +806,37 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
             if (customerPhone.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _contactAction(
-                        icon: Icons.phone,
-                        color: Colors.blue,
-                        label: 'Call',
-                        onTap: () => _makeCall(customerPhone),
-                      ),
-                      const SizedBox(width: 8),
-                      _contactAction(
-                        icon: Icons.message,
-                        color: Colors.orange,
-                        label: 'SMS',
-                        onTap: () => _sendSms(customerPhone),
-                      ),
-                      const SizedBox(width: 8),
-                      _contactAction(
-                        icon: Icons.chat,
-                        color: Colors.green,
-                        label: 'WhatsApp',
-                        onTap: () => _openWhatsApp(customerPhone),
-                      ),
-                    ],
-                  ),
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _contactAction(
+                      icon: Icons.phone,
+                      color: Colors.blue,
+                      label: 'Call',
+                      onTap: () => _makeCall(customerPhone),
+                    ),
+                    _contactAction(
+                      icon: Icons.message,
+                      color: Colors.orange,
+                      label: 'SMS',
+                      onTap: () => _sendSms(customerPhone),
+                    ),
+                    _contactAction(
+                      icon: Icons.chat,
+                      color: Colors.green,
+                      label: 'WhatsApp',
+                      onTap: () => _openWhatsApp(customerPhone),
+                    ),
+                  ],
                 ),
               ),
             _buildDetailRow(
               'Payment',
               paymentStatus,
-              valueColor: paymentStatus == 'paid' ? Colors.green : Colors.orange,
+              valueColor: paymentStatus == 'paid'
+                  ? Colors.green
+                  : Colors.orange,
             ),
 
             if (delivery['rider_location'] != null)
@@ -855,7 +887,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             width: 80,
             child: Text(
               '$label:',
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
             ),
           ),
           Expanded(
@@ -863,7 +898,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               value,
               style: TextStyle(
                 color: valueColor ?? Colors.black87,
-                fontWeight: valueColor != null ? FontWeight.bold : FontWeight.normal,
+                fontWeight: valueColor != null
+                    ? FontWeight.bold
+                    : FontWeight.normal,
               ),
             ),
           ),
@@ -902,11 +939,16 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         style: OutlinedButton.styleFrom(
           foregroundColor: color,
           side: BorderSide(color: color.withValues(alpha: 0.6)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 10),
         ),
         icon: Icon(icon, size: 18),
-        label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        label: Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
       ),
     );
   }
@@ -964,7 +1006,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       // Filter items for THIS store
                       final storeItems = items
                           .where(
-                            (item) => (item['store_name'] ?? delivery['store_name']) == storeName,
+                            (item) =>
+                                (item['store_name'] ??
+                                    delivery['store_name']) ==
+                                storeName,
                           )
                           .toList();
 
@@ -980,14 +1025,21 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                 children: [
                                   Text(
                                     'Order #${delivery['order_number']}',
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    delivery['status']?.toString().toUpperCase() ?? '',
+                                    delivery['status']
+                                            ?.toString()
+                                            .toUpperCase() ??
+                                        '',
                                     style: TextStyle(
-                                      color: _getStatusColor(delivery['status'] ?? ''),
+                                      color: _getStatusColor(
+                                        delivery['status'] ?? '',
+                                      ),
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
                                     ),
@@ -997,14 +1049,20 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                               const Divider(),
                               ...storeItems.map(
                                 (item) => Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 2,
+                                  ),
                                   child: Row(
                                     children: [
                                       Text(
                                         '${item['quantity']}x ',
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                      Expanded(child: Text('${item['product_name']}')),
+                                      Expanded(
+                                        child: Text('${item['product_name']}'),
+                                      ),
                                       Text('PKR ${item['price']}'),
                                     ],
                                   ),
@@ -1012,11 +1070,15 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                               ),
                               const SizedBox(height: 8),
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
                                     'Address: ${delivery['delivery_address']}',
-                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1071,7 +1133,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       Expanded(
                         child: Text(
                           'Order #${delivery['order_number']}',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       IconButton(
@@ -1082,7 +1147,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ),
                   const SizedBox(height: 12),
                   _buildDetailRow('Status', '${delivery['status']}'),
-                  _buildDetailRow('Payment', '${delivery['payment_status'] ?? 'unknown'}'),
+                  _buildDetailRow(
+                    'Payment',
+                    '${delivery['payment_status'] ?? 'unknown'}',
+                  ),
                   const SizedBox(height: 12),
                   const Divider(),
                   const Text(
@@ -1099,7 +1167,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     '${delivery['first_name'] ?? ''} ${delivery['last_name'] ?? ''}',
                   ),
                   _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
-                  _buildDetailRow('Delivery Address', '${delivery['delivery_address'] ?? 'N/A'}'),
+                  _buildDetailRow(
+                    'Delivery Address',
+                    '${delivery['delivery_address'] ?? 'N/A'}',
+                  ),
                   const SizedBox(height: 12),
                   const Divider(),
                   const Text(
@@ -1116,8 +1187,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     final storeItems = entry.value;
                     double storeSubtotal = 0;
                     for (var item in storeItems) {
-                      final price = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
-                      final quantity = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
+                      final price =
+                          double.tryParse(item['price']?.toString() ?? '0') ??
+                          0;
+                      final quantity =
+                          int.tryParse(item['quantity']?.toString() ?? '1') ??
+                          1;
                       storeSubtotal += price * quantity;
                     }
 
@@ -1126,12 +1201,20 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       children: [
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).primaryColor.withAlpha((0.15 * 255).round()),
+                            color: Theme.of(
+                              context,
+                            ).primaryColor.withAlpha((0.15 * 255).round()),
                             borderRadius: BorderRadius.circular(4),
                             border: Border(
-                              left: BorderSide(color: Theme.of(context).primaryColor, width: 3),
+                              left: BorderSide(
+                                color: Theme.of(context).primaryColor,
+                                width: 3,
+                              ),
                             ),
                           ),
                           child: Text(
@@ -1158,14 +1241,20 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                 ),
                                 Text(
                                   'PKR ${(double.tryParse(item['price']?.toString() ?? '0') ?? 0) * (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1)}',
-                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.only(top: 4, bottom: 12, left: 8),
+                          padding: const EdgeInsets.only(
+                            top: 4,
+                            bottom: 12,
+                            left: 8,
+                          ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1173,13 +1262,19 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                               Expanded(
                                 child: Text(
                                   'Subtotal ($storeName):',
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Text(
                                 'PKR ${storeSubtotal.toStringAsFixed(2)}',
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ],
                           ),
@@ -1206,25 +1301,43 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
                       for (var item in allItems) {
                         itemsSubtotal +=
-                            (double.tryParse(item['price']?.toString() ?? '0') ?? 0) *
-                            (int.tryParse(item['quantity']?.toString() ?? '1') ?? 1);
+                            (double.tryParse(
+                                  item['price']?.toString() ?? '0',
+                                ) ??
+                                0) *
+                            (int.tryParse(
+                                  item['quantity']?.toString() ?? '1',
+                                ) ??
+                                1);
                         final storeId = item['store_id'] as int?;
                         if (storeId != null) storeIds.add(storeId);
                       }
 
-                      final deliveryFee = double.tryParse(delivery['delivery_fee']?.toString() ?? '0') ?? 0;
+                      final deliveryFee =
+                          double.tryParse(
+                            delivery['delivery_fee']?.toString() ?? '0',
+                          ) ??
+                          0;
                       final grandTotal = itemsSubtotal + deliveryFee;
-                      final numStores = storeIds.isNotEmpty ? storeIds.length : 1;
+                      final numStores = storeIds.isNotEmpty
+                          ? storeIds.length
+                          : 1;
 
                       return Column(
                         children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Items Subtotal:', style: TextStyle(fontSize: 13)),
+                              const Text(
+                                'Items Subtotal:',
+                                style: TextStyle(fontSize: 13),
+                              ),
                               Text(
                                 'PKR ${itemsSubtotal.toStringAsFixed(2)}',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ],
                           ),
@@ -1238,7 +1351,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                               ),
                               Text(
                                 'PKR ${deliveryFee.toStringAsFixed(2)}',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ],
                           ),
@@ -1250,7 +1366,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                             children: [
                               const Text(
                                 'Grand Total:',
-                                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               Text(
                                 'PKR ${grandTotal.toStringAsFixed(2)}',
@@ -1284,7 +1403,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         children: [
           Card(
             elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
@@ -1318,15 +1439,23 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           ),
                           const SizedBox(width: 8),
                           IconButton(
-                            icon: const Icon(Icons.refresh, color: Colors.white),
+                            icon: const Icon(
+                              Icons.refresh,
+                              color: Colors.white,
+                            ),
                             onPressed: () async {
-                              final token = Provider.of<AuthProvider>(context, listen: false).token;
+                              final token = Provider.of<AuthProvider>(
+                                context,
+                                listen: false,
+                              ).token;
                               if (token != null) {
                                 await _loadWalletBalance(token);
                                 if (mounted) {
-                                  ScaffoldMessenger.of(
-                                    context,
-                                  ).showSnackBar(const SnackBar(content: Text('Wallet updated')));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Wallet updated'),
+                                    ),
+                                  );
                                 }
                               }
                             },
@@ -1347,7 +1476,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   ),
                   const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
@@ -1355,7 +1487,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.info_outline, color: Colors.white, size: 16),
+                        const Icon(
+                          Icons.info_outline,
+                          color: Colors.white,
+                          size: 16,
+                        ),
                         const SizedBox(width: 6),
                         const Text(
                           'Tap refresh to update balance',
@@ -1409,7 +1545,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                               const SizedBox(height: 4),
                               const Text(
                                 'Complete deliveries and mark payments as received to earn',
-                                style: TextStyle(fontSize: 12, color: Colors.grey),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
                               ),
                             ],
                           ),
@@ -1435,13 +1574,19 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   const Divider(),
                   _buildWalletInfoRow('Status', 'Active'),
                   const Divider(),
-                  _buildWalletInfoRow('Balance', 'PKR ${_walletBalance.toStringAsFixed(2)}'),
+                  _buildWalletInfoRow(
+                    'Balance',
+                    'PKR ${_walletBalance.toStringAsFixed(2)}',
+                  ),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 24),
-          const Text('How it works', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const Text(
+            'How it works',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 12),
           Card(
             child: Padding(
@@ -1484,7 +1629,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         children: [
           Text(
             label,
-            style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
@@ -1506,7 +1654,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           child: Center(
             child: Text(
               number,
-              style: TextStyle(color: Colors.blue.shade600, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.blue.shade600,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ),
@@ -1517,7 +1668,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             children: [
               Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              Text(description, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              Text(
+                description,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
             ],
           ),
         ),
@@ -1537,7 +1691,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             ],
             selected: <String>{_selectedStatsPeriod},
             onSelectionChanged: (Set<String> newSelection) async {
-              final token = Provider.of<AuthProvider>(context, listen: false).token;
+              final token = Provider.of<AuthProvider>(
+                context,
+                listen: false,
+              ).token;
               if (token != null) {
                 await _loadWalletStats(token, newSelection.first);
               }
@@ -1556,7 +1713,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final stats = _walletStats!;
     final cashReceived = _parseDouble(stats['cash_received']);
     final deliveryFees = _parseDouble(stats['total_delivery_fees']);
-    final paymentSummary = (stats['payment_summary'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final paymentSummary =
+        (stats['payment_summary'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
     return Column(
       children: [
@@ -1609,18 +1767,29 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                method.replaceFirst(method[0], method[0].toUpperCase()),
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                method.replaceFirst(
+                                  method[0],
+                                  method[0].toUpperCase(),
+                                ),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               Text(
                                 '$count order${count != 1 ? 's' : ''}',
-                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
                               ),
                             ],
                           ),
                           Text(
                             'PKR ${amount.toStringAsFixed(2)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
@@ -1665,7 +1834,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             const SizedBox(height: 8),
             Text(
               value,
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: iconColor),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: iconColor,
+              ),
             ),
           ],
         ),
@@ -1680,7 +1853,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
     // Image tile without label (clean top row)
     Widget imageTile(String? url) {
-      final resolved = (url == null || url.isEmpty) ? null : ApiService.getImageUrl(url);
+      final resolved = (url == null || url.isEmpty)
+          ? null
+          : ApiService.getImageUrl(url);
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Container(
@@ -1706,7 +1881,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -1716,7 +1894,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 textAlign: TextAlign.right,
                 style: TextStyle(
                   color: valueColor ?? Colors.black87,
-                  fontWeight: valueColor != null ? FontWeight.bold : FontWeight.normal,
+                  fontWeight: valueColor != null
+                      ? FontWeight.bold
+                      : FontWeight.normal,
                 ),
               ),
             ),
@@ -1725,7 +1905,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       );
     }
 
-    final fullName = '${r?['first_name'] ?? ''} ${r?['last_name'] ?? ''}'.trim();
+    final fullName = '${r?['first_name'] ?? ''} ${r?['last_name'] ?? ''}'
+        .trim();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -1762,7 +1943,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       style: const TextStyle(fontWeight: FontWeight.w500),
                     ),
                   ),
-                  TextButton(onPressed: _refreshLocation, child: const Text('Refresh')),
+                  TextButton(
+                    onPressed: _refreshLocation,
+                    child: const Text('Refresh'),
+                  ),
                 ],
               ),
             ],

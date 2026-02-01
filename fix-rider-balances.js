@@ -26,22 +26,27 @@ async function fixRiderBalances() {
         for (const rider of riders) {
             console.log(`Processing rider: ${rider.email} (ID: ${rider.id})`);
 
-            // Calculate correct balance: sum all delivered + paid orders
-            const [cashOrders] = await connection.query(`
+            // Calculate correct balance:
+            // Credit: Sum of delivery fees for ALL paid/delivered orders (Earnings)
+            // Debit: Sum of total amount for CASH paid/delivered orders (Liability)
+            
+            // 1. Total Earnings (Credits)
+            const [earnings] = await connection.query(`
+                SELECT COALESCE(SUM(delivery_fee), 0) as total_fees
+                FROM orders
+                WHERE rider_id = ? AND payment_status = 'paid' AND status = 'delivered'
+            `, [rider.id]);
+
+            // 2. Total Cash Collected (Debits)
+            const [cashCollected] = await connection.query(`
                 SELECT COALESCE(SUM(total_amount), 0) as total_cash
                 FROM orders
                 WHERE rider_id = ? AND payment_method = 'cash' AND payment_status = 'paid' AND status = 'delivered'
             `, [rider.id]);
 
-            const [nonCashOrders] = await connection.query(`
-                SELECT COALESCE(SUM(delivery_fee), 0) as total_delivery_fees
-                FROM orders
-                WHERE rider_id = ? AND payment_method != 'cash' AND status = 'delivered'
-            `, [rider.id]);
-
-            const cashAmount = parseFloat(cashOrders[0].total_cash || 0);
-            const deliveryFeeAmount = parseFloat(nonCashOrders[0].total_delivery_fees || 0);
-            const correctBalance = cashAmount + deliveryFeeAmount;
+            const totalCredits = parseFloat(earnings[0].total_fees || 0);
+            const totalDebits = parseFloat(cashCollected[0].total_cash || 0);
+            const correctBalance = totalCredits - totalDebits;
 
             // Get current wallet balance
             const [wallets] = await connection.query(`
@@ -57,8 +62,8 @@ async function fixRiderBalances() {
             const currentBalance = parseFloat(wallet.balance || 0);
 
             console.log(`  Current balance: ${currentBalance}`);
-            console.log(`  Cash orders: ${cashAmount}`);
-            console.log(`  Delivery fees (non-cash): ${deliveryFeeAmount}`);
+            console.log(`  Total Fees (Credit): ${totalCredits}`);
+            console.log(`  Cash Collected (Debit): ${totalDebits}`);
             console.log(`  Correct balance: ${correctBalance}`);
 
             if (currentBalance !== correctBalance) {
@@ -66,9 +71,9 @@ async function fixRiderBalances() {
                 
                 await connection.query(`
                     UPDATE wallets 
-                    SET balance = ?, total_credited = ?
+                    SET balance = ?, total_credited = ?, total_spent = ?
                     WHERE id = ?
-                `, [correctBalance, correctBalance, wallet.id]);
+                `, [correctBalance, totalCredits, totalDebits, wallet.id]);
 
                 console.log(`  ✅ Balance updated successfully`);
             } else {
