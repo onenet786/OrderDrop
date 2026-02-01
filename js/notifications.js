@@ -241,7 +241,11 @@
             showToast('New Assignment', data.message, 'info');
             
             // Refresh rider dashboard if function exists
-            if (typeof displayRiderDeliveries === 'function') displayRiderDeliveries();
+            if (typeof switchTab === 'function') {
+                switchTab('assigned');
+            } else if (typeof displayRiderDeliveries === 'function') {
+                displayRiderDeliveries();
+            }
             if (typeof loadRiderWallet === 'function') loadRiderWallet();
         }
     });

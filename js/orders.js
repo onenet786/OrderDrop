@@ -62,17 +62,17 @@ async function displayOrders(status = 'pending') {
                 if (order.rider_phone) {
                     const cleanPhone = order.rider_phone.replace(/[^0-9]/g, '');
                     contactRiderHtml = `
-                        <div class="rider-contact" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee;">
+                        <div class="rider-contact" style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-radius: 8px; border: 1px solid #eee; width: 100%; box-sizing: border-box;">
                             <p style="margin-bottom: 10px;"><strong>Rider:</strong> ${order.rider_first_name} ${order.rider_last_name || ''}</p>
-                            <div class="contact-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                                <a href="tel:${order.rider_phone}" class="btn btn-sm" style="background: #2196F3; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 14px;">
-                                    <i class="fas fa-phone"></i> Call
+                            <div class="contact-actions" style="display: flex; gap: 8px; width: 100%;">
+                                <a href="tel:${order.rider_phone}" class="btn btn-small" style="background: #2196F3; color: white; padding: 8px 0; border-radius: 4px; text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; flex: 1; text-align: center; white-space: nowrap;">
+                                    <i class="fas fa-phone" style="margin-right: 5px;"></i> Call
                                 </a>
-                                <a href="sms:${order.rider_phone}" class="btn btn-sm" style="background: #FF9800; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 14px;">
-                                    <i class="fas fa-sms"></i> SMS
+                                <a href="sms:${order.rider_phone}" class="btn btn-small" style="background: #FF9800; color: white; padding: 8px 0; border-radius: 4px; text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; flex: 1; text-align: center; white-space: nowrap;">
+                                    <i class="fas fa-sms" style="margin-right: 5px;"></i> SMS
                                 </a>
-                                <a href="https://wa.me/${cleanPhone}" target="_blank" class="btn btn-sm" style="background: #4CAF50; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; font-size: 14px;">
-                                    <i class="fab fa-whatsapp"></i> WhatsApp
+                                <a href="https://wa.me/${cleanPhone}" target="_blank" class="btn btn-small" style="background: #4CAF50; color: white; padding: 8px 0; border-radius: 4px; text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; flex: 1; text-align: center; white-space: nowrap;">
+                                    <i class="fab fa-whatsapp" style="margin-right: 5px;"></i> WhatsApp
                                 </a>
                             </div>
                         </div>

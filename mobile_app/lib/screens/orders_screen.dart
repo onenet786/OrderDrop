@@ -516,33 +516,35 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       maxLines: 2,
                     ),
                     const SizedBox(height: 8),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _contactButton(
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _contactButton(
                             icon: Icons.phone,
                             color: Colors.blue,
                             label: 'Call',
                             onPressed: () => _makeCall(riderPhone.toString()),
                           ),
-                          const SizedBox(width: 8),
-                          _contactButton(
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _contactButton(
                             icon: Icons.message,
                             color: Colors.orange,
                             label: 'SMS',
                             onPressed: () => _sendSms(riderPhone.toString()),
                           ),
-                          const SizedBox(width: 8),
-                          _contactButton(
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _contactButton(
                             icon: Icons.chat,
                             color: Colors.green,
                             label: 'WhatsApp',
                             onPressed: () => _openWhatsApp(riderPhone.toString()),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

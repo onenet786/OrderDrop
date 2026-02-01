@@ -141,6 +141,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         ),
       );
       _loadAllData();
+      _tabController.animateTo(0); // Switch to Home tab
     }
   }
 
