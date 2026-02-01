@@ -322,6 +322,12 @@ async function viewJournalVoucher(id) {
 }
 
 function initializeFinancialForms() {
+    // Initialize dynamic voucher type handlers
+    if (window.handleVoucherTypeChange) {
+        handleVoucherTypeChange('payeeType', 'payeeName', 'payeeSelect', 'payeeId', 'addExpenseTypeBtn');
+        handleVoucherTypeChange('payerType', 'payerName', 'payerSelect', 'payerId', 'addPayerExpenseTypeBtn');
+    }
+
     document.getElementById('paymentVoucherForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         await submitPaymentVoucher();
@@ -893,6 +899,7 @@ async function submitPaymentVoucher() {
     const id = document.getElementById('paymentVoucherId').value;
     const payeeName = document.getElementById('payeeName').value;
     const payeeType = document.getElementById('payeeType').value;
+    const payeeId = document.getElementById('payeeId').value;
     const amount = parseFloat(document.getElementById('paymentAmount').value);
     const purpose = document.getElementById('paymentPurpose').value;
     const paymentMethod = document.getElementById('paymentMethodPV').value;
@@ -900,6 +907,7 @@ async function submitPaymentVoucher() {
     const payload = {
         payee_name: payeeName,
         payee_type: payeeType,
+        payee_id: (payeeType === 'expense') ? null : (payeeId || null),
         amount,
         purpose,
         description: '',
@@ -935,16 +943,38 @@ async function submitPaymentVoucher() {
     }
 }
 
-function editPaymentVoucher(id) {
+async function editPaymentVoucher(id) {
     const voucher = currentPaymentVouchers.find(v => v.id === id);
     if (!voucher) return;
 
     document.getElementById('paymentVoucherId').value = voucher.id;
-    document.getElementById('payeeName').value = voucher.payee_name;
-    document.getElementById('payeeType').value = voucher.payee_type;
     document.getElementById('paymentAmount').value = voucher.amount;
     document.getElementById('paymentPurpose').value = voucher.purpose || '';
     document.getElementById('paymentMethodPV').value = voucher.payment_method;
+    
+    const payeeType = document.getElementById('payeeType');
+    payeeType.value = voucher.payee_type;
+    
+    // UI elements
+    const nameInput = document.getElementById('payeeName');
+    const select = document.getElementById('payeeSelect');
+    const hidden = document.getElementById('payeeId');
+    const addBtn = document.getElementById('addExpenseTypeBtn');
+    
+    await updateVoucherTypeUI(voucher.payee_type, nameInput, select, hidden, addBtn);
+    
+    if (['store', 'rider', 'employee', 'expense'].includes(voucher.payee_type)) {
+        if (voucher.payee_type === 'expense') {
+             select.value = voucher.payee_name;
+             hidden.value = ''; 
+        } else {
+             select.value = voucher.payee_id;
+             hidden.value = voucher.payee_id;
+        }
+        nameInput.value = voucher.payee_name;
+    } else {
+        nameInput.value = voucher.payee_name;
+    }
 
     document.querySelector('#paymentVoucherModal h2').textContent = 'Edit Payment Voucher';
     document.querySelector('#paymentVoucherModal .btn-primary').textContent = 'Update Voucher';
@@ -991,6 +1021,7 @@ async function submitReceiptVoucher() {
     const id = document.getElementById('receiptVoucherId').value;
     const payerName = document.getElementById('payerName').value;
     const payerType = document.getElementById('payerType').value;
+    const payerId = document.getElementById('payerId').value;
     const amount = parseFloat(document.getElementById('receiptAmount').value);
     const description = document.getElementById('receiptDescription').value;
     const paymentMethod = document.getElementById('paymentMethodRV').value;
@@ -998,6 +1029,7 @@ async function submitReceiptVoucher() {
     const payload = {
         payer_name: payerName,
         payer_type: payerType,
+        payer_id: (payerType === 'expense') ? null : (payerId || null),
         amount,
         description,
         details: '',
@@ -1033,16 +1065,38 @@ async function submitReceiptVoucher() {
     }
 }
 
-function editReceiptVoucher(id) {
+async function editReceiptVoucher(id) {
     const voucher = currentReceiptVouchers.find(v => v.id === id);
     if (!voucher) return;
 
     document.getElementById('receiptVoucherId').value = voucher.id;
-    document.getElementById('payerName').value = voucher.payer_name;
-    document.getElementById('payerType').value = voucher.payer_type;
     document.getElementById('receiptAmount').value = voucher.amount;
     document.getElementById('receiptDescription').value = voucher.description || '';
     document.getElementById('paymentMethodRV').value = voucher.payment_method;
+    
+    const payerType = document.getElementById('payerType');
+    payerType.value = voucher.payer_type;
+    
+    // UI elements
+    const nameInput = document.getElementById('payerName');
+    const select = document.getElementById('payerSelect');
+    const hidden = document.getElementById('payerId');
+    const addBtn = document.getElementById('addPayerExpenseTypeBtn');
+    
+    await updateVoucherTypeUI(voucher.payer_type, nameInput, select, hidden, addBtn);
+    
+    if (['store', 'rider', 'employee', 'expense'].includes(voucher.payer_type)) {
+        if (voucher.payer_type === 'expense') {
+             select.value = voucher.payer_name;
+             hidden.value = ''; 
+        } else {
+             select.value = voucher.payer_id;
+             hidden.value = voucher.payer_id;
+        }
+        nameInput.value = voucher.payer_name;
+    } else {
+        nameInput.value = voucher.payer_name;
+    }
 
     document.querySelector('#receiptVoucherModal h2').textContent = 'Edit Receipt Voucher';
     document.querySelector('#receiptVoucherModal .btn-primary').textContent = 'Update Voucher';
@@ -1846,7 +1900,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    initializeFinancialForms();
     initializePersistentModalHandlers();
     initializeFinancialManagement();
 });

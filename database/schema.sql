@@ -313,7 +313,7 @@ CREATE TABLE IF NOT EXISTS cash_payment_vouchers (
     voucher_number VARCHAR(50) UNIQUE NOT NULL,
     voucher_date DATE NOT NULL,
     payee_name VARCHAR(100) NOT NULL,
-    payee_type ENUM('store', 'rider', 'vendor', 'employee', 'other') NOT NULL,
+    payee_type ENUM('store', 'rider', 'vendor', 'employee', 'expense', 'other') NOT NULL,
     payee_id INT,
     amount DECIMAL(12, 2) NOT NULL,
     purpose VARCHAR(255),
@@ -329,7 +329,7 @@ CREATE TABLE IF NOT EXISTS cash_payment_vouchers (
     paid_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (payee_id) REFERENCES users(id) ON DELETE SET NULL,
+    -- FOREIGN KEY (payee_id) removed to support polymorphic relationships (stores, riders, employees)
     FOREIGN KEY (prepared_by) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (paid_by) REFERENCES users(id) ON DELETE SET NULL,

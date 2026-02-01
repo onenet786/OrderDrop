@@ -57,6 +57,11 @@ function updateCartCount() {
     const cartCount = document.getElementById('cartCount');
     if (cartCount) {
         cartCount.textContent = cart.length;
+        if (cart.length > 0) {
+            cartCount.style.display = 'inline-block';
+        } else {
+            cartCount.style.display = 'none';
+        }
     }
 }
 

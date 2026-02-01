@@ -307,9 +307,42 @@ router.get('/payment-vouchers', async (req, res) => {
     }
 });
 
+router.get('/entities', async (req, res) => {
+    try {
+        const { type } = req.query;
+        let data = [];
+
+        if (type === 'store') {
+            const [stores] = await req.db.execute('SELECT id, name FROM stores ORDER BY name');
+            data = stores;
+        } else if (type === 'rider') {
+            const [riders] = await req.db.execute('SELECT id, CONCAT(first_name, " ", last_name) as name FROM riders ORDER BY first_name');
+            data = riders;
+        } else if (type === 'employee') {
+            const [employees] = await req.db.execute('SELECT id, CONCAT(first_name, " ", last_name) as name FROM users WHERE user_type IN ("admin", "staff") ORDER BY first_name');
+            data = employees;
+        } else if (type === 'expense') {
+            const [expenses] = await req.db.execute(`
+                SELECT DISTINCT name FROM (
+                    SELECT category as name FROM admin_expenses WHERE category IS NOT NULL
+                    UNION
+                    SELECT payee_name as name FROM cash_payment_vouchers WHERE payee_type = 'expense' AND payee_name IS NOT NULL
+                ) as combined_expenses 
+                ORDER BY name
+            `);
+            data = expenses.map(e => ({ id: e.name, name: e.name }));
+        }
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error fetching entities:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch entities' });
+    }
+});
+
 router.post('/payment-vouchers', [
     body('payee_name').trim().notEmpty(),
-    body('payee_type').isIn(['store', 'rider', 'vendor', 'employee', 'other']),
+    body('payee_type').isIn(['store', 'rider', 'vendor', 'employee', 'expense', 'other']),
     body('amount').isFloat({ min: 0.01 }),
     body('payment_method').isIn(['cash', 'check', 'bank_transfer']),
     body('purpose').optional().trim()
@@ -368,7 +401,7 @@ router.put('/payment-vouchers/:id', [
         }
 
         const { id } = req.params;
-        const { payee_name, amount, status, description } = req.body;
+        const { payee_name, payee_type, payee_id, amount, status, description } = req.body;
 
         // Get existing voucher data if we're marking it as paid
         let existingVoucher = null;
@@ -390,6 +423,14 @@ router.put('/payment-vouchers/:id', [
         if (payee_name) {
             updates.push('payee_name = ?');
             params.push(payee_name);
+        }
+        if (payee_type) {
+            updates.push('payee_type = ?');
+            params.push(payee_type);
+        }
+        if (payee_id !== undefined) { // Allow null to be passed
+            updates.push('payee_id = ?');
+            params.push(payee_id);
         }
         if (amount) {
             updates.push('amount = ?');
@@ -443,6 +484,56 @@ router.put('/payment-vouchers/:id', [
                 reference_id: existingVoucher.voucher_number,
                 created_by: req.user.id
             });
+
+            // If payee is a rider, record cash settlement/advance and update wallet (Debit)
+            const payeeType = payee_type || existingVoucher.payee_type;
+            const payeeId = payee_id !== undefined ? payee_id : existingVoucher.payee_id;
+
+            if (payeeType === 'rider' && payeeId) {
+                const movement_number = generateVoucherNumber('RCM');
+                const movement_date = new Date().toISOString().split('T')[0];
+                const movementType = 'settlement'; // Using settlement for payments to riders
+
+                const [movementResult] = await req.db.execute(
+                    `INSERT INTO rider_cash_movements 
+                     (movement_number, rider_id, movement_date, movement_type, amount, description, reference_type, reference_id, recorded_by, status, approved_by, approved_at)
+                     VALUES (?, ?, ?, ?, ?, ?, 'payment_voucher', ?, ?, 'completed', ?, NOW())`,
+                    [movement_number, payeeId, movement_date, movementType, voucherAmount, `Cash payment via CPV ${existingVoucher.voucher_number}`, existingVoucher.voucher_number, req.user.id, req.user.id]
+                );
+
+                // Debit rider wallet (reduce company liability / increase rider liability)
+                await recordRiderWalletTransaction(
+                    req.db,
+                    payeeId,
+                    'debit',
+                    voucherAmount,
+                    `Cash payment via CPV ${existingVoucher.voucher_number}`,
+                    movementResult.insertId,
+                    movementType
+                );
+            } else if (payeeType === 'store' && payeeId) {
+                // Debit store wallet (reduce company liability)
+                await recordStoreWalletTransaction(
+                    req.db,
+                    payeeId,
+                    'debit',
+                    voucherAmount,
+                    `Payment via CPV ${existingVoucher.voucher_number}`,
+                    existingVoucher.id,
+                    'payment_voucher'
+                );
+            } else if (payeeType === 'employee' && payeeId) {
+                // Debit employee wallet (reduce company liability)
+                await recordUserWalletTransaction(
+                    req.db,
+                    payeeId,
+                    'debit',
+                    voucherAmount,
+                    `Payment via CPV ${existingVoucher.voucher_number}`,
+                    existingVoucher.id,
+                    'payment_voucher'
+                );
+            }
         }
 
         res.json({
@@ -516,7 +607,7 @@ router.get('/receipt-vouchers', async (req, res) => {
 
 router.post('/receipt-vouchers', [
     body('payer_name').trim().notEmpty(),
-    body('payer_type').isIn(['customer', 'store', 'vendor', 'other']),
+    body('payer_type').isIn(['customer', 'store', 'rider', 'vendor', 'employee', 'expense', 'other']),
     body('amount').isFloat({ min: 0.01 }),
     body('payment_method').isIn(['cash', 'check', 'bank_transfer']),
     body('description').optional().trim()
@@ -575,7 +666,7 @@ router.put('/receipt-vouchers/:id', [
         }
 
         const { id } = req.params;
-        const { payer_name, amount, status, description } = req.body;
+        const { payer_name, payer_type, payer_id, amount, status, description } = req.body;
 
         // Get existing voucher data if we're marking it as received
         let existingVoucher = null;
@@ -597,6 +688,14 @@ router.put('/receipt-vouchers/:id', [
         if (payer_name) {
             updates.push('payer_name = ?');
             params.push(payer_name);
+        }
+        if (payer_type) {
+            updates.push('payer_type = ?');
+            params.push(payer_type);
+        }
+        if (payer_id !== undefined) { // Allow null to be passed
+            updates.push('payer_id = ?');
+            params.push(payer_id);
         }
         if (amount) {
             updates.push('amount = ?');
@@ -650,6 +749,55 @@ router.put('/receipt-vouchers/:id', [
                 reference_id: existingVoucher.voucher_number,
                 created_by: req.user.id
             });
+
+            // If payer is a rider, record cash submission and update wallet
+            const payerType = payer_type || existingVoucher.payer_type;
+            const payerId = payer_id !== undefined ? payer_id : existingVoucher.payer_id;
+
+            if (payerType === 'rider' && payerId) {
+                const movement_number = generateVoucherNumber('RCM');
+                const movement_date = new Date().toISOString().split('T')[0];
+
+                const [movementResult] = await req.db.execute(
+                    `INSERT INTO rider_cash_movements 
+                     (movement_number, rider_id, movement_date, movement_type, amount, description, reference_type, reference_id, recorded_by, status, approved_by, approved_at)
+                     VALUES (?, ?, ?, 'cash_submission', ?, ?, 'receipt_voucher', ?, ?, 'completed', ?, NOW())`,
+                    [movement_number, payerId, movement_date, voucherAmount, `Cash submission via CRV ${existingVoucher.voucher_number}`, existingVoucher.voucher_number, req.user.id, req.user.id]
+                );
+
+                // Credit rider wallet (reduce cash in hand liability)
+                await recordRiderWalletTransaction(
+                    req.db,
+                    payerId,
+                    'credit',
+                    voucherAmount,
+                    `Cash submission via CRV ${existingVoucher.voucher_number}`,
+                    movementResult.insertId,
+                    'cash_submission'
+                );
+            } else if (payerType === 'store' && payerId) {
+                // Credit store wallet (increase company liability / reduce store debt)
+                await recordStoreWalletTransaction(
+                    req.db,
+                    payerId,
+                    'credit',
+                    voucherAmount,
+                    `Receipt via CRV ${existingVoucher.voucher_number}`,
+                    existingVoucher.id,
+                    'receipt_voucher'
+                );
+            } else if (payerType === 'employee' && payerId) {
+                // Credit employee wallet (increase company liability / reduce employee debt)
+                await recordUserWalletTransaction(
+                    req.db,
+                    payerId,
+                    'credit',
+                    voucherAmount,
+                    `Receipt via CRV ${existingVoucher.voucher_number}`,
+                    existingVoucher.id,
+                    'receipt_voucher'
+                );
+            }
         }
 
         res.json({
@@ -1190,6 +1338,17 @@ router.put('/store-settlements/:id', [
                 reference_id: existingSettlement.settlement_number,
                 created_by: req.user.id
             });
+
+            // Debit store wallet (payment made, liability reduced)
+            await recordStoreWalletTransaction(
+                req.db,
+                existingSettlement.store_id,
+                'debit',
+                settlementAmount,
+                `Settlement Payment: ${existingSettlement.settlement_number}`,
+                existingSettlement.id,
+                'store_settlement'
+            );
         }
 
         res.json({
@@ -1837,6 +1996,39 @@ router.post('/journal-vouchers/:id/post', async (req, res) => {
                 created_by: req.user.id,
                 notes: `Voucher: ${voucher.voucher_number} | Type: ${entry.entry_type.toUpperCase()}`
             });
+
+            // Update entity wallets if applicable
+            if (entry.entity_type === 'rider' && entry.entity_id) {
+                await recordRiderWalletTransaction(
+                    req.db,
+                    entry.entity_id,
+                    entry.entry_type, // 'debit' or 'credit'
+                    entry.amount,
+                    `JNV: ${voucher.voucher_number} - ${entry.description || entry.account_name}`,
+                    entry.id,
+                    'journal_voucher'
+                );
+            } else if (entry.entity_type === 'store' && entry.entity_id) {
+                await recordStoreWalletTransaction(
+                    req.db,
+                    entry.entity_id,
+                    entry.entry_type,
+                    entry.amount,
+                    `JNV: ${voucher.voucher_number} - ${entry.description || entry.account_name}`,
+                    entry.id,
+                    'journal_voucher'
+                );
+            } else if ((entry.entity_type === 'employee' || entry.entity_type === 'user') && entry.entity_id) {
+                await recordUserWalletTransaction(
+                    req.db,
+                    entry.entity_id,
+                    entry.entry_type,
+                    entry.amount,
+                    `JNV: ${voucher.voucher_number} - ${entry.description || entry.account_name}`,
+                    entry.id,
+                    'journal_voucher'
+                );
+            }
         }
 
         res.json({ success: true, message: 'Journal Voucher posted successfully' });
@@ -2084,5 +2276,117 @@ router.get('/reports/stores-detailed', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+// Helper function to get or create store wallet
+async function getOrCreateStoreWallet(db, storeId) {
+    const [wallets] = await db.execute(
+        `SELECT id, balance, total_credited, total_spent FROM wallets WHERE store_id = ?`,
+        [storeId]
+    );
+
+    if (!wallets.length) {
+        // Create new wallet for store
+        await db.execute(
+            'INSERT INTO wallets (store_id, user_type, balance) VALUES (?, ?, ?)',
+            [storeId, 'store', 0]
+        );
+        
+        const [newWallet] = await db.execute(
+            'SELECT id, balance, total_credited, total_spent FROM wallets WHERE store_id = ?',
+            [storeId]
+        );
+        return newWallet[0];
+    }
+    return wallets[0];
+}
+
+// Helper function to record store wallet transaction
+async function recordStoreWalletTransaction(db, storeId, type, amount, description, referenceId, referenceType) {
+    const wallet = await getOrCreateStoreWallet(db, storeId);
+    const newBalance = type === 'credit' 
+        ? parseFloat(wallet.balance || 0) + parseFloat(amount)
+        : parseFloat(wallet.balance || 0) - parseFloat(amount);
+
+    // Update wallet balance
+    if (type === 'credit') {
+        await db.execute(
+            'UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?',
+            [newBalance, amount, wallet.id]
+        );
+    } else {
+        await db.execute(
+            'UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?',
+            [newBalance, amount, wallet.id]
+        );
+    }
+
+    // Record wallet transaction
+    await db.execute(
+        `INSERT INTO wallet_transactions 
+         (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [wallet.id, type, amount, description, referenceType, referenceId, newBalance]
+    );
+
+    return { walletId: wallet.id, newBalance };
+}
+
+// Helper function to get or create user wallet (for employees/admin)
+async function getOrCreateUserWallet(db, userId) {
+    const [wallets] = await db.execute(
+        `SELECT id, balance, total_credited, total_spent FROM wallets WHERE user_id = ?`,
+        [userId]
+    );
+
+    if (!wallets.length) {
+        // Get user type from users table
+        const [users] = await db.execute('SELECT user_type FROM users WHERE id = ?', [userId]);
+        const userType = users.length > 0 ? users[0].user_type : 'customer';
+
+        // Create new wallet for user
+        await db.execute(
+            'INSERT INTO wallets (user_id, user_type, balance) VALUES (?, ?, ?)',
+            [userId, userType, 0]
+        );
+        
+        const [newWallet] = await db.execute(
+            'SELECT id, balance, total_credited, total_spent FROM wallets WHERE user_id = ?',
+            [userId]
+        );
+        return newWallet[0];
+    }
+    return wallets[0];
+}
+
+// Helper function to record user wallet transaction
+async function recordUserWalletTransaction(db, userId, type, amount, description, referenceId, referenceType) {
+    const wallet = await getOrCreateUserWallet(db, userId);
+    const newBalance = type === 'credit' 
+        ? parseFloat(wallet.balance || 0) + parseFloat(amount)
+        : parseFloat(wallet.balance || 0) - parseFloat(amount);
+
+    // Update wallet balance
+    if (type === 'credit') {
+        await db.execute(
+            'UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?',
+            [newBalance, amount, wallet.id]
+        );
+    } else {
+        await db.execute(
+            'UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?',
+            [newBalance, amount, wallet.id]
+        );
+    }
+
+    // Record wallet transaction
+    await db.execute(
+        `INSERT INTO wallet_transactions 
+         (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [wallet.id, type, amount, description, referenceType, referenceId, newBalance]
+    );
+
+    return { walletId: wallet.id, newBalance };
+}
 
 module.exports = router;

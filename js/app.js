@@ -417,6 +417,7 @@ window.addEventListener("DOMContentLoaded", function () {
   } catch (e) {
     /* ignore */
   }
+  updateCartCount();
 });
 
 // Cart functionality

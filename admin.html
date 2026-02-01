@@ -2783,8 +2783,9 @@
     <script src="js/app.js?v=7" defer></script>
     <script src="/socket.io/socket.io.js" defer></script>
     <script src="js/notifications.js" defer></script>
+    <script src="js/financial_helpers.js" defer></script>
     <script src="js/financial.js" defer></script>
-    <script src="js/admin.js?v=14" defer></script>
+    <script src="js/admin.js?v=15" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");
@@ -2832,18 +2833,25 @@
         <form id="paymentVoucherForm">
           <input type="hidden" id="paymentVoucherId" name="id" />
           <div class="form-group">
-            <label>Payee Name</label>
-            <input type="text" id="payeeName" name="payeeName" required />
-          </div>
-          <div class="form-group">
             <label>Payee Type</label>
             <select id="payeeType" name="payeeType" required>
+              <option value="">Select Type</option>
               <option value="store">Store</option>
               <option value="rider">Rider</option>
-              <option value="vendor">Vendor</option>
               <option value="employee">Employee</option>
+              <option value="expense">Expense</option>
+              <option value="vendor">Vendor</option>
               <option value="other">Other</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label>Payee Name</label>
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="payeeName" name="payeeName" class="form-control" required />
+                <select id="payeeSelect" class="form-control" style="display:none; flex-grow: 1;"></select>
+                <button type="button" id="addExpenseTypeBtn" class="btn btn-primary" style="display:none;" title="Add New Expense Type">+</button>
+            </div>
+            <input type="hidden" id="payeeId" name="payeeId">
           </div>
           <div class="form-group">
             <label>Amount (₨)</label>
@@ -2896,17 +2904,26 @@
         <form id="receiptVoucherForm">
           <input type="hidden" id="receiptVoucherId" name="id" />
           <div class="form-group">
-            <label>Payer Name</label>
-            <input type="text" id="payerName" name="payerName" required />
-          </div>
-          <div class="form-group">
             <label>Payer Type</label>
             <select id="payerType" name="payerType" required>
-              <option value="customer">Customer</option>
+              <option value="">Select Type</option>
               <option value="store">Store</option>
+              <option value="rider">Rider</option>
+              <option value="employee">Employee</option>
+              <option value="expense">Expense (Refund)</option>
+              <option value="customer">Customer</option>
               <option value="vendor">Vendor</option>
               <option value="other">Other</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label>Payer Name</label>
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="payerName" name="payerName" class="form-control" required />
+                <select id="payerSelect" class="form-control" style="display:none; flex-grow: 1;"></select>
+                <button type="button" id="addPayerExpenseTypeBtn" class="btn btn-primary" style="display:none;" title="Add New Expense Type">+</button>
+            </div>
+            <input type="hidden" id="payerId" name="payerId">
           </div>
           <div class="form-group">
             <label>Amount (₨)</label>
