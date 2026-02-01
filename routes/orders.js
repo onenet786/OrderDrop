@@ -1847,11 +1847,27 @@ router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res)
             }
         }
 
-        const totalAmount = Number(itemsSubtotal) + Number(order.delivery_fee || 0);
+        // Recalculate totals and store_id from DB to ensure consistency across all items
+        const [currentItems] = await req.db.execute(
+            'SELECT SUM(quantity * price) as total, COUNT(DISTINCT store_id) as store_count, MAX(store_id) as single_store_id FROM order_items WHERE order_id = ?',
+            [id]
+        );
+
+        const dbSubtotal = Number(currentItems[0]?.total || 0);
+        const storeCount = currentItems[0]?.store_count || 0;
+        let newOrderStoreId = null;
+        
+        // If all items belong to exactly one store, assign that store to the order
+        if (storeCount === 1) {
+            newOrderStoreId = currentItems[0]?.single_store_id;
+        }
+        // If storeCount > 1, newOrderStoreId remains null (Multiple Stores)
+
+        const totalAmount = dbSubtotal + Number(order.delivery_fee || 0);
 
         await req.db.execute(
-            'UPDATE orders SET total_amount = ? WHERE id = ?',
-            [totalAmount, id]
+            'UPDATE orders SET total_amount = ?, store_id = ? WHERE id = ?',
+            [totalAmount, newOrderStoreId, id]
         );
 
         res.json({
@@ -1977,15 +1993,22 @@ router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req,
         `, [id, product_id, quantity, price, itemStoreId]);
 
         const [currentItems] = await req.db.execute(
-            'SELECT SUM(quantity * price) as total FROM order_items WHERE order_id = ?',
+            'SELECT SUM(quantity * price) as total, COUNT(DISTINCT store_id) as store_count, MAX(store_id) as single_store_id FROM order_items WHERE order_id = ?',
             [id]
         );
 
         const itemsSubtotal = Number(currentItems[0]?.total || 0);
+        const storeCount = currentItems[0]?.store_count || 0;
+        let newOrderStoreId = null;
+        
+        if (storeCount === 1) {
+            newOrderStoreId = currentItems[0]?.single_store_id;
+        }
+
         const newTotal = itemsSubtotal + Number(order.delivery_fee || 0);
         await req.db.execute(
-            'UPDATE orders SET total_amount = ? WHERE id = ?',
-            [newTotal, id]
+            'UPDATE orders SET total_amount = ?, store_id = ? WHERE id = ?',
+            [newTotal, newOrderStoreId, id]
         );
 
         res.json({
@@ -2047,15 +2070,22 @@ router.delete('/:id(\\d+)/items/:itemId(\\d+)', authenticateToken, requireAdmin,
         );
 
         const [currentItems] = await req.db.execute(
-            'SELECT SUM(quantity * price) as total FROM order_items WHERE order_id = ?',
+            'SELECT SUM(quantity * price) as total, COUNT(DISTINCT store_id) as store_count, MAX(store_id) as single_store_id FROM order_items WHERE order_id = ?',
             [id]
         );
 
         const itemsSubtotal = Number(currentItems[0]?.total || 0);
+        const storeCount = currentItems[0]?.store_count || 0;
+        let newOrderStoreId = null;
+        
+        if (storeCount === 1) {
+            newOrderStoreId = currentItems[0]?.single_store_id;
+        }
+
         const newTotal = itemsSubtotal + Number(order.delivery_fee || 0);
         await req.db.execute(
-            'UPDATE orders SET total_amount = ? WHERE id = ?',
-            [newTotal, id]
+            'UPDATE orders SET total_amount = ?, store_id = ? WHERE id = ?',
+            [newTotal, newOrderStoreId, id]
         );
 
         const [remainingItems] = await req.db.execute(

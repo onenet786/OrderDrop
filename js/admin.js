@@ -4,39 +4,49 @@
 window._adminDiag = window._adminDiag || {};
 
 // API_BASE, currentUser, and authToken are provided by app.js (loaded in admin.html)
-let currentOrders = [];
-let currentProducts = [];
-let currentAccounts = [];
-let currentStores = [];
-let currentCategories = [];
-let currentRiders = [];
-let editingProductId = null;
-let editingAccountId = null;
-let editingStoreId = null;
-let editingCategoryId = null;
-let editingRiderId = null;
-let currentUnits = [];
-let currentSizes = [];
-let editingUnitId = null;
-let editingSizeId = null;
-let productStoreTermsById = {};
-
-// Chart references
-window['statusChart'] = null;
-window['revenueChart'] = null;
-
-// Sorting state for each table
-let sortState = {
-    products: { column: 'id', direction: 'asc' },
-    users: { column: 'id', direction: 'asc' },
-    accounts: { column: 'id', direction: 'asc' },
-    stores: { column: 'id', direction: 'asc' },
-    categories: { column: 'id', direction: 'asc' },
-    riders: { column: 'id', direction: 'asc' },
-    orders: { column: 'order_number', direction: 'asc' },
-    payments: { column: 'id', direction: 'asc' },
-    wallets: { column: 'id', direction: 'asc' }
+// Centralized State Management
+const AppState = {
+    orders: [],
+    products: [],
+    accounts: [],
+    stores: [],
+    categories: [],
+    riders: [],
+    units: [],
+    sizes: [],
+    productStoreTermsById: {},
+    editing: {
+        productId: null,
+        accountId: null,
+        storeId: null,
+        categoryId: null,
+        riderId: null,
+        unitId: null,
+        sizeId: null
+    },
+    // Chart references
+    charts: {
+        status: null,
+        revenue: null
+    },
+    // Sorting state for each table
+    sort: {
+        products: { column: 'id', direction: 'asc' },
+        users: { column: 'id', direction: 'asc' },
+        accounts: { column: 'id', direction: 'asc' },
+        stores: { column: 'id', direction: 'asc' },
+        categories: { column: 'id', direction: 'asc' },
+        riders: { column: 'id', direction: 'asc' },
+        orders: { column: 'order_number', direction: 'asc' },
+        payments: { column: 'id', direction: 'asc' },
+        wallets: { column: 'id', direction: 'asc' }
+    }
 };
+
+// Backward compatibility (optional, but good for transition)
+// These getters allow existing code to work while we refactor usages
+// Note: We cannot easily proxy local 'let' variables, so we will replace usages.
+
 
 // ===== MODERN TOAST NOTIFICATION SYSTEM =====
 function showToast(title, message, type = 'info', duration = 3000) {
@@ -51,15 +61,38 @@ function showToast(title, message, type = 'info', duration = 3000) {
         info: 'ℹ'
     };
     
-    toast.innerHTML = `
-        <div class="toast-icon">${icons[type] || '•'}</div>
-        <div class="toast-content">
-            <h4 class="toast-title">${title}</h4>
-            <p class="toast-message">${message}</p>
-        </div>
-        <button class="toast-close" onclick="this.closest('.toast').remove()">✕</button>
-        <div class="toast-progress"></div>
-    `;
+    const iconDiv = document.createElement('div');
+    iconDiv.className = 'toast-icon';
+    iconDiv.textContent = icons[type] || '•';
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'toast-content';
+    
+    const titleEl = document.createElement('h4');
+    titleEl.className = 'toast-title';
+    titleEl.textContent = title;
+    
+    const messageEl = document.createElement('p');
+    messageEl.className = 'toast-message';
+    messageEl.textContent = message;
+    
+    contentDiv.appendChild(titleEl);
+    contentDiv.appendChild(messageEl);
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = function() {
+        this.closest('.toast').remove();
+    };
+    
+    const progressDiv = document.createElement('div');
+    progressDiv.className = 'toast-progress';
+    
+    toast.appendChild(iconDiv);
+    toast.appendChild(contentDiv);
+    toast.appendChild(closeBtn);
+    toast.appendChild(progressDiv);
     
     toastContainer.appendChild(toast);
     
@@ -255,8 +288,11 @@ function initializeAdmin() {
     } catch (e) { console.error('Error ensuring units/sizes DOM:', e); }
 
     // Add event listeners for unit and size buttons after DOM is ensured
-    document.getElementById('addUnitBtn').addEventListener('click', () => showAddUnitModal());
-    document.getElementById('addSizeBtn').addEventListener('click', () => showAddSizeModal());
+    let addUnitBtn = document.getElementById('addUnitBtn');
+    if (addUnitBtn) addUnitBtn.addEventListener('click', () => showAddUnitModal());
+    
+    let addSizeBtn = document.getElementById('addSizeBtn');
+    if (addSizeBtn) addSizeBtn.addEventListener('click', () => showAddSizeModal());
 
     // Logout functionality
     document.getElementById('logoutBtn').addEventListener('click', function(e) {
@@ -295,6 +331,8 @@ function initializeAdmin() {
     document.getElementById('addAccountBtn').addEventListener('click', () => showAddAccountModal());
     document.getElementById('addStoreBtn').addEventListener('click', () => showAddStoreModal());
     document.getElementById('addProductBtn').addEventListener('click', () => showAddProductModal());
+    document.getElementById('runDiagnosticsBtn')?.addEventListener('click', () => runAllDiagnostics());
+    document.getElementById('runSingleDiagnosticBtn')?.addEventListener('click', () => runSingleDiagnostic());
     // Removed Export Base64 Images and Image Fit controls
     // Apply matching background color for any product-image previews already on the page
     try {
@@ -322,7 +360,7 @@ function initializeAdmin() {
             if (typeof window.loadStoreSettlements === 'function') window.loadStoreSettlements();
         });
     }
-    let addUnitBtn = document.getElementById('addUnitBtn');
+    // Reuse addUnitBtn from above, just check and create fallback if needed
     console.debug('admin:init addUnitBtn present:', !!addUnitBtn);
     if (!addUnitBtn) {
         // Create a fallback Add Unit button if missing in the DOM
@@ -343,7 +381,7 @@ function initializeAdmin() {
     }
     if (addUnitBtn) addUnitBtn.addEventListener('click', () => showAddUnitModal());
 
-    let addSizeBtn = document.getElementById('addSizeBtn');
+    // Reuse addSizeBtn from above, just check and create fallback if needed
     if (!addSizeBtn) {
         // Create a fallback Add Size button if missing in the DOM
         try {
@@ -816,8 +854,10 @@ try {
                 if (nowOpen) {
                     const rect = this.getBoundingClientRect();
                     menu.style.position = 'fixed';
-                    menu.style.left = Math.round(rect.left) + 'px';
-                    menu.style.top = Math.round(rect.bottom) + 'px';
+                    // Open to the right side
+                    menu.style.left = Math.round(rect.right) + 'px';
+                    // Align top with the parent item
+                    menu.style.top = Math.round(rect.top) + 'px';
                     menu.style.zIndex = '5000';
                     menu.style.maxHeight = 'none';
                     menu.style.overflow = 'visible';
@@ -861,8 +901,10 @@ try {
             if (!menu) return;
             const rect = openToggle.getBoundingClientRect();
             menu.style.position = 'fixed';
-            menu.style.left = Math.round(rect.left) + 'px';
-            menu.style.top = Math.round(rect.bottom) + 'px';
+            // Open to the right side
+            menu.style.left = Math.round(rect.right) + 'px';
+            // Align top with the parent item
+            menu.style.top = Math.round(rect.top) + 'px';
             menu.style.zIndex = '5000';
             menu.style.maxHeight = 'none';
             menu.style.overflow = 'visible';
@@ -1790,8 +1832,8 @@ function loadAccounts() {
     })
     .then(response => response.json())
     .then(data => {
-        currentAccounts = data.users || [];
-        displayAccounts(currentAccounts);
+        AppState.accounts = data.users || [];
+        displayAccounts(AppState.accounts);
         loadAccountStats();
         initializeTableSorting('accounts');
     })
@@ -1802,10 +1844,10 @@ function loadAccounts() {
 }
 
 function loadAccountStats() {
-    const total = currentAccounts.length;
-    const active = currentAccounts.filter(a => a.is_active === true || a.is_active === 1 || a.is_active === '1').length;
-    const inactive = currentAccounts.filter(a => a.is_active !== true && a.is_active !== 1 && a.is_active !== '1').length;
-    const verified = currentAccounts.filter(a => a.is_verified === true || a.is_verified === 1 || a.is_verified === '1').length;
+    const total = AppState.accounts.length;
+    const active = AppState.accounts.filter(a => a.is_active === true || a.is_active === 1 || a.is_active === '1').length;
+    const inactive = AppState.accounts.filter(a => a.is_active !== true && a.is_active !== 1 && a.is_active !== '1').length;
+    const verified = AppState.accounts.filter(a => a.is_verified === true || a.is_verified === 1 || a.is_verified === '1').length;
 
     document.getElementById('totalAccountsCount').textContent = total;
     document.getElementById('activeAccountsCount').textContent = active;
@@ -1862,13 +1904,13 @@ function showAddAccountModal() {
 }
 
 function editAccount(accountId) {
-    const account = currentAccounts.find(a => a.id === accountId);
+    const account = AppState.accounts.find(a => a.id === accountId);
     if (!account) {
         showError('Error', 'Account not found');
         return;
     }
 
-    editingAccountId = accountId;
+    AppState.editing.accountId = accountId;
     const isActive = account.is_active === true || account.is_active === 1 || account.is_active === '1';
     const isVerified = account.is_verified === true || account.is_verified === 1 || account.is_verified === '1';
     
@@ -2005,7 +2047,7 @@ function filterAccounts() {
     const statusFilter = document.getElementById('accountStatusFilter').value;
     const verifiedFilter = document.getElementById('accountVerifiedFilter').value;
 
-    const filtered = currentAccounts.filter(account => {
+    const filtered = AppState.accounts.filter(account => {
         const matchesSearch = account.first_name.toLowerCase().includes(searchText) ||
                               account.last_name.toLowerCase().includes(searchText) ||
                               account.email.toLowerCase().includes(searchText);
@@ -2028,7 +2070,7 @@ function clearAccountFilters() {
     document.getElementById('accountTypeFilter').value = '';
     document.getElementById('accountStatusFilter').value = '';
     document.getElementById('accountVerifiedFilter').value = '';
-    displayAccounts(currentAccounts);
+    displayAccounts(AppState.accounts);
 }
 
 function loadStores() {
@@ -2037,8 +2079,8 @@ function loadStores() {
     })
     .then(response => response.json())
     .then(data => {
-        currentStores = data.stores || [];
-        displayStores(currentStores);
+        AppState.stores = data.stores || [];
+        displayStores(AppState.stores);
         initializeTableSorting('stores');
     })
     .catch(error => console.error('Error loading stores:', error));
@@ -2085,9 +2127,9 @@ function updatePriorityWarning() {
         return;
     }
     
-    const storeWithPriority = currentStores.find(s => s.priority == selectedPriority);
+    const storeWithPriority = AppState.stores.find(s => s.priority == selectedPriority);
     if (storeWithPriority) {
-        const currentStore = currentStores.find(s => s.id == document.getElementById('setPriorityForm').dataset.storeId);
+        const currentStore = AppState.stores.find(s => s.id == document.getElementById('setPriorityForm').dataset.storeId);
         if (!currentStore || currentStore.priority != selectedPriority) {
             warningDiv.style.display = 'block';
             warningDiv.innerHTML = `<strong>⚠️ Warning:</strong> Priority ${selectedPriority} is already assigned to "${storeWithPriority.name}". Setting this priority will remove it from that store.`;
@@ -2105,10 +2147,10 @@ function loadProducts() {
     .then(response => response.json())
     .then(data => {
         console.log('Products API response:', data);
-        currentProducts = data.products || [];
-        console.log('Current products array:', currentProducts);
+        AppState.products = data.products || [];
+        console.log('Current products array:', AppState.products);
         try { populateProductFilters(); } catch (e) { console.warn('populateProductFilters error', e); }
-        displayProducts(currentProducts);
+        displayProducts(AppState.products);
         initializeTableSorting('products');
     })
     .catch(error => console.error('Error loading products:', error));
@@ -2274,13 +2316,13 @@ function loadOrders() {
     .then(response => response.json())
     .then(data => {
         // Store orders data globally for edit functionality
-        currentOrders = data.orders || [];
+        AppState.orders = data.orders || [];
         
         // Populate rider filter
         populateRiderFilter();
         
         // Display orders
-        displayOrders(currentOrders);
+        displayOrders(AppState.orders);
         
         // Update dashboard tiles
         try {
@@ -2291,7 +2333,7 @@ function loadOrders() {
                        dt.getMonth() === today.getMonth() &&
                        dt.getDate() === today.getDate();
             };
-            const todayOrders = currentOrders.filter(o => isSameDay(o.created_at));
+            const todayOrders = AppState.orders.filter(o => isSameDay(o.created_at));
             const countStatus = (arr, status) => arr.filter(o => (o.status || '').toLowerCase() === status).length;
             const countPendingLike = (arr) => arr.filter(o => {
                 const s = (o.status || '').toLowerCase();
@@ -2302,10 +2344,10 @@ function loadOrders() {
             set('todayDelivered', countStatus(todayOrders, 'delivered'));
             set('todayPending', countPendingLike(todayOrders));
             set('todayCancelled', countStatus(todayOrders, 'cancelled'));
-            set('allTotalOrders', currentOrders.length);
-            set('allDelivered', countStatus(currentOrders, 'delivered'));
-            set('allPending', countPendingLike(currentOrders));
-            set('allCancelled', countStatus(currentOrders, 'cancelled'));
+            set('allTotalOrders', AppState.orders.length);
+            set('allDelivered', countStatus(AppState.orders, 'delivered'));
+            set('allPending', countPendingLike(AppState.orders));
+            set('allCancelled', countStatus(AppState.orders, 'cancelled'));
         } catch (e) { /* ignore */ }
     })
     .catch(error => console.error('Error loading orders:', error));
@@ -2315,7 +2357,7 @@ function populateRiderFilter() {
     const filterRider = document.getElementById('filterRider');
     const riders = new Set();
     
-    currentOrders.forEach(order => {
+    AppState.orders.forEach(order => {
         if (order.rider_first_name) {
             riders.add(`${order.rider_first_name} ${order.rider_last_name || ''}`.trim());
         }
@@ -2335,7 +2377,7 @@ function populateRiderFilter() {
     filterRider.value = currentValue;
 }
 
-function displayOrders(orders = currentOrders) {
+function displayOrders(orders = AppState.orders) {
     const tbody = document.getElementById('ordersTableBody');
     if (!tbody) return;
     
@@ -2381,7 +2423,7 @@ function filterOrders() {
     const statusFilter = document.getElementById('filterStatus') ? document.getElementById('filterStatus').value : '';
     const assignmentFilter = document.getElementById('filterAssignment') ? document.getElementById('filterAssignment').value : 'all';
     
-    let filtered = currentOrders;
+    let filtered = AppState.orders;
     
     // Filter by date range
     if (startDateFilter || endDateFilter) {
@@ -2432,14 +2474,14 @@ function clearFilters() {
     if (statusFilter) statusFilter.value = '';
     const assignmentFilter = document.getElementById('filterAssignment');
     if (assignmentFilter) assignmentFilter.value = 'all';
-    displayOrders(currentOrders);
+    displayOrders(AppState.orders);
 }
 
 function filterStores() {
     try {
         const q = (document.getElementById('storeSearch')?.value || '').trim().toLowerCase();
         const status = document.getElementById('storeStatusFilter')?.value || '';
-        let filtered = currentStores || [];
+        let filtered = AppState.stores || [];
         if (q) {
             filtered = filtered.filter(s => {
                 const name = (s.name || '').toLowerCase();
@@ -2459,7 +2501,7 @@ function filterStores() {
 function clearStoreFilters() {
     const ids = ['storeSearch', 'storeStatusFilter'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    displayStores(currentStores);
+    displayStores(AppState.stores);
 }
 
 function populateProductFilters() {
@@ -2468,7 +2510,7 @@ function populateProductFilters() {
     if (!catSel && !storeSel) return;
     const cats = new Set();
     const stores = new Set();
-    (currentProducts || []).forEach(p => {
+    (AppState.products || []).forEach(p => {
         if (p.category_name) cats.add(String(p.category_name));
         if (p.store_name) stores.add(String(p.store_name));
     });
@@ -2490,7 +2532,7 @@ function filterProducts() {
         const cat = document.getElementById('productCategoryFilter')?.value || '';
         const store = document.getElementById('productStoreFilter')?.value || '';
         const status = document.getElementById('productStatusFilter')?.value || '';
-        let filtered = currentProducts || [];
+        let filtered = AppState.products || [];
         if (q) {
             filtered = filtered.filter(p => (String(p.name || '').toLowerCase().includes(q)));
         }
@@ -2504,14 +2546,14 @@ function filterProducts() {
 function clearProductFilters() {
     const ids = ['productSearch', 'productCategoryFilter', 'productStoreFilter', 'productStatusFilter'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    displayProducts(currentProducts);
+    displayProducts(AppState.products);
 }
 
 function filterCategories() {
     try {
         const q = (document.getElementById('categorySearch')?.value || '').trim().toLowerCase();
         const status = document.getElementById('categoryStatusFilter')?.value || '';
-        let filtered = currentCategories || [];
+        let filtered = AppState.categories || [];
         if (q) {
             filtered = filtered.filter(c => {
                 const name = (c.name || '').toLowerCase();
@@ -2527,7 +2569,7 @@ function filterCategories() {
 function clearCategoryFilters() {
     const ids = ['categorySearch', 'categoryStatusFilter'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    displayCategories(currentCategories);
+    displayCategories(AppState.categories);
 }
 
 function filterRiders() {
@@ -2535,7 +2577,7 @@ function filterRiders() {
         const q = (document.getElementById('riderSearch')?.value || '').trim().toLowerCase();
         const avail = document.getElementById('riderAvailabilityFilter')?.value || '';
         const status = document.getElementById('riderStatusFilter')?.value || '';
-        let filtered = currentRiders || [];
+        let filtered = AppState.riders || [];
         if (q) {
             filtered = filtered.filter(r => {
                 const name = (r.full_name || [r.first_name || '', r.last_name || ''].filter(Boolean).join(' ')).toLowerCase();
@@ -2553,11 +2595,11 @@ function filterRiders() {
 function clearRiderFilters() {
     const ids = ['riderSearch', 'riderAvailabilityFilter', 'riderStatusFilter'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    displayRiders(currentRiders);
+    displayRiders(AppState.riders);
 }
 
 function updateOrderStatus(orderId, currentStatus) {
-    const newStatus = prompt('Enter new status (pending, confirmed, preparing, ready, delivered, cancelled):', currentStatus);
+    const newStatus = prompt('Enter new status (pending, confirmed, preparing, ready, out_for_delivery, delivered, cancelled):', currentStatus);
     if (!newStatus) return;
 
     fetch(`${API_BASE}/api/orders/${orderId}/status`, {
@@ -2684,15 +2726,9 @@ async function viewOrderDetails(orderId) {
 }
 
 function calculateDeliveryCharges(uniqueStoreCount) {
-    if (uniqueStoreCount === 1) {
-        return 70;
-    } else if (uniqueStoreCount === 2) {
-        return 100;
-    } else if (uniqueStoreCount >= 3) {
-        return 130 + (uniqueStoreCount - 3) * 30;
-    } else {
-        return 70;
-    }
+    if (uniqueStoreCount <= 0) return 0;
+    // Base 70 for first store, +30 for each additional store
+    return 70 + (uniqueStoreCount - 1) * 30;
 }
 
 function updateOrderSummary(items, deliveryFee) {
@@ -2726,8 +2762,8 @@ async function editOrder(orderId) {
         });
         const itemsData = await itemsResponse.json();
 
-        // Use fresh order data from API if available, otherwise fallback to currentOrders
-        const freshOrder = itemsData.order || currentOrders.find(o => o.id === orderId);
+        // Use fresh order data from API if available, otherwise fallback to AppState.orders
+        const freshOrder = itemsData.order || AppState.orders.find(o => o.id === orderId);
 
         if (!freshOrder) {
             showError('Order Not Found', 'The order could not be found in the system.');
@@ -2847,13 +2883,23 @@ async function editOrder(orderId) {
             const itemsSubtotal = itemsData.items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
             
             // Determine the delivery fee to display
-            // Priority: 1. Use stored delivery_fee, 2. Implied from total_amount, 3. Auto-calculate
+            // Priority: 1. Auto-calculate based on stores (Business Rule enforcement)
+            // Note: We override stored fee to ensure logic applies when items/stores change
             let deliveryFee = calculateDeliveryCharges(storeCount);
+            
+            // Log if we are overriding a stored fee
+            if (freshOrder && freshOrder.delivery_fee !== undefined && Number(freshOrder.delivery_fee) !== deliveryFee) {
+                 console.log(`[Order ${orderId}] Recalculated delivery fee from ${freshOrder.delivery_fee} to ${deliveryFee} based on ${storeCount} stores`);
+            }
+
+            /* 
+            // Disabled to ensure multi-store logic always applies
             if (freshOrder && freshOrder.delivery_fee !== undefined && freshOrder.delivery_fee !== null) {
                 deliveryFee = Number(freshOrder.delivery_fee);
             } else if (freshOrder && freshOrder.total_amount !== undefined && freshOrder.total_amount !== null) {
                 deliveryFee = Math.max(0, Number(freshOrder.total_amount) - itemsSubtotal);
-            }
+            } 
+            */
             
             console.log(`[Order ${orderId}] Subtotal: ${itemsSubtotal}, Delivery Fee: ${deliveryFee}, Total: ${itemsSubtotal + deliveryFee}`);
             
@@ -2960,7 +3006,7 @@ async function saveOrder() {
             console.log(`[saveOrder] Current items:`, items);
             
             const hasChanges = items.some((item, idx) => {
-                const original = currentOrders.find(o => o.id == orderId);
+                const original = AppState.orders.find(o => o.id == orderId);
                 return true;
             });
             
@@ -3201,7 +3247,7 @@ async function loadUnits() {
             console.warn('No units returned', data);
             return;
         }
-        currentUnits = data.units;
+        AppState.units = data.units;
         data.units.forEach(u => {
             const row = document.createElement('tr');
             row.innerHTML = `
@@ -3229,7 +3275,7 @@ async function loadUnits() {
 }
 
 function showAddUnitModal() {
-    editingUnitId = null;
+    AppState.editing.unitId = null;
     const existing = document.getElementById('addUnitModal');
     if (existing) try { existing.remove(); } catch (e) {}
     const m = document.createElement('div');
@@ -3297,10 +3343,10 @@ async function saveUnit() {
         const payload = { name: nameVal, abbreviation: abbrevVal, multiplier: multVal };
         return await (async function(payloadLocal){
             try {
-                console.debug('saveUnit: sending (no-form fallback)', { editingUnitId, payload: payloadLocal });
+                console.debug('saveUnit: sending (no-form fallback)', { unitId: AppState.editing.unitId, payload: payloadLocal });
                 let resp;
-                if (editingUnitId) {
-                    resp = await fetch(`${API_BASE}/api/units/${editingUnitId}`, {
+                if (AppState.editing.unitId) {
+                    resp = await fetch(`${API_BASE}/api/units/${AppState.editing.unitId}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                         body: JSON.stringify(payloadLocal)
@@ -3319,7 +3365,7 @@ async function saveUnit() {
                     showSuccess('Saved', 'Unit saved successfully');
                     resetUnitForm();
                     hideModal('addUnitModal');
-                    editingUnitId = null;
+                    AppState.editing.unitId = null;
                     await loadUnits();
                 } else {
                     const msg = data && (data.message || (data.errors && JSON.stringify(data.errors))) ? (data.message || JSON.stringify(data.errors)) : `HTTP ${resp.status}`;
@@ -3340,10 +3386,10 @@ async function saveUnit() {
         multiplier: formData.get('multiplier') || 1.0
     };
     try {
-        console.debug('saveUnit: sending', { editingUnitId, payload });
+        console.debug('saveUnit: sending', { unitId: AppState.editing.unitId, payload });
         let resp;
-        if (editingUnitId) {
-            resp = await fetch(`${API_BASE}/api/units/${editingUnitId}`, {
+        if (AppState.editing.unitId) {
+            resp = await fetch(`${API_BASE}/api/units/${AppState.editing.unitId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(payload)
@@ -3363,7 +3409,7 @@ async function saveUnit() {
             showSuccess('Saved', 'Unit saved successfully');
             resetUnitForm();
             hideModal('addUnitModal');
-            editingUnitId = null;
+            AppState.editing.unitId = null;
             await loadUnits();
         } else {
             const msg = data && (data.message || (data.errors && JSON.stringify(data.errors))) ? (data.message || JSON.stringify(data.errors)) : `HTTP ${resp.status}`;
@@ -3379,15 +3425,15 @@ async function saveUnit() {
 try { window.saveUnit = saveUnit; } catch (e) {}
 
 async function editUnit(unitId) {
-    editingUnitId = unitId;
-    let unit = (currentUnits || []).find(u => String(u.id) === String(unitId));
+    AppState.editing.unitId = unitId;
+    let unit = (AppState.units || []).find(u => String(u.id) === String(unitId));
     if (!unit) {
         try {
             const resp = await fetch(`${API_BASE}/api/units?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' });
             const data = await resp.json();
             if (data && data.success && Array.isArray(data.units)) {
-                currentUnits = data.units;
-                unit = (currentUnits || []).find(u => String(u.id) === String(unitId));
+                AppState.units = data.units;
+                unit = (AppState.units || []).find(u => String(u.id) === String(unitId));
             }
         } catch (e) {}
     }
@@ -3465,7 +3511,7 @@ async function loadSizes() {
         if (!tbody) return;
         tbody.innerHTML = '';
         if (!data.success || !Array.isArray(data.sizes)) return;
-        currentSizes = data.sizes;
+        AppState.sizes = data.sizes;
         data.sizes.forEach(s => {
             const row = document.createElement('tr');
             row.innerHTML = `
@@ -3502,10 +3548,10 @@ async function saveSize() {
         description: formData.get('description') || null
     };
     try {
-        console.debug('saveSize: sending', { editingSizeId, payload });
+        console.debug('saveSize: sending', { sizeId: AppState.editing.sizeId, payload });
         let resp;
-        if (editingSizeId) {
-            resp = await fetch(`${API_BASE}/api/sizes/${editingSizeId}`, {
+        if (AppState.editing.sizeId) {
+            resp = await fetch(`${API_BASE}/api/sizes/${AppState.editing.sizeId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(payload)
@@ -3524,7 +3570,7 @@ async function saveSize() {
         if (resp.ok && data && data.success) {
             showSuccess('Saved', 'Size saved successfully');
             hideModal('addSizeModal');
-            editingSizeId = null;
+            AppState.editing.sizeId = null;
             await loadSizes();
         } else {
             const msg = data && (data.message || (data.errors && JSON.stringify(data.errors))) ? (data.message || JSON.stringify(data.errors)) : `HTTP ${resp.status}`;
@@ -3538,8 +3584,8 @@ async function saveSize() {
 }
 
 async function editSize(sizeId) {
-    editingSizeId = sizeId;
-    const s = (currentSizes || []).find(x => x.id === sizeId);
+    AppState.editing.sizeId = sizeId;
+    const s = (AppState.sizes || []).find(x => x.id === sizeId);
     if (s) {
         const form = document.getElementById('addSizeForm');
         form.querySelector('#sizeLabel').value = s.label || '';
@@ -3649,12 +3695,12 @@ function hideModal(modalId) {
     } catch (e) { /* ignore */ }
     // Clear any editing state related to this modal to avoid stale IDs
     try {
-        if (modalId === 'addUnitModal') editingUnitId = null;
-        if (modalId === 'addSizeModal') editingSizeId = null;
-        if (modalId === 'addStoreModal') editingStoreId = null;
-        if (modalId === 'addProductModal') editingProductId = null;
-        if (modalId === 'addCategoryModal') editingCategoryId = null;
-        if (modalId === 'addRiderModal') editingRiderId = null;
+        if (modalId === 'addUnitModal') AppState.editing.unitId = null;
+        if (modalId === 'addSizeModal') AppState.editing.sizeId = null;
+        if (modalId === 'addStoreModal') AppState.editing.storeId = null;
+        if (modalId === 'addProductModal') AppState.editing.productId = null;
+        if (modalId === 'addCategoryModal') AppState.editing.categoryId = null;
+        if (modalId === 'addRiderModal') AppState.editing.riderId = null;
     } catch (e) { /* ignore */ }
 }
 
@@ -3757,8 +3803,8 @@ async function saveStore() {
     }
 
     try {
-        if (editingStoreId) {
-            const response = await fetch(`${API_BASE}/api/stores/${editingStoreId}`, {
+        if (AppState.editing.storeId) {
+            const response = await fetch(`${API_BASE}/api/stores/${AppState.editing.storeId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(storeData)
@@ -3767,7 +3813,7 @@ async function saveStore() {
             if (data.success) {
                 showSuccess('Store Updated', 'Store updated successfully!');
                 hideModal('addStoreModal');
-                editingStoreId = null;
+                AppState.editing.storeId = null;
                 loadStores();
             } else {
                 showError('Error', data.message || 'Failed to update store');
@@ -3795,7 +3841,7 @@ async function saveStore() {
 
 async function editStore(storeId) {
     // Open edit modal and populate
-    editingStoreId = storeId;
+    AppState.editing.storeId = storeId;
     try {
         const resp = await fetch(`${API_BASE}/api/stores/${storeId}`, { headers: { 'Authorization': `Bearer ${authToken}` } });
         const data = await resp.json();
@@ -3862,10 +3908,10 @@ async function populateStoreCategorySelect(selectedId = null) {
 }
 
 function setProductStoreTerms(stores) {
-    productStoreTermsById = {};
+    AppState.productStoreTermsById = {};
     (stores || []).forEach(s => {
         if (s && s.id !== undefined && s.id !== null) {
-            productStoreTermsById[String(s.id)] = s.payment_term || '';
+            AppState.productStoreTermsById[String(s.id)] = s.payment_term || '';
         }
     });
 }
@@ -3884,7 +3930,7 @@ function recalcProductCost() {
     const discountValueEl = document.getElementById('productDiscountValue');
     if (!priceEl || !costEl || !storeEl) return;
 
-    const term = productStoreTermsById[String(storeEl.value || '')] || '';
+    const term = AppState.productStoreTermsById[String(storeEl.value || '')] || '';
     const hasDiscount = isDiscountPaymentTerm(term);
     if (discountRow) discountRow.style.display = hasDiscount ? '' : 'none';
 
@@ -3918,7 +3964,7 @@ function computeCostForPrice(price) {
     const storeEl = document.getElementById('productStore');
     const discountTypeEl = document.getElementById('productDiscountType');
     const discountValueEl = document.getElementById('productDiscountValue');
-    const term = productStoreTermsById[String(storeEl?.value || '')] || '';
+    const term = AppState.productStoreTermsById[String(storeEl?.value || '')] || '';
     const hasDiscount = isDiscountPaymentTerm(term);
 
     let cost = Number(price);
@@ -4130,10 +4176,10 @@ function addProductSizePriceRow(prefill) {
     measureSelect.setAttribute('data-role', 'variant-measure');
     measureSelect.style.minWidth = '260px';
     if (mode === 'size') {
-        measureSelect.innerHTML = '<option value="">Select Size</option>' + (currentSizes || []).map(s => `<option value="${s.id}">${s.label}</option>`).join('');
+        measureSelect.innerHTML = '<option value="">Select Size</option>' + (AppState.sizes || []).map(s => `<option value="${s.id}">${s.label}</option>`).join('');
         if (prefill && prefill.size_id) measureSelect.value = String(prefill.size_id);
     } else {
-        measureSelect.innerHTML = '<option value="">Select Unit</option>' + (currentUnits || []).map(u => `<option value="${u.id}">${u.name}${u.abbreviation ? ' ('+u.abbreviation+')' : ''}</option>`).join('');
+        measureSelect.innerHTML = '<option value="">Select Unit</option>' + (AppState.units || []).map(u => `<option value="${u.id}">${u.name}${u.abbreviation ? ' ('+u.abbreviation+')' : ''}</option>`).join('');
         if (prefill && prefill.unit_id) measureSelect.value = String(prefill.unit_id);
     }
 
@@ -4185,9 +4231,9 @@ function refreshProductSizePriceRowOptions() {
     for (const sel of selects) {
         const selected = String(sel.value || '');
         if (mode === 'size') {
-            sel.innerHTML = '<option value="">Select Size</option>' + (currentSizes || []).map(s => `<option value="${s.id}">${s.label}</option>`).join('');
+            sel.innerHTML = '<option value="">Select Size</option>' + (AppState.sizes || []).map(s => `<option value="${s.id}">${s.label}</option>`).join('');
         } else {
-            sel.innerHTML = '<option value="">Select Unit</option>' + (currentUnits || []).map(u => `<option value="${u.id}">${u.name}${u.abbreviation ? ' ('+u.abbreviation+')' : ''}</option>`).join('');
+            sel.innerHTML = '<option value="">Select Unit</option>' + (AppState.units || []).map(u => `<option value="${u.id}">${u.name}${u.abbreviation ? ' ('+u.abbreviation+')' : ''}</option>`).join('');
         }
         if (selected) sel.value = selected;
     }
@@ -4320,8 +4366,8 @@ async function showAddProductModal() {
             ]);
             const unitsJson = await unitsResp.json();
             const sizesJson = await sizesResp.json();
-            if (unitsJson && unitsJson.success && Array.isArray(unitsJson.units)) currentUnits = unitsJson.units;
-            if (sizesJson && sizesJson.success && Array.isArray(sizesJson.sizes)) currentSizes = sizesJson.sizes;
+            if (unitsJson && unitsJson.success && Array.isArray(unitsJson.units)) AppState.units = unitsJson.units;
+            if (sizesJson && sizesJson.success && Array.isArray(sizesJson.sizes)) AppState.sizes = sizesJson.sizes;
             refreshProductSizePriceRowOptions();
 
             const unitSelect = document.getElementById('productUnit');
@@ -4512,7 +4558,7 @@ async function saveProduct() {
         // If editing an existing product, use PUT
         let method = 'POST';
         let url = `${API_BASE}/api/products`;
-        if (editingProductId) { method = 'PUT'; url = `${API_BASE}/api/products/${editingProductId}`; }
+        if (AppState.editing.productId) { method = 'PUT'; url = `${API_BASE}/api/products/${AppState.editing.productId}`; }
 
         const response = await fetch(url, {
             method,
@@ -4526,9 +4572,9 @@ async function saveProduct() {
         const data = await response.json();
 
         if (data.success) {
-            showSuccess(editingProductId ? 'Product Updated' : 'Product Created', editingProductId ? 'Product updated successfully!' : 'Product created successfully!');
+            showSuccess(AppState.editing.productId ? 'Product Updated' : 'Product Created', AppState.editing.productId ? 'Product updated successfully!' : 'Product created successfully!');
             hideModal('addProductModal');
-            editingProductId = null;
+            AppState.editing.productId = null;
             loadProducts();
         } else {
             const msg = data.message || (data.errors ? data.errors.map(e => e.msg).join(', ') : 'Failed to create product');
@@ -4547,7 +4593,7 @@ async function editProduct(productId) {
         showError('Error', 'Invalid product ID');
         return;
     }
-    editingProductId = id;
+    AppState.editing.productId = id;
     try {
         const resp = await fetch(`${API_BASE}/api/products/${id}?admin=1`, { headers: { 'Authorization': `Bearer ${authToken}` } });
         const data = await resp.json();
@@ -4568,8 +4614,8 @@ async function editProduct(productId) {
         const productsData = await productsResponse.json();
         const unitsJson = await unitsResp.json();
         const sizesJson = await sizesResp.json();
-        if (unitsJson && unitsJson.success && Array.isArray(unitsJson.units)) currentUnits = unitsJson.units;
-        if (sizesJson && sizesJson.success && Array.isArray(sizesJson.sizes)) currentSizes = sizesJson.sizes;
+        if (unitsJson && unitsJson.success && Array.isArray(unitsJson.units)) AppState.units = unitsJson.units;
+        if (sizesJson && sizesJson.success && Array.isArray(sizesJson.sizes)) AppState.sizes = sizesJson.sizes;
         const form = document.getElementById('addProductForm');
         const storeSelect = document.getElementById('productStore');
         const categorySelect = document.getElementById('productCategory');
@@ -4679,7 +4725,7 @@ async function editProduct(productId) {
             }
         } catch (e) {}
         try { syncProductMeasureModeFromValues(); } catch (e) {}
-        if (isDiscountPaymentTerm(productStoreTermsById[String(p.store_id || '')] || '')) {
+        if (isDiscountPaymentTerm(AppState.productStoreTermsById[String(p.store_id || '')] || '')) {
             const priceNum = parseFloat(String(p.price ?? '').trim());
             const costNum = parseFloat(String(p.cost_price ?? '').trim());
             const discountTypeEl = document.getElementById('productDiscountType');
@@ -4778,8 +4824,8 @@ async function saveCategory() {
     }
 
     try {
-        if (editingCategoryId) {
-            const response = await fetch(`${API_BASE}/api/categories/${editingCategoryId}`, {
+        if (AppState.editing.categoryId) {
+            const response = await fetch(`${API_BASE}/api/categories/${AppState.editing.categoryId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(categoryData)
@@ -4788,7 +4834,7 @@ async function saveCategory() {
             if (data.success) {
                 showSuccess('Category Updated', 'Category updated successfully!');
                 hideModal('addCategoryModal');
-                editingCategoryId = null;
+                AppState.editing.categoryId = null;
                 loadCategories();
             } else {
                 showError('Error', data.message || 'Failed to update category');
@@ -4815,15 +4861,15 @@ async function saveCategory() {
 }
 
 async function editCategory(categoryId) {
-    editingCategoryId = categoryId;
+    AppState.editing.categoryId = categoryId;
     try {
-        let c = (currentCategories || []).find(x => String(x.id) === String(categoryId));
+        let c = (AppState.categories || []).find(x => String(x.id) === String(categoryId));
         if (!c) {
             const resp = await fetch(`${API_BASE}/api/categories?ts=${Date.now()}`, { cache: 'no-store' });
             const data = await resp.json();
             if (!data.success) { showError('Error', 'Failed to load categories'); return; }
-            currentCategories = data.categories || [];
-            c = (currentCategories || []).find(x => String(x.id) === String(categoryId));
+            AppState.categories = data.categories || [];
+            c = (AppState.categories || []).find(x => String(x.id) === String(categoryId));
             if (!c) { showError('Error', 'Category not found'); return; }
         }
         showAddCategoryModal();
@@ -5032,7 +5078,7 @@ function deleteFuelEntry(entryId, riderId) {
 
 
 function showAddSizeModal() {
-    editingSizeId = null;
+    AppState.editing.sizeId = null;
     const form = document.getElementById('addSizeForm');
     if (form) form.reset();
     showModal('addSizeModal');
@@ -5105,7 +5151,7 @@ async function populateVehicleTypeSelect(selectEl, currentValue) {
 }
 
 async function showAddRiderModal() {
-    editingRiderId = null;
+    AppState.editing.riderId = null;
     const vehicleTypeSelect = document.getElementById('riderVehicleType');
     await populateVehicleTypeSelect(vehicleTypeSelect, null);
     const modal = document.getElementById('addRiderModal');
@@ -5218,8 +5264,8 @@ async function saveRider() {
     } catch (e) { console.warn('Rider uploads failed', e); }
 
     try {
-        if (editingRiderId) {
-            const response = await fetch(`${API_BASE}/api/riders/${editingRiderId}`, {
+        if (AppState.editing.riderId) {
+            const response = await fetch(`${API_BASE}/api/riders/${AppState.editing.riderId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(riderData)
@@ -5238,7 +5284,7 @@ async function saveRider() {
                     if (idPrev) { idPrev.src = ''; idPrev.style.display = 'none'; }
                 } catch (e) {}
                 hideModal('addRiderModal');
-                editingRiderId = null;
+                AppState.editing.riderId = null;
                 loadRiders();
             } else {
                 showError('Error', data.message || 'Failed to update rider');
@@ -5280,7 +5326,7 @@ async function saveRider() {
 }
 
 async function editRider(riderId) {
-    editingRiderId = riderId;
+    AppState.editing.riderId = riderId;
     try {
         const resp = await fetch(`${API_BASE}/api/riders/${riderId}`, { headers: { 'Authorization': `Bearer ${authToken}` } });
         const data = await resp.json();
@@ -5528,11 +5574,11 @@ function createStatusChart(statusCounts) {
     const ctx = document.getElementById('statusChart').getContext('2d');
 
     // Destroy existing chart if it exists
-    if (window['statusChart']) {
-        window['statusChart'].destroy();
+    if (AppState.charts.status) {
+        AppState.charts.status.destroy();
     }
 
-    window['statusChart'] = new Chart(ctx, {
+    AppState.charts.status = new Chart(ctx, {
         type: 'pie',
         data: {
             labels: Object.keys(statusCounts),
@@ -5568,8 +5614,8 @@ function createRevenueChart(orders) {
     const ctx = document.getElementById('revenueChart').getContext('2d');
 
     // Destroy existing chart if it exists
-    if (window['revenueChart']) {
-        window['revenueChart'].destroy();
+    if (AppState.charts.revenue) {
+        AppState.charts.revenue.destroy();
     }
 
     // Group revenue by date for the last 30 days
@@ -5596,7 +5642,7 @@ function createRevenueChart(orders) {
         data.push(revenueByDate[dateKey] || 0);
     }
 
-    window['revenueChart'] = new Chart(ctx, {
+    AppState.charts.revenue = new Chart(ctx, {
         type: 'line',
         data: {
             labels: labels,
@@ -5675,30 +5721,30 @@ function getColumnName(tableType, columnIndex) {
 // Sort table by column
 function sortTable(tableType, column) {
     // Toggle sort direction
-    if (sortState[tableType].column === column) {
-        sortState[tableType].direction = sortState[tableType].direction === 'asc' ? 'desc' : 'asc';
+    if (AppState.sort[tableType].column === column) {
+        AppState.sort[tableType].direction = AppState.sort[tableType].direction === 'asc' ? 'desc' : 'asc';
     } else {
-        sortState[tableType].column = column;
-        sortState[tableType].direction = 'asc';
+        AppState.sort[tableType].column = column;
+        AppState.sort[tableType].direction = 'asc';
     }
 
     // Get the data array for this table
     let data = [];
     switch(tableType) {
         case 'products':
-            data = currentProducts;
+            data = AppState.products;
             break;
         case 'stores':
-            data = currentStores;
+            data = AppState.stores;
             break;
         case 'categories':
-            data = currentCategories;
+            data = AppState.categories;
             break;
         case 'riders':
-            data = currentRiders;
+            data = AppState.riders;
             break;
         case 'orders':
-            data = currentOrders;
+            data = AppState.orders;
             break;
     }
 
@@ -5721,8 +5767,8 @@ function sortTable(tableType, column) {
             bVal = String(bVal || '').toLowerCase();
         }
 
-        if (aVal < bVal) return sortState[tableType].direction === 'asc' ? -1 : 1;
-        if (aVal > bVal) return sortState[tableType].direction === 'asc' ? 1 : -1;
+        if (aVal < bVal) return AppState.sort[tableType].direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return AppState.sort[tableType].direction === 'asc' ? 1 : -1;
         return 0;
     });
 
@@ -5775,8 +5821,8 @@ function updateSortIndicator(header, column, tableType) {
     header.classList.add('sortable');
 
     // Add sort direction class if this column is currently sorted
-    if (sortState[tableType].column === column) {
-        header.classList.add(sortState[tableType].direction === 'asc' ? 'sort-asc' : 'sort-desc');
+    if (AppState.sort[tableType].column === column) {
+        header.classList.add(AppState.sort[tableType].direction === 'asc' ? 'sort-asc' : 'sort-desc');
     }
 }
 
@@ -5785,11 +5831,11 @@ function loadStores() {
     return fetch(`${API_BASE}/api/stores?admin=1`)
     .then(response => response.json())
     .then(data => {
-        currentStores = data.stores || [];
-        displayStores(currentStores);
+        AppState.stores = data.stores || [];
+        displayStores(AppState.stores);
         initializeTableSorting('stores');
         attachStoreFilterListeners();
-        return currentStores;
+        return AppState.stores;
     })
     .catch(error => {
         console.error('Error loading stores:', error);
@@ -5821,7 +5867,7 @@ function filterStores() {
     const searchTerm = document.getElementById('storeSearch')?.value.toLowerCase();
     const status = document.getElementById('storeStatusFilter')?.value;
 
-    let filtered = currentStores;
+    let filtered = AppState.stores;
 
     if (searchTerm) {
         filtered = filtered.filter(store => 
@@ -5983,8 +6029,8 @@ function loadCategories() {
     fetch(`${API_BASE}/api/categories?ts=${Date.now()}`, { cache: 'no-store' })
     .then(response => response.json())
     .then(data => {
-        currentCategories = data.categories || [];
-        displayCategories(currentCategories);
+        AppState.categories = data.categories || [];
+        displayCategories(AppState.categories);
         initializeTableSorting('categories');
     })
     .catch(error => console.error('Error loading categories:', error));
@@ -6022,10 +6068,10 @@ function loadRiders() {
     })
     .then(response => response.json())
     .then(data => {
-        currentRiders = data.riders || [];
-        displayRiders(currentRiders);
+        AppState.riders = data.riders || [];
+        displayRiders(AppState.riders);
         initializeTableSorting('riders');
-        return currentRiders;
+        return AppState.riders;
     })
     .catch(error => {
         console.error('Error loading riders:', error);
@@ -6478,10 +6524,15 @@ document.addEventListener('DOMContentLoaded', function(){
 // ===== PROBLEMS & DIAGNOSTICS =====
 async function loadProblemsDiagnostics() {
     const tbody = document.getElementById('diagnosticsTableBody');
+    const checksRun = document.getElementById('problemsChecksRun');
+    
     if (!tbody) return;
     
-    // Initial UI state
-    if (tbody.innerHTML.trim() === '' || tbody.innerHTML.includes('loading')) {
+    // Auto-run if never run before (stats are empty)
+    if (checksRun && checksRun.textContent.trim() === '-') {
+        await runAllDiagnostics();
+    } else if (tbody.innerHTML.trim() === '' || tbody.innerHTML.includes('loading')) {
+        // Fallback message if for some reason stats are set but table is empty
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Click "Run All Diagnostics" to scan for issues.</td></tr>';
     }
 }
@@ -6556,3 +6607,4 @@ function displayDiagnostics(results) {
     document.getElementById('problemsIssuesFound').textContent = totalIssues;
     document.getElementById('problemsLastRun').textContent = new Date().toLocaleTimeString();
 }
+
