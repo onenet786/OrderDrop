@@ -115,6 +115,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         _handleNotification(data);
       },
     );
+
+    // Connect to socket for real-time updates
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (authProvider.user != null) {
+      NotificationService.connect(authProvider.user!.id, 'rider');
+    }
   }
 
   void _handleNotification(Map<String, dynamic> notification) {
@@ -139,6 +145,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   void dispose() {
     _tabController.dispose();
     _locationTrackingTimer?.cancel();
+    NotificationService.disconnect();
     super.dispose();
   }
 
