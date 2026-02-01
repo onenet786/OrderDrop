@@ -254,7 +254,7 @@ router.post('/transactions', [
 
 router.get('/payment-vouchers', async (req, res) => {
     try {
-        const { status, page = 1, limit = 20 } = req.query;
+        const { status, payment_method, page = 1, limit = 20 } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         let whereClause = 'WHERE 1=1';
@@ -263,6 +263,14 @@ router.get('/payment-vouchers', async (req, res) => {
         if (status) {
             whereClause += ' AND status = ?';
             params.push(status);
+        }
+
+        if (payment_method) {
+            if (payment_method === 'cash') {
+                whereClause += ' AND payment_method = \'cash\'';
+            } else if (payment_method === 'bank') {
+                whereClause += ' AND (payment_method = \'bank_transfer\' OR payment_method = \'check\')';
+            }
         }
 
         const [vouchers] = await req.db.execute(
@@ -453,7 +461,7 @@ router.put('/payment-vouchers/:id', [
 
 router.get('/receipt-vouchers', async (req, res) => {
     try {
-        const { status, page = 1, limit = 20 } = req.query;
+        const { status, payment_method, page = 1, limit = 20 } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         let whereClause = 'WHERE 1=1';
@@ -462,6 +470,14 @@ router.get('/receipt-vouchers', async (req, res) => {
         if (status) {
             whereClause += ' AND status = ?';
             params.push(status);
+        }
+
+        if (payment_method) {
+            if (payment_method === 'cash') {
+                whereClause += ' AND payment_method = \'cash\'';
+            } else if (payment_method === 'bank') {
+                whereClause += ' AND (payment_method = \'bank_transfer\' OR payment_method = \'check\')';
+            }
         }
 
         const [vouchers] = await req.db.execute(

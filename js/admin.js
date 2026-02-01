@@ -1200,8 +1200,14 @@ function switchTab(tabName) {
         case 'payment-vouchers':
             if (typeof window['loadPaymentVouchers'] === 'function') window['loadPaymentVouchers']();
             break;
+        case 'bank-payment-vouchers':
+            if (typeof window['loadBankPaymentVouchers'] === 'function') window['loadBankPaymentVouchers']();
+            break;
         case 'receipt-vouchers':
             if (typeof window['loadReceiptVouchers'] === 'function') window['loadReceiptVouchers']();
+            break;
+        case 'bank-receipt-vouchers':
+            if (typeof window['loadBankReceiptVouchers'] === 'function') window['loadBankReceiptVouchers']();
             break;
         case 'rider-cash':
             if (typeof window['loadRiderCash'] === 'function') window['loadRiderCash']();

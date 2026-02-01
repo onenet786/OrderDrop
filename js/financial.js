@@ -454,6 +454,7 @@ async function loadPaymentVouchers() {
         const status = document.getElementById('paymentVoucherStatusFilter')?.value || '';
         const params = new URLSearchParams();
         if (status) params.append('status', status);
+        params.append('payment_method', 'cash');
 
         const response = await fetch(`${API_BASE}/api/financial/payment-vouchers?${params.toString()}`, {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
@@ -467,6 +468,56 @@ async function loadPaymentVouchers() {
     } catch (error) {
         console.error('Error loading payment vouchers:', error);
         showError('Load Error', 'Failed to load payment vouchers');
+    }
+}
+
+async function loadBankPaymentVouchers() {
+    try {
+        const status = document.getElementById('bankPaymentVoucherStatusFilter')?.value || '';
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+        params.append('payment_method', 'bank');
+
+        const response = await fetch(`${API_BASE}/api/financial/payment-vouchers?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            displayBankPaymentVouchers(data.vouchers || []);
+        }
+    } catch (error) {
+        console.error('Error loading bank payment vouchers:', error);
+        showError('Load Error', 'Failed to load bank payment vouchers');
+    }
+}
+
+function displayBankPaymentVouchers(vouchers) {
+    const tbody = document.getElementById('bankPaymentVouchersTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    vouchers.forEach(v => {
+        const row = document.createElement('tr');
+        const date = new Date(v.voucher_date).toLocaleDateString();
+        row.innerHTML = `
+            <td>${v.voucher_number}</td>
+            <td>${date}</td>
+            <td>${v.payee_name}</td>
+            <td>${v.payee_type}</td>
+            <td>₨ ${parseFloat(v.amount).toFixed(2)}</td>
+            <td>${v.purpose || '-'}</td>
+            <td><span class="status-${v.status}">${v.status}</span></td>
+            <td>
+                <button class="btn-small btn-info" onclick="editPaymentVoucher(${v.id})">Edit</button>
+                <button class="btn-small btn-primary" onclick="approvePaymentVoucher(${v.id})">Approve</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    if (vouchers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">No bank payment vouchers found</td></tr>';
     }
 }
 
@@ -503,6 +554,7 @@ async function loadReceiptVouchers() {
         const status = document.getElementById('receiptVoucherStatusFilter')?.value || '';
         const params = new URLSearchParams();
         if (status) params.append('status', status);
+        params.append('payment_method', 'cash');
 
         const response = await fetch(`${API_BASE}/api/financial/receipt-vouchers?${params.toString()}`, {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
@@ -516,6 +568,56 @@ async function loadReceiptVouchers() {
     } catch (error) {
         console.error('Error loading receipt vouchers:', error);
         showError('Load Error', 'Failed to load receipt vouchers');
+    }
+}
+
+async function loadBankReceiptVouchers() {
+    try {
+        const status = document.getElementById('bankReceiptVoucherStatusFilter')?.value || '';
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+        params.append('payment_method', 'bank');
+
+        const response = await fetch(`${API_BASE}/api/financial/receipt-vouchers?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            displayBankReceiptVouchers(data.vouchers || []);
+        }
+    } catch (error) {
+        console.error('Error loading bank receipt vouchers:', error);
+        showError('Load Error', 'Failed to load bank receipt vouchers');
+    }
+}
+
+function displayBankReceiptVouchers(vouchers) {
+    const tbody = document.getElementById('bankReceiptVouchersTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    vouchers.forEach(v => {
+        const row = document.createElement('tr');
+        const date = new Date(v.voucher_date).toLocaleDateString();
+        row.innerHTML = `
+            <td>${v.voucher_number}</td>
+            <td>${date}</td>
+            <td>${v.payer_name}</td>
+            <td>${v.payer_type}</td>
+            <td>₨ ${parseFloat(v.amount).toFixed(2)}</td>
+            <td>${v.description || '-'}</td>
+            <td><span class="status-${v.status}">${v.status}</span></td>
+            <td>
+                <button class="btn-small btn-info" onclick="editReceiptVoucher(${v.id})">Edit</button>
+                <button class="btn-small btn-primary" onclick="approveReceiptVoucher(${v.id})">Approve</button>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    if (vouchers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">No bank receipt vouchers found</td></tr>';
     }
 }
 
@@ -759,7 +861,28 @@ function createPaymentVoucher() {
     const idInput = document.getElementById('paymentVoucherId');
     if (idInput) idInput.value = '';
     
-    document.querySelector('#paymentVoucherModal h2').textContent = 'Create Payment Voucher';
+    // Set default payment method to cash for CPV
+    const methodSelect = document.getElementById('paymentMethodPV');
+    if (methodSelect) methodSelect.value = 'cash';
+
+    document.querySelector('#paymentVoucherModal h2').textContent = 'Create Cash Payment Voucher (CPV)';
+    document.querySelector('#paymentVoucherModal .btn-primary').textContent = 'Create Voucher';
+    
+    formChangedState['paymentVoucherModal'] = false;
+    openModal('paymentVoucherModal');
+}
+
+function createBankPaymentVoucher() {
+    const form = document.getElementById('paymentVoucherForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('paymentVoucherId');
+    if (idInput) idInput.value = '';
+    
+    // Set default payment method to bank_transfer for BPV
+    const methodSelect = document.getElementById('paymentMethodPV');
+    if (methodSelect) methodSelect.value = 'bank_transfer';
+
+    document.querySelector('#paymentVoucherModal h2').textContent = 'Create Bank Payment Voucher (BPV)';
     document.querySelector('#paymentVoucherModal .btn-primary').textContent = 'Create Voucher';
     
     formChangedState['paymentVoucherModal'] = false;
@@ -836,7 +959,28 @@ function createReceiptVoucher() {
     const idInput = document.getElementById('receiptVoucherId');
     if (idInput) idInput.value = '';
     
-    document.querySelector('#receiptVoucherModal h2').textContent = 'Create Receipt Voucher';
+    // Set default payment method to cash for CRV
+    const methodSelect = document.getElementById('paymentMethodRV');
+    if (methodSelect) methodSelect.value = 'cash';
+
+    document.querySelector('#receiptVoucherModal h2').textContent = 'Create Cash Receipt Voucher (CRV)';
+    document.querySelector('#receiptVoucherModal .btn-primary').textContent = 'Create Voucher';
+    
+    formChangedState['receiptVoucherModal'] = false;
+    openModal('receiptVoucherModal');
+}
+
+function createBankReceiptVoucher() {
+    const form = document.getElementById('receiptVoucherForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('receiptVoucherId');
+    if (idInput) idInput.value = '';
+    
+    // Set default payment method to bank_transfer for BRV
+    const methodSelect = document.getElementById('paymentMethodRV');
+    if (methodSelect) methodSelect.value = 'bank_transfer';
+
+    document.querySelector('#receiptVoucherModal h2').textContent = 'Create Bank Receive Voucher (BRV)';
     document.querySelector('#receiptVoucherModal .btn-primary').textContent = 'Create Voucher';
     
     formChangedState['receiptVoucherModal'] = false;
@@ -1580,7 +1724,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const paymentVoucherStatusFilter = document.getElementById('paymentVoucherStatusFilter');
     const clearPaymentVoucherFiltersBtn = document.getElementById('clearPaymentVoucherFiltersBtn');
     const addPaymentVoucherBtn = document.getElementById('addPaymentVoucherBtn');
+    const bankPaymentVoucherStatusFilter = document.getElementById('bankPaymentVoucherStatusFilter');
+    const clearBankPaymentVoucherFiltersBtn = document.getElementById('clearBankPaymentVoucherFiltersBtn');
+    const addBankPaymentVoucherBtn = document.getElementById('addBankPaymentVoucherBtn');
     const receiptVoucherStatusFilter = document.getElementById('receiptVoucherStatusFilter');
+    const bankReceiptVoucherStatusFilter = document.getElementById('bankReceiptVoucherStatusFilter');
+    const clearBankReceiptVoucherFiltersBtn = document.getElementById('clearBankReceiptVoucherFiltersBtn');
+    const addBankReceiptVoucherBtn = document.getElementById('addBankReceiptVoucherBtn');
     const clearReceiptVoucherFiltersBtn = document.getElementById('clearReceiptVoucherFiltersBtn');
     const addReceiptVoucherBtn = document.getElementById('addReceiptVoucherBtn');
     const riderCashMovementTypeFilter = document.getElementById('riderCashMovementTypeFilter');
@@ -1619,12 +1769,26 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     if (addPaymentVoucherBtn) addPaymentVoucherBtn.addEventListener('click', createPaymentVoucher);
 
+    if (bankPaymentVoucherStatusFilter) bankPaymentVoucherStatusFilter.addEventListener('change', loadBankPaymentVouchers);
+    if (clearBankPaymentVoucherFiltersBtn) clearBankPaymentVoucherFiltersBtn.addEventListener('click', () => {
+        if (bankPaymentVoucherStatusFilter) bankPaymentVoucherStatusFilter.value = '';
+        loadBankPaymentVouchers();
+    });
+    if (addBankPaymentVoucherBtn) addBankPaymentVoucherBtn.addEventListener('click', createBankPaymentVoucher);
+
     if (receiptVoucherStatusFilter) receiptVoucherStatusFilter.addEventListener('change', loadReceiptVouchers);
     if (clearReceiptVoucherFiltersBtn) clearReceiptVoucherFiltersBtn.addEventListener('click', () => {
         if (receiptVoucherStatusFilter) receiptVoucherStatusFilter.value = '';
         loadReceiptVouchers();
     });
     if (addReceiptVoucherBtn) addReceiptVoucherBtn.addEventListener('click', createReceiptVoucher);
+
+    if (bankReceiptVoucherStatusFilter) bankReceiptVoucherStatusFilter.addEventListener('change', loadBankReceiptVouchers);
+    if (clearBankReceiptVoucherFiltersBtn) clearBankReceiptVoucherFiltersBtn.addEventListener('click', () => {
+        if (bankReceiptVoucherStatusFilter) bankReceiptVoucherStatusFilter.value = '';
+        loadBankReceiptVouchers();
+    });
+    if (addBankReceiptVoucherBtn) addBankReceiptVoucherBtn.addEventListener('click', createBankReceiptVoucher);
 
     if (riderCashMovementTypeFilter) riderCashMovementTypeFilter.addEventListener('change', loadRiderCash);
     if (riderCashStatusFilter) riderCashStatusFilter.addEventListener('change', loadRiderCash);
@@ -1704,19 +1868,11 @@ function initializePersistentModalHandlers() {
 }
 
 function initializeFinancialManagement() {
-    loadFinancialDashboard();
-    loadTransactions();
     loadPaymentVouchers();
+    loadBankPaymentVouchers();
     loadReceiptVouchers();
-    loadRiderCash();
-    loadStoreSettlements();
+    loadBankReceiptVouchers();
     loadJournalVouchers();
-    loadExpenses();
-    loadFinancialReports();
-    loadRiderReports();
-    loadStoreReports();
-    populateReportFilters();
-    setupPeriodFilters();
 }
 
 async function populateReportFilters() {

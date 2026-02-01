@@ -36,18 +36,34 @@
                 ><i class="fas fa-tachometer-alt"></i> Dashboard</a
               >
             </li>
-            <li>
+            <li class="dropdown">
               <a
                 href="admin.html#accounts"
-                class="tab-link"
-                data-tab="accounts"
-                ><i class="fas fa-users"></i> Accounts</a
-              >
-            </li>
-            <li>
-              <a href="admin.html#riders" class="tab-link" data-tab="riders"
-                ><i class="fas fa-motorcycle"></i> Riders</a
-              >
+                class="dropdown-toggle"
+                role="button"
+                aria-haspopup="true"
+                aria-expanded="false"
+                ><i class="fas fa-user-circle"></i> Accounts
+                <i
+                  class="fas fa-chevron-down"
+                  style="margin-left: 0.25rem; font-size: 0.8rem"
+                ></i
+              ></a>
+              <ul class="dropdown-menu">
+                <li>
+                  <a
+                    href="admin.html#accounts"
+                    class="tab-link"
+                    data-tab="accounts"
+                    ><i class="fas fa-users"></i> Users</a
+                  >
+                </li>
+                <li>
+                  <a href="admin.html#riders" class="tab-link" data-tab="riders"
+                    ><i class="fas fa-motorcycle"></i> Riders</a
+                  >
+                </li>
+              </ul>
             </li>
             <li>
               <a href="admin.html#stores" class="tab-link" data-tab="stores"
@@ -194,26 +210,10 @@
               <ul class="dropdown-menu">
                 <li>
                   <a
-                    href="admin.html#financial-dashboard"
-                    class="tab-link"
-                    data-tab="financial-dashboard"
-                    ><i class="fas fa-chart-pie"></i> Dashboard</a
-                  >
-                </li>
-                <li>
-                  <a
-                    href="admin.html#transactions"
-                    class="tab-link"
-                    data-tab="transactions"
-                    ><i class="fas fa-exchange-alt"></i> Transactions</a
-                  >
-                </li>
-                <li>
-                  <a
                     href="admin.html#payment-vouchers"
                     class="tab-link"
                     data-tab="payment-vouchers"
-                    ><i class="fas fa-receipt"></i> Payment Vouchers</a
+                    ><i class="fas fa-money-bill-wave"></i> CPV (Cash Payment Voucher)</a
                   >
                 </li>
                 <li>
@@ -221,24 +221,23 @@
                     href="admin.html#receipt-vouchers"
                     class="tab-link"
                     data-tab="receipt-vouchers"
-                    ><i class="fas fa-file-invoice-dollar"></i> Receipt
-                    Vouchers</a
+                    ><i class="fas fa-cash-register"></i> CRV (Cash Receive Voucher)</a
                   >
                 </li>
                 <li>
                   <a
-                    href="admin.html#rider-cash"
+                    href="admin.html#bank-payment-vouchers"
                     class="tab-link"
-                    data-tab="rider-cash"
-                    ><i class="fas fa-motorcycle"></i> Rider Cash</a
+                    data-tab="bank-payment-vouchers"
+                    ><i class="fas fa-university"></i> BPV (Bank Payment Voucher)</a
                   >
                 </li>
                 <li>
                   <a
-                    href="admin.html#store-settlements"
+                    href="admin.html#bank-receipt-vouchers"
                     class="tab-link"
-                    data-tab="store-settlements"
-                    ><i class="fas fa-handshake"></i> Store Settlements</a
+                    data-tab="bank-receipt-vouchers"
+                    ><i class="fas fa-file-invoice"></i> BRV (Bank Receive Voucher)</a
                   >
                 </li>
                 <li>
@@ -246,23 +245,7 @@
                     href="admin.html#journal-vouchers"
                     class="tab-link"
                     data-tab="journal-vouchers"
-                    ><i class="fas fa-book"></i> Journal Vouchers</a
-                  >
-                </li>
-                <li>
-                  <a
-                    href="admin.html#expenses"
-                    class="tab-link"
-                    data-tab="expenses"
-                    ><i class="fas fa-money-bill-wave"></i> Expenses</a
-                  >
-                </li>
-                <li>
-                  <a
-                    href="admin.html#financial-reports"
-                    class="tab-link"
-                    data-tab="financial-reports"
-                    ><i class="fas fa-file-alt"></i> Reports</a
+                    ><i class="fas fa-book"></i> JNV (Journal Voucher)</a
                   >
                 </li>
               </ul>
@@ -379,10 +362,10 @@
 
         <!-- Rider Fuel panel moved inside Riders management as a sub-panel -->
 
-        <!-- Accounts Tab -->
+        <!-- Users Tab -->
 
         <div id="accounts" class="tab-content">
-          <h2>Accounts Management</h2>
+          <h2>Users Management</h2>
 
           <div
             class="stats-grid"
@@ -400,7 +383,7 @@
               >
                 -
               </h3>
-              <p style="font-size: 0.75rem; margin: 0">Total Accounts</p>
+              <p style="font-size: 0.75rem; margin: 0">Total Users</p>
             </div>
             <div class="stat-card" style="padding: 0.5rem 0.5rem">
               <h3
@@ -409,7 +392,7 @@
               >
                 -
               </h3>
-              <p style="font-size: 0.75rem; margin: 0">Active Accounts</p>
+              <p style="font-size: 0.75rem; margin: 0">Active Users</p>
             </div>
             <div class="stat-card" style="padding: 0.5rem 0.5rem">
               <h3
@@ -418,7 +401,7 @@
               >
                 -
               </h3>
-              <p style="font-size: 0.75rem; margin: 0">Inactive Accounts</p>
+              <p style="font-size: 0.75rem; margin: 0">Inactive Users</p>
             </div>
             <div class="stat-card" style="padding: 0.5rem 0.5rem">
               <h3
@@ -427,7 +410,7 @@
               >
                 -
               </h3>
-              <p style="font-size: 0.75rem; margin: 0">Verified Accounts</p>
+              <p style="font-size: 0.75rem; margin: 0">Verified Users</p>
             </div>
           </div>
 
@@ -490,117 +473,15 @@
               </thead>
 
               <tbody id="accountsTableBody">
-                <!-- Accounts will be loaded here -->
+                <!-- Users will be loaded here -->
               </tbody>
             </table>
           </div>
         </div>
 
-        <!-- Financial Dashboard Tab -->
-        <div id="financial-dashboard" class="tab-content">
-          <h2>Financial Dashboard</h2>
-          <div class="filter-controls" style="margin-bottom: 1.5rem">
-            <div class="filter-group">
-                <label for="financialPeriodFilter">Period</label>
-                <select id="financialPeriodFilter" class="form-control">
-                    <option value="today">Today</option>
-                    <option value="week">This Week</option>
-                    <option value="month" selected>This Month</option>
-                </select>
-            </div>
-            <button class="btn btn-primary" id="refreshFinancialDashboardBtn" style="align-self: flex-end; margin-bottom: 2px;">
-              <i class="fas fa-sync-alt"></i> Refresh
-            </button>
-          </div>
-          <div
-            class="stats-grid"
-            style="grid-template-columns: repeat(4, 1fr); margin-bottom: 2rem"
-          >
-            <div class="stat-card">
-              <h3 id="totalIncomeAmount">₨ -</h3>
-              <p>Total Income</p>
-            </div>
-            <div class="stat-card">
-              <h3 id="totalExpenseAmount">₨ -</h3>
-              <p>Total Expense</p>
-            </div>
-            <div class="stat-card">
-              <h3 id="totalSettlementsAmount">₨ -</h3>
-              <p>Total Settlements</p>
-            </div>
-            <div class="stat-card">
-              <h3 id="netProfitAmount">₨ -</h3>
-              <p>Net Profit</p>
-            </div>
-          </div>
-          <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr)">
-            <div class="stat-card">
-              <h3 id="paymentVouchersAmount">₨ -</h3>
-              <p>Payment Vouchers</p>
-            </div>
-            <div class="stat-card">
-              <h3 id="receiptVouchersAmount">₨ -</h3>
-              <p>Receipt Vouchers</p>
-            </div>
-            <div class="stat-card">
-              <h3 id="totalRiderCashAmount">₨ -</h3>
-              <p>Rider Cash Submitted</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Transactions Tab -->
-        <div id="transactions" class="tab-content">
-          <h2>Financial Transactions</h2>
-          <button class="btn btn-primary" id="addTransactionBtn">
-            Add Transaction
-          </button>
-          <div class="filter-controls">
-            <div class="filter-group">
-                <label for="transactionTypeFilter">Type</label>
-                <select id="transactionTypeFilter" class="form-control">
-                    <option value="">All Types</option>
-                    <option value="income">Income</option>
-                    <option value="expense">Expense</option>
-                    <option value="settlement">Settlement</option>
-                    <option value="refund">Refund</option>
-                    <option value="adjustment">Adjustment</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="transactionStatusFilter">Status</label>
-                <select id="transactionStatusFilter" class="form-control">
-                    <option value="">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                </select>
-            </div>
-            <button class="btn btn-secondary" id="clearTransactionFiltersBtn">Clear</button>
-          </div>
-          <div class="table-container">
-            <table id="transactionsTable">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Transaction #</th>
-                  <th>Type</th>
-                  <th>Description</th>
-                  <th>Amount</th>
-                  <th>Payment Method</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="transactionsTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Payment Vouchers Tab -->
+        <!-- Cash Payment Vouchers (CPV) Tab -->
         <div id="payment-vouchers" class="tab-content">
-          <h2>Cash Payment Vouchers</h2>
+          <h2>CPV - Cash Payment Vouchers</h2>
           <button class="btn btn-primary" id="addPaymentVoucherBtn">
             Create Payment Voucher
           </button>
@@ -637,9 +518,48 @@
           </div>
         </div>
 
-        <!-- Receipt Vouchers Tab -->
+        <!-- Bank Payment Vouchers (BPV) Tab -->
+        <div id="bank-payment-vouchers" class="tab-content">
+          <h2>BPV - Bank Payment Vouchers</h2>
+          <button class="btn btn-primary" id="addBankPaymentVoucherBtn">
+            Create Bank Payment Voucher
+          </button>
+          <div class="filter-controls">
+            <div class="filter-group">
+                <label for="bankPaymentVoucherStatusFilter">Status</label>
+                <select id="bankPaymentVoucherStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="draft">Draft</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="paid">Paid</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearBankPaymentVoucherFiltersBtn">Clear</button>
+          </div>
+          <div class="table-container">
+            <table id="bankPaymentVouchersTable">
+              <thead>
+                <tr>
+                  <th>Voucher #</th>
+                  <th>Date</th>
+                  <th>Payee Name</th>
+                  <th>Payee Type</th>
+                  <th>Amount</th>
+                  <th>Purpose</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="bankPaymentVouchersTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Cash Receipt Vouchers (CRV) Tab -->
         <div id="receipt-vouchers" class="tab-content">
-          <h2>Cash Receipt Vouchers</h2>
+          <h2>CRV - Cash Receipt Vouchers</h2>
           <button class="btn btn-primary" id="addReceiptVoucherBtn">
             Create Receipt Voucher
           </button>
@@ -675,95 +595,47 @@
           </div>
         </div>
 
-        <!-- Rider Cash Movements Tab -->
-        <div id="rider-cash" class="tab-content">
-          <h2>Rider Cash Movements</h2>
-          <button class="btn btn-primary" id="addRiderCashMovementBtn">
-            Record Cash Movement
+        <!-- Bank Receive Vouchers (BRV) Tab -->
+        <div id="bank-receipt-vouchers" class="tab-content">
+          <h2>BRV - Bank Receive Vouchers</h2>
+          <button class="btn btn-primary" id="addBankReceiptVoucherBtn">
+            Create Bank Receive Voucher
           </button>
           <div class="filter-controls">
             <div class="filter-group">
-                <label for="riderCashMovementTypeFilter">Type</label>
-                <select id="riderCashMovementTypeFilter" class="form-control">
-                    <option value="">All Types</option>
-                    <option value="cash_collection">Cash Collection</option>
-                    <option value="cash_submission">Cash Submission</option>
-                    <option value="advance">Advance</option>
-                    <option value="settlement">Settlement</option>
-                    <option value="adjustment">Adjustment</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="riderCashStatusFilter">Status</label>
-                <select id="riderCashStatusFilter" class="form-control">
+                <label for="bankReceiptVoucherStatusFilter">Status</label>
+                <select id="bankReceiptVoucherStatusFilter" class="form-control">
                     <option value="">All Status</option>
+                    <option value="draft">Draft</option>
                     <option value="pending">Pending</option>
-                    <option value="completed">Completed</option>
-                    <option value="approved">Approved</option>
-                </select>
-            </div>
-            <button class="btn btn-secondary" id="clearRiderCashFiltersBtn">Clear</button>
-          </div>
-          <div class="table-container">
-            <table id="riderCashTable">
-              <thead>
-                <tr>
-                  <th>Movement #</th>
-                  <th>Rider</th>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                  <th>Recorded By</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="riderCashTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Store Settlements Tab -->
-        <div id="store-settlements" class="tab-content">
-          <h2>Store Settlements</h2>
-          <button class="btn btn-primary" id="addStoreSettlementBtn">
-            Create Settlement
-          </button>
-          <div class="filter-controls">
-            <div class="filter-group">
-                <label for="storeSettlementStatusFilter">Status</label>
-                <select id="storeSettlementStatusFilter" class="form-control">
-                    <option value="">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="paid">Paid</option>
+                    <option value="received">Received</option>
                     <option value="cancelled">Cancelled</option>
                 </select>
             </div>
-            <button class="btn btn-secondary" id="clearStoreSettlementFiltersBtn">Clear</button>
+            <button class="btn btn-secondary" id="clearBankReceiptVoucherFiltersBtn">Clear</button>
           </div>
           <div class="table-container">
-            <table id="storeSettlementsTable">
+            <table id="bankReceiptVouchersTable">
               <thead>
                 <tr>
-                  <th>Settlement #</th>
-                  <th>Store Name</th>
-                  <th>Settlement Date</th>
-                  <th>Period From</th>
-                  <th>Period To</th>
-                  <th>Net Amount</th>
+                  <th>Voucher #</th>
+                  <th>Date</th>
+                  <th>Payer Name</th>
+                  <th>Payer Type</th>
+                  <th>Amount</th>
+                  <th>Description</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody id="storeSettlementsTableBody"></tbody>
+              <tbody id="bankReceiptVouchersTableBody"></tbody>
             </table>
           </div>
         </div>
 
-        <!-- Journal Vouchers Tab -->
+        <!-- Journal Vouchers (JNV) Tab -->
         <div id="journal-vouchers" class="tab-content">
-          <h2>Journal Vouchers</h2>
+          <h2>JNV - Journal Vouchers</h2>
           <button class="btn btn-primary" id="addJournalVoucherBtn">
             Create Journal Voucher
           </button>
@@ -794,102 +666,6 @@
                 </tr>
               </thead>
               <tbody id="journalVouchersTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Expenses Tab -->
-        <div id="expenses" class="tab-content">
-          <h2>Admin Expenses</h2>
-          <button class="btn btn-primary" id="addExpenseBtn">
-            Record Expense
-          </button>
-          <div class="filter-controls">
-            <div class="filter-group">
-                <label for="expenseCategoryFilter">Category</label>
-                <select id="expenseCategoryFilter" class="form-control">
-                    <option value="">All Categories</option>
-                    <option value="utilities">Utilities</option>
-                    <option value="maintenance">Maintenance</option>
-                    <option value="office">Office</option>
-                    <option value="travel">Travel</option>
-                    <option value="marketing">Marketing</option>
-                    <option value="other">Other</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="expenseStatusFilter">Status</label>
-                <select id="expenseStatusFilter" class="form-control">
-                    <option value="">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="paid">Paid</option>
-                    <option value="rejected">Rejected</option>
-                </select>
-            </div>
-            <button class="btn btn-secondary" id="clearExpenseFiltersBtn">Clear</button>
-          </div>
-          <div class="table-container">
-            <table id="expensesTable">
-              <thead>
-                <tr>
-                  <th>Expense #</th>
-                  <th>Date</th>
-                  <th>Category</th>
-                  <th>Description</th>
-                  <th>Amount</th>
-                  <th>Vendor</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="expensesTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Financial Reports Tab -->
-        <div id="financial-reports" class="tab-content">
-          <h2>Financial Reports</h2>
-          <div class="filter-controls">
-            <div class="filter-group">
-                <label for="reportTypeFilter">Report Type</label>
-                <select id="reportTypeFilter" class="form-control">
-                    <option value="">All Report Types</option>
-                    <option value="daily_summary">Daily Summary</option>
-                    <option value="weekly_summary">Weekly Summary</option>
-                    <option value="monthly_summary">Monthly Summary</option>
-                    <option value="store_settlement">Store Settlement</option>
-                    <option value="store_financials">Store Financials (Cost Analysis)</option>
-                    <option value="rider_cash_report">Rider Cash Report</option>
-                    <option value="general_voucher">General Voucher (JNV)</option>
-                    <option value="expense_report">Expense Report</option>
-                    <option value="custom">Custom</option>
-                </select>
-            </div>
-            <button class="btn btn-primary" id="generateFinancialReportBtn">
-              <i class="fas fa-file-alt"></i> Generate Report
-            </button>
-            <button class="btn btn-secondary" id="exportReportBtn">
-              <i class="fas fa-download"></i> Export
-            </button>
-          </div>
-          <div class="table-container">
-            <table id="reportsTable">
-              <thead>
-                <tr>
-                  <th>Report #</th>
-                  <th>Type</th>
-                  <th>Period From</th>
-                  <th>Period To</th>
-                  <th>Total Income</th>
-                  <th>Total Expense</th>
-                  <th>Net Profit</th>
-                  <th>Generated Date</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="reportsTableBody"></tbody>
             </table>
           </div>
         </div>
