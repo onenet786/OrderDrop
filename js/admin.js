@@ -645,14 +645,7 @@ function initializeAdmin() {
         const mm = pad(now.getMinutes());
         const todayDate = `${y}-${m}-${d}`;
         const todayDateTime = `${y}-${m}-${d}T${hh}:${mm}`;
-        const fsd = document.getElementById('filterStartDate');
-        if (fsd && !fsd.value) fsd.value = todayDate;
-        const fed = document.getElementById('filterEndDate');
-        if (fed && !fed.value) fed.value = todayDate;
-        const rsd = document.getElementById('reportStartDate');
-        if (rsd && !rsd.value) rsd.value = todayDate;
-        const red = document.getElementById('reportEndDate');
-        if (red && !red.value) red.value = todayDate;
+        // Date defaults are now handled in financial.js initializeDateDefaults()
         const ed = document.getElementById('entryDate');
         if (ed && !ed.value) ed.value = todayDateTime;
     } catch (e) {}
@@ -687,8 +680,27 @@ function initializeAdmin() {
     if (saveFuelBtn) saveFuelBtn.addEventListener('click', saveFuelEntry);
 
     const fuelRiderSelect = document.getElementById('fuelRiderSelect');
-    if (fuelRiderSelect) fuelRiderSelect.addEventListener('change', function() {
-        if (this.value) loadFuelHistory(this.value);
+    if (fuelRiderSelect) fuelRiderSelect.addEventListener('change', async function() {
+        if (this.value) {
+            try {
+                const data = await loadFuelHistory(this.value);
+                if (data && data.success && Array.isArray(data.records) && data.records.length > 0) {
+                    // Records are ordered by id DESC (latest first)
+                    const latest = data.records[0];
+                    const sm = document.getElementById('startMeter');
+                    if (sm && latest.end_meter) {
+                        sm.value = latest.end_meter;
+                        // Trigger input event to update calculations
+                        sm.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                } else {
+                    const sm = document.getElementById('startMeter');
+                    if (sm) sm.value = '';
+                }
+            } catch (e) {
+                console.error('Error auto-populating start meter:', e);
+            }
+        }
     });
 
     const activeRiderSelect = document.getElementById('activeRiderSelect');
@@ -720,22 +732,23 @@ function initializeAdmin() {
         const r = document.getElementById('petrolRate');
         const c = document.getElementById('fuelCost');
         if (d) { try { d.readOnly = true; } catch(_) {} }
-        if (c) { try { c.readOnly = true; } catch(_) {} }
+        // if (c) { try { c.readOnly = true; } catch(_) {} } // Allow manual override
         if (!s || !e) return;
-        const recalc = () => {
+        const recalc = (showError = true) => {
             const sv = parseFloat(String(s.value || '').replace(/[^\d.]/g, ''));
             const ev = parseFloat(String(e.value || '').replace(/[^\d.]/g, ''));
             if (Number.isFinite(sv) && Number.isFinite(ev)) {
                 if (ev <= sv) {
                     if (d) d.value = '';
                     if (c) c.value = '';
-                    showWarning('Invalid Meter', 'End meter must be greater than start meter');
+                    if (showError) showWarning('Invalid Meter', 'End meter must be greater than start meter');
                     return;
                 }
                 const dist = ev - sv;
                 if (d) d.value = dist.toFixed(2);
                 const rate = parseFloat(String(r && r.value || '').replace(/[^\d.]/g, ''));
-                if (Number.isFinite(rate) && c) c.value = (rate * dist).toFixed(2);
+                // Formula: (Distance / 45) * Rate
+                if (Number.isFinite(rate) && c) c.value = Math.round((dist / 45) * rate).toFixed(0);
             } else {
                 if (d) d.value = '';
                 if (c) c.value = '';
@@ -744,10 +757,13 @@ function initializeAdmin() {
         const recalcCostOnly = () => {
             const rate = parseFloat(String(r && r.value || '').replace(/[^\d.]/g, ''));
             const dist = parseFloat(String(d && d.value || '').replace(/[^\d.]/g, ''));
-            if (Number.isFinite(rate) && Number.isFinite(dist) && c) c.value = (rate * dist).toFixed(2);
+            // Formula: (Distance / 45) * Rate
+            if (Number.isFinite(rate) && Number.isFinite(dist) && c) c.value = Math.round((dist / 45) * rate).toFixed(0);
         };
-        s.addEventListener('input', recalc);
-        e.addEventListener('input', recalc);
+        s.addEventListener('input', () => recalc(false));
+        e.addEventListener('input', () => recalc(false));
+        s.addEventListener('change', () => recalc(true));
+        e.addEventListener('change', () => recalc(true));
         if (r) r.addEventListener('input', recalcCostOnly);
     })();
 
@@ -5028,6 +5044,18 @@ async function saveFuelEntry() {
     const distance = (distanceRaw !== undefined && distanceRaw !== null && distanceRaw !== '') ? parseFloat(distanceRaw) : null;
     const petrolRate = (petrolRateRaw !== undefined && petrolRateRaw !== null && petrolRateRaw !== '') ? parseFloat(petrolRateRaw) : null;
     const fuelCost = (costRaw !== undefined && costRaw !== null && costRaw !== '') ? parseFloat(costRaw) : null;
+
+    // Validation: Ensure enough data is present for cost calculation
+    if (fuelCost === null) {
+        if (petrolRate === null) {
+            showWarning('Missing Information', 'Please enter Petrol Rate so the system can calculate Fuel Cost.');
+            return;
+        }
+        if (distance === null) {
+            showWarning('Missing Information', 'Please enter Start/End Meter or Distance so the system can calculate Fuel Cost.');
+            return;
+        }
+    }
 
     const payload = {
         entryDate: entryDateVal,

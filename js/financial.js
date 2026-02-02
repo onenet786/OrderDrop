@@ -378,6 +378,31 @@ function initializeFinancialForms() {
         e.preventDefault();
         await submitGenerateReport();
     });
+
+    // Report Type Change Handler
+    const reportTypeSelect = document.getElementById('reportTypeModal');
+    if (reportTypeSelect) {
+        reportTypeSelect.addEventListener('change', function() {
+            const riderGroup = document.getElementById('reportRiderSelectGroup');
+            const riderSelect = document.getElementById('reportRiderSelect');
+            
+            if (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report') {
+                if (riderGroup) riderGroup.style.display = 'block';
+                // Populate riders if needed
+                if (riderSelect && riderSelect.options.length <= 1 && window.AppState && window.AppState.riders) {
+                     window.AppState.riders.forEach(r => {
+                        const opt = document.createElement('option');
+                        opt.value = r.id;
+                        opt.textContent = `${r.first_name} ${r.last_name || ''}`.trim();
+                        riderSelect.appendChild(opt);
+                     });
+                }
+            } else {
+                if (riderGroup) riderGroup.style.display = 'none';
+                if (riderSelect) riderSelect.value = '';
+            }
+        });
+    }
 }
 
 async function loadFinancialDashboard() {
@@ -910,7 +935,7 @@ function displayReports(reports) {
             <td>${created}</td>
             <td>
                 <button class="btn-small btn-info" onclick="viewReport(${r.id})">View</button>
-                <button class="btn-small btn-secondary" onclick="downloadReport(${r.id})">Download</button>
+                <button class="btn-small btn-secondary" onclick="viewReport(${r.id})">Download</button>
             </td>
         `;
         tbody.appendChild(row);
@@ -972,7 +997,7 @@ async function submitPaymentVoucher() {
         purpose,
         description: '',
         payment_method: paymentMethod,
-        check_number: null,
+        cheque_number: null,
         bank_details: null
     };
 
@@ -1094,8 +1119,8 @@ async function submitReceiptVoucher() {
         description,
         details: '',
         payment_method: paymentMethod,
-        check_number: null,
-        bank_details: null
+    cheque_number: null,
+    bank_details: null
     };
 
     try {
@@ -1599,13 +1624,44 @@ function generateFinancialReport() {
     document.getElementById('generateReportForm').reset();
     const reportType = document.getElementById('reportTypeFilter')?.value || 'monthly_summary';
     document.getElementById('reportTypeModal').value = reportType;
+    populateReportRidersDropdown(); // Populate riders when modal opens
+    
+    // Trigger change event to set initial visibility
+    const reportTypeModal = document.getElementById('reportTypeModal');
+    if (reportTypeModal) {
+        reportTypeModal.dispatchEvent(new Event('change'));
+    }
+    
     openModal('generateReportModal');
+}
+
+async function populateReportRidersDropdown() {
+    try {
+        const response = await fetch(`${API_BASE}/api/riders`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        
+        const select = document.getElementById('reportRiderSelect');
+        if (select && data.riders) {
+            select.innerHTML = '<option value="">All Riders</option>';
+            data.riders.forEach(rider => {
+                const option = document.createElement('option');
+                option.value = rider.id;
+                option.textContent = `${rider.first_name} ${rider.last_name} (${rider.phone})`;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error populating report riders dropdown:', error);
+    }
 }
 
 async function submitGenerateReport() {
     const reportType = document.getElementById('reportTypeModal').value;
     const periodFromInput = document.getElementById('reportPeriodFrom').value;
     const periodToInput = document.getElementById('reportPeriodTo').value;
+    const riderId = document.getElementById('reportRiderSelect')?.value;
 
     const payload = {
         report_type: reportType
@@ -1616,6 +1672,9 @@ async function submitGenerateReport() {
     }
     if (periodToInput) {
         payload.period_to = periodToInput;
+    }
+    if (riderId && (reportType === 'rider_fuel_report' || reportType === 'rider_cash_report')) {
+        payload.rider_id = riderId;
     }
 
     try {
@@ -1642,64 +1701,138 @@ async function submitGenerateReport() {
     }
 }
 
-function downloadReport(reportId) {
+function generatePDF(reportId) {
     const report = currentReports.find(r => r.id === reportId);
     if (!report) return;
 
-    let csvRows = [
-        ['Report Number', report.report_number],
-        ['Report Type', report.report_type],
-        ['Period From', report.period_from || '-'],
-        ['Period To', report.period_to || '-'],
-        ['Total Income', `₨ ${parseFloat(report.total_income).toFixed(2)}`],
-        ['Total Expense', `₨ ${parseFloat(report.total_expense).toFixed(2)}`],
-        ['Total Settlements', `₨ ${parseFloat(report.total_commissions).toFixed(2)}`],
-        ['Net Profit', `₨ ${parseFloat(report.net_profit).toFixed(2)}`],
-        ['Generated Date', new Date(report.created_at).toLocaleDateString()],
-        [] // Empty row separator
-    ];
+    // Check if jsPDF is loaded
+    if (!window.jspdf) {
+        alert('PDF generator library not loaded. Please refresh the page.');
+        return;
+    }
 
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    // Title
+    doc.setFontSize(20);
+    doc.text('ServeNow Financial Report', 14, 22);
+    
+    // Metadata
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Report #: ${report.report_number}`, 14, 32);
+    doc.text(`Type: ${report.report_type.replace(/_/g, ' ').toUpperCase()}`, 14, 37);
+    doc.text(`Generated: ${new Date(report.created_at).toLocaleString()}`, 14, 42);
+    if (report.period_from) {
+        doc.text(`Period: ${new Date(report.period_from).toLocaleDateString()} - ${report.period_to ? new Date(report.period_to).toLocaleDateString() : 'Now'}`, 14, 47);
+    }
+
+    // Financial Summary
+    doc.setFontSize(12);
+    doc.setTextColor(0);
+    doc.text('Financial Summary', 14, 58);
+    
+    doc.autoTable({
+        startY: 62,
+        head: [['Category', 'Amount']],
+        body: [
+            ['Total Income', `Rs ${parseFloat(report.total_income).toFixed(2)}`],
+            ['Total Expense', `Rs ${parseFloat(report.total_expense).toFixed(2)}`],
+            ['Total Settlements', `Rs ${parseFloat(report.total_commissions).toFixed(2)}`],
+            ['Net Profit', `Rs ${parseFloat(report.net_profit).toFixed(2)}`]
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [41, 128, 185] },
+        styles: { fontSize: 10, cellPadding: 3 }
+    });
+
+    // Detailed Data
     let data;
     try {
         data = typeof report.data === 'string' ? JSON.parse(report.data) : report.data;
-    } catch (e) {
-        data = null;
+    } catch (e) { data = null; }
+
+    if (data) {
+        let startY = doc.lastAutoTable.finalY + 15;
+        doc.setFontSize(12);
+        
+        if (data.type === 'rider_cash') {
+            doc.text('Rider Cash Movements', 14, startY);
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Rider', 'Date', 'Type', 'Amount', 'Description']],
+                body: data.movements.map(m => [
+                    `${m.first_name} ${m.last_name}`,
+                    new Date(m.movement_date).toLocaleDateString(),
+                    m.movement_type,
+                    `Rs ${parseFloat(m.amount).toFixed(2)}`,
+                    m.description || ''
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'store_financials') {
+            doc.text('Store Financials (Cost Analysis)', 14, startY);
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Store Name', 'Total Sales', 'Total Cost', 'Est. Profit']],
+                body: data.stores.map(s => [
+                    s.store_name,
+                    `Rs ${parseFloat(s.total_sales).toFixed(2)}`,
+                    `Rs ${parseFloat(s.total_cost).toFixed(2)}`,
+                    `Rs ${parseFloat(s.estimated_profit).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'general_voucher') {
+            doc.text('Journal Vouchers', 14, startY);
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Voucher #', 'Date', 'Description', 'Amount', 'Ref']],
+                body: data.vouchers.map(v => [
+                    v.voucher_number,
+                    new Date(v.voucher_date).toLocaleDateString(),
+                    v.description || '',
+                    `Rs ${parseFloat(v.total_amount).toFixed(2)}`,
+                    v.reference_number || ''
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'rider_fuel') {
+            doc.text('Rider Fuel History', 14, startY);
+            
+            // Summary for Fuel
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(`Total Distance: ${data.summary.total_distance} km | Total Cost: Rs ${parseFloat(data.summary.total_cost).toFixed(2)}`, 14, startY + 5);
+                startY += 10;
+            }
+
+            if (data.entries) {
+                doc.autoTable({
+                    startY: startY + 5,
+                    head: [['Rider', 'Date', 'Start', 'End', 'Dist', 'Rate', 'Cost', 'Notes']],
+                    body: data.entries.map(e => [
+                        `${e.first_name} ${e.last_name || ''}`,
+                        new Date(e.entry_date).toLocaleDateString(),
+                        e.start_meter || '-',
+                        e.end_meter || '-',
+                        e.distance || '0',
+                        e.petrol_rate || '-',
+                        `Rs ${e.fuel_cost}`,
+                        e.notes || ''
+                    ]),
+                    theme: 'grid',
+                    styles: { fontSize: 8 }
+                });
+            }
+        }
     }
 
-    if (data && data.type === 'rider_cash') {
-        csvRows.push(['Rider Cash Movements']);
-        csvRows.push(['Rider', 'Date', 'Type', 'Amount', 'Description']);
-        data.movements.forEach(m => {
-            csvRows.push([`${m.first_name} ${m.last_name}`, new Date(m.movement_date).toLocaleDateString(), m.movement_type, m.amount, m.description || '']);
-        });
-    } else if (data && data.type === 'store_financials') {
-        csvRows.push(['Store Financials (Cost Analysis)']);
-        csvRows.push(['Store Name', 'Total Sales', 'Total Cost', 'Estimated Profit']);
-        data.stores.forEach(s => {
-            csvRows.push([s.store_name, s.total_sales, s.total_cost, s.estimated_profit]);
-        });
-    } else if (data && data.type === 'general_voucher') {
-        csvRows.push(['Journal Vouchers']);
-        csvRows.push(['Voucher #', 'Date', 'Description', 'Amount', 'Reference']);
-        data.vouchers.forEach(v => {
-            csvRows.push([v.voucher_number, new Date(v.voucher_date).toLocaleDateString(), v.description || '', v.total_amount, v.reference_number || '']);
-        });
-    }
-
-    const csvContent = csvRows
-        .map(row => row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(','))
-        .join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = `${report.report_number}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    a.remove();
+    doc.save(`Report_${report.report_number}.pdf`);
 }
 
 function viewReport(reportId) {
@@ -1732,6 +1865,17 @@ function viewReport(reportId) {
             extraDetails += `<tr><td>${v.voucher_number}</td><td>${new Date(v.voucher_date).toLocaleDateString()}</td><td>${v.description || '-'}</td><td>₨ ${parseFloat(v.total_amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
+    } else if (data && data.type === 'rider_fuel') {
+        extraDetails = '<h3>Rider Fuel History</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Distance</th><th>Cost</th></tr></thead><tbody>';
+        if (data.entries) {
+            data.entries.forEach(e => {
+                extraDetails += `<tr><td>${e.first_name} ${e.last_name || ''}</td><td>${new Date(e.entry_date).toLocaleDateString()}</td><td>${e.distance} km</td><td>₨ ${parseFloat(e.fuel_cost).toFixed(2)}</td></tr>`;
+            });
+        }
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;"><strong>Total Distance:</strong> ${data.summary.total_distance} km | <strong>Total Cost:</strong> ₨ ${parseFloat(data.summary.total_cost).toFixed(2)}</div>`;
+        }
     }
 
     const details = `
@@ -1749,32 +1893,46 @@ function viewReport(reportId) {
         ${extraDetails}
     `;
 
-    // Create a modal instead of showInfo for better presentation of tables
-    const modalId = 'reportViewModal';
-    let modal = document.getElementById(modalId);
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = modalId;
-        modal.className = 'modal';
-        modal.innerHTML = `
-            <div class="modal-content" style="max-width: 800px;">
-                <div class="modal-header">
-                    <h3>Report Details</h3>
-                    <span class="close" onclick="document.getElementById('${modalId}').classList.remove('show')">&times;</span>
+    // Use the new modal for preview
+    const contentDiv = document.getElementById('viewReportContent');
+    if (contentDiv) {
+        contentDiv.innerHTML = details;
+        
+        // Setup download button
+        const downloadBtn = document.getElementById('viewReportDownloadBtn');
+        if (downloadBtn) {
+            downloadBtn.onclick = () => generatePDF(reportId);
+        }
+        
+        openModal('viewReportModal');
+    } else {
+        // Fallback to dynamic modal if static one is missing
+        const modalId = 'reportViewModal';
+        let modal = document.getElementById(modalId);
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = modalId;
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 800px;">
+                    <div class="modal-header">
+                        <h3>Report Details</h3>
+                        <span class="close" onclick="document.getElementById('${modalId}').classList.remove('show')">&times;</span>
+                    </div>
+                    <div class="modal-body" id="${modalId}Body"></div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="document.getElementById('${modalId}').classList.remove('show')">Close</button>
+                        <button class="btn btn-primary" id="${modalId}Download">Download PDF</button>
+                    </div>
                 </div>
-                <div class="modal-body" id="${modalId}Body"></div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" onclick="document.getElementById('${modalId}').classList.remove('show')">Close</button>
-                    <button class="btn btn-primary" id="${modalId}Download">Download CSV</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
+            `;
+            document.body.appendChild(modal);
+        }
+        
+        document.getElementById(`${modalId}Body`).innerHTML = details;
+        document.getElementById(`${modalId}Download`).onclick = () => generatePDF(reportId);
+        modal.classList.add('show');
     }
-    
-    document.getElementById(`${modalId}Body`).innerHTML = details;
-    document.getElementById(`${modalId}Download`).onclick = () => downloadReport(reportId);
-    modal.classList.add('show');
 }
 
 async function editRiderCash(id) {
@@ -1940,9 +2098,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const generateFinancialReportBtn = document.getElementById('generateFinancialReportBtn');
     if (generateFinancialReportBtn) generateFinancialReportBtn.addEventListener('click', generateFinancialReport);
     
+    const reportTypeModal = document.getElementById('reportTypeModal');
+    if (reportTypeModal) {
+        reportTypeModal.addEventListener('change', function() {
+            const riderGroup = document.getElementById('reportRiderSelectGroup');
+            if (riderGroup) {
+                riderGroup.style.display = (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report') ? 'block' : 'none';
+            }
+        });
+    }
+
     const generateRiderReportBtn = document.getElementById('generateRiderReportBtn');
     if (generateRiderReportBtn) generateRiderReportBtn.addEventListener('click', loadRiderReports);
 
+    // Setup period filters and initialize defaults
+    setupPeriodFilters();
+});
     const generateStoreReportBtn = document.getElementById('generateStoreReportBtn');
     if (generateStoreReportBtn) generateStoreReportBtn.addEventListener('click', loadStoreReports);
 
@@ -2027,46 +2198,111 @@ async function populateReportFilters() {
     }
 }
 
-function setupPeriodFilters() {
-    const setDatesForPeriod = (period, startEl, endEl) => {
-        const today = new Date();
-        let startDate = new Date();
-        let endDate = new Date();
+// Helper to set date inputs based on period
+function setDatesForPeriod(period, startEl, endEl) {
+    const today = new Date();
+    let startDate = new Date();
+    let endDate = new Date();
 
-        switch (period) {
-            case 'daily':
-                startDate = today;
-                endDate = today;
-                break;
-            case 'weekly':
-                startDate.setDate(today.getDate() - today.getDay());
-                endDate.setDate(startDate.getDate() + 6);
-                break;
-            case 'monthly':
-                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-                endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-                break;
-            default:
-                return;
-        }
+    switch (period) {
+        case 'daily':
+        case 'today':
+            startDate = today;
+            endDate = today;
+            break;
+        case 'weekly':
+        case 'week':
+            // Start of week (Sunday)
+            startDate.setDate(today.getDate() - today.getDay());
+            // End date is Today (per user request)
+            endDate = today;
+            break;
+        case 'monthly':
+        case 'month':
+            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+            // End date is Today
+            endDate = today;
+            break;
+        case 'year':
+            startDate = new Date(today.getFullYear(), 0, 1);
+            endDate = today;
+            break;
+        default:
+            return;
+    }
 
-        const formatDate = (date) => {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        };
-        document.getElementById(startEl).value = formatDate(startDate);
-        document.getElementById(endEl).value = formatDate(endDate);
+    const formatDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     };
+    
+    const sEl = document.getElementById(startEl);
+    const eEl = document.getElementById(endEl);
+    if (sEl) sEl.value = formatDate(startDate);
+    if (eEl) eEl.value = formatDate(endDate);
+}
 
+function initializeDateDefaults() {
+    // 1. Initialize Period Selectors
+    const periods = [
+        { periodId: 'riderReportPeriod', startId: 'riderReportStartDate', endId: 'riderReportEndDate' },
+        { periodId: 'storeReportPeriod', startId: 'storeReportStartDate', endId: 'storeReportEndDate' }
+    ];
+    
+    periods.forEach(p => {
+        const el = document.getElementById(p.periodId);
+        if (el && el.value && el.value !== 'custom') {
+            setDatesForPeriod(el.value, p.startId, p.endId);
+        }
+    });
+
+    // 2. Initialize Standalone Date Filters (Default to Month/Today if empty)
+    const defaults = [
+        { startId: 'filterStartDate', endId: 'filterEndDate', type: 'month' },
+        { startId: 'paymentStartDate', endId: 'paymentEndDate', type: 'month' },
+        { startId: 'jnvDate', type: 'today' },
+        { startId: 'reportStartDate', endId: 'reportEndDate', type: 'month' },
+        { startId: 'reportPeriodFrom', endId: 'reportPeriodTo', type: 'month' },
+        { startId: 'periodFrom', endId: 'periodTo', type: 'month' },
+        // Fallbacks if period selector didn't set them (or doesn't exist)
+        { startId: 'riderReportStartDate', endId: 'riderReportEndDate', type: 'month' },
+        { startId: 'storeReportStartDate', endId: 'storeReportEndDate', type: 'month' }
+    ];
+
+    defaults.forEach(d => {
+        if (d.type === 'today') {
+            const el = document.getElementById(d.startId);
+            if (el && !el.value) {
+                el.value = new Date().toISOString().split('T')[0];
+            }
+        } else {
+            const s = document.getElementById(d.startId);
+            const e = document.getElementById(d.endId);
+            // Only set if both exist and start is empty
+            if (s && e && !s.value) {
+                setDatesForPeriod(d.type === 'month' ? 'monthly' : 'daily', d.startId, d.endId);
+            }
+        }
+    });
+}
+
+function setupPeriodFilters() {
     document.getElementById('riderReportPeriod')?.addEventListener('change', function() {
-        setDatesForPeriod(this.value, 'riderReportStartDate', 'riderReportEndDate');
+        if (this.value !== 'custom') {
+            setDatesForPeriod(this.value, 'riderReportStartDate', 'riderReportEndDate');
+        }
     });
 
     document.getElementById('storeReportPeriod')?.addEventListener('change', function() {
-        setDatesForPeriod(this.value, 'storeReportStartDate', 'storeReportEndDate');
+        if (this.value !== 'custom') {
+            setDatesForPeriod(this.value, 'storeReportStartDate', 'storeReportEndDate');
+        }
     });
+    
+    // Initialize defaults on load
+    initializeDateDefaults();
 }
 
 async function loadRiderReports() {

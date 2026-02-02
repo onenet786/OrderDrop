@@ -1282,4 +1282,17 @@ The financial management system is designed with:
 - **Flexibility**: Can handle various payment methods and entity types
 - **Scalability**: JSON fields for storing complex data (reports)
 
+---
+
+## 9. Reports Guide
+
+### Generating Reports
+1. Go to the **Financial** dropdown in the navigation menu.
+2. Select **Financial Reports**.
+3. Click **Generate New Report**.
+4. Select the report type from the dropdown (e.g., Rider Fuel Report).
+5. (Optional) For Rider Fuel Reports, select a specific Rider.
+6. Choose your **Date Range** and click **Generate Report**.
+7. The report will appear in the list. Click the **View** icon to see details or the **Download** icon to get the CSV.
+
 Good luck with development! Refer to this guide whenever adding new features or fixing bugs.

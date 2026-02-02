@@ -1606,6 +1606,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
             // -Cash Collected (Rider owes Company)
             const isCash = order.payment_method === 'cash';
             const cashCollected = isCash ? parseFloat(order.total_amount || 0) : 0;
+            const riderDrAmount = cashCollected;
             
             // Get or Create Wallet
             const [wallets] = await req.db.execute(

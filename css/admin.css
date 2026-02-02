@@ -249,7 +249,8 @@ button {
   box-shadow: 4px 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-.nav-menu li.dropdown:hover .dropdown-menu {
+.nav-menu li.dropdown:hover .dropdown-menu,
+.nav-menu li.dropdown.open .dropdown-menu {
   display: block;
   animation: slideInRight 0.2s ease;
 }

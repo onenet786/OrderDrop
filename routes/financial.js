@@ -284,7 +284,7 @@ router.get('/transactions', async (req, res) => {
 router.post('/transactions', [
     body('transaction_type').isIn(['income', 'expense', 'settlement', 'refund', 'adjustment']),
     body('amount').isFloat({ min: 0.01 }),
-    body('payment_method').isIn(['cash', 'card', 'bank_transfer', 'wallet', 'check']),
+    body('payment_method').isIn(['cash', 'card', 'bank_transfer', 'wallet', 'cheque']),
     body('description').optional().trim()
 ], async (req, res) => {
     try {
@@ -353,7 +353,7 @@ router.get('/payment-vouchers', async (req, res) => {
             if (payment_method === 'cash') {
                 whereClause += ' AND payment_method = \'cash\'';
             } else if (payment_method === 'bank') {
-                whereClause += ' AND (payment_method = \'bank_transfer\' OR payment_method = \'check\')';
+                whereClause += ' AND (payment_method = \'bank_transfer\' OR payment_method = \'cheque\')';
             }
         }
 
@@ -428,7 +428,7 @@ router.post('/payment-vouchers', [
     body('payee_name').trim().notEmpty(),
     body('payee_type').isIn(['store', 'rider', 'vendor', 'employee', 'expense', 'other']),
     body('amount').isFloat({ min: 0.01 }),
-    body('payment_method').isIn(['cash', 'check', 'bank_transfer']),
+    body('payment_method').isIn(['cash', 'cheque', 'bank_transfer']),
     body('purpose').optional().trim()
 ], async (req, res) => {
     try {
@@ -441,15 +441,15 @@ router.post('/payment-vouchers', [
             });
         }
 
-        const { payee_name, payee_type, payee_id, amount, purpose, description, payment_method, check_number, bank_details } = req.body;
+        const { payee_name, payee_type, payee_id, amount, purpose, description, payment_method, cheque_number, bank_details } = req.body;
         const voucher_number = generateVoucherNumber('CPV');
         const voucher_date = new Date().toISOString().split('T')[0];
 
         const [result] = await req.db.execute(
             `INSERT INTO cash_payment_vouchers 
-             (voucher_number, voucher_date, payee_name, payee_type, payee_id, amount, purpose, description, payment_method, check_number, bank_details, prepared_by, status)
+             (voucher_number, voucher_date, payee_name, payee_type, payee_id, amount, purpose, description, payment_method, cheque_number, bank_details, prepared_by, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')`,
-            [voucher_number, voucher_date, payee_name, payee_type, payee_id || null, amount, purpose || null, description || null, payment_method, check_number || null, bank_details || null, req.user.id]
+            [voucher_number, voucher_date, payee_name, payee_type, payee_id || null, amount, purpose || null, description || null, payment_method, cheque_number || null, bank_details || null, req.user.id]
         );
 
         res.status(201).json({
@@ -651,7 +651,7 @@ router.get('/receipt-vouchers', async (req, res) => {
             if (payment_method === 'cash') {
                 whereClause += ' AND payment_method = \'cash\'';
             } else if (payment_method === 'bank') {
-                whereClause += ' AND (payment_method = \'bank_transfer\' OR payment_method = \'check\')';
+                whereClause += ' AND (payment_method = \'bank_transfer\' OR payment_method = \'cheque\')';
             }
         }
 
@@ -693,7 +693,7 @@ router.post('/receipt-vouchers', [
     body('payer_name').trim().notEmpty(),
     body('payer_type').isIn(['customer', 'store', 'rider', 'vendor', 'employee', 'expense', 'other']),
     body('amount').isFloat({ min: 0.01 }),
-    body('payment_method').isIn(['cash', 'check', 'bank_transfer']),
+    body('payment_method').isIn(['cash', 'cheque', 'bank_transfer']),
     body('description').optional().trim()
 ], async (req, res) => {
     try {
@@ -706,15 +706,15 @@ router.post('/receipt-vouchers', [
             });
         }
 
-        const { payer_name, payer_type, payer_id, amount, description, details, payment_method, check_number, bank_details } = req.body;
+        const { payer_name, payer_type, payer_id, amount, description, details, payment_method, cheque_number, bank_details } = req.body;
         const voucher_number = generateVoucherNumber('CRV');
         const voucher_date = new Date().toISOString().split('T')[0];
 
         const [result] = await req.db.execute(
             `INSERT INTO cash_receipt_vouchers 
-             (voucher_number, voucher_date, payer_name, payer_type, payer_id, amount, description, details, payment_method, check_number, bank_details, prepared_by, status)
+             (voucher_number, voucher_date, payer_name, payer_type, payer_id, amount, description, details, payment_method, cheque_number, bank_details, prepared_by, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')`,
-            [voucher_number, voucher_date, payer_name, payer_type, payer_id || null, amount, description || null, details || null, payment_method, check_number || null, bank_details || null, req.user.id]
+            [voucher_number, voucher_date, payer_name, payer_type, payer_id || null, amount, description || null, details || null, payment_method, cheque_number || null, bank_details || null, req.user.id]
         );
 
         res.status(201).json({
@@ -1295,7 +1295,7 @@ router.get('/store-settlements', async (req, res) => {
 router.post('/store-settlements', [
     body('store_id').isInt({ min: 1 }),
     body('net_amount').isFloat({ min: 0 }),
-    body('payment_method').isIn(['cash', 'check', 'bank_transfer'])
+    body('payment_method').isIn(['cash', 'cheque', 'bank_transfer'])
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -1511,7 +1511,7 @@ router.get('/expenses', async (req, res) => {
 router.post('/expenses', [
     body('category').trim().notEmpty(),
     body('amount').isFloat({ min: 0.01 }),
-    body('payment_method').isIn(['cash', 'card', 'check', 'bank_transfer']),
+    body('payment_method').isIn(['cash', 'card', 'cheque', 'bank_transfer']),
     body('description').optional().trim()
 ], async (req, res) => {
     try {
@@ -1695,9 +1695,10 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'custom']),
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'custom']),
     body('period_from').optional().isISO8601(),
-    body('period_to').optional().isISO8601()
+    body('period_to').optional().isISO8601(),
+    body('rider_id').optional().toInt()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -1709,8 +1710,46 @@ router.post('/reports/generate', [
             });
         }
 
-        const { report_type, period_from, period_to } = req.body;
-        const report_number = generateVoucherNumber('RPT');
+        const { report_type, period_from, period_to, rider_id } = req.body;
+        
+        let report_number;
+        if (report_type === 'rider_cash_report' || report_type === 'rider_fuel_report') {
+            const prefix = report_type === 'rider_cash_report' ? 'RCR' : 'RFR';
+            const today = new Date();
+            const day = String(today.getDate()).padStart(2, '0');
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const month = monthNames[today.getMonth()];
+            const year = today.getFullYear();
+            const dateStr = `${day}${month}${year}`;
+            
+            const searchPattern = `${prefix}-${dateStr}-%`;
+            const [lastReports] = await req.db.execute(
+                `SELECT report_number FROM financial_reports 
+                 WHERE report_number LIKE ? 
+                 ORDER BY id DESC LIMIT 1`,
+                [searchPattern]
+            );
+            
+            let serial = 1;
+            if (lastReports.length > 0) {
+                const lastNum = lastReports[0].report_number;
+                const parts = lastNum.split('-');
+                if (parts.length === 3) {
+                    serial = parseInt(parts[2]) + 1;
+                }
+            }
+            report_number = `${prefix}-${dateStr}-${String(serial).padStart(4, '0')}`;
+        } else {
+            report_number = generateVoucherNumber('RPT');
+        }
+
+        let riderName = null;
+        if (rider_id) {
+            const [riders] = await req.db.execute('SELECT first_name, last_name FROM riders WHERE id = ?', [rider_id]);
+            if (riders.length > 0) {
+                riderName = `${riders[0].first_name} ${riders[0].last_name}`;
+            }
+        }
 
         let reportData = {};
         let total_income = 0, total_expense = 0, total_settlements = 0, total_refunds = 0, total_adjustments = 0;
@@ -1737,25 +1776,36 @@ router.post('/reports/generate', [
 
         if (report_type === 'rider_cash_report') {
             const riderDateFilter = period_from && period_to ? 'AND movement_date BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND rcm.rider_id = ?' : '';
+            
+            const params = [];
+            if (period_from && period_to) {
+                params.push(period_from, period_to);
+            }
+            if (rider_id) {
+                params.push(rider_id);
+            }
+
             const [movements] = await req.db.execute(
                 `SELECT rcm.*, r.first_name, r.last_name 
                  FROM rider_cash_movements rcm
                  JOIN riders r ON rcm.rider_id = r.id
-                 WHERE 1=1 ${riderDateFilter}
+                 WHERE 1=1 ${riderDateFilter} ${riderFilter}
                  ORDER BY movement_date DESC`,
-                dateParams
+                params
             );
             
             const [summary] = await req.db.execute(
                 `SELECT movement_type, SUM(amount) as total 
-                 FROM rider_cash_movements 
-                 WHERE 1=1 ${riderDateFilter} 
+                 FROM rider_cash_movements rcm
+                 WHERE 1=1 ${riderDateFilter} ${riderFilter}
                  GROUP BY movement_type`,
-                dateParams
+                params
             );
 
             reportData = {
                 type: 'rider_cash',
+                rider_name: riderName,
                 movements,
                 summary: summary.reduce((acc, curr) => {
                     acc[curr.movement_type] = curr.total;
@@ -1812,6 +1862,41 @@ router.post('/reports/generate', [
                     acc.total_profit += parseFloat(curr.estimated_profit || 0);
                     return acc;
                 }, { total_sales: 0, total_cost: 0, total_profit: 0 })
+            };
+        } else if (report_type === 'rider_fuel_report') {
+            const fuelDateFilter = period_from && period_to ? 'AND rfh.entry_date BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND rfh.rider_id = ?' : '';
+            
+            // Build params array carefully
+            const params = [];
+            if (period_from && period_to) {
+                params.push(period_from, period_to);
+            }
+            if (rider_id) {
+                params.push(rider_id);
+            }
+
+            const [fuelEntries] = await req.db.execute(
+                `SELECT rfh.*, r.first_name, r.last_name 
+                 FROM riders_fuel_history rfh
+                 JOIN riders r ON rfh.rider_id = r.id
+                 WHERE 1=1 ${fuelDateFilter} ${riderFilter}
+                 ORDER BY rfh.entry_date DESC`,
+                params
+            );
+
+            const [summary] = await req.db.execute(
+                `SELECT SUM(fuel_cost) as total_cost, SUM(distance) as total_distance
+                 FROM riders_fuel_history rfh
+                 WHERE 1=1 ${fuelDateFilter} ${riderFilter}`,
+                params
+            );
+
+            reportData = {
+                type: 'rider_fuel',
+                rider_name: riderName,
+                entries: fuelEntries,
+                summary: summary[0] || { total_cost: 0, total_distance: 0 }
             };
         } else {
             reportData = {

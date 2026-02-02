@@ -564,13 +564,13 @@ router.get('/:id/fuel-history', authenticateToken, requireAdmin, async (req, res
 
 // Create a fuel history entry for a rider
 router.post('/:id/fuel-history', authenticateToken, requireAdmin, [
-    body('entryDate').optional().isISO8601().withMessage('entryDate must be a valid date'),
-    body('startMeter').optional().trim().isLength({ max: 64 }).withMessage('startMeter must be a short string'),
-    body('endMeter').optional().trim().isLength({ max: 64 }).withMessage('endMeter must be a short string'),
-    body('distance').optional().isNumeric().withMessage('distance must be numeric'),
-    body('petrolRate').optional().isNumeric().withMessage('petrolRate must be numeric'),
-    body('fuelCost').optional().isNumeric().withMessage('fuelCost must be numeric'),
-    body('notes').optional().trim()
+    body('entryDate').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('entryDate must be a valid date'),
+    body('startMeter').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 64 }).withMessage('startMeter must be a short string'),
+    body('endMeter').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 64 }).withMessage('endMeter must be a short string'),
+    body('distance').optional({ nullable: true, checkFalsy: true }).isNumeric().withMessage('distance must be numeric'),
+    body('petrolRate').optional({ nullable: true, checkFalsy: true }).isNumeric().withMessage('petrolRate must be numeric'),
+    body('fuelCost').optional({ nullable: true, checkFalsy: true }).isNumeric().withMessage('fuelCost must be numeric'),
+    body('notes').optional({ nullable: true, checkFalsy: true }).trim()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -592,11 +592,14 @@ router.post('/:id/fuel-history', authenticateToken, requireAdmin, [
         const sm = (startMeter !== undefined && startMeter !== null && startMeter !== '') ? startMeter : null;
         const em = (endMeter !== undefined && endMeter !== null && endMeter !== '') ? endMeter : null;
 
-        // Determine fuel_cost: prefer provided fuelCost; otherwise leave NULL
+        // Determine fuel_cost: prefer provided fuelCost; otherwise calculate if possible
         let fuel_cost = null;
         const fcp = (fuelCostProvided !== undefined && fuelCostProvided !== null && fuelCostProvided !== '') ? parseFloat(fuelCostProvided) : null;
         if (fcp !== null && Number.isFinite(fcp)) {
-            fuel_cost = Math.round(fcp * 100) / 100;
+            fuel_cost = Math.round(fcp); // Round to integer as requested
+        } else if (dist !== null && pr !== null) {
+             // Formula: (Distance / 45) * Rate
+             fuel_cost = Math.round((dist / 45) * pr); // Round to integer
         }
 
         // Build an INSERT dynamically using only columns that exist in the actual DB table.
