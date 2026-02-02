@@ -397,10 +397,70 @@ async function loadFinancialDashboard() {
             document.getElementById('paymentVouchersAmount').textContent = `₨ ${parseFloat(data.stats.paymentVouchers).toFixed(2)}`;
             document.getElementById('receiptVouchersAmount').textContent = `₨ ${parseFloat(data.stats.receiptVouchers).toFixed(2)}`;
             document.getElementById('totalRiderCashAmount').textContent = `₨ ${parseFloat(data.stats.riderCashSubmitted).toFixed(2)}`;
+            if (document.getElementById('cashInHandAmount')) {
+                document.getElementById('cashInHandAmount').textContent = `₨ ${parseFloat(data.stats.cashInHand).toFixed(2)}`;
+            }
         }
     } catch (error) {
         console.error('Error loading financial dashboard:', error);
         showError('Dashboard Error', 'Failed to load financial dashboard');
+    }
+}
+
+function showCashLedger() {
+    loadCashLedger();
+    openModal('cashLedgerModal');
+}
+
+async function loadCashLedger() {
+    try {
+        const period = document.getElementById('ledgerPeriod')?.value || 'month';
+        const response = await fetch(`${API_BASE}/api/financial/cash-ledger?period=${period}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const tbody = document.getElementById('cashLedgerBody');
+            tbody.innerHTML = '';
+            let total = 0;
+
+            data.transactions.forEach(t => {
+                const row = document.createElement('tr');
+                const date = new Date(t.created_at).toLocaleString();
+                const amount = parseFloat(t.amount);
+                
+                // Determine if amount should be displayed as positive or negative based on type
+                let displayAmount = amount;
+                let amountClass = 'text-success'; // Green for incoming
+                
+                if (['expense', 'settlement', 'refund'].includes(t.transaction_type)) {
+                    displayAmount = -amount;
+                    amountClass = 'text-danger'; // Red for outgoing
+                }
+                
+                total += displayAmount;
+
+                row.innerHTML = `
+                    <td>${date}</td>
+                    <td>${t.description || '-'}</td>
+                    <td><span class="badge badge-${t.transaction_type}">${t.transaction_type}</span></td>
+                    <td>${t.category || '-'}</td>
+                    <td class="${amountClass}" style="font-weight:bold">₨ ${displayAmount.toFixed(2)}</td>
+                    <td>${t.created_by_name || '-'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            if (data.transactions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 2rem;">No cash transactions found for this period</td></tr>';
+            }
+            
+            document.getElementById('ledgerTotal').textContent = `₨ ${total.toFixed(2)}`;
+        }
+    } catch (error) {
+        console.error('Error loading cash ledger:', error);
+        showError('Load Error', 'Failed to load cash ledger');
     }
 }
 

@@ -106,6 +106,23 @@ router.get('/dashboard', async (req, res) => {
             riderCashParams
         );
 
+        const [cashInHandResult] = await req.db.execute(`
+            SELECT 
+                SUM(CASE 
+                    WHEN transaction_type = 'income' THEN amount 
+                    WHEN transaction_type = 'adjustment' AND category = 'rider_cash' THEN amount 
+                    WHEN transaction_type = 'adjustment' AND category = 'receipt' THEN amount 
+                    WHEN transaction_type = 'expense' THEN -amount 
+                    WHEN transaction_type = 'settlement' THEN -amount 
+                    WHEN transaction_type = 'refund' THEN -amount 
+                    ELSE 0 
+                END) as total
+            FROM financial_transactions 
+            WHERE payment_method = 'cash' 
+            AND status = 'completed'
+            AND category != 'rider_receivable'
+        `);
+
         const stats = {
             income: 0,
             expense: 0,
@@ -115,7 +132,8 @@ router.get('/dashboard', async (req, res) => {
             paymentVouchers: parseFloat(paymentVouchers[0]?.total || 0),
             receiptVouchers: parseFloat(receiptVouchers[0]?.total || 0),
             riderCashSubmitted: 0,
-            riderCashAdvance: 0
+            riderCashAdvance: 0,
+            cashInHand: parseFloat(cashInHandResult[0]?.total || 0)
         };
 
         transactions.forEach(t => {
@@ -144,6 +162,72 @@ router.get('/dashboard', async (req, res) => {
             message: 'Failed to fetch dashboard data',
             error: error.message
         });
+    }
+});
+
+router.get('/cash-ledger', async (req, res) => {
+    try {
+        const { period = 'month', page = 1, limit = 20 } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        
+        let dateFilter = '';
+        let params = [];
+        const today = new Date();
+
+        if (period === 'today') {
+            const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            dateFilter = 'AND DATE(ft.created_at) = DATE(?)';
+            params.push(startOfDay.toISOString().split('T')[0]);
+        } else if (period === 'week') {
+            const startOfWeek = new Date(today);
+            startOfWeek.setDate(today.getDate() - today.getDay());
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(startOfWeek.getDate() + 7);
+            dateFilter = 'AND ft.created_at >= ? AND ft.created_at < ?';
+            params.push(startOfWeek.toISOString(), endOfWeek.toISOString());
+        } else if (period === 'month') {
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            dateFilter = 'AND YEAR(ft.created_at) = ? AND MONTH(ft.created_at) = ?';
+            params.push(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1);
+        } else if (period === 'year') {
+            dateFilter = 'AND YEAR(ft.created_at) = ?';
+            params.push(today.getFullYear());
+        }
+
+        const query = `
+            SELECT ft.*, cu.first_name as created_by_name
+            FROM financial_transactions ft
+            LEFT JOIN users cu ON ft.created_by = cu.id
+            WHERE ft.payment_method = 'cash' 
+            AND ft.status = 'completed'
+            AND ft.category != 'rider_receivable'
+            ${dateFilter}
+            ORDER BY ft.created_at DESC
+            LIMIT ? OFFSET ?
+        `;
+
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM financial_transactions ft
+            WHERE ft.payment_method = 'cash' 
+            AND ft.status = 'completed'
+            AND ft.category != 'rider_receivable'
+            ${dateFilter}
+        `;
+
+        const [transactions] = await req.db.execute(query, [...params, parseInt(limit), offset]);
+        const [countResult] = await req.db.execute(countQuery, params);
+
+        res.json({
+            success: true,
+            transactions,
+            total: countResult[0]?.total || 0,
+            page: parseInt(page),
+            limit: parseInt(limit)
+        });
+    } catch (error) {
+        console.error('Error fetching cash ledger:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch cash ledger', error: error.message });
     }
 });
 

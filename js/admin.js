@@ -307,6 +307,21 @@ function initializeAdmin() {
     tabLinks.forEach(link => {
         link.addEventListener('click', function(e) {
             e.preventDefault();
+            
+            // Close any open dropdowns
+            document.querySelectorAll('.nav-menu .dropdown.open').forEach(d => {
+                d.classList.remove('open');
+                const menu = d.querySelector('.dropdown-menu');
+                if (menu) {
+                    menu.style.position = '';
+                    menu.style.left = '';
+                    menu.style.top = '';
+                    menu.style.zIndex = '';
+                    menu.style.maxHeight = '';
+                    menu.style.overflow = '';
+                }
+            });
+
             switchTab(this.dataset.tab);
         });
     });

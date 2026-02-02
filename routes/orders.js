@@ -1604,7 +1604,6 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
             // Balance = What Company Owes Rider.
             // +Delivery Fee (Company owes Rider)
             // -Cash Collected (Rider owes Company)
-            const deliveryFee = parseFloat(order.delivery_fee || 0);
             const isCash = order.payment_method === 'cash';
             const cashCollected = isCash ? parseFloat(order.total_amount || 0) : 0;
             
