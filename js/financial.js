@@ -2113,7 +2113,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Setup period filters and initialize defaults
     setupPeriodFilters();
-});
+
     const generateStoreReportBtn = document.getElementById('generateStoreReportBtn');
     if (generateStoreReportBtn) generateStoreReportBtn.addEventListener('click', loadStoreReports);
 
