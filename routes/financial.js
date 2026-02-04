@@ -2,8 +2,21 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { recordFinancialTransaction } = require('../utils/dbHelpers');
+const fs = require('fs');
+const path = require('path');
 
 const router = express.Router();
+
+// Helper to log errors to file
+const logDebugError = (error) => {
+    try {
+        const logPath = path.join(__dirname, '..', 'debug_error.log');
+        const msg = `[${new Date().toISOString()}] ${error.message}\n${error.stack}\n\n`;
+        fs.appendFileSync(logPath, msg);
+    } catch (e) {
+        console.error('Failed to write debug log:', e);
+    }
+};
 
 function generateVoucherNumber(prefix, date = new Date()) {
     const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
@@ -428,7 +441,7 @@ router.post('/payment-vouchers', [
     body('payee_name').trim().notEmpty(),
     body('payee_type').isIn(['store', 'rider', 'vendor', 'employee', 'expense', 'other']),
     body('amount').isFloat({ min: 0.01 }),
-    body('payment_method').isIn(['cash', 'cheque', 'bank_transfer']),
+    body('payment_method').isIn(['cash', 'check', 'bank_transfer']),
     body('purpose').optional().trim()
 ], async (req, res) => {
     try {
@@ -441,15 +454,15 @@ router.post('/payment-vouchers', [
             });
         }
 
-        const { payee_name, payee_type, payee_id, amount, purpose, description, payment_method, cheque_number, bank_details } = req.body;
+        const { payee_name, payee_type, payee_id, amount, purpose, description, payment_method, check_number, bank_details } = req.body;
         const voucher_number = generateVoucherNumber('CPV');
         const voucher_date = new Date().toISOString().split('T')[0];
 
         const [result] = await req.db.execute(
             `INSERT INTO cash_payment_vouchers 
-             (voucher_number, voucher_date, payee_name, payee_type, payee_id, amount, purpose, description, payment_method, cheque_number, bank_details, prepared_by, status)
+             (voucher_number, voucher_date, payee_name, payee_type, payee_id, amount, purpose, description, payment_method, check_number, bank_details, prepared_by, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')`,
-            [voucher_number, voucher_date, payee_name, payee_type, payee_id || null, amount, purpose || null, description || null, payment_method, cheque_number || null, bank_details || null, req.user.id]
+            [voucher_number, voucher_date, payee_name, payee_type, payee_id || null, amount, purpose || null, description || null, payment_method, check_number || null, bank_details || null, req.user.id]
         );
 
         res.status(201).json({
@@ -636,22 +649,27 @@ router.put('/payment-vouchers/:id', [
 
 router.get('/receipt-vouchers', async (req, res) => {
     try {
-        const { status, payment_method, page = 1, limit = 20 } = req.query;
+        let { status, payment_method, page = 1, limit = 20 } = req.query;
+        
+        // Handle array parameters (take first item) to prevent SQL errors
+        if (Array.isArray(status)) status = status[0];
+        if (Array.isArray(payment_method)) payment_method = payment_method[0];
+
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         let whereClause = 'WHERE 1=1';
         const params = [];
 
         if (status) {
-            whereClause += ' AND status = ?';
+            whereClause += ' AND crv.status = ?';
             params.push(status);
         }
 
         if (payment_method) {
             if (payment_method === 'cash') {
-                whereClause += ' AND payment_method = \'cash\'';
+                whereClause += ' AND crv.payment_method = \'cash\'';
             } else if (payment_method === 'bank') {
-                whereClause += ' AND (payment_method = \'bank_transfer\' OR payment_method = \'cheque\')';
+                whereClause += ' AND (crv.payment_method = \'bank_transfer\' OR crv.payment_method = \'cheque\')';
             }
         }
 
@@ -668,7 +686,7 @@ router.get('/receipt-vouchers', async (req, res) => {
         );
 
         const [countResult] = await req.db.execute(
-            `SELECT COUNT(*) as total FROM cash_receipt_vouchers ${whereClause}`,
+            `SELECT COUNT(*) as total FROM cash_receipt_vouchers crv ${whereClause}`,
             params
         );
 
@@ -681,6 +699,7 @@ router.get('/receipt-vouchers', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching receipt vouchers:', error);
+        logDebugError(error);
         res.status(500).json({
             success: false,
             message: 'Failed to fetch receipt vouchers',
@@ -706,16 +725,63 @@ router.post('/receipt-vouchers', [
             });
         }
 
-        const { payer_name, payer_type, payer_id, amount, description, details, payment_method, cheque_number, bank_details } = req.body;
+        const { payer_name, payer_type, payer_id, amount, description, details, payment_method } = req.body;
+        // Accept either cheque_number or check_number from client, normalize to one variable
+        const cheque_number = req.body.cheque_number ?? req.body.check_number ?? null;
+        const bank_details = req.body.bank_details ?? null;
         const voucher_number = generateVoucherNumber('CRV');
         const voucher_date = new Date().toISOString().split('T')[0];
 
-        const [result] = await req.db.execute(
-            `INSERT INTO cash_receipt_vouchers 
-             (voucher_number, voucher_date, payer_name, payer_type, payer_id, amount, description, details, payment_method, cheque_number, bank_details, prepared_by, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')`,
-            [voucher_number, voucher_date, payer_name, payer_type, payer_id || null, amount, description || null, details || null, payment_method, cheque_number || null, bank_details || null, req.user.id]
-        );
+        // Try insert with 'cheque_number', fallback to 'check_number' if column not found
+        let result;
+        try {
+            const insertSqlCheque = `
+                INSERT INTO cash_receipt_vouchers 
+                (voucher_number, voucher_date, payer_name, payer_type, payer_id, amount, description, details, payment_method, cheque_number, bank_details, prepared_by, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+            `;
+            const insertParamsCheque = [
+                voucher_number,
+                voucher_date,
+                payer_name,
+                payer_type,
+                payer_id || null,
+                amount,
+                description || null,
+                details || null,
+                payment_method,
+                cheque_number || null,
+                bank_details || null,
+                req.user.id
+            ];
+            [result] = await req.db.execute(insertSqlCheque, insertParamsCheque);
+        } catch (e) {
+            const msg = e && e.message ? e.message.toLowerCase() : '';
+            if (msg.includes('unknown column') && msg.includes('cheque_number')) {
+                const insertSqlCheck = `
+                    INSERT INTO cash_receipt_vouchers 
+                    (voucher_number, voucher_date, payer_name, payer_type, payer_id, amount, description, details, payment_method, check_number, bank_details, prepared_by, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+                `;
+                const insertParamsCheck = [
+                    voucher_number,
+                    voucher_date,
+                    payer_name,
+                    payer_type,
+                    payer_id || null,
+                    amount,
+                    description || null,
+                    details || null,
+                    payment_method,
+                    cheque_number || null,
+                    bank_details || null,
+                    req.user.id
+                ];
+                [result] = await req.db.execute(insertSqlCheck, insertParamsCheck);
+            } else {
+                throw e;
+            }
+        }
 
         res.status(201).json({
             success: true,
@@ -727,6 +793,7 @@ router.post('/receipt-vouchers', [
         });
     } catch (error) {
         console.error('Error creating receipt voucher:', error);
+        logDebugError(error);
         res.status(500).json({
             success: false,
             message: 'Failed to create receipt voucher',
@@ -1954,6 +2021,33 @@ router.post('/reports/generate', [
     }
 });
 
+router.delete('/reports/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [result] = await req.db.execute('DELETE FROM financial_reports WHERE id = ?', [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Report deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error deleting report:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete report',
+            error: error.message
+        });
+    }
+});
+
 // ===== CUSTOM REPORTS =====
 
 // Rider Report
@@ -2557,5 +2651,32 @@ async function recordUserWalletTransaction(db, userId, type, amount, description
 
     return { walletId: wallet.id, newBalance };
 }
+
+router.delete('/reports/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [result] = await req.db.execute('DELETE FROM financial_reports WHERE id = ?', [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Report not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Report deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error deleting report:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete report',
+            error: error.message
+        });
+    }
+});
 
 module.exports = router;

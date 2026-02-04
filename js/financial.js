@@ -330,42 +330,49 @@ function initializeFinancialForms() {
 
     document.getElementById('paymentVoucherForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (typeof validateForm === 'function' && !validateForm('paymentVoucherForm')) return;
         await submitPaymentVoucher();
     });
     trackFormChanges('paymentVoucherForm', 'paymentVoucherModal');
     
     document.getElementById('receiptVoucherForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (typeof validateForm === 'function' && !validateForm('receiptVoucherForm')) return;
         await submitReceiptVoucher();
     });
     trackFormChanges('receiptVoucherForm', 'receiptVoucherModal');
     
     document.getElementById('transactionForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (typeof validateForm === 'function' && !validateForm('transactionForm')) return;
         await submitTransaction();
     });
     trackFormChanges('transactionForm', 'transactionModal');
     
     document.getElementById('riderCashForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (typeof validateForm === 'function' && !validateForm('riderCashForm')) return;
         await submitRiderCash();
     });
     trackFormChanges('riderCashForm', 'riderCashModal');
     
     document.getElementById('storeSettlementForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (typeof validateForm === 'function' && !validateForm('storeSettlementForm')) return;
         await submitStoreSettlement();
     });
     trackFormChanges('storeSettlementForm', 'storeSettlementModal');
     
     document.getElementById('expenseForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (typeof validateForm === 'function' && !validateForm('expenseForm')) return;
         await submitExpense();
     });
     trackFormChanges('expenseForm', 'expenseModal');
     
     document.getElementById('journalVoucherForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (typeof validateForm === 'function' && !validateForm('journalVoucherForm')) return;
         await submitJournalVoucher();
     });
     trackFormChanges('journalVoucherForm', 'journalVoucherModal');
@@ -935,7 +942,8 @@ function displayReports(reports) {
             <td>${created}</td>
             <td>
                 <button class="btn-small btn-info" onclick="viewReport(${r.id})">View</button>
-                <button class="btn-small btn-secondary" onclick="viewReport(${r.id})">Download</button>
+                <button class="btn-small btn-secondary" onclick="generatePDF(${r.id})">Download</button>
+                <button class="btn-small btn-danger" onclick="deleteReport(${r.id})" style="background-color: #dc3545; color: white; margin-left: 4px;">Delete</button>
             </td>
         `;
         tbody.appendChild(row);
@@ -943,6 +951,32 @@ function displayReports(reports) {
 
     if (reports.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 2rem;">No reports found</td></tr>';
+    }
+}
+
+async function deleteReport(id) {
+    if (!confirm('Are you sure you want to delete this report? This action cannot be undone.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/reports/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            }
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Report deleted successfully');
+            loadFinancialReports();
+        } else {
+            showError('Error', data.message);
+        }
+    } catch (error) {
+        console.error('Error deleting report:', error);
+        showError('Error', 'Failed to delete report');
     }
 }
 
@@ -997,7 +1031,7 @@ async function submitPaymentVoucher() {
         purpose,
         description: '',
         payment_method: paymentMethod,
-        cheque_number: null,
+        check_number: null,
         bank_details: null
     };
 
@@ -1346,7 +1380,11 @@ async function submitRiderCash() {
 
 async function createStoreSettlement() {
     const form = document.getElementById('storeSettlementForm');
-    if (form) form.reset();
+    if (form) {
+        form.reset();
+        // Set default dates for the settlement period
+        setDatesForPeriod('month', 'periodFrom', 'periodTo');
+    }
     const idInput = document.getElementById('storeSettlementId');
     if (idInput) idInput.value = '';
 
@@ -1622,6 +1660,10 @@ async function approveExpense(id) {
 
 function generateFinancialReport() {
     document.getElementById('generateReportForm').reset();
+    
+    // Set default dates for the report period
+    setDatesForPeriod('month', 'reportPeriodFrom', 'reportPeriodTo');
+
     const reportType = document.getElementById('reportTypeFilter')?.value || 'monthly_summary';
     document.getElementById('reportTypeModal').value = reportType;
     populateReportRidersDropdown(); // Populate riders when modal opens
@@ -2240,8 +2282,14 @@ function setDatesForPeriod(period, startEl, endEl) {
     
     const sEl = document.getElementById(startEl);
     const eEl = document.getElementById(endEl);
-    if (sEl) sEl.value = formatDate(startDate);
-    if (eEl) eEl.value = formatDate(endDate);
+    if (sEl) {
+        sEl.value = formatDate(startDate);
+        sEl.defaultValue = sEl.value;
+    }
+    if (eEl) {
+        eEl.value = formatDate(endDate);
+        eEl.defaultValue = eEl.value;
+    }
 }
 
 function initializeDateDefaults() {

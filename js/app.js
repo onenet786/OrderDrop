@@ -1467,15 +1467,38 @@ function validateForm(formId) {
     "input[required], select[required], textarea[required]"
   );
   let isValid = true;
+  let missingFields = [];
 
   inputs.forEach((input) => {
+    // Skip hidden inputs (type="hidden")
+    if (input.type === 'hidden') return;
+
+    // Skip visually hidden inputs
+    const style = window.getComputedStyle(input);
+    if (style.display === 'none' || style.visibility === 'hidden') return;
+    
+    // Skip inputs inside hidden parents
+    if (input.offsetParent === null && style.position !== 'fixed') return;
+
     if (!input.value.trim()) {
       input.style.borderColor = "red";
       isValid = false;
+      // Get field label or name for error message
+      let fieldName = input.getAttribute('name') || input.id;
+      const label = form.querySelector(`label[for="${input.id}"]`);
+      if (label) fieldName = label.textContent;
+      missingFields.push(fieldName);
     } else {
       input.style.borderColor = "#ddd";
     }
   });
+
+  if (!isValid && missingFields.length > 0) {
+      // Store missing fields in a data attribute or global to be used by the caller if needed, 
+      // or just rely on the side effect of red borders.
+      // We will update the showWarning call in the event listener to include this info.
+      form.dataset.missingFields = missingFields.join(", ");
+  }
 
   return isValid;
 }
