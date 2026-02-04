@@ -1667,6 +1667,7 @@ function generateFinancialReport() {
     const reportType = document.getElementById('reportTypeFilter')?.value || 'monthly_summary';
     document.getElementById('reportTypeModal').value = reportType;
     populateReportRidersDropdown(); // Populate riders when modal opens
+    populateReportStoresDropdown(); // Populate stores when modal opens
     
     // Trigger change event to set initial visibility
     const reportTypeModal = document.getElementById('reportTypeModal');
@@ -1699,11 +1700,34 @@ async function populateReportRidersDropdown() {
     }
 }
 
+async function populateReportStoresDropdown() {
+    try {
+        const response = await fetch(`${API_BASE}/api/stores?admin=1`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        
+        const select = document.getElementById('reportStoreSelect');
+        if (select && data.stores) {
+            select.innerHTML = '<option value="">All Stores</option>';
+            data.stores.forEach(store => {
+                const option = document.createElement('option');
+                option.value = store.id;
+                option.textContent = store.name;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error populating report stores dropdown:', error);
+    }
+}
+
 async function submitGenerateReport() {
     const reportType = document.getElementById('reportTypeModal').value;
     const periodFromInput = document.getElementById('reportPeriodFrom').value;
     const periodToInput = document.getElementById('reportPeriodTo').value;
     const riderId = document.getElementById('reportRiderSelect')?.value;
+    const storeId = document.getElementById('reportStoreSelect')?.value;
 
     const payload = {
         report_type: reportType
@@ -1717,6 +1741,9 @@ async function submitGenerateReport() {
     }
     if (riderId && (reportType === 'rider_fuel_report' || reportType === 'rider_cash_report')) {
         payload.rider_id = riderId;
+    }
+    if (storeId && reportType === 'store_financials') {
+        payload.store_id = storeId;
     }
 
     try {
@@ -1764,7 +1791,7 @@ function generatePDF(reportId) {
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Report #: ${report.report_number}`, 14, 32);
-    doc.text(`Type: ${report.report_type.replace(/_/g, ' ').toUpperCase()}`, 14, 37);
+    doc.text(`Type: ${report.description ? report.description.toUpperCase() : report.report_type.replace(/_/g, ' ').toUpperCase()}`, 14, 37);
     doc.text(`Generated: ${new Date(report.created_at).toLocaleString()}`, 14, 42);
     if (report.period_from) {
         doc.text(`Period: ${new Date(report.period_from).toLocaleDateString()} - ${report.period_to ? new Date(report.period_to).toLocaleDateString() : 'Now'}`, 14, 47);
@@ -1818,11 +1845,12 @@ function generatePDF(reportId) {
             doc.text('Store Financials (Cost Analysis)', 14, startY);
             doc.autoTable({
                 startY: startY + 5,
-                head: [['Store Name', 'Total Sales', 'Total Cost', 'Est. Profit']],
+                head: [['Store Name', 'Total Sales', 'Total Cost', 'Total Discount', 'Est. Profit']],
                 body: data.stores.map(s => [
                     s.store_name,
                     `Rs ${parseFloat(s.total_sales).toFixed(2)}`,
                     `Rs ${parseFloat(s.total_cost).toFixed(2)}`,
+                    `Rs ${parseFloat(s.total_discount || 0).toFixed(2)}`,
                     `Rs ${parseFloat(s.estimated_profit).toFixed(2)}`
                 ]),
                 theme: 'grid',
@@ -1890,25 +1918,33 @@ function viewReport(reportId) {
 
     let extraDetails = '';
     if (data && data.type === 'rider_cash') {
-        extraDetails = '<h3>Rider Cash Movements</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Type</th><th>Amount</th></tr></thead><tbody>';
+        extraDetails = '<h3>Rider Cash Movements</h3><div class="report-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Type</th><th>Amount</th></tr></thead><tbody>';
         data.movements.forEach(m => {
             extraDetails += `<tr><td>${m.first_name} ${m.last_name}</td><td>${new Date(m.movement_date).toLocaleDateString()}</td><td>${m.movement_type}</td><td>₨ ${parseFloat(m.amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'store_financials') {
-        extraDetails = '<h3>Store Financials</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Store</th><th>Sales</th><th>Cost</th><th>Profit</th></tr></thead><tbody>';
+        extraDetails = '<h3>Store Financials</h3><div class="report-table-wrapper"><table class="report-detail-table"><thead><tr><th>Store</th><th>Sales</th><th>Cost</th><th>Discount</th><th>Profit</th></tr></thead><tbody>';
         data.stores.forEach(s => {
-            extraDetails += `<tr><td>${s.store_name}</td><td>₨ ${parseFloat(s.total_sales).toFixed(2)}</td><td>₨ ${parseFloat(s.total_cost).toFixed(2)}</td><td>₨ ${parseFloat(s.estimated_profit).toFixed(2)}</td></tr>`;
+            extraDetails += `<tr><td>${s.store_name}</td><td>₨ ${parseFloat(s.total_sales).toFixed(2)}</td><td>₨ ${parseFloat(s.total_cost).toFixed(2)}</td><td>₨ ${parseFloat(s.total_discount || 0).toFixed(2)}</td><td>₨ ${parseFloat(s.estimated_profit).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
+
+        if (data.items && data.items.length > 0) {
+            extraDetails += '<h3 style="margin-top:20px;">Item Breakdown</h3><div class="report-table-wrapper"><table class="report-detail-table"><thead><tr><th>Item</th><th>Qty</th><th>Sales</th><th>Cost</th><th>Discount</th><th>Profit</th></tr></thead><tbody>';
+            data.items.forEach(i => {
+                extraDetails += `<tr><td>${i.item_name}</td><td>${i.total_qty}</td><td>₨ ${parseFloat(i.total_sales).toFixed(2)}</td><td>₨ ${parseFloat(i.total_cost).toFixed(2)}</td><td>₨ ${parseFloat(i.total_discount || 0).toFixed(2)}</td><td>₨ ${parseFloat(i.estimated_profit).toFixed(2)}</td></tr>`;
+            });
+            extraDetails += '</tbody></table></div>';
+        }
     } else if (data && data.type === 'general_voucher') {
-        extraDetails = '<h3>Journal Vouchers</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Voucher #</th><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>';
+        extraDetails = '<h3>Journal Vouchers</h3><div class="report-table-wrapper"><table class="report-detail-table"><thead><tr><th>Voucher #</th><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>';
         data.vouchers.forEach(v => {
             extraDetails += `<tr><td>${v.voucher_number}</td><td>${new Date(v.voucher_date).toLocaleDateString()}</td><td>${v.description || '-'}</td><td>₨ ${parseFloat(v.total_amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'rider_fuel') {
-        extraDetails = '<h3>Rider Fuel History</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Distance</th><th>Cost</th></tr></thead><tbody>';
+        extraDetails = '<h3>Rider Fuel History</h3><div class="report-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Distance</th><th>Cost</th></tr></thead><tbody>';
         if (data.entries) {
             data.entries.forEach(e => {
                 extraDetails += `<tr><td>${e.first_name} ${e.last_name || ''}</td><td>${new Date(e.entry_date).toLocaleDateString()}</td><td>${e.distance} km</td><td>₨ ${parseFloat(e.fuel_cost).toFixed(2)}</td></tr>`;
@@ -1923,7 +1959,7 @@ function viewReport(reportId) {
     const details = `
         <div class="report-summary">
             <strong>Number:</strong> ${report.report_number}<br>
-            <strong>Type:</strong> ${report.report_type.replace(/_/g, ' ')}<br>
+            <strong>Type:</strong> ${report.description || report.report_type.replace(/_/g, ' ')}<br>
             <strong>Period:</strong> ${report.period_from ? new Date(report.period_from).toLocaleDateString() : '-'} to ${report.period_to ? new Date(report.period_to).toLocaleDateString() : '-'}<br>
             <hr>
             <strong>Total Income:</strong> ₨ ${parseFloat(report.total_income).toFixed(2)}<br>
@@ -1956,12 +1992,12 @@ function viewReport(reportId) {
             modal.id = modalId;
             modal.className = 'modal';
             modal.innerHTML = `
-                <div class="modal-content" style="max-width: 800px;">
+                <div class="modal-content" style="max-width: 800px; max-height: 90vh; display: flex; flex-direction: column;">
                     <div class="modal-header">
                         <h3>Report Details</h3>
                         <span class="close" onclick="document.getElementById('${modalId}').classList.remove('show')">&times;</span>
                     </div>
-                    <div class="modal-body" id="${modalId}Body"></div>
+                    <div class="modal-body" id="${modalId}Body" style="overflow-y: auto; flex: 1;"></div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" onclick="document.getElementById('${modalId}').classList.remove('show')">Close</button>
                         <button class="btn btn-primary" id="${modalId}Download">Download PDF</button>
@@ -2146,6 +2182,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const riderGroup = document.getElementById('reportRiderSelectGroup');
             if (riderGroup) {
                 riderGroup.style.display = (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report') ? 'block' : 'none';
+            }
+            const storeGroup = document.getElementById('reportStoreSelectGroup');
+            if (storeGroup) {
+                storeGroup.style.display = (this.value === 'store_financials') ? 'block' : 'none';
             }
         });
     }

@@ -95,6 +95,31 @@ function getMinVariantPrice(variants) {
     return min;
 }
 
+async function ensureProductColumns(db) {
+    try {
+        const columns = [
+            { name: 'discount_type', definition: "ENUM('amount', 'percent') NULL" },
+            { name: 'discount_value', definition: 'DECIMAL(10, 2) NULL' }
+        ];
+
+        for (const col of columns) {
+            try {
+                const [rows] = await db.execute(
+                    'SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                    ['products', col.name]
+                );
+                if (rows && rows[0] && rows[0].cnt === 0) {
+                    await db.execute(`ALTER TABLE products ADD COLUMN ${col.name} ${col.definition}`);
+                }
+            } catch (e) {
+                console.error(`Failed to ensure column ${col.name} in products:`, e);
+            }
+        }
+    } catch (e) {
+        console.error('Error ensuring product columns:', e);
+    }
+}
+
 async function ensureProductSizePricesTable(db) {
     try {
         await db.execute('SELECT 1 FROM product_size_prices LIMIT 1');
@@ -735,6 +760,9 @@ router.post('/', authenticateToken, requireStoreOwner, [
             }
         }
 
+        // Ensure columns exist
+        await ensureProductColumns(req.db);
+
         // If image_url is a remote link, download it into /uploads and use that path
         let meta = null;
         try {
@@ -761,9 +789,9 @@ router.post('/', authenticateToken, requireStoreOwner, [
             if (!meta) meta = await extractImageVarsFromPath(String(image_url || ''));
         } catch (e) { /* ignore */ }
 
-        const insertFields = ['name','description','cost_price','price','image_url','category_id','store_id','stock_quantity'];
-        const insertPlaceholders = ['?','?','?','?','?','?','?','?'];
-        const insertValues = [name, description, derivedCost, roundMoney(normalizedEffectivePrice.value), image_url, category_id, store_id, stock_quantity];
+        const insertFields = ['name','description','cost_price','price','image_url','category_id','store_id','stock_quantity','discount_type','discount_value'];
+        const insertPlaceholders = ['?','?','?','?','?','?','?','?','?','?'];
+        const insertValues = [name, description, derivedCost, roundMoney(normalizedEffectivePrice.value), image_url, category_id, store_id, stock_quantity, discount_type || null, discount_value || null];
         if (!hasRequestedVariants) {
             if (unit_id) { insertFields.push('unit_id'); insertPlaceholders.push('?'); insertValues.push(unit_id); }
             if (size_id) { insertFields.push('size_id'); insertPlaceholders.push('?'); insertValues.push(size_id); }
@@ -945,6 +973,8 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
 
         if (name !== undefined) { updateFields.push('name = ?'); updateValues.push(name); }
         if (description !== undefined) { updateFields.push('description = ?'); updateValues.push(description); }
+        if (discount_type !== undefined) { updateFields.push('discount_type = ?'); updateValues.push(discount_type || null); }
+        if (discount_value !== undefined) { updateFields.push('discount_value = ?'); updateValues.push(discount_value || null); }
         const normalizedCost = normalizeNumber(cost_price);
         const normalizedPrice = normalizeNumber(price);
         const normalizedDiscount = normalizeNumber(discount_value);

@@ -19,7 +19,9 @@ async function ensureOrderItemsSchema(db) {
         { name: 'size_id', definition: 'INT NULL' },
         { name: 'unit_id', definition: 'INT NULL' },
         { name: 'variant_label', definition: 'VARCHAR(255) NULL' },
-        { name: 'store_id', definition: 'INT NULL', constraint: 'FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL' }
+        { name: 'store_id', definition: 'INT NULL', constraint: 'FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL' },
+        { name: 'discount_type', definition: "ENUM('amount', 'percent') NULL" },
+        { name: 'discount_value', definition: 'DECIMAL(10, 2) NULL' }
     ];
 
     for (const col of columns) {
@@ -269,7 +271,7 @@ router.post('/', authenticateToken, async (req, res) => {
             }
 
             const [products] = await req.db.execute(
-                'SELECT id, price, store_id, name, size_id, unit_id FROM products WHERE id = ? AND is_available = true',
+                'SELECT id, price, store_id, name, size_id, unit_id, discount_type, discount_value FROM products WHERE id = ? AND is_available = true',
                 [productId]
             );
 
@@ -332,7 +334,17 @@ router.post('/', authenticateToken, async (req, res) => {
                 }
             }
 
-            preparedItems.push({ productId, quantity, unitPrice, sizeId, unitId, variantLabel, storeId: product.store_id });
+            preparedItems.push({ 
+                productId, 
+                quantity, 
+                unitPrice, 
+                sizeId, 
+                unitId, 
+                variantLabel, 
+                storeId: product.store_id,
+                discount_type: product.discount_type,
+                discount_value: product.discount_value
+            });
             itemsSubtotal += unitPrice * quantity;
         }
 
@@ -448,8 +460,8 @@ router.post('/', authenticateToken, async (req, res) => {
 
         for (let item of preparedItems) {
             await req.db.execute(
-                'INSERT INTO order_items (order_id, product_id, store_id, quantity, price, size_id, unit_id, variant_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [orderId, item.productId, item.storeId, item.quantity, item.unitPrice, item.sizeId, item.unitId, item.variantLabel]
+                'INSERT INTO order_items (order_id, product_id, store_id, quantity, price, size_id, unit_id, variant_label, discount_type, discount_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [orderId, item.productId, item.storeId, item.quantity, item.unitPrice, item.sizeId, item.unitId, item.variantLabel, item.discount_type || null, item.discount_value || null]
             );
         }
 
@@ -1982,7 +1994,7 @@ router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req,
         }
 
         const [products] = await req.db.execute(
-            'SELECT id, price, cost_price, store_id FROM products WHERE id = ? AND is_available = true',
+            'SELECT id, price, cost_price, store_id, discount_type, discount_value FROM products WHERE id = ? AND is_available = true',
             [product_id]
         );
 
@@ -1999,9 +2011,9 @@ router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req,
         const itemStoreId = store_id || order.store_id || product.store_id || null;
 
         const [result] = await req.db.execute(`
-            INSERT INTO order_items (order_id, product_id, quantity, price, store_id)
-            VALUES (?, ?, ?, ?, ?)
-        `, [id, product_id, quantity, price, itemStoreId]);
+            INSERT INTO order_items (order_id, product_id, quantity, price, store_id, discount_type, discount_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [id, product_id, quantity, price, itemStoreId, product.discount_type, product.discount_value]);
 
         const [currentItems] = await req.db.execute(
             'SELECT SUM(quantity * price) as total, COUNT(DISTINCT store_id) as store_count, MAX(store_id) as single_store_id FROM order_items WHERE order_id = ?',

@@ -1765,7 +1765,8 @@ router.post('/reports/generate', [
     body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'custom']),
     body('period_from').optional().isISO8601(),
     body('period_to').optional().isISO8601(),
-    body('rider_id').optional().toInt()
+    body('rider_id').optional().toInt(),
+    body('store_id').optional().toInt()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -1777,38 +1778,46 @@ router.post('/reports/generate', [
             });
         }
 
-        const { report_type, period_from, period_to, rider_id } = req.body;
+        const { report_type, period_from, period_to, rider_id, store_id } = req.body;
         
-        let report_number;
-        if (report_type === 'rider_cash_report' || report_type === 'rider_fuel_report') {
-            const prefix = report_type === 'rider_cash_report' ? 'RCR' : 'RFR';
-            const today = new Date();
-            const day = String(today.getDate()).padStart(2, '0');
-            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-            const month = monthNames[today.getMonth()];
-            const year = today.getFullYear();
-            const dateStr = `${day}${month}${year}`;
-            
-            const searchPattern = `${prefix}-${dateStr}-%`;
-            const [lastReports] = await req.db.execute(
-                `SELECT report_number FROM financial_reports 
-                 WHERE report_number LIKE ? 
-                 ORDER BY id DESC LIMIT 1`,
-                [searchPattern]
-            );
-            
-            let serial = 1;
-            if (lastReports.length > 0) {
-                const lastNum = lastReports[0].report_number;
-                const parts = lastNum.split('-');
-                if (parts.length === 3) {
-                    serial = parseInt(parts[2]) + 1;
-                }
-            }
-            report_number = `${prefix}-${dateStr}-${String(serial).padStart(4, '0')}`;
-        } else {
-            report_number = generateVoucherNumber('RPT');
+        let prefix = 'RPT';
+        switch (report_type) {
+            case 'store_financials': prefix = 'SFR'; break;
+            case 'daily_summary': prefix = 'DSR'; break;
+            case 'weekly_summary': prefix = 'WSR'; break;
+            case 'monthly_summary': prefix = 'MSR'; break;
+            case 'rider_cash_report': prefix = 'RCR'; break;
+            case 'rider_fuel_report': prefix = 'RFR'; break;
+            case 'expense_report': prefix = 'EXR'; break;
+            case 'general_voucher': prefix = 'GVR'; break;
+            case 'store_settlement': prefix = 'SSR'; break;
+            case 'custom': prefix = 'CUS'; break;
         }
+
+        const today = new Date();
+        const day = String(today.getDate()).padStart(2, '0');
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const month = monthNames[today.getMonth()];
+        const year = today.getFullYear();
+        const dateStr = `${day}${month}${year}`;
+        
+        const searchPattern = `${prefix}-${dateStr}-%`;
+        const [lastReports] = await req.db.execute(
+            `SELECT report_number FROM financial_reports 
+             WHERE report_number LIKE ? 
+             ORDER BY id DESC LIMIT 1`,
+            [searchPattern]
+        );
+        
+        let serial = 1;
+        if (lastReports.length > 0) {
+            const lastNum = lastReports[0].report_number;
+            const parts = lastNum.split('-');
+            if (parts.length === 3) {
+                serial = parseInt(parts[2]) + 1;
+            }
+        }
+        report_number = `${prefix}-${dateStr}-${String(serial).padStart(4, '0')}`;
 
         let riderName = null;
         if (rider_id) {
@@ -1905,30 +1914,85 @@ router.post('/reports/generate', [
             };
         } else if (report_type === 'store_financials') {
             const orderDateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const storeFilter = store_id ? 'AND (oi.store_id = ? OR (oi.store_id IS NULL AND p.store_id = ?))' : '';
+            
+            // Adjust params
+            const queryParams = [];
+            if (period_from && period_to) {
+                queryParams.push(period_from, `${period_to} 23:59:59`);
+            }
+            if (store_id) {
+                queryParams.push(store_id, store_id);
+            }
+
             const [financials] = await req.db.execute(
                 `SELECT 
                     s.name as store_name,
                     SUM(oi.quantity * oi.price) as total_sales,
-                    SUM(oi.quantity * p.cost_price) as total_cost,
-                    SUM(oi.quantity * (oi.price - p.cost_price)) as estimated_profit
+                    SUM(oi.quantity * COALESCE(psp.cost_price, p.cost_price)) as total_cost,
+                    SUM(oi.quantity * (oi.price - COALESCE(psp.cost_price, p.cost_price))) as estimated_profit,
+                    SUM(CASE 
+                        WHEN oi.discount_type = 'percent' THEN oi.quantity * oi.price * (oi.discount_value / 100)
+                        WHEN oi.discount_type = 'amount' THEN oi.quantity * oi.discount_value
+                        ELSE 0 
+                    END) as total_discount
                  FROM order_items oi
                  JOIN orders o ON oi.order_id = o.id
                  JOIN products p ON oi.product_id = p.id
-                 JOIN stores s ON oi.store_id = s.id
-                 WHERE o.status = 'delivered' ${orderDateFilter}
+                 LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id 
+                    AND (
+                        (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR 
+                        (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                    )
+                 LEFT JOIN stores s ON COALESCE(oi.store_id, p.store_id) = s.id
+                 WHERE o.status = 'delivered' ${orderDateFilter} ${storeFilter}
                  GROUP BY s.id, s.name`,
-                dateParams
+                queryParams
             );
+
+            // Fetch item-level breakdown for the same filter
+            let itemsBreakdown = [];
+            if (store_id) {
+                 const [items] = await req.db.execute(
+                    `SELECT 
+                        COALESCE(oi.variant_label, p.name) as item_name,
+                        SUM(oi.quantity) as total_qty,
+                        SUM(oi.quantity * oi.price) as total_sales,
+                        SUM(oi.quantity * COALESCE(psp.cost_price, p.cost_price)) as total_cost,
+                        SUM(oi.quantity * (oi.price - COALESCE(psp.cost_price, p.cost_price))) as estimated_profit,
+                        SUM(CASE 
+                            WHEN oi.discount_type = 'percent' THEN oi.quantity * oi.price * (oi.discount_value / 100)
+                            WHEN oi.discount_type = 'amount' THEN oi.quantity * oi.discount_value
+                            ELSE 0 
+                        END) as total_discount
+                     FROM order_items oi
+                     JOIN orders o ON oi.order_id = o.id
+                     JOIN products p ON oi.product_id = p.id
+                     LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id 
+                        AND (
+                            (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR 
+                            (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                        )
+                     WHERE o.status = 'delivered' ${orderDateFilter} 
+                     AND (oi.store_id = ? OR (oi.store_id IS NULL AND p.store_id = ?))
+                     GROUP BY p.id, oi.variant_label
+                     ORDER BY total_sales DESC`,
+                    [...queryParams] // Reuse params including store_id
+                );
+                itemsBreakdown = items;
+            }
 
             reportData = {
                 type: 'store_financials',
                 stores: financials,
+                items: itemsBreakdown,
                 overall: financials.reduce((acc, curr) => {
                     acc.total_sales += parseFloat(curr.total_sales || 0);
                     acc.total_cost += parseFloat(curr.total_cost || 0);
                     acc.total_profit += parseFloat(curr.estimated_profit || 0);
+                    acc.total_discount += parseFloat(curr.total_discount || 0);
                     return acc;
-                }, { total_sales: 0, total_cost: 0, total_profit: 0 })
+                }, { total_sales: 0, total_cost: 0, total_profit: 0, total_discount: 0 })
             };
         } else if (report_type === 'rider_fuel_report') {
             const fuelDateFilter = period_from && period_to ? 'AND rfh.entry_date BETWEEN ? AND ?' : '';
@@ -1981,10 +2045,22 @@ router.post('/reports/generate', [
 
         const net_profit = total_income - total_expense - total_settlements - total_refunds;
 
+        let description = null;
+        if (report_type === 'store_financials') {
+            if (store_id) {
+                const [stores] = await req.db.execute('SELECT name FROM stores WHERE id = ?', [store_id]);
+                if (stores.length > 0) {
+                    description = `Store Financials - ${stores[0].name}`;
+                }
+            } else {
+                description = 'Store Financials - All Stores';
+            }
+        }
+
         const [result] = await req.db.execute(
             `INSERT INTO financial_reports 
-             (report_number, report_type, period_from, period_to, total_income, total_expense, total_commissions, net_profit, data, generated_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (report_number, report_type, period_from, period_to, total_income, total_expense, total_commissions, net_profit, data, generated_by, description)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 report_number, 
                 report_type, 
@@ -1995,7 +2071,8 @@ router.post('/reports/generate', [
                 total_settlements, // Store settlements in total_commissions column
                 net_profit, 
                 JSON.stringify(reportData), 
-                req.user.id
+                req.user.id,
+                description
             ]
         );
 
