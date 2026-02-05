@@ -226,10 +226,37 @@
                 </li>
                 <li>
                   <a
+                    href="admin.html#store-settlements"
+                    class="tab-link"
+                    data-tab="store-settlements"
+                    style="padding-left: 2.5rem; font-size: 0.9em;"
+                    ><i class="fas fa-store"></i> Store Settlements</a
+                  >
+                </li>
+                <li>
+                  <a
+                    href="admin.html#expenses"
+                    class="tab-link"
+                    data-tab="expenses"
+                    style="padding-left: 2.5rem; font-size: 0.9em;"
+                    ><i class="fas fa-receipt"></i> Expenses</a
+                  >
+                </li>
+                <li>
+                  <a
                     href="admin.html#receipt-vouchers"
                     class="tab-link"
                     data-tab="receipt-vouchers"
                     ><i class="fas fa-cash-register"></i> CRV (Cash Receive Voucher)</a
+                  >
+                </li>
+                <li>
+                  <a
+                    href="admin.html#rider-cash"
+                    class="tab-link"
+                    data-tab="rider-cash"
+                    style="padding-left: 2.5rem; font-size: 0.9em;"
+                    ><i class="fas fa-motorcycle"></i> Rider Cash</a
                   >
                 </li>
                 <li>
@@ -682,6 +709,146 @@
                 </tr>
               </thead>
               <tbody id="journalVouchersTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Expenses Tab -->
+        <div id="expenses" class="tab-content">
+          <h2>Expenses</h2>
+          <button class="btn btn-primary" id="addExpenseBtn">
+            Record Expense
+          </button>
+          <div class="filter-controls">
+            <div class="filter-group">
+                <label for="expenseCategoryFilter">Category</label>
+                <select id="expenseCategoryFilter" class="form-control">
+                    <option value="">All Categories</option>
+                    <option value="fuel">Fuel</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="salary">Salary</option>
+                    <option value="marketing">Marketing</option>
+                    <option value="rent">Rent</option>
+                    <option value="utilities">Utilities</option>
+                    <option value="office_supplies">Office Supplies</option>
+                    <option value="software">Software/Tech</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="expenseStatusFilter">Status</label>
+                <select id="expenseStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearExpenseFiltersBtn">Clear</button>
+          </div>
+          <div class="table-container">
+            <table id="expensesTable">
+              <thead>
+                <tr>
+                  <th>Ref #</th>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th>Amount</th>
+                  <th>Vendor</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="expensesTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Rider Cash Tab -->
+        <div id="rider-cash" class="tab-content">
+          <h2>Rider Cash Movements</h2>
+          <button class="btn btn-primary" id="addRiderCashMovementBtn">
+            Add Movement
+          </button>
+          <div class="filter-controls">
+            <div class="filter-group">
+                <label for="riderCashMovementTypeFilter">Type</label>
+                <select id="riderCashMovementTypeFilter" class="form-control">
+                    <option value="">All Types</option>
+                    <option value="cash_collection">Cash Collection</option>
+                    <option value="cash_submission">Cash Submission</option>
+                    <option value="advance">Advance</option>
+                    <option value="settlement">Settlement</option>
+                    <option value="adjustment">Adjustment</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="riderCashStatusFilter">Status</label>
+                <select id="riderCashStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearRiderCashFiltersBtn">Clear</button>
+          </div>
+          <div class="table-container">
+            <table id="riderCashTable">
+              <thead>
+                <tr>
+                  <th>Ref #</th>
+                  <th>Date</th>
+                  <th>Rider</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="riderCashTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Store Settlements Tab -->
+        <div id="store-settlements" class="tab-content">
+          <h2>Store Settlements</h2>
+          <button class="btn btn-primary" id="addStoreSettlementBtn">
+            Create Settlement
+          </button>
+          <div class="filter-controls">
+            <div class="filter-group">
+                <label for="storeSettlementStatusFilter">Status</label>
+                <select id="storeSettlementStatusFilter" class="form-control">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="paid">Paid</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="clearStoreSettlementFiltersBtn">Clear</button>
+          </div>
+          <div class="table-container">
+            <table id="storeSettlementsTable">
+              <thead>
+                <tr>
+                  <th>Settlement #</th>
+                  <th>Date</th>
+                  <th>Store</th>
+                  <th>Period</th>
+                  <th>Total Orders</th>
+                  <th>Commissions</th>
+                  <th>Net Amount</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="storeSettlementsTableBody"></tbody>
             </table>
           </div>
         </div>
@@ -2909,8 +3076,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
-    <script src="js/financial.js" defer></script>
-    <script src="js/admin.js?v=15" defer></script>
+    <script src="js/financial.js?v=3" defer></script>
+    <script src="js/admin.js?v=17" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");
@@ -2994,13 +3161,13 @@
             <input type="text" id="paymentPurpose" name="purpose" />
           </div>
           <div class="form-group">
-              <label>Payment Method</label>
-              <select id="paymentMethodPV" name="paymentMethod" required>
-                <option value="cash">Cash</option>
-                <option value="check">Cheque</option>
-                <option value="bank_transfer">Bank Transfer</option>
-              </select>
-            </div>
+            <label>Payment Method</label>
+            <select id="paymentMethodPV" name="paymentMethod" required>
+              <option value="cash">Cash</option>
+              <option value="cheque">Cheque</option>
+              <option value="bank_transfer">Bank Transfer</option>
+            </select>
+          </div>
           <div class="form-actions">
             <button
               type="button"
@@ -3228,6 +3395,46 @@
               <option value="adjustment">Adjustment</option>
             </select>
           </div>
+          
+          <!-- Pending Orders List Container -->
+          <style>
+    #pendingOrdersContainer table th, 
+    #pendingOrdersContainer table td {
+        border: 1px solid #ccc !important;
+    }
+    #pendingOrdersContainer table {
+        min-width: 0 !important;
+    }
+</style>
+<div id="pendingOrdersContainer" style="display:none; margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; background: #f9f9f9; border-radius: 4px;">
+              <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 0.9em;">Pending Cash Deliveries</h4>
+              <div style="max-height: 150px; overflow-y: auto;">
+                  <table class="table table-sm table-bordered" style="font-size: 0.8em; width: 100%; table-layout: fixed;">
+                      <colgroup>
+                          <col style="width: 10%;">
+                          <col style="width: 40%;">
+                          <col style="width: 25%;">
+                          <col style="width: 25%;">
+                      </colgroup>
+                      <thead>
+                          <tr>
+                              <th style="text-align: center;"><input type="checkbox" id="selectAllPendingOrders" onchange="toggleAllPendingOrders(this)" style="cursor: pointer;"></th>
+                              <th>Order #</th>
+                              <th>Date</th>
+                              <th style="text-align: right;">Amount</th>
+                          </tr>
+                      </thead>
+                      <tbody id="pendingOrdersListBody"></tbody>
+                      <tfoot>
+                          <tr>
+                              <th colspan="3">Total Selected:</th>
+                              <th style="text-align: right;" id="pendingOrdersTotal">0.00</th>
+                          </tr>
+                      </tfoot>
+                  </table>
+              </div>
+          </div>
+
           <div class="form-group">
             <label>Amount (₨)</label>
             <input
@@ -3348,12 +3555,6 @@
             <label>Select Rider (Optional)</label>
             <select id="reportRiderSelect" name="riderId">
               <option value="">All Riders</option>
-            </select>
-          </div>
-          <div class="form-group" id="reportStoreSelectGroup" style="display: none;">
-            <label>Select Store (Optional)</label>
-            <select id="reportStoreSelect" name="storeId">
-              <option value="">All Stores</option>
             </select>
           </div>
           <div class="form-group">

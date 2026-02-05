@@ -1221,9 +1221,29 @@ router.put('/rider-cash/:id', [
                         movement.id,
                         movement.movement_type
                     );
-                    // This is clearing a receivable, not new income, but we'll record it as adjustment
-                    transactionType = 'adjustment';
+                    // This is cash INFLOW for the company
+                    transactionType = 'income'; 
                     descriptionPrefix = 'Rider Cash Submission';
+                } else if (movement.movement_type === 'cash_collection') {
+                    // Cash collection from customer (if not linked to order)
+                    // If it IS linked to an order, it was already income. 
+                    // But if this is a manual entry, treat as income.
+                    if (movement.reference_type !== 'order') {
+                        await recordRiderWalletTransaction(
+                            req.db,
+                            movement.rider_id,
+                            'debit',
+                            effectiveAmount,
+                            `Cash collection via ${movement.movement_number}`,
+                            movement.id,
+                            movement.movement_type
+                        );
+                        transactionType = 'income';
+                        descriptionPrefix = 'Rider Cash Collection (Manual)';
+                    }
+                    // If reference_type === 'order', it's already handled. 
+                    // But if user manually created it and wants it in report, we might need to log it?
+                    // Usually cash_collection is auto-created by orders.
                 } else if (movement.movement_type === 'settlement') {
                     // Credit to rider wallet for settlements (earnings)
                     await recordRiderWalletTransaction(
@@ -1251,8 +1271,18 @@ router.put('/rider-cash/:id', [
                             movement.id,
                             movement.movement_type
                         );
+                        // Treat manual cash collection as income too? 
+                        // Or just internal movement? Usually cash collection means Rider has cash.
+                        // It becomes Company Income only when submitted?
+                        // Actually, if it's a sale, it's income.
+                        transactionType = 'income';
+                        descriptionPrefix = 'Manual Cash Collection';
+                    } else {
+                         // Even if it IS an order, if the user manually approved a "cash_collection" movement,
+                         // we might want to ensure a financial transaction exists if one doesn't?
+                         // But usually orders create financial transactions separately.
                     }
-                    // Internal movement, already recorded as income/receivable at order time
+                } else if (movement.movement_type === 'settlement') {
                 } else if (movement.movement_type === 'advance') {
                     // Advances are already debited on POST
                     transactionType = 'expense';
@@ -2095,6 +2125,33 @@ router.post('/reports/generate', [
             message: 'Failed to generate report',
             error: error.message
         });
+    }
+});
+
+// Get pending cash orders for a rider
+router.get('/riders/:id/pending-cash-orders', async (req, res) => {
+    try {
+        const { id } = req.params;
+        // Fetch delivered cash orders for this rider
+        // TODO: In a more advanced system, we would exclude orders already linked to a submission.
+        // For now, we return recent delivered cash orders to help the admin calculate.
+        const [orders] = await req.db.execute(
+            `SELECT id, order_number, total_amount, created_at 
+             FROM orders 
+             WHERE rider_id = ? 
+             AND status = 'delivered' 
+             AND payment_method = 'cash' 
+             ORDER BY created_at DESC 
+             LIMIT 50`,
+            [id]
+        );
+        
+        // Calculate total
+        const total = orders.reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
+
+        res.json({ success: true, orders, total });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
