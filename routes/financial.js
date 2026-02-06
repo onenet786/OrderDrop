@@ -563,8 +563,8 @@ router.put('/payment-vouchers/:id', [
             params
         );
 
-        // Create financial transaction if status changed to paid
-        if (status === 'paid' && existingVoucher) {
+        // Create financial transaction if status changed to paid or approved
+        if ((status === 'paid' || status === 'approved') && existingVoucher) {
             const voucherAmount = amount || existingVoucher.amount;
             const voucherPayee = payee_name || existingVoucher.payee_name;
             const voucherDescription = description || existingVoucher.description || existingVoucher.purpose || 'Payment via voucher';
@@ -882,8 +882,8 @@ router.put('/receipt-vouchers/:id', [
             params
         );
 
-        // Create financial transaction if status changed to received
-        if (status === 'received' && existingVoucher) {
+        // Create financial transaction if status changed to received or approved
+        if ((status === 'received' || status === 'approved') && existingVoucher) {
             const voucherAmount = amount || existingVoucher.amount;
             const voucherPayer = payer_name || existingVoucher.payer_name;
             const voucherDescription = description || existingVoucher.description || 'Receipt via voucher';
@@ -1792,7 +1792,7 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'custom']),
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'custom']),
     body('period_from').optional().isISO8601(),
     body('period_to').optional().isISO8601(),
     body('rider_id').optional().toInt(),
@@ -1818,6 +1818,7 @@ router.post('/reports/generate', [
             case 'monthly_summary': prefix = 'MSR'; break;
             case 'rider_cash_report': prefix = 'RCR'; break;
             case 'rider_fuel_report': prefix = 'RFR'; break;
+            case 'comprehensive_report': prefix = 'CPR'; break;
             case 'expense_report': prefix = 'EXR'; break;
             case 'general_voucher': prefix = 'GVR'; break;
             case 'store_settlement': prefix = 'SSR'; break;
@@ -2059,6 +2060,64 @@ router.post('/reports/generate', [
                 entries: fuelEntries,
                 summary: summary[0] || { total_cost: 0, total_distance: 0 }
             };
+        } else if (report_type === 'comprehensive_report') {
+            // Add end-of-day time to period_to if it doesn't have time component
+            let endDate = period_to;
+            if (period_to && period_to.length === 10) {
+                 endDate = period_to + ' 23:59:59';
+            }
+
+            const dateFilter = period_from && endDate ? 'AND ft.created_at BETWEEN ? AND ?' : '';
+            const params = period_from && endDate ? [period_from, endDate] : [];
+
+            const [details] = await req.db.execute(`
+                SELECT 
+                    ft.*,
+                    CASE 
+                        WHEN ft.related_entity_type = 'rider' THEN CONCAT(r.first_name, ' ', r.last_name)
+                        WHEN ft.related_entity_type = 'store' THEN s.name
+                        WHEN ft.related_entity_type = 'employee' OR ft.related_entity_type = 'user' THEN CONCAT(u.first_name, ' ', u.last_name)
+                        ELSE NULL 
+                    END as entity_name,
+                    ft.reference_id as reference_number_display
+                FROM financial_transactions ft
+                LEFT JOIN riders r ON ft.related_entity_type = 'rider' AND ft.related_entity_id = r.id
+                LEFT JOIN stores s ON ft.related_entity_type = 'store' AND ft.related_entity_id = s.id
+                LEFT JOIN users u ON (ft.related_entity_type = 'employee' OR ft.related_entity_type = 'user') AND ft.related_entity_id = u.id
+                WHERE 1=1 ${dateFilter}
+                ORDER BY ft.created_at DESC
+            `, params);
+
+            // Reset totals to avoid double counting from the initial summary query
+            total_income = 0;
+            total_expense = 0;
+            total_settlements = 0;
+            total_refunds = 0;
+            total_adjustments = 0;
+
+            details.forEach(t => {
+                const amt = parseFloat(t.amount || 0);
+                if (t.transaction_type === 'income') total_income += amt;
+                else if (t.transaction_type === 'expense') total_expense += amt;
+                else if (t.transaction_type === 'settlement') total_settlements += amt;
+                else if (t.transaction_type === 'refund') total_refunds += amt;
+                else if (t.transaction_type === 'adjustment') total_adjustments += amt;
+            });
+
+            const net_flow = total_income - total_expense - total_settlements - total_refunds;
+
+            reportData = {
+                type: 'comprehensive_report',
+                transactions: details,
+                summary: {
+                    total_income,
+                    total_expense,
+                    total_settlements,
+                    total_refunds,
+                    total_adjustments,
+                    net_flow
+                }
+            };
         } else {
             reportData = {
                 transactions: transactions.map(t => ({ type: t.transaction_type, total: t.total })),
@@ -2085,6 +2144,26 @@ router.post('/reports/generate', [
             } else {
                 description = 'Store Financials - All Stores';
             }
+        }
+
+        if (req.body.preview) {
+            return res.json({
+                success: true,
+                message: 'Report preview generated',
+                report: {
+                    report_number,
+                    report_type,
+                    period_from,
+                    period_to,
+                    total_income,
+                    total_expense,
+                    total_commissions: total_settlements,
+                    net_profit,
+                    data: reportData,
+                    created_at: new Date().toISOString(),
+                    description
+                }
+            });
         }
 
         const [result] = await req.db.execute(
@@ -2132,24 +2211,49 @@ router.post('/reports/generate', [
 router.get('/riders/:id/pending-cash-orders', async (req, res) => {
     try {
         const { id } = req.params;
-        // Fetch delivered cash orders for this rider
-        // TODO: In a more advanced system, we would exclude orders already linked to a submission.
-        // For now, we return recent delivered cash orders to help the admin calculate.
+        
+        // Find orders that are NOT yet linked to any approved cash submission
+        // We look for 'rider_cash_movements' that mention this order in description or reference
+        // Note: This is a heuristic because we don't have a direct junction table yet.
+        // Ideally, we should have a 'rider_cash_submission_orders' table.
+        
+        // 1. Get all delivered cash orders for this rider
         const [orders] = await req.db.execute(
             `SELECT id, order_number, total_amount, created_at 
              FROM orders 
              WHERE rider_id = ? 
              AND status = 'delivered' 
              AND payment_method = 'cash' 
-             ORDER BY created_at DESC 
-             LIMIT 50`,
+             ORDER BY created_at DESC`,
             [id]
         );
         
-        // Calculate total
-        const total = orders.reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
+        // 2. Get all approved cash submissions for this rider
+        // We'll search their descriptions for order numbers (if admin put them there)
+        // OR we can implement a logic where we mark orders as "submitted" in the future.
+        // For now, let's just return the orders. 
+        // The user issue is that the UI shows them as "pending" even if submitted.
+        // If the UI is just listing "delivered cash orders", that's technically correct (they are cash orders).
+        // But if it implies "Unsubmitted Cash", we need to filter.
+        
+        // Current implementation just returns list.
+        // If the user wants them to disappear, we need to know WHICH orders were paid.
+        // Since we don't store order_ids in cash_submission, we can't filter them out automatically yet.
+        // We will add a 'is_cash_submitted' flag to orders table in future.
+        
+        // Temporary fix: Filter out orders if their order_number appears in any approved submission description
+        const [submissions] = await req.db.execute(
+            `SELECT description FROM rider_cash_movements 
+             WHERE rider_id = ? AND movement_type = 'cash_submission' AND status = 'approved'`,
+            [id]
+        );
+        
+        const submittedDescriptions = submissions.map(s => s.description || '').join(' ');
+        
+        const pendingOrders = orders.filter(o => !submittedDescriptions.includes(o.order_number));
+        const total = pendingOrders.reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
 
-        res.json({ success: true, orders, total });
+        res.json({ success: true, orders: pendingOrders, total });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

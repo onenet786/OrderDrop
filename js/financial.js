@@ -1823,6 +1823,9 @@ async function submitGenerateReport() {
         payload.rider_id = riderId;
     }
 
+    // Always default to preview first
+    payload.preview = true;
+
     try {
         const response = await fetch(`${API_BASE}/api/financial/reports/generate`, {
             method: 'POST',
@@ -1835,15 +1838,85 @@ async function submitGenerateReport() {
 
         const data = await response.json();
         if (data.success) {
-            showSuccess('Success', 'Report generated successfully');
             closeModal('generateReportModal');
-            loadFinancialReports();
+            
+            // Show preview in the View Modal, but with extra controls
+            // Add the report to currentReports temporarily so viewReport works
+            const tempReport = data.report;
+            // Ensure ID is unique/dummy if needed, though viewReport uses ID lookup. 
+            // We'll modify viewReport or just push it.
+            // Actually, viewReport expects an ID. Let's make it flexible.
+            
+            // Add to list but mark as preview
+            tempReport.id = 'preview_temp';
+            const existingIndex = currentReports.findIndex(r => r.id === 'preview_temp');
+            if (existingIndex >= 0) {
+                currentReports[existingIndex] = tempReport;
+            } else {
+                currentReports.push(tempReport);
+            }
+            
+            // Call view report
+            viewReport('preview_temp');
+            
+            // Update the modal footer to show "Save" button
+            setTimeout(() => {
+                const footer = document.querySelector('#viewReportModal .modal-footer') || document.querySelector('#reportViewModal .modal-footer');
+                if (footer) {
+                    // Remove existing Save button if any
+                    const existingSave = document.getElementById('btnSaveReport');
+                    if (existingSave) existingSave.remove();
+                    
+                    const saveBtn = document.createElement('button');
+                    saveBtn.id = 'btnSaveReport';
+                    saveBtn.className = 'btn btn-success';
+                    saveBtn.innerHTML = 'Save Report';
+                    saveBtn.style.marginLeft = '10px';
+                    saveBtn.onclick = () => saveGeneratedReport(payload); // Pass original payload without preview flag
+                    
+                    // Insert before Close button
+                    footer.insertBefore(saveBtn, footer.firstChild);
+                }
+            }, 500);
+
         } else {
             showError('Error', data.message);
         }
     } catch (error) {
         console.error('Error generating report:', error);
         showError('Error', 'Failed to generate report');
+    }
+}
+
+async function saveGeneratedReport(payload) {
+    // Remove preview flag to actually save
+    const savePayload = { ...payload };
+    delete savePayload.preview;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/reports/generate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            },
+            body: JSON.stringify(savePayload)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Report saved successfully');
+            // Close the view modal
+            const modalId = document.getElementById('viewReportModal') ? 'viewReportModal' : 'reportViewModal';
+            closeModal(modalId);
+            // Refresh list
+            loadFinancialReports();
+        } else {
+            showError('Error', data.message);
+        }
+    } catch (error) {
+        console.error('Error saving report:', error);
+        showError('Error', 'Failed to save report');
     }
 }
 
@@ -1975,6 +2048,24 @@ function generatePDF(reportId) {
                     styles: { fontSize: 8 }
                 });
             }
+        } else if (data.type === 'comprehensive_report') {
+            doc.text('Comprehensive Transaction Report', 14, startY);
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Date', 'Ref #', 'Type', 'Entity', 'Cat', 'In', 'Out', 'Desc']],
+                body: data.transactions.map(t => [
+                    new Date(t.created_at).toLocaleDateString(),
+                    t.transaction_number,
+                    t.transaction_type.toUpperCase(),
+                    t.entity_name || t.related_entity_type || '-',
+                    t.category || '-',
+                    (t.transaction_type === 'income' || t.transaction_type === 'refund') ? `Rs ${parseFloat(t.amount).toFixed(2)}` : '-',
+                    (t.transaction_type === 'expense' || t.transaction_type === 'settlement') ? `Rs ${parseFloat(t.amount).toFixed(2)}` : '-',
+                    t.description || ''
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 7, cellPadding: 2 }
+            });
         }
     }
 
@@ -2022,6 +2113,49 @@ function viewReport(reportId) {
         if (data.summary) {
             extraDetails += `<div style="margin-top: 10px;"><strong>Total Distance:</strong> ${data.summary.total_distance} km | <strong>Total Cost:</strong> ₨ ${parseFloat(data.summary.total_cost).toFixed(2)}</div>`;
         }
+    } else if (data && data.type === 'comprehensive_report') {
+        extraDetails = '<h3>Comprehensive Transactions</h3><div style="max-height: 400px; overflow-y: auto;"><table class="report-detail-table" style="font-size:0.8em"><thead><tr><th>Date</th><th>Ref #</th><th>Type</th><th>Entity</th><th>In</th><th>Out</th><th>Desc</th></tr></thead><tbody>';
+        if (data.transactions) {
+            data.transactions.forEach(t => {
+                const income = (t.transaction_type === 'income' || t.transaction_type === 'refund') ? `₨ ${parseFloat(t.amount).toFixed(2)}` : '-';
+                const expense = (t.transaction_type === 'expense' || t.transaction_type === 'settlement') ? `₨ ${parseFloat(t.amount).toFixed(2)}` : '-';
+                const entity = t.entity_name || t.related_entity_type || '-';
+                const ref = t.reference_number_display || t.transaction_number || '-';
+                
+                extraDetails += `<tr>
+                    <td>${new Date(t.created_at).toLocaleDateString()}</td>
+                    <td>${ref}</td>
+                    <td>${t.transaction_type.toUpperCase()}</td>
+                    <td>${entity}</td>
+                    <td style="color:green">${income}</td>
+                    <td style="color:red">${expense}</td>
+                    <td>${t.description || ''}</td>
+                </tr>`;
+            });
+        }
+        extraDetails += '</tbody></table></div>';
+        
+        // Add prominent Net Flow summary
+        const flowColor = data.summary.net_flow >= 0 ? 'green' : 'red';
+        extraDetails += `
+            <div style="margin-top: 15px; padding: 15px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;">
+                <h4 style="margin: 0 0 10px 0;">Net Result Calculation</h4>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
+                    <div>
+                        <div style="font-size: 0.8em; color: #666;">Total In (Income/Refunds)</div>
+                        <div style="font-size: 1.2em; font-weight: bold; color: green;">+ ₨ ${parseFloat(data.summary.total_income + data.summary.total_refunds).toFixed(2)}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8em; color: #666;">Total Out (Expense/Settlements)</div>
+                        <div style="font-size: 1.2em; font-weight: bold; color: red;">- ₨ ${parseFloat(data.summary.total_expense + data.summary.total_settlements).toFixed(2)}</div>
+                    </div>
+                    <div style="border-left: 2px solid #ddd;">
+                        <div style="font-size: 0.8em; color: #666;">Net Result (Balance)</div>
+                        <div style="font-size: 1.4em; font-weight: bold; color: ${flowColor};">₨ ${parseFloat(data.summary.net_flow).toFixed(2)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
     const details = `
