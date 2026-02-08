@@ -334,6 +334,25 @@ router.post('/', authenticateToken, async (req, res) => {
                 }
             }
 
+            // Calculate discounted price for subtotal calculation
+            let finalUnitPrice = unitPrice;
+            const discountType = product.discount_type;
+            const discountValue = product.discount_value ? Number(product.discount_value) : 0;
+            
+            if (discountType && Number.isFinite(discountValue) && discountValue > 0) {
+                if (discountType === 'percent') {
+                    finalUnitPrice = unitPrice * (1 - discountValue / 100);
+                } else if (discountType === 'amount') {
+                    finalUnitPrice = unitPrice - discountValue;
+                }
+                
+                // Ensure price doesn't go below 0
+                if (finalUnitPrice < 0) finalUnitPrice = 0;
+                
+                // Round to 2 decimal places
+                finalUnitPrice = Math.round(finalUnitPrice * 100) / 100;
+            }
+
             preparedItems.push({ 
                 productId, 
                 quantity, 
@@ -345,7 +364,8 @@ router.post('/', authenticateToken, async (req, res) => {
                 discount_type: product.discount_type,
                 discount_value: product.discount_value
             });
-            itemsSubtotal += unitPrice * quantity;
+            // Use finalUnitPrice (discounted) for the total calculation
+            itemsSubtotal += finalUnitPrice * quantity;
         }
 
         // Enforce store open/closed hours before proceeding

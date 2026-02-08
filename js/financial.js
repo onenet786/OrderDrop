@@ -14,6 +14,12 @@ const formChangedState = {};
 
 function openModal(modalId) {
     document.getElementById(modalId).classList.add('show');
+    
+    // Initialize listeners when the settlement modal opens
+    if (modalId === 'storeSettlementModal') {
+        // We delay slightly to ensure DOM is ready/visible if needed, though usually unnecessary
+        setTimeout(setupStoreSettlementListeners, 100);
+    }
 }
 
 function closeModal(modalId) {
@@ -840,6 +846,7 @@ function displayStoreSettlements(settlements) {
             <td>
                 <button class="btn-small btn-info" onclick="editStoreSettlement(${s.id})">Edit</button>
                 <button class="btn-small btn-primary" onclick="approveStoreSettlement(${s.id})">Approve</button>
+                ${s.status === 'approved' ? `<button class="btn-small btn-success" onclick="payStoreSettlement(${s.id})" style="background-color: #28a745; color: white; margin-left: 4px;">Pay</button>` : ''}
             </td>
         `;
         tbody.appendChild(row);
@@ -899,6 +906,88 @@ function displayExpenses(expenses) {
     if (expenses.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">No expenses found</td></tr>';
     }
+}
+
+// === Store Settlement Logic ===
+
+function setupStoreSettlementListeners() {
+    const storeSelect = document.getElementById('settlementStoreSelect');
+    const autoCalcCheckbox = document.getElementById('autoCalculateSettlement');
+    
+    if (storeSelect) {
+        storeSelect.addEventListener('change', () => {
+            if (autoCalcCheckbox && autoCalcCheckbox.checked) {
+                loadUnsettledItems(storeSelect.value);
+            }
+        });
+    }
+
+    if (autoCalcCheckbox) {
+        autoCalcCheckbox.addEventListener('change', () => {
+            const itemsContainer = document.getElementById('unsettledItemsContainer');
+            const amountInput = document.getElementById('settlementAmount');
+            
+            if (autoCalcCheckbox.checked) {
+                itemsContainer.style.display = 'block';
+                amountInput.readOnly = true;
+                if (storeSelect.value) {
+                    loadUnsettledItems(storeSelect.value);
+                }
+            } else {
+                itemsContainer.style.display = 'none';
+                amountInput.readOnly = false;
+                amountInput.value = '';
+            }
+        });
+    }
+}
+
+async function loadUnsettledItems(storeId) {
+    if (!storeId) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/store-settlements/unsettled-items?store_id=${storeId}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            displayUnsettledItems(data.items, data.summary);
+            // Auto fill the amount
+            document.getElementById('settlementAmount').value = data.summary.net_amount.toFixed(2);
+        } else {
+            showError('Error', data.message);
+        }
+    } catch (error) {
+        console.error('Error loading unsettled items:', error);
+        showError('Error', 'Failed to load unpaid items');
+    }
+}
+
+function displayUnsettledItems(items, summary) {
+    const tbody = document.getElementById('unsettledItemsBody');
+    tbody.innerHTML = '';
+    
+    items.forEach(item => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${new Date(item.order_date).toLocaleDateString()}</td>
+            <td>${item.order_number}</td>
+            <td>${item.product_name} (${item.variant_label || '-'})</td>
+            <td>${item.quantity}</td>
+            <td>₨ ${(item.price * item.quantity).toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+    
+    if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No unpaid items found</td></tr>';
+    }
+    
+    document.getElementById('unsettledTotalSales').textContent = `₨ ${summary.total_orders_amount.toFixed(2)}`;
+    document.getElementById('unsettledCommissionRate').textContent = summary.commission_rate;
+    document.getElementById('unsettledCommission').textContent = `₨ ${summary.commissions.toFixed(2)}`;
+    document.getElementById('unsettledNetPayable').textContent = `₨ ${summary.net_amount.toFixed(2)}`;
 }
 
 async function loadFinancialReports() {
@@ -977,6 +1066,32 @@ async function deleteReport(id) {
     } catch (error) {
         console.error('Error deleting report:', error);
         showError('Error', 'Failed to delete report');
+    }
+}
+
+async function payStoreSettlement(id) {
+    if (!confirm('Are you sure you want to mark this settlement as PAID? This will record a financial transaction.')) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/store-settlements/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            },
+            body: JSON.stringify({ status: 'paid' })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Settlement marked as paid');
+            loadStoreSettlements();
+        } else {
+            showError('Error', data.message);
+        }
+    } catch (error) {
+        console.error('Error paying settlement:', error);
+        showError('Error', 'Failed to pay settlement');
     }
 }
 
@@ -2005,6 +2120,44 @@ function generatePDF(reportId) {
                 theme: 'grid',
                 styles: { fontSize: 8 }
             });
+        } else if (data.type === 'store_settlement') {
+            doc.text('Store Settlements', 14, startY);
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Settlement #', 'Date', 'Store', 'Amount', 'Comm.', 'Status']],
+                body: data.settlements.map(s => [
+                    s.settlement_number,
+                    new Date(s.settlement_date).toLocaleDateString(),
+                    s.store_name,
+                    `Rs ${parseFloat(s.net_amount).toFixed(2)}`,
+                    `Rs ${parseFloat(s.commissions).toFixed(2)}`,
+                    s.status
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'delivery_charges_breakdown') {
+            doc.text('Delivery Charges Breakdown', 14, startY);
+            
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(`Total Orders: ${data.summary.total_orders} | Total Fees: Rs ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}`, 14, startY + 5);
+                startY += 10;
+            }
+
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Order #', 'Date', 'Rider', 'Store', 'Fee']],
+                body: data.orders.map(o => [
+                    o.order_number,
+                    new Date(o.order_date).toLocaleDateString(),
+                    o.rider_name,
+                    o.store_names,
+                    `Rs ${parseFloat(o.delivery_fee).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
         } else if (data.type === 'general_voucher') {
             doc.text('Journal Vouchers', 14, startY);
             doc.autoTable({
@@ -2113,6 +2266,38 @@ function viewReport(reportId) {
         if (data.summary) {
             extraDetails += `<div style="margin-top: 10px;"><strong>Total Distance:</strong> ${data.summary.total_distance} km | <strong>Total Cost:</strong> ₨ ${parseFloat(data.summary.total_cost).toFixed(2)}</div>`;
         }
+    } else if (data && data.type === 'store_settlement') {
+        extraDetails = '<h3>Store Settlements</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Settlement #</th><th>Date</th><th>Store</th><th>Amount</th><th>Comm.</th><th>Status</th></tr></thead><tbody>';
+        if (data.settlements) {
+            data.settlements.forEach(s => {
+                extraDetails += `<tr>
+                    <td>${s.settlement_number}</td>
+                    <td>${new Date(s.settlement_date).toLocaleDateString()}</td>
+                    <td>${s.store_name}</td>
+                    <td>₨ ${parseFloat(s.net_amount).toFixed(2)}</td>
+                    <td>₨ ${parseFloat(s.commissions).toFixed(2)}</td>
+                    <td><span class="status-${s.status}">${s.status}</span></td>
+                </tr>`;
+            });
+        }
+        extraDetails += '</tbody></table></div>';
+    } else if (data && data.type === 'delivery_charges_breakdown') {
+        extraDetails = '<h3>Delivery Charges Breakdown</h3><div style="max-height: 400px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Order #</th><th>Date</th><th>Rider</th><th>Store(s)</th><th>Fee</th></tr></thead><tbody>';
+        if (data.orders) {
+            data.orders.forEach(o => {
+                extraDetails += `<tr>
+                    <td>${o.order_number}</td>
+                    <td>${new Date(o.order_date).toLocaleDateString()}</td>
+                    <td>${o.rider_name}</td>
+                    <td>${o.store_names}</td>
+                    <td>₨ ${parseFloat(o.delivery_fee).toFixed(2)}</td>
+                </tr>`;
+            });
+        }
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;"><strong>Total Orders:</strong> ${data.summary.total_orders} | <strong>Total Delivery Fees:</strong> ₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</div>`;
+        }
     } else if (data && data.type === 'comprehensive_report') {
         extraDetails = '<h3>Comprehensive Transactions</h3><div style="max-height: 400px; overflow-y: auto;"><table class="report-detail-table" style="font-size:0.8em"><thead><tr><th>Date</th><th>Ref #</th><th>Type</th><th>Entity</th><th>In</th><th>Out</th><th>Desc</th></tr></thead><tbody>';
         if (data.transactions) {
@@ -2142,18 +2327,26 @@ function viewReport(reportId) {
                 <h4 style="margin: 0 0 10px 0;">Net Result Calculation</h4>
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
                     <div>
-                        <div style="font-size: 0.8em; color: #666;">Total In (Income/Refunds)</div>
-                        <div style="font-size: 1.2em; font-weight: bold; color: green;">+ ₨ ${parseFloat(data.summary.total_income + data.summary.total_refunds).toFixed(2)}</div>
+                        <div style="font-size: 0.8em; color: #666;">Total In (Income)</div>
+                        <div style="font-size: 1.2em; font-weight: bold; color: green;">+ ₨ ${parseFloat(data.summary.total_income).toFixed(2)}</div>
                     </div>
                     <div>
-                        <div style="font-size: 0.8em; color: #666;">Total Out (Expense/Settlements)</div>
-                        <div style="font-size: 1.2em; font-weight: bold; color: red;">- ₨ ${parseFloat(data.summary.total_expense + data.summary.total_settlements).toFixed(2)}</div>
+                        <div style="font-size: 0.8em; color: #666;">Total Out (Expense/Settlements/Refunds)</div>
+                        <div style="font-size: 1.2em; font-weight: bold; color: red;">- ₨ ${parseFloat(data.summary.total_expense + data.summary.total_settlements + data.summary.total_refunds).toFixed(2)}</div>
                     </div>
                     <div style="border-left: 2px solid #ddd;">
                         <div style="font-size: 0.8em; color: #666;">Net Result (Balance)</div>
                         <div style="font-size: 1.4em; font-weight: bold; color: ${flowColor};">₨ ${parseFloat(data.summary.net_flow).toFixed(2)}</div>
                     </div>
                 </div>
+                ${(data.summary.total_delivery_fees !== undefined && data.summary.total_item_cost !== undefined) ? `
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; text-align: center; font-size: 0.9em; color: #555;">
+                    <div><strong>Total Revenue Breakdown (Cash In):</strong></div>
+                    Delivery Fees: ₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)} + 
+                    Item Cost: ₨ ${parseFloat(data.summary.total_item_cost).toFixed(2)} + 
+                    Discount: ₨ ${parseFloat(data.summary.total_item_discount || 0).toFixed(2)} = 
+                    <strong>₨ ${parseFloat(data.summary.total_delivery_fees + data.summary.total_item_cost + (data.summary.total_item_discount || 0)).toFixed(2)}</strong>
+                </div>` : ''}
             </div>
         `;
     }
@@ -2383,7 +2576,7 @@ document.addEventListener('DOMContentLoaded', function() {
         reportTypeModal.addEventListener('change', function() {
             const riderGroup = document.getElementById('reportRiderSelectGroup');
             if (riderGroup) {
-                riderGroup.style.display = (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report') ? 'block' : 'none';
+                riderGroup.style.display = (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report' || this.value === 'delivery_charges_breakdown') ? 'block' : 'none';
             }
         });
     }

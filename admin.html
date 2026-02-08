@@ -3077,7 +3077,7 @@
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
     <script src="js/financial.js?v=3" defer></script>
-    <script src="js/admin.js?v=17" defer></script>
+    <script src="js/admin.js?v=18" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");
@@ -3502,6 +3502,48 @@
               <option value="bank_transfer">Bank Transfer</option>
             </select>
           </div>
+          
+          <!-- Auto Calculate Checkbox -->
+          <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+            <input type="checkbox" id="autoCalculateSettlement" name="autoCalculate" style="width: auto; margin: 0;">
+            <label for="autoCalculateSettlement" style="margin: 0;">Auto-Calculate from Unpaid Items</label>
+          </div>
+
+          <!-- Unsettled Items Container -->
+          <div id="unsettledItemsContainer" style="display: none; border: 1px solid #ddd; padding: 10px; border-radius: 4px; margin-bottom: 15px; background: #f9f9f9;">
+            <h4>Unpaid Sale Items</h4>
+            <div style="max-height: 200px; overflow-y: auto;">
+              <table class="table" style="font-size: 0.9em;">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Order #</th>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody id="unsettledItemsBody">
+                  <!-- Items injected here -->
+                </tbody>
+                <tfoot style="font-weight: bold; background: #eee;">
+                  <tr>
+                    <td colspan="4" style="text-align: right;">Total Sales:</td>
+                    <td id="unsettledTotalSales">₨ 0.00</td>
+                  </tr>
+                  <tr>
+                    <td colspan="4" style="text-align: right;">Commission (<span id="unsettledCommissionRate">10</span>%):</td>
+                    <td id="unsettledCommission">₨ 0.00</td>
+                  </tr>
+                  <tr>
+                    <td colspan="4" style="text-align: right;">Net Payable:</td>
+                    <td id="unsettledNetPayable" style="color: green;">₨ 0.00</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
           <div class="form-group">
             <label>Period From</label>
             <input type="date" id="periodFrom" name="periodFrom" />
@@ -3549,6 +3591,7 @@
               <option value="comprehensive_report">Comprehensive Cash Report</option>
               <option value="general_voucher">General Voucher (JNV)</option>
               <option value="expense_report">Expense Report</option>
+              <option value="delivery_charges_breakdown">Delivery Charges Breakdown</option>
               <option value="custom">Custom</option>
             </select>
           </div>

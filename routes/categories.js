@@ -34,6 +34,37 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Get category by ID
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [categories] = await req.db.execute(
+            'SELECT * FROM categories WHERE id = ?',
+            [id]
+        );
+
+        if (categories.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Category not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            category: categories[0]
+        });
+
+    } catch (error) {
+        console.error('Error fetching category:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch category',
+            error: error.message
+        });
+    }
+});
+
 // Create new category (Admin only)
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     try {

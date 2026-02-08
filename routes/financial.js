@@ -1338,6 +1338,63 @@ router.put('/rider-cash/:id', [
     }
 });
 
+// Get unsettled items for a store
+router.get('/store-settlements/unsettled-items', async (req, res) => {
+    try {
+        const { store_id } = req.query;
+        if (!store_id) {
+            return res.status(400).json({ success: false, message: 'Store ID is required' });
+        }
+
+        // Get items that are delivered, paid by customer, but not settled with store
+        const [items] = await req.db.execute(`
+            SELECT 
+                oi.id, oi.order_id, oi.product_id, oi.quantity, oi.price, 
+                oi.variant_label,
+                o.order_number, o.created_at as order_date,
+                p.name as product_name,
+                s.commission_rate
+            FROM order_items oi
+            JOIN orders o ON oi.order_id = o.id
+            JOIN products p ON oi.product_id = p.id
+            JOIN stores s ON COALESCE(oi.store_id, p.store_id) = s.id
+            WHERE s.id = ?
+            AND o.status = 'delivered'
+            AND o.payment_status = 'paid'
+            AND oi.settlement_id IS NULL
+            ORDER BY o.created_at ASC
+        `, [store_id]);
+
+        // Calculate totals
+        let total_amount = 0;
+        // Default commission rate 10% if not set
+        let commission_rate = items.length > 0 ? parseFloat(items[0].commission_rate || 10) : 10;
+        
+        items.forEach(item => {
+            total_amount += parseFloat(item.price) * item.quantity;
+        });
+
+        const commission_amount = (total_amount * commission_rate) / 100;
+        const net_amount = total_amount - commission_amount;
+
+        res.json({
+            success: true,
+            items,
+            summary: {
+                total_orders_amount: total_amount,
+                commission_rate,
+                commissions: commission_amount,
+                net_amount,
+                item_count: items.length
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching unsettled items:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 router.get('/store-settlements', async (req, res) => {
     try {
         const { store_id, status, page = 1, limit = 20 } = req.query;
@@ -1391,9 +1448,9 @@ router.get('/store-settlements', async (req, res) => {
 
 router.post('/store-settlements', [
     body('store_id').isInt({ min: 1 }),
-    body('net_amount').isFloat({ min: 0 }),
     body('payment_method').isIn(['cash', 'cheque', 'bank_transfer'])
 ], async (req, res) => {
+    let conn;
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -1404,26 +1461,96 @@ router.post('/store-settlements', [
             });
         }
 
-        const { store_id, period_from, period_to, total_orders_amount, commissions, deductions, net_amount, payment_method, notes } = req.body;
+        conn = await req.db.getConnection();
+        await conn.beginTransaction();
+
+        const { store_id, period_from, period_to, total_orders_amount, commissions, deductions, net_amount, payment_method, notes, auto_calculate } = req.body;
+        
+        let final_total = total_orders_amount || 0;
+        let final_commissions = commissions || 0;
+        let final_deductions = deductions || 0;
+        let final_net = net_amount || 0;
+        let settlement_items = [];
+
+        // If auto-calculation is requested, calculate from unsettled items
+        if (auto_calculate === true || auto_calculate === 'true' || auto_calculate === 'on') {
+             const [items] = await conn.execute(`
+                SELECT 
+                    oi.id, oi.quantity, oi.price,
+                    s.commission_rate
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                JOIN products p ON oi.product_id = p.id
+                JOIN stores s ON COALESCE(oi.store_id, p.store_id) = s.id
+                WHERE s.id = ?
+                AND o.status = 'delivered'
+                AND o.payment_status = 'paid'
+                AND oi.settlement_id IS NULL
+            `, [store_id]);
+
+            if (items.length === 0) {
+                await conn.rollback();
+                conn.release();
+                 return res.status(400).json({
+                    success: false,
+                    message: 'No unsettled items found for this store'
+                });
+            }
+
+            let calculated_total = 0;
+            let commission_rate = items.length > 0 ? parseFloat(items[0].commission_rate || 10) : 10;
+            
+            items.forEach(item => {
+                calculated_total += parseFloat(item.price) * item.quantity;
+                settlement_items.push(item.id);
+            });
+
+            final_total = calculated_total;
+            final_commissions = (final_total * commission_rate) / 100;
+            final_deductions = parseFloat(deductions || 0);
+            final_net = final_total - final_commissions - final_deductions;
+        }
+
         const settlement_number = generateVoucherNumber('SS');
         const settlement_date = new Date().toISOString().split('T')[0];
 
-        const [result] = await req.db.execute(
+        // Create the settlement record
+        const [result] = await conn.execute(
             `INSERT INTO store_settlements 
              (settlement_number, settlement_date, store_id, period_from, period_to, total_orders_amount, commissions, deductions, net_amount, payment_method, notes, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-            [settlement_number, settlement_date, store_id, period_from || null, period_to || null, total_orders_amount || 0, commissions || 0, deductions || 0, net_amount, payment_method, notes || null]
+            [settlement_number, settlement_date, store_id, period_from || null, period_to || null, final_total, final_commissions, final_deductions, final_net, payment_method, notes || null]
         );
+
+        const settlementId = result.insertId;
+
+        // Link the items to this settlement so they aren't paid again
+        if (auto_calculate && settlement_items.length > 0) {
+             const placeholders = settlement_items.map(() => '?').join(',');
+             await conn.execute(
+                `UPDATE order_items SET settlement_id = ? WHERE id IN (${placeholders})`,
+                [settlementId, ...settlement_items]
+             );
+        }
+
+        await conn.commit();
+        conn.release();
 
         res.status(201).json({
             success: true,
             message: 'Store settlement created successfully',
             settlement: {
-                id: result.insertId,
-                settlement_number
+                id: settlementId,
+                settlement_number,
+                net_amount: final_net,
+                items_count: settlement_items.length
             }
         });
     } catch (error) {
+        if (conn) {
+            await conn.rollback();
+            conn.release();
+        }
         console.error('Error creating store settlement:', error);
         res.status(500).json({
             success: false,
@@ -1507,6 +1634,24 @@ router.put('/store-settlements/:id', [
             const [storeRows] = await req.db.execute('SELECT name FROM stores WHERE id = ?', [existingSettlement.store_id]);
             const storeName = storeRows.length > 0 ? storeRows[0].name : `Store #${existingSettlement.store_id}`;
 
+            // Create financial transaction if status changed to paid
+            // We need to record the FULL payout as a settlement expense
+            // And the COMMISSION as income (if not already recorded, but usually commissions are implicit in the net deduction)
+            // Wait, standard accounting:
+            // 1. We collected Cash from Rider (Income/Asset).
+            // 2. We owe Store (Liability).
+            // 3. We pay Store (Asset decreases, Liability decreases).
+            // 4. The Commission is the Revenue we keep.
+            
+            // Current Logic:
+            // records 'settlement' transaction with amount = net_amount (what we paid).
+            // This is correct for Cash Flow (money leaving).
+            // But for Profit/Loss, 'settlement' is treated as an expense/deduction from Gross Income.
+            
+            // The issue user reported: "settlements not reflected in comprehensive report"
+            // The Comprehensive Report queries `financial_transactions`.
+            // So we MUST ensure a record exists here.
+            
             await recordFinancialTransaction(req.db, {
                 transaction_type: 'settlement',
                 category: 'store_settlement',
@@ -1520,6 +1665,19 @@ router.put('/store-settlements/:id', [
                 created_by: req.user.id
             });
 
+            // ALSO, we should record the Commission as explicit INCOME if it's not already.
+            // When we do "Rider Cash Collection", we record the full cash amount as Income.
+            // Example: Order 1000. Rider gives us 1000 (Income).
+            // We pay Store 900 (Settlement).
+            // Net Profit = 1000 - 900 = 100. Correct.
+            
+            // So the logic holds: 
+            // Total Income (from riders) - Total Settlements (to stores) = Gross Profit.
+            
+            // If the user says it's "not reflected", maybe they haven't marked the settlement as 'paid'?
+            // Only 'paid' status triggers this transaction creation.
+            // Or maybe the date filter in the report misses the transaction date.
+            
             // Debit store wallet (payment made, liability reduced)
             await recordStoreWalletTransaction(
                 req.db,
@@ -1792,7 +1950,7 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'custom']),
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'delivery_charges_breakdown', 'custom']),
     body('period_from').optional().isISO8601(),
     body('period_to').optional().isISO8601(),
     body('rider_id').optional().toInt(),
@@ -1820,6 +1978,7 @@ router.post('/reports/generate', [
             case 'rider_fuel_report': prefix = 'RFR'; break;
             case 'comprehensive_report': prefix = 'CPR'; break;
             case 'expense_report': prefix = 'EXR'; break;
+            case 'delivery_charges_breakdown': prefix = 'DCB'; break;
             case 'general_voucher': prefix = 'GVR'; break;
             case 'store_settlement': prefix = 'SSR'; break;
             case 'custom': prefix = 'CUS'; break;
@@ -1919,6 +2078,41 @@ router.post('/reports/generate', [
                     return acc;
                 }, {})
             };
+        } else if (report_type === 'store_settlement') {
+            const dateFilter = period_from && period_to ? 'AND settlement_date BETWEEN ? AND ?' : '';
+            const params = period_from && period_to ? [period_from, `${period_to} 23:59:59`] : [];
+            
+            const [settlements] = await req.db.execute(
+                `SELECT ss.*, s.name as store_name
+                 FROM store_settlements ss
+                 JOIN stores s ON ss.store_id = s.id
+                 WHERE 1=1 ${dateFilter}
+                 ORDER BY settlement_date DESC`,
+                params
+            );
+
+            // Calculate totals
+            let total_settled_amount = 0;
+            let total_commissions = 0;
+            
+            settlements.forEach(s => {
+                total_settled_amount += parseFloat(s.net_amount || 0);
+                total_commissions += parseFloat(s.commissions || 0);
+            });
+
+            // Update main report totals
+            total_settlements = total_settled_amount;
+            // Commissions are income for the platform
+            total_income = total_commissions; 
+
+            reportData = {
+                type: 'store_settlement',
+                settlements,
+                summary: {
+                    total_settled_amount,
+                    total_commissions
+                }
+            };
         } else if (report_type === 'general_voucher') {
             const jnvDateFilter = period_from && period_to ? 'AND voucher_date BETWEEN ? AND ?' : '';
             const [vouchers] = await req.db.execute(
@@ -1942,6 +2136,55 @@ router.post('/reports/generate', [
             reportData = {
                 type: 'general_voucher',
                 vouchers
+            };
+        } else if (report_type === 'delivery_charges_breakdown') {
+            const dateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND o.rider_id = ?' : '';
+            const storeFilter = store_id ? 'AND (oi.store_id = ? OR (oi.store_id IS NULL AND p.store_id = ?))' : '';
+            
+            const params = [];
+            if (period_from && period_to) {
+                params.push(period_from, `${period_to} 23:59:59`);
+            }
+            if (rider_id) {
+                params.push(rider_id);
+            }
+            if (store_id) {
+                params.push(store_id, store_id);
+            }
+
+            // Join with order_items to get accurate store names (handling multi-store orders)
+            const [orders] = await req.db.execute(
+                `SELECT 
+                    o.order_number, 
+                    o.created_at as order_date,
+                    o.delivery_fee,
+                    CONCAT(r.first_name, ' ', r.last_name) as rider_name,
+                    GROUP_CONCAT(DISTINCT s.name SEPARATOR ', ') as store_names
+                 FROM orders o
+                 JOIN riders r ON o.rider_id = r.id
+                 JOIN order_items oi ON o.id = oi.order_id
+                 JOIN products p ON oi.product_id = p.id
+                 JOIN stores s ON COALESCE(oi.store_id, p.store_id, s.id) = s.id
+                 WHERE o.status = 'delivered' ${dateFilter} ${riderFilter} ${storeFilter}
+                 GROUP BY o.id
+                 ORDER BY o.created_at DESC`,
+                params
+            );
+
+            const total_fees = orders.reduce((sum, o) => sum + parseFloat(o.delivery_fee || 0), 0);
+            
+            // Delivery fees are income for the platform
+            total_income = total_fees;
+
+            reportData = {
+                type: 'delivery_charges_breakdown',
+                rider_name: riderName,
+                orders,
+                summary: {
+                    total_orders: orders.length,
+                    total_delivery_fees: total_fees
+                }
             };
         } else if (report_type === 'store_financials') {
             const orderDateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
@@ -2104,6 +2347,86 @@ router.post('/reports/generate', [
                 else if (t.transaction_type === 'adjustment') total_adjustments += amt;
             });
 
+            // Calculate profit from store items
+            const orderDateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const orderParams = period_from && period_to ? [period_from, `${period_to} 23:59:59`] : [];
+            
+            // Item Cost Calculation: SUM(Quantity * CostPrice) - Total Discount
+            // According to user logic: Item Cost is the amount payable to store (Selling Price - Discount)
+            // But we have Cost Price field. If user sets Cost = Selling Price, then Profit = 0.
+            // And "Payable to Store" becomes "Cost - Discount".
+            
+            // Let's recalculate "Net Item Cost" (Payable to Store)
+            // It is: (Quantity * CostPrice) - Discount
+            // Wait, standard logic:
+            // Store Settlement = (Sales - Commission).
+            // User says: "sale price is 300 so after 10 % discount is costs Rs. 270"
+            // This means Cost = Price - Discount.
+            // So "Item Cost" in the report should be 1422 (which is 1580 - 158).
+            
+            // So we need to calculate `total_item_cost_net` = `total_item_cost` - `total_item_discount`.
+            
+             // Item Cost Calculation: SUM(Quantity * CostPrice)
+             const [costData] = await req.db.execute(
+                 `SELECT 
+                     SUM(oi.quantity * COALESCE(psp.cost_price, p.cost_price)) as total_item_cost
+                  FROM order_items oi
+                  JOIN orders o ON oi.order_id = o.id
+                  JOIN products p ON oi.product_id = p.id
+                  LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id 
+                     AND (
+                         (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR 
+                         (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                     )
+                  WHERE o.status = 'delivered' ${orderDateFilter}`,
+                 orderParams
+             );
+            const total_item_cost_gross = parseFloat(costData[0].total_item_cost || 0);
+            
+            // Item Profit Calculation: (Quantity * (Price - Cost))
+            const [profitData] = await req.db.execute(
+                `SELECT 
+                    SUM(oi.quantity * (oi.price - COALESCE(psp.cost_price, p.cost_price))) as total_item_profit
+                 FROM order_items oi
+                 JOIN orders o ON oi.order_id = o.id
+                 JOIN products p ON oi.product_id = p.id
+                 LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id 
+                    AND (
+                        (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR 
+                        (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                    )
+                 WHERE o.status = 'delivered' ${orderDateFilter}`,
+                orderParams
+            );
+            const total_item_profit = parseFloat(profitData[0].total_item_profit || 0);
+
+            // Calculate Delivery Charges
+            const [deliveryData] = await req.db.execute(
+                `SELECT SUM(delivery_fee) as total_delivery_fees
+                 FROM orders o
+                 WHERE o.status = 'delivered' ${orderDateFilter}`,
+                orderParams
+            );
+            const total_delivery_fees = parseFloat(deliveryData[0].total_delivery_fees || 0);
+
+            // Calculate Total Discounts
+            const [discountData] = await req.db.execute(
+                `SELECT 
+                    SUM(CASE 
+                        WHEN oi.discount_type = 'percent' THEN oi.quantity * oi.price * (oi.discount_value / 100)
+                        WHEN oi.discount_type = 'amount' THEN oi.quantity * oi.discount_value
+                        ELSE 0 
+                    END) as total_discount
+                 FROM order_items oi
+                 JOIN orders o ON oi.order_id = o.id
+                 WHERE o.status = 'delivered' ${orderDateFilter}`,
+                orderParams
+            );
+            const total_item_discount = parseFloat(discountData[0].total_discount || 0);
+
+            // Correct Net Item Cost (Payable to Store)
+            const total_item_cost_net = total_item_cost_gross - total_item_discount;
+
             const net_flow = total_income - total_expense - total_settlements - total_refunds;
 
             reportData = {
@@ -2115,7 +2438,19 @@ router.post('/reports/generate', [
                     total_settlements,
                     total_refunds,
                     total_adjustments,
-                    net_flow
+                    net_flow,
+                    // Extra metrics for P&L analysis
+                    total_delivery_fees,
+                    total_item_profit,
+                    total_item_cost: total_item_cost_net, // Send the NET cost (1422)
+                    total_item_discount,
+                    // Reconciled Gross Profit: Delivery + Cost + Profit + Discount (If user wants to see total value flowing)
+                    // But typically Gross Profit = Revenue - Cost
+                    // User's formula: "Delivery charges 130 + items Cost(1422) + (discount 158) = 1710"
+                    // This implies the user wants to see the TOTAL REVENUE GENERATED/COLLECTED.
+                    
+                    // Let's send all these variables so frontend can display them exactly as requested
+                    estimated_gross_profit: (total_delivery_fees + total_item_profit) - total_item_discount
                 }
             };
         } else {

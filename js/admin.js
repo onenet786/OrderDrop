@@ -536,6 +536,17 @@ function initializeAdmin() {
     const filterRider = document.getElementById('filterRider');
     const clearFiltersBtn = document.getElementById('clearFiltersBtn');
 
+    // Make functions globally available for inline onclick attributes
+    window.showAddUnitModal = showAddUnitModal;
+    window.showAddSizeModal = showAddSizeModal;
+    window.saveUnit = saveUnit;
+    window.saveSize = saveSize;
+    
+    // Also export setupStoreSettlementListeners if available
+    if (typeof setupStoreSettlementListeners !== 'undefined') {
+        window.setupStoreSettlementListeners = setupStoreSettlementListeners;
+    }
+
     if (filterStartDate) {
         filterStartDate.addEventListener('change', filterOrders);
     }
@@ -3923,7 +3934,7 @@ async function populateStoreCategorySelect(selectedId = null) {
     if (!categorySelect) return;
     categorySelect.innerHTML = '<option value="">Select Category (Optional)</option>';
     try {
-        const resp = await fetch(`${API_BASE}/api/categories?includeInactive=true`);
+        const resp = await fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' });
         const data = await resp.json();
         if (data && data.success && Array.isArray(data.categories)) {
             data.categories.forEach(category => {
@@ -4306,10 +4317,12 @@ function bindProductSizePricesUI() {
 async function showAddProductModal() {
     // Load stores and categories for dropdowns
     try {
-        const [storesResponse, categoriesResponse, productsResponse] = await Promise.all([
+        const [storesResponse, categoriesResponse, productsResponse, unitsResp, sizesResp] = await Promise.all([
             fetch(`${API_BASE}/api/stores`),
-            fetch(`${API_BASE}/api/categories`),
-            fetch(`${API_BASE}/api/products?admin=1`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+            fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' }),
+            fetch(`${API_BASE}/api/products?admin=1`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+            fetch(`${API_BASE}/api/units?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' }),
+            fetch(`${API_BASE}/api/sizes?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' })
         ]);
 
         const storesData = await storesResponse.json();
@@ -4390,11 +4403,9 @@ async function showAddProductModal() {
         resetProductSizePricesUI();
 
         // Populate units and sizes
+        // Note: unitsResp and sizesResp are already fetched above
         try {
-            const [unitsResp, sizesResp] = await Promise.all([
-                fetch(`${API_BASE}/api/units?ts=${Date.now()}`, { cache: 'no-store' }),
-                fetch(`${API_BASE}/api/sizes?ts=${Date.now()}`, { cache: 'no-store' })
-            ]);
+            // Use results from Promise.all above instead of fetching again
             const unitsJson = await unitsResp.json();
             const sizesJson = await sizesResp.json();
             if (unitsJson && unitsJson.success && Array.isArray(unitsJson.units)) AppState.units = unitsJson.units;
@@ -4635,7 +4646,7 @@ async function editProduct(productId) {
         const p = data.product;
         const [storesResponse, categoriesResponse, productsResponse, unitsResp, sizesResp] = await Promise.all([
             fetch(`${API_BASE}/api/stores`),
-            fetch(`${API_BASE}/api/categories`),
+            fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' }),
             fetch(`${API_BASE}/api/products?admin=1`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             fetch(`${API_BASE}/api/units?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' }),
             fetch(`${API_BASE}/api/sizes?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' })
@@ -4896,7 +4907,7 @@ async function editCategory(categoryId) {
     try {
         let c = (AppState.categories || []).find(x => String(x.id) === String(categoryId));
         if (!c) {
-            const resp = await fetch(`${API_BASE}/api/categories?ts=${Date.now()}`, { cache: 'no-store' });
+            const resp = await fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' });
             const data = await resp.json();
             if (!data.success) { showError('Error', 'Failed to load categories'); return; }
             AppState.categories = data.categories || [];
@@ -6069,7 +6080,7 @@ function displayStores(stores) {
 }
 
 function loadCategories() {
-    fetch(`${API_BASE}/api/categories?ts=${Date.now()}`, { cache: 'no-store' })
+    fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' })
     .then(response => response.json())
     .then(data => {
         AppState.categories = data.categories || [];

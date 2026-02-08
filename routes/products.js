@@ -729,21 +729,37 @@ router.post('/', authenticateToken, requireStoreOwner, [
         const normalizedCost = normalizeNumber(cost_price);
         const normalizedDiscount = normalizeNumber(discount_value);
         let derivedCost = null;
+        
+        // --- LOGIC FIX START: Enforce Business Rule "Item Cost = Price - Discount" ---
+        // If the store is "Credit with Discount", we MUST prioritize the discount-based cost calculation.
+        // If the user did NOT provide a cost_price but provided a discount, use it.
+        // If the user PROVIDED a cost_price but it conflicts with the discount logic, we should probably favor the calculated one or at least default to it if cost_price >= price (which is invalid for profit).
+        
         if (isDiscountPaymentTerm(paymentTerm)) {
-            if (normalizedDiscount.present && normalizedDiscount.ok) {
-                derivedCost = computeCostFromPrice({ price: normalizedEffectivePrice.value, discountType: discount_type, discountValue: normalizedDiscount.value });
+            if (normalizedDiscount.present && normalizedDiscount.ok && discount_type) {
+                // Case 1: Store has discount. Calculate Cost = Price - Discount.
+                derivedCost = computeCostFromPrice({ 
+                    price: normalizedEffectivePrice.value, 
+                    discountType: discount_type, 
+                    discountValue: normalizedDiscount.value 
+                });
             } else if (normalizedCost.present && normalizedCost.ok) {
+                // Case 2: User manually set cost.
                 derivedCost = roundMoney(normalizedCost.value);
             } else {
+                // Case 3: No discount, no cost. Default Cost = Price (0 Profit).
                 derivedCost = roundMoney(normalizedEffectivePrice.value);
             }
         } else {
+            // Standard Term
             if (normalizedCost.present && normalizedCost.ok) {
                 derivedCost = roundMoney(normalizedCost.value);
             } else {
                 derivedCost = roundMoney(normalizedEffectivePrice.value);
             }
         }
+        // --- LOGIC FIX END ---
+        
         if (derivedCost === null) return res.status(400).json({ success: false, message: 'Invalid price/cost input' });
 
         // Check if category exists (if provided)
@@ -979,51 +995,52 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
         const normalizedPrice = normalizeNumber(price);
         const normalizedDiscount = normalizeNumber(discount_value);
         const hasDiscount = isDiscountPaymentTerm(product.payment_term);
+        
+        // --- LOGIC FIX START: Enforce "Cost = Price - Discount" on Update ---
+        
+        let derivedCost = null;
+        let finalPrice = normalizedPrice.present && normalizedPrice.ok ? roundMoney(normalizedPrice.value) : product.price;
+        let finalDiscountType = discount_type !== undefined ? discount_type : product.discount_type;
+        let finalDiscountValue = normalizedDiscount.present && normalizedDiscount.ok ? normalizedDiscount.value : product.discount_value;
+        
+        // Always recalculate cost if Price, Discount, or Cost is touched, OR if store logic dictates it
+        if (hasDiscount) {
+            if (finalDiscountType && finalDiscountValue > 0) {
+                 // Priority 1: Recalculate based on Price - Discount
+                 derivedCost = computeCostFromPrice({ 
+                    price: finalPrice, 
+                    discountType: finalDiscountType, 
+                    discountValue: finalDiscountValue 
+                });
+            } else if (normalizedCost.present && normalizedCost.ok) {
+                // Priority 2: User explicit cost
+                derivedCost = roundMoney(normalizedCost.value);
+            } else {
+                // Priority 3: Default to Price (0 Profit)
+                derivedCost = roundMoney(finalPrice);
+            }
+        } else {
+            // Standard Term
+            if (normalizedCost.present && normalizedCost.ok) {
+                derivedCost = roundMoney(normalizedCost.value);
+            } else if (normalizedPrice.present) {
+                // If price changed but cost didn't, default to price (safest assumption)
+                derivedCost = roundMoney(finalPrice);
+            }
+        }
 
         if (normalizedPrice.present) {
             if (!normalizedPrice.ok) return res.status(400).json({ success: false, message: 'Invalid price' });
-            const roundedPrice = roundMoney(normalizedPrice.value);
             updateFields.push('price = ?');
-            updateValues.push(roundedPrice);
-
-            let derivedCost = null;
-            if (hasDiscount) {
-                if (normalizedDiscount.present && normalizedDiscount.ok) {
-                    derivedCost = computeCostFromPrice({ price: roundedPrice, discountType: discount_type, discountValue: normalizedDiscount.value });
-                } else {
-                    const existingDiscount = Number(product.price) - Number(product.cost_price);
-                    if (Number.isFinite(existingDiscount) && existingDiscount > 0) {
-                        derivedCost = roundMoney(roundedPrice - existingDiscount);
-                        if (derivedCost !== null && derivedCost < 0) derivedCost = 0;
-                    } else if (normalizedCost.present && normalizedCost.ok) {
-                        derivedCost = roundMoney(normalizedCost.value);
-                    } else {
-                        derivedCost = roundMoney(roundedPrice);
-                    }
-                }
-            } else {
-                if (normalizedCost.present && normalizedCost.ok) {
-                    derivedCost = roundMoney(normalizedCost.value);
-                } else {
-                    derivedCost = roundMoney(roundedPrice);
-                }
-            }
-
-            if (derivedCost !== null) {
-                updateFields.push('cost_price = ?');
-                updateValues.push(derivedCost);
-            }
-        } else if (normalizedCost.present) {
-            if (!normalizedCost.ok) return res.status(400).json({ success: false, message: 'Invalid cost price' });
-            updateFields.push('cost_price = ?');
-            updateValues.push(roundMoney(normalizedCost.value));
-        } else if (hasDiscount && normalizedDiscount.present && normalizedDiscount.ok) {
-            const derivedCost = computeCostFromPrice({ price: product.price, discountType: discount_type, discountValue: normalizedDiscount.value });
-            if (derivedCost !== null) {
-                updateFields.push('cost_price = ?');
-                updateValues.push(derivedCost);
-            }
+            updateValues.push(finalPrice);
         }
+        
+        if (derivedCost !== null) {
+            updateFields.push('cost_price = ?');
+            updateValues.push(derivedCost);
+        }
+
+        // --- LOGIC FIX END ---
         if (image_url !== undefined) {
             // If client supplied a remote URL, download it into uploads first
             if (image_url && /^https?:\/\//i.test(String(image_url))) {
