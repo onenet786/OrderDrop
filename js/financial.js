@@ -2203,6 +2203,31 @@ function generatePDF(reportId) {
             }
         } else if (data.type === 'comprehensive_report') {
             doc.text('Comprehensive Transaction Report', 14, startY);
+            
+            // Add Summary Table at Top for Clarity
+            if (data.summary) {
+                const deliveryFees = parseFloat(data.summary.total_delivery_fees || 0);
+                const itemSales = parseFloat(data.summary.total_item_sales_net || 0);
+                const storeComm = parseFloat(data.summary.total_store_commission || 0);
+                const totalIn = deliveryFees + itemSales;
+                const netProfit = deliveryFees + storeComm;
+                const netPayable = itemSales - storeComm;
+
+                doc.autoTable({
+                    startY: startY + 5,
+                    head: [['Metric', 'Amount', 'Metric', 'Amount']],
+                    body: [
+                        ['Delivery Fees', `Rs ${deliveryFees.toFixed(2)}`, 'Item Sales (Net)', `Rs ${itemSales.toFixed(2)}`],
+                        ['Store Commission', `Rs ${storeComm.toFixed(2)}`, 'Net Profit', `Rs ${netProfit.toFixed(2)}`],
+                        ['Total Cash In', `Rs ${totalIn.toFixed(2)}`, 'Payable to Stores', `Rs ${netPayable.toFixed(2)}`]
+                    ],
+                    theme: 'grid',
+                    styles: { fontSize: 9 },
+                    headStyles: { fillColor: [41, 128, 185] }
+                });
+                startY = doc.lastAutoTable.finalY + 10;
+            }
+
             doc.autoTable({
                 startY: startY + 5,
                 head: [['Date', 'Ref #', 'Type', 'Entity', 'Cat', 'In', 'Out', 'Desc']],
@@ -2339,13 +2364,41 @@ function viewReport(reportId) {
                         <div style="font-size: 1.4em; font-weight: bold; color: ${flowColor};">₨ ${parseFloat(data.summary.net_flow).toFixed(2)}</div>
                     </div>
                 </div>
-                ${(data.summary.total_delivery_fees !== undefined && data.summary.total_item_cost !== undefined) ? `
-                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; text-align: center; font-size: 0.9em; color: #555;">
-                    <div><strong>Total Revenue Breakdown (Cash In):</strong></div>
-                    Delivery Fees: ₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)} + 
-                    Item Cost: ₨ ${parseFloat(data.summary.total_item_cost).toFixed(2)} + 
-                    Discount: ₨ ${parseFloat(data.summary.total_item_discount || 0).toFixed(2)} = 
-                    <strong>₨ ${parseFloat(data.summary.total_delivery_fees + data.summary.total_item_cost + (data.summary.total_item_discount || 0)).toFixed(2)}</strong>
+                ${(data.summary.total_delivery_fees !== undefined && data.summary.total_store_commission !== undefined) ? `
+                <div style="margin-top: 15px; border-top: 1px solid #ddd; padding-top: 10px; font-size: 0.9em;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        
+                        <!-- Cash In Column -->
+                        <div style="background: #f9fafb; padding: 10px; border-radius: 6px;">
+                            <div style="font-weight: bold; margin-bottom: 5px; color: #374151;">Cash Collected (In)</div>
+                            <div style="display: flex; justify-content: space-between;"><span>Delivery Fees:</span> <span>₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Item Sales:</span> <span>₨ ${parseFloat(data.summary.total_item_sales_net).toFixed(2)}</span></div>
+                            <div style="border-top: 1px dashed #ccc; margin-top: 5px; padding-top: 5px; font-weight: bold; display: flex; justify-content: space-between;">
+                                <span>Total:</span> <span>₨ ${parseFloat(data.summary.total_delivery_fees + data.summary.total_item_sales_net).toFixed(2)}</span>
+                            </div>
+                        </div>
+
+                        <!-- Profit Column -->
+                        <div style="background: #ecfdf5; padding: 10px; border-radius: 6px;">
+                            <div style="font-weight: bold; margin-bottom: 5px; color: #065f46;">Platform Profit</div>
+                            <div style="display: flex; justify-content: space-between;"><span>Delivery Profit:</span> <span>₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Store Comm.:</span> <span>₨ ${parseFloat(data.summary.total_store_commission).toFixed(2)}</span></div>
+                            <div style="border-top: 1px dashed #ccc; margin-top: 5px; padding-top: 5px; font-weight: bold; color: #059669; display: flex; justify-content: space-between;">
+                                <span>Net Profit:</span> <span>₨ ${parseFloat(data.summary.estimated_gross_profit).toFixed(2)}</span>
+                            </div>
+                        </div>
+
+                        <!-- Payable Column -->
+                        <div style="background: #fffbeb; padding: 10px; border-radius: 6px;">
+                            <div style="font-weight: bold; margin-bottom: 5px; color: #92400e;">Payable to Stores</div>
+                            <div style="display: flex; justify-content: space-between;"><span>Item Sales:</span> <span>₨ ${parseFloat(data.summary.total_item_sales_net).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Less Comm.:</span> <span>-₨ ${parseFloat(data.summary.total_store_commission).toFixed(2)}</span></div>
+                            <div style="border-top: 1px dashed #ccc; margin-top: 5px; padding-top: 5px; font-weight: bold; color: #b45309; display: flex; justify-content: space-between;">
+                                <span>Net Payable:</span> <span>₨ ${parseFloat(data.summary.total_item_sales_net - data.summary.total_store_commission).toFixed(2)}</span>
+                            </div>
+                        </div>
+
+                    </div>
                 </div>` : ''}
             </div>
         `;
@@ -2566,7 +2619,7 @@ document.addEventListener('DOMContentLoaded', function() {
         loadJournalVouchers();
     });
     if (addJournalVoucherBtn) addJournalVoucherBtn.addEventListener('click', createJournalVoucher);
-
+    
     if (reportTypeFilter) reportTypeFilter.addEventListener('change', loadFinancialReports);
     const generateFinancialReportBtn = document.getElementById('generateFinancialReportBtn');
     if (generateFinancialReportBtn) generateFinancialReportBtn.addEventListener('click', generateFinancialReport);
@@ -2943,4 +2996,221 @@ function downloadCSV(filename, headers, rows) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+// Order Wise Detail Summary Functions
+
+let lastOrderDetailData = null;
+
+async function populateOrderDetailFilters() {
+    try {
+        const [storesRes, ridersRes] = await Promise.all([
+            fetch('/api/stores').then(res => res.json()),
+            fetch('/api/riders').then(res => res.json())
+        ]);
+
+        const stores = storesRes.stores || [];
+        const riders = ridersRes.riders || [];
+
+        const storeSelect = document.getElementById('orderDetailStore');
+        const riderSelect = document.getElementById('orderDetailRider');
+
+        if (storeSelect) {
+            storeSelect.innerHTML = '<option value="">All Stores</option>';
+            stores.forEach(s => {
+                storeSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+            });
+        }
+
+        if (riderSelect) {
+            riderSelect.innerHTML = '<option value="">All Riders</option>';
+            riders.forEach(r => {
+                const name = r.full_name || `${r.first_name} ${r.last_name}`;
+                riderSelect.innerHTML += `<option value="${r.id}">${name}</option>`;
+            });
+        }
+    } catch (error) {
+        console.error('Error populating filters:', error);
+        showError('Failed to load filter data');
+    }
+}
+
+async function generateOrderWiseDetailReport() {
+    const fromDate = document.getElementById('orderDetailFrom').value;
+    const toDate = document.getElementById('orderDetailTo').value;
+    const storeId = document.getElementById('orderDetailStore').value;
+    const riderId = document.getElementById('orderDetailRider').value;
+
+    if (!fromDate || !toDate) {
+        showWarning('Validation Error', 'Please select date range');
+        return;
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            from: fromDate,
+            to: toDate,
+            store_id: storeId,
+            rider_id: riderId
+        });
+
+        const response = await fetch(`/api/financial/order-wise-detail-report?${queryParams}`);
+        if (!response.ok) throw new Error('Failed to fetch report');
+        
+        const data = await response.json();
+        lastOrderDetailData = data;
+        
+        displayOrderDetailReport(data);
+        document.getElementById('orderDetailResult').style.display = 'block';
+    } catch (error) {
+        console.error('Error generating report:', error);
+        showError('Failed to generate report');
+    }
+}
+
+function displayOrderDetailReport(data) {
+    const container = document.getElementById('orderDetailPreviewContent');
+    if (!data || data.length === 0) {
+        container.innerHTML = '<p class="text-center">No orders found for the selected criteria.</p>';
+        return;
+    }
+
+    // Calculate totals
+    const totals = data.reduce((acc, order) => {
+        acc.item_sales_gross += parseFloat(order.item_sales_gross || 0);
+        acc.delivery_fee += parseFloat(order.delivery_fee || 0);
+        acc.total_in += parseFloat(order.total_in || 0);
+        acc.store_commission += parseFloat(order.store_commission || 0);
+        acc.platform_profit += parseFloat(order.platform_profit || 0);
+        acc.payable_to_store += parseFloat(order.payable_to_store || 0);
+        return acc;
+    }, {
+        item_sales_gross: 0,
+        delivery_fee: 0,
+        total_in: 0,
+        store_commission: 0,
+        platform_profit: 0,
+        payable_to_store: 0
+    });
+
+    let html = `
+        <table class="table table-bordered table-striped" style="font-size: 0.85em;">
+            <thead class="thead-dark">
+                <tr>
+                    <th>Date</th>
+                    <th>Order #</th>
+                    <th>Store</th>
+                    <th>Rider</th>
+                    <th class="text-right">Item Sales</th>
+                    <th class="text-right">Del. Fee</th>
+                    <th class="text-right">Total In</th>
+                    <th class="text-right">Store Comm.</th>
+                    <th class="text-right">Net Profit</th>
+                    <th class="text-right">Payable to Store</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    data.forEach(order => {
+        html += `
+            <tr>
+                <td>${new Date(order.created_at).toLocaleDateString()}</td>
+                <td>${order.order_number}</td>
+                <td>${order.store_names}</td>
+                <td>${order.rider_name || '-'}</td>
+                <td class="text-right">Rs ${parseFloat(order.item_sales_gross).toFixed(2)}</td>
+                <td class="text-right">Rs ${parseFloat(order.delivery_fee).toFixed(2)}</td>
+                <td class="text-right"><strong>Rs ${parseFloat(order.total_in).toFixed(2)}</strong></td>
+                <td class="text-right">Rs ${parseFloat(order.store_commission).toFixed(2)}</td>
+                <td class="text-right" style="color: green;">Rs ${parseFloat(order.platform_profit).toFixed(2)}</td>
+                <td class="text-right" style="color: #d35400;">Rs ${parseFloat(order.payable_to_store).toFixed(2)}</td>
+            </tr>
+        `;
+    });
+
+    // Totals row
+    html += `
+            <tr style="font-weight: bold; background-color: #f2f2f2; border-top: 2px solid #333;">
+                <td colspan="4" class="text-right">TOTALS:</td>
+                <td class="text-right">Rs ${totals.item_sales_gross.toFixed(2)}</td>
+                <td class="text-right">Rs ${totals.delivery_fee.toFixed(2)}</td>
+                <td class="text-right">Rs ${totals.total_in.toFixed(2)}</td>
+                <td class="text-right">Rs ${totals.store_commission.toFixed(2)}</td>
+                <td class="text-right">Rs ${totals.platform_profit.toFixed(2)}</td>
+                <td class="text-right">Rs ${totals.payable_to_store.toFixed(2)}</td>
+            </tr>
+            </tbody>
+        </table>
+    `;
+
+    container.innerHTML = html;
+}
+
+function downloadOrderWiseDetailPdf() {
+    if (!lastOrderDetailData || lastOrderDetailData.length === 0) {
+        showWarning('No Data', 'Please generate a report first');
+        return;
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('l', 'mm', 'a4'); // Landscape
+
+    doc.setFontSize(16);
+    doc.text('Order Wise Detail Summary Report', 14, 15);
+    
+    doc.setFontSize(10);
+    const fromDate = document.getElementById('orderDetailFrom').value;
+    const toDate = document.getElementById('orderDetailTo').value;
+    doc.text(`Period: ${fromDate} to ${toDate}`, 14, 22);
+
+    const headers = [['Date', 'Order #', 'Store', 'Rider', 'Item Sales', 'Del. Fee', 'Total In', 'Store Comm.', 'Net Profit', 'Payable']];
+    
+    const body = lastOrderDetailData.map(order => [
+        new Date(order.created_at).toLocaleDateString(),
+        order.order_number,
+        order.store_names,
+        order.rider_name || '-',
+        `Rs ${parseFloat(order.item_sales_gross).toFixed(2)}`,
+        `Rs ${parseFloat(order.delivery_fee).toFixed(2)}`,
+        `Rs ${parseFloat(order.total_in).toFixed(2)}`,
+        `Rs ${parseFloat(order.store_commission).toFixed(2)}`,
+        `Rs ${parseFloat(order.platform_profit).toFixed(2)}`,
+        `Rs ${parseFloat(order.payable_to_store).toFixed(2)}`
+    ]);
+
+    // Calculate totals
+    const totals = lastOrderDetailData.reduce((acc, order) => {
+        acc.item_sales_gross += parseFloat(order.item_sales_gross || 0);
+        acc.delivery_fee += parseFloat(order.delivery_fee || 0);
+        acc.total_in += parseFloat(order.total_in || 0);
+        acc.store_commission += parseFloat(order.store_commission || 0);
+        acc.platform_profit += parseFloat(order.platform_profit || 0);
+        acc.payable_to_store += parseFloat(order.payable_to_store || 0);
+        return acc;
+    }, {
+        item_sales_gross: 0, delivery_fee: 0, total_in: 0, store_commission: 0, platform_profit: 0, payable_to_store: 0
+    });
+
+    body.push([
+        'TOTALS', '', '', '',
+        `Rs ${totals.item_sales_gross.toFixed(2)}`,
+        `Rs ${totals.delivery_fee.toFixed(2)}`,
+        `Rs ${totals.total_in.toFixed(2)}`,
+        `Rs ${totals.store_commission.toFixed(2)}`,
+        `Rs ${totals.platform_profit.toFixed(2)}`,
+        `Rs ${totals.payable_to_store.toFixed(2)}`
+    ]);
+
+    doc.autoTable({
+        head: headers,
+        body: body,
+        startY: 25,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [41, 128, 185] },
+        footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' }
+    });
+
+    doc.save(`Order_Wise_Detail_Summary_${fromDate}_to_${toDate}.pdf`);
 }

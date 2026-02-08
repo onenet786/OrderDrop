@@ -1304,6 +1304,18 @@
             </button>
           </div>
 
+          <div class="actions-toolbar" style="margin-top: 1rem; margin-bottom: 1rem;">
+            <button class="btn btn-primary" id="openTransactionModalBtn">
+              <i class="fas fa-plus"></i> Add Transaction
+            </button>
+            <button class="btn btn-secondary" id="openCompReportModalBtn">
+              <i class="fas fa-file-invoice-dollar"></i> Comprehensive Report
+            </button>
+            <button class="btn btn-secondary" id="openOrderDetailReportModalBtn">
+              <i class="fas fa-list-alt"></i> Order Detail Report
+            </button>
+          </div>
+          
           <div class="stats-grid">
             <div class="stat-card" onclick="showCashLedger()" style="cursor: pointer" title="Click to view Cash Ledger">
               <h3 id="cashInHandAmount">-</h3>
@@ -2131,8 +2143,61 @@
               </form>
             </div>
 
-            <div class="table-container">
-              <table id="fuelHistoryTable">
+    <!-- Order Wise Detail Summary Report Modal -->
+    <div id="orderWiseDetailModal" class="modal">
+      <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+          <h3>Order Wise Detail Summary</h3>
+          <span class="close" data-modal="orderWiseDetailModal">&times;</span>
+        </div>
+        <div class="modal-body">
+          <form id="orderWiseDetailForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="orderDetailFrom">From Date:</label>
+                <input type="date" id="orderDetailFrom" name="period_from" required />
+              </div>
+              <div class="form-group">
+                <label for="orderDetailTo">To Date:</label>
+                <input type="date" id="orderDetailTo" name="period_to" required />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="orderDetailStore">Store (Optional):</label>
+                <select id="orderDetailStore" name="store_id">
+                  <option value="">All Stores</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="orderDetailRider">Rider (Optional):</label>
+                <select id="orderDetailRider" name="rider_id">
+                  <option value="">All Riders</option>
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="submit" class="btn btn-primary">Generate Report</button>
+            </div>
+          </form>
+          
+          <div id="orderDetailResult" style="display:none; margin-top: 20px;">
+            <hr>
+            <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4>Report Preview</h4>
+                <button id="downloadOrderDetailPdf" class="btn btn-secondary"><i class="fas fa-file-pdf"></i> Download PDF</button>
+            </div>
+            <div id="orderDetailPreviewContent" class="table-container" style="max-height: 400px; overflow-y: auto;">
+                <!-- Content will be injected here -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fuel History Table -->
+    <div class="table-container">
+      <table id="fuelHistoryTable">
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -3076,7 +3141,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
-    <script src="js/financial.js?v=3" defer></script>
+    <script src="js/financial.js?v=8" defer></script>
     <script src="js/admin.js?v=18" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>

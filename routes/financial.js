@@ -2366,40 +2366,17 @@ router.post('/reports/generate', [
             
             // So we need to calculate `total_item_cost_net` = `total_item_cost` - `total_item_discount`.
             
-             // Item Cost Calculation: SUM(Quantity * CostPrice)
-             const [costData] = await req.db.execute(
-                 `SELECT 
-                     SUM(oi.quantity * COALESCE(psp.cost_price, p.cost_price)) as total_item_cost
-                  FROM order_items oi
-                  JOIN orders o ON oi.order_id = o.id
-                  JOIN products p ON oi.product_id = p.id
-                  LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id 
-                     AND (
-                         (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR 
-                         (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
-                     )
-                  WHERE o.status = 'delivered' ${orderDateFilter}`,
-                 orderParams
-             );
-            const total_item_cost_gross = parseFloat(costData[0].total_item_cost || 0);
-            
-            // Item Profit Calculation: (Quantity * (Price - Cost))
-            const [profitData] = await req.db.execute(
+             // Item Sales Calculation: SUM(Quantity * Price) - Gross Sales
+            const [salesData] = await req.db.execute(
                 `SELECT 
-                    SUM(oi.quantity * (oi.price - COALESCE(psp.cost_price, p.cost_price))) as total_item_profit
+                    SUM(oi.quantity * oi.price) as total_item_sales
                  FROM order_items oi
                  JOIN orders o ON oi.order_id = o.id
-                 JOIN products p ON oi.product_id = p.id
-                 LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id 
-                    AND (
-                        (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR 
-                        (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
-                    )
                  WHERE o.status = 'delivered' ${orderDateFilter}`,
                 orderParams
             );
-            const total_item_profit = parseFloat(profitData[0].total_item_profit || 0);
-
+            const total_item_sales_gross = parseFloat(salesData[0].total_item_sales || 0);
+            
             // Calculate Delivery Charges
             const [deliveryData] = await req.db.execute(
                 `SELECT SUM(delivery_fee) as total_delivery_fees
@@ -2424,8 +2401,39 @@ router.post('/reports/generate', [
             );
             const total_item_discount = parseFloat(discountData[0].total_discount || 0);
 
-            // Correct Net Item Cost (Payable to Store)
-            const total_item_cost_net = total_item_cost_gross - total_item_discount;
+            // Correct Net Item Sales (Cash from items)
+            const total_item_sales_net = total_item_sales_gross - total_item_discount;
+
+            // Calculate Item Profit (for P&L) if needed: (Price - Cost) * Qty
+            // Note: This relies on cost_price being accurate in DB
+            const [profitData] = await req.db.execute(
+                `SELECT 
+                    SUM(oi.quantity * (oi.price - COALESCE(psp.cost_price, p.cost_price))) as total_item_profit
+                 FROM order_items oi
+                 JOIN orders o ON oi.order_id = o.id
+                 JOIN products p ON oi.product_id = p.id
+                 LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id 
+                    AND (
+                        (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR 
+                        (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                    )
+                 WHERE o.status = 'delivered' ${orderDateFilter}`,
+                orderParams
+            );
+            const total_item_profit = parseFloat(profitData[0].total_item_profit || 0);
+
+            // Calculate Store Commission (Platform Profit)
+            const [commissionData] = await req.db.execute(
+                `SELECT 
+                    SUM(oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100)) as total_commission
+                 FROM order_items oi
+                 JOIN orders o ON oi.order_id = o.id
+                 JOIN products p ON oi.product_id = p.id
+                 JOIN stores s ON COALESCE(oi.store_id, p.store_id) = s.id
+                 WHERE o.status = 'delivered' ${orderDateFilter}`,
+                orderParams
+            );
+            const total_store_commission = parseFloat(commissionData[0].total_commission || 0);
 
             const net_flow = total_income - total_expense - total_settlements - total_refunds;
 
@@ -2442,15 +2450,11 @@ router.post('/reports/generate', [
                     // Extra metrics for P&L analysis
                     total_delivery_fees,
                     total_item_profit,
-                    total_item_cost: total_item_cost_net, // Send the NET cost (1422)
+                    total_item_sales_gross, // Gross Sales (before discount)
+                    total_item_sales_net,   // Net Sales (after discount)
                     total_item_discount,
-                    // Reconciled Gross Profit: Delivery + Cost + Profit + Discount (If user wants to see total value flowing)
-                    // But typically Gross Profit = Revenue - Cost
-                    // User's formula: "Delivery charges 130 + items Cost(1422) + (discount 158) = 1710"
-                    // This implies the user wants to see the TOTAL REVENUE GENERATED/COLLECTED.
-                    
-                    // Let's send all these variables so frontend can display them exactly as requested
-                    estimated_gross_profit: (total_delivery_fees + total_item_profit) - total_item_discount
+                    total_store_commission, // The 10% profit from stores
+                    estimated_gross_profit: total_delivery_fees + total_store_commission
                 }
             };
         } else {
