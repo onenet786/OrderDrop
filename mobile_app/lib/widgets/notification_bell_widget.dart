@@ -286,6 +286,8 @@ class _NotificationItem extends StatelessWidget {
         return Icons.check;
       case 'schedule':
         return Icons.schedule;
+      case 'store':
+        return Icons.store;
       default:
         return Icons.info;
     }

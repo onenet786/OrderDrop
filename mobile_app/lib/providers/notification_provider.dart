@@ -319,6 +319,22 @@ class NotificationProvider with ChangeNotifier {
       }
     });
 
+    _socket!.on('store_owner_notification', (data) {
+      final storeId = data['store_id'].toString();
+      debugPrint('[NotificationProvider] store_owner_notification: $data');
+
+      // Since we don't track which stores the user owns in AuthProvider easily,
+      // we rely on the backend sending this event to the correct user room.
+      // The backend emits to `user_{owner_id}`, so if we receive it, it's for us.
+
+      addNotification(
+        title: 'Store Order Update',
+        message: data['message'] ?? 'New update for your store.',
+        type: 'info', // You can change this based on data['type']
+        icon: 'store', // Need to make sure 'store' icon is handled or use 'inventory_2'
+      );
+    });
+
     _socket!.on('payment_status_update', (data) {
       debugPrint(
         'Socket: payment_status_update received for user ${data['user_id']}',
