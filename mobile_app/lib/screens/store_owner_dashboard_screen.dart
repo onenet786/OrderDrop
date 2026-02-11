@@ -64,7 +64,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       ),
     );
 
-    if (type == 'new_order') {
+    if (type == 'new_order' || type == 'rider_assigned') {
       _loadOrders();
     }
   }
@@ -220,12 +220,38 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Order #${order['order_number']}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Order #${order['order_number']}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (order['rider_first_name'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.delivery_dining,
+                              size: 16,
+                              color: Colors.blue,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Rider: ${order['rider_first_name']}',
+                              style: const TextStyle(
+                                color: Colors.blue,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(

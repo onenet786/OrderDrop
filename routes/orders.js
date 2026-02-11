@@ -1596,6 +1596,53 @@ router.put(
             timestamp: new Date(),
           });
 
+          // Notify Store Owners
+          const [storeItems] = await req.db.execute(
+            `SELECT DISTINCT s.id, s.name, s.owner_id 
+             FROM order_items oi
+             JOIN stores s ON oi.store_id = s.id
+             WHERE oi.order_id = ?`,
+            [id],
+          );
+
+          for (const store of storeItems) {
+            if (store.owner_id) {
+              const [products] = await req.db.execute(
+                `SELECT p.name, oi.quantity 
+                 FROM order_items oi
+                 JOIN products p ON oi.product_id = p.id
+                 WHERE oi.order_id = ? AND oi.store_id = ?`,
+                [id, store.id],
+              );
+
+              const productList = products
+                .map((p) => `${p.quantity}x ${p.name}`)
+                .join(", ");
+
+              req.io
+                .to(`user_${store.owner_id}`)
+                .emit("store_owner_notification", {
+                  type: "rider_assigned",
+                  order_id: id,
+                  order_number: order.order_number,
+                  store_id: store.id,
+                  store_name: store.name,
+                  products: productList,
+                  rider_name: `${rider.first_name} ${rider.last_name}`,
+                  message: `Rider assigned for order ${order.order_number}. Preparing: ${productList}`,
+                  timestamp: new Date(),
+                });
+
+              const fs = require("fs");
+              const path = require("path");
+              const logMsg = `[${new Date().toISOString()}] Store notification sent to owner ${store.owner_id} for store ${store.name}\n`;
+              fs.appendFileSync(
+                path.join(__dirname, "../socket_debug.log"),
+                logMsg,
+              );
+            }
+          }
+
           console.log(
             `[Orders] Emitting user_notification to room: ${userRoomName}`,
             { user_id: order.user_id, order_number: order.order_number },
