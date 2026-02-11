@@ -70,6 +70,32 @@ const requireStoreOwner = (req, res, next) => {
     next();
 };
 
+// Middleware for Standard User (Product Entry & Dispatch)
+// Allows: Admin, Store Owner, Standard User
+const requireStaffAccess = (req, res, next) => {
+    const allowed = ['admin', 'store_owner', 'standard_user'];
+    if (!allowed.includes(req.user.user_type)) {
+        return res.status(403).json({
+            success: false,
+            message: 'Staff access required'
+        });
+    }
+    next();
+};
+
+// Middleware for Dispatch/Rider Assignment
+// Allows: Admin, Standard User
+const requireDispatchAccess = (req, res, next) => {
+    const allowed = ['admin', 'standard_user'];
+    if (!allowed.includes(req.user.user_type)) {
+        return res.status(403).json({
+            success: false,
+            message: 'Dispatch access required'
+        });
+    }
+    next();
+};
+
 // Optional authentication - doesn't fail if no token
 const optionalAuth = (req, res, next) => {
     const authHeader = req.headers['authorization'];
@@ -91,5 +117,7 @@ module.exports = {
     authenticateToken,
     requireAdmin,
     requireStoreOwner,
+    requireStaffAccess,
+    requireDispatchAccess,
     optionalAuth
 };

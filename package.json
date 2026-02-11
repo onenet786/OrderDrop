@@ -4,7 +4,7 @@
   "description": "Backend API for ServeNow grocery delivery platform",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node server.js --port 3003",
     "dev": "nodemon server.js"
   },
   "dependencies": {

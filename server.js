@@ -19,7 +19,9 @@ if (dotenvResult.parsed) {
 }
 
 // Force the PORT value to the one declared in .env (or fallback to 3002), unless already set
+const forcedPortFromArg = process.argv.find(arg => arg.startsWith('--port='))?.split('=')[1];
 const forcedPort =
+  forcedPortFromArg ||
   process.env.PORT ||
   (dotenvResult.parsed && dotenvResult.parsed.PORT
     ? dotenvResult.parsed.PORT
@@ -49,6 +51,7 @@ const sizeRoutes = require("./routes/sizes");
 const paymentRoutes = require("./routes/payments");
 const walletRoutes = require("./routes/wallets");
 const financialRoutes = require("./routes/financial");
+const permissionRoutes = require("./routes/permissions");
 const { logError } = require("./utils/debugLogger");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -340,6 +343,8 @@ app.use("/api/wallet", walletRoutes);
 console.log("Wallet routes mounted at /api/wallet");
 app.use("/api/financial", financialRoutes);
 console.log("Financial routes mounted at /api/financial");
+app.use("/api/permissions", permissionRoutes);
+console.log("Permission routes mounted at /api/permissions");
 console.log("All API routes configured.");
 
 // Serve login.html for the root path
@@ -406,7 +411,7 @@ app.use((err, req, res, next) => {
 console.log("Error handling middleware configured.");
 
 // Start server
-const PORT = process.env.PORT || 3002;
+const PORT = forcedPortFromArg || process.env.PORT || 3002;
 console.log(`Configured PORT: ${PORT}`);
 
 async function startServer() {

@@ -167,7 +167,7 @@ function updateNavigation() {
         window.location.href = "index.html";
         return;
       }
-    } else if (user.user_type === "admin") {
+    } else if (user.user_type === "admin" || user.user_type === "standard_user") {
       if (isLoginPage || isRegisterPage) {
         window.location.href = "admin.html";
         return;
@@ -1277,7 +1277,7 @@ async function handleLogin(e) {
       showSuccess("Login Successful", "Logged in successfully!");
 
       // Redirect based on user type
-      if (data.user.user_type === "admin") {
+      if (data.user.user_type === "admin" || data.user.user_type === "standard_user") {
         window.location.href = "admin.html";
       } else if (data.user.user_type === "rider") {
         window.location.href = "rider.html";
@@ -1340,7 +1340,7 @@ async function handleRegister(e) {
       showSuccess("Registration Successful", "Registration successful!");
 
       // Redirect based on user type
-      if (data.user.user_type === "admin") {
+      if (data.user.user_type === "admin" || data.user.user_type === "standard_user") {
         window.location.href = "admin.html";
       } else {
         window.location.href = "index.html";

@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { authenticateToken, requireAdmin, requireStoreOwner } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireStoreOwner, requireDispatchAccess, requireStaffAccess } = require('../middleware/auth');
 const { sendOrderThanksEmail } = require('../services/emailService');
 const { recordFinancialTransaction } = require('../utils/dbHelpers');
 
@@ -553,8 +553,8 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 });
 
-// Get available riders
-router.get('/available-riders', authenticateToken, requireAdmin, async (req, res) => {
+// Get available riders (Admin & Dispatch)
+router.get('/available-riders', authenticateToken, requireDispatchAccess, async (req, res) => {
     try {
         const [riders] = await req.db.execute(
             'SELECT id, first_name, last_name, email, phone, vehicle_type FROM riders WHERE is_active = true AND is_available = true ORDER BY first_name ASC LIMIT 500'
@@ -665,7 +665,7 @@ router.get('/rider/:riderId/deliveries', authenticateToken, async (req, res) => 
                 message: 'Access denied. You can only view your own deliveries.'
             });
         }
-        if (req.user.user_type !== 'rider' && req.user.user_type !== 'admin') {
+        if (req.user.user_type !== 'rider' && req.user.user_type !== 'admin' && req.user.user_type !== 'standard_user') {
             return res.status(403).json({
                 success: false,
                 message: 'Access denied.'
@@ -929,8 +929,9 @@ router.get('/:id(\\d+)', authenticateToken, async (req, res) => {
 
         const order = orders[0];
 
-        // Check permission: Admin, Rider assigned, or Customer who owns the order
+        // Check permission: Admin, Standard User, Rider assigned, or Customer who owns the order
         if (req.user.user_type !== 'admin' && 
+            req.user.user_type !== 'standard_user' &&
             req.user.id !== order.user_id && 
             (req.user.user_type === 'rider' && req.user.id !== order.rider_id)) {
             return res.status(403).json({
@@ -981,8 +982,8 @@ router.get('/:id(\\d+)', authenticateToken, async (req, res) => {
     }
 });
 
-// Get all orders (Admin only)
-router.get('/', authenticateToken, requireAdmin, async (req, res) => {
+// Get all orders (Admin & Dispatch only)
+router.get('/', authenticateToken, requireDispatchAccess, async (req, res) => {
     try {
         const { status, assignment, startDate, endDate } = req.query;
         let conditions = [];
@@ -1041,9 +1042,9 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
-// Update order status (Admin or Store Owner)
-router.put('/:id(\\d+)/status', authenticateToken, requireStoreOwner, [
-    body('status').isIn(['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled']).withMessage('Invalid status')
+// Update order status (Admin, Store Owner, or Standard User)
+router.put('/:id(\\d+)/status', authenticateToken, requireStaffAccess, [
+    body('status').isIn(['pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled', 'out_for_delivery']).withMessage('Invalid status')
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -1076,7 +1077,7 @@ router.put('/:id(\\d+)/status', authenticateToken, requireStoreOwner, [
         const order = orders[0];
 
         // Check ownership permission
-        if (req.user.user_type !== 'admin' && (!order.owner_id || order.owner_id !== req.user.id)) {
+        if (req.user.user_type !== 'admin' && req.user.user_type !== 'standard_user' && (!order.owner_id || order.owner_id !== req.user.id)) {
             return res.status(403).json({
                 success: false,
                 message: 'You do not have permission to update this order'
@@ -1127,7 +1128,7 @@ router.put('/:id(\\d+)/status', authenticateToken, requireStoreOwner, [
 });
 
 // Assign rider to order (Admin only)
-router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
+router.put('/:id(\\d+)/assign-rider', authenticateToken, requireDispatchAccess, [
     body('rider_id').isInt().withMessage('Rider ID must be a valid integer'),
     body('delivery_fee').optional().isFloat({ min: 0 }).withMessage('Invalid delivery fee')
 ], async (req, res) => {
@@ -1276,7 +1277,8 @@ router.put('/:id(\\d+)/assign-rider', authenticateToken, requireAdmin, [
 });
 
 // Update delivery fee (Admin only) - Auto-calculates based on unique stores in order
-router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireAdmin, async (req, res) => {
+// Update delivery fee (Admin or Standard User)
+router.put('/:id(\\d+)/delivery-fee', authenticateToken, requireStaffAccess, async (req, res) => {
     try {
         const { id } = req.params;
         const { delivery_fee: manual_delivery_fee } = req.body;
@@ -1393,7 +1395,7 @@ router.put('/:id(\\d+)/rider-location', authenticateToken, [
         const order = orders[0];
 
         // Check ownership permission
-        if (req.user.user_type !== 'admin' && order.rider_id !== req.user.id) {
+        if (req.user.user_type !== 'admin' && req.user.user_type !== 'standard_user' && order.rider_id !== req.user.id) {
             return res.status(403).json({
                 success: false,
                 message: 'You do not have permission to update this order'
@@ -1429,7 +1431,7 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Check if order exists and user has permission (rider or admin)
+        // Check if order exists and user has permission (rider, admin, or standard user)
         const [orders] = await req.db.execute(
             `SELECT o.id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.delivery_fee, o.payment_method, o.payment_status, o.status,
                     u.email as user_email, u.first_name as user_first_name
@@ -1449,7 +1451,7 @@ router.put('/:id(\\d+)/deliver', authenticateToken, async (req, res) => {
         const order = orders[0];
 
         // Check ownership permission
-        if (req.user.user_type !== 'admin' && order.rider_id !== req.user.id) {
+        if (req.user.user_type !== 'admin' && req.user.user_type !== 'standard_user' && order.rider_id !== req.user.id) {
             return res.status(403).json({
                 success: false,
                 message: 'You do not have permission to update this order'
@@ -1581,7 +1583,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
         const order = orders[0];
 
         // Check ownership permission
-        if (req.user.user_type !== 'admin' && order.rider_id !== req.user.id) {
+        if (req.user.user_type !== 'admin' && req.user.user_type !== 'standard_user' && order.rider_id !== req.user.id) {
             return res.status(403).json({
                 success: false,
                 message: 'You do not have permission to update this order'
@@ -1811,7 +1813,7 @@ router.put('/:id(\\d+)/payment-status', authenticateToken, [
     }
 });
 
-router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
+router.put('/:id(\\d+)/items', authenticateToken, requireStaffAccess, async (req, res) => {
     try {
         const { id } = req.params;
         const { items, store_id } = req.body;
@@ -1928,7 +1930,7 @@ router.put('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res)
     }
 });
 
-router.get('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/:id(\\d+)/items', authenticateToken, requireStaffAccess, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -1980,7 +1982,7 @@ router.get('/:id(\\d+)/items', authenticateToken, requireAdmin, async (req, res)
     }
 });
 
-router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/:id(\\d+)/items/add', authenticateToken, requireStaffAccess, async (req, res) => {
     try {
         const { id } = req.params;
         const { product_id, quantity, store_id } = req.body;
@@ -2070,7 +2072,7 @@ router.post('/:id(\\d+)/items/add', authenticateToken, requireAdmin, async (req,
     }
 });
 
-router.delete('/:id(\\d+)/items/:itemId(\\d+)', authenticateToken, requireAdmin, async (req, res) => {
+router.delete('/:id(\\d+)/items/:itemId(\\d+)', authenticateToken, requireStaffAccess, async (req, res) => {
     try {
         const { id, itemId } = req.params;
 

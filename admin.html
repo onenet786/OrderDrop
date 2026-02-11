@@ -63,6 +63,11 @@
                     ><i class="fas fa-motorcycle"></i> Riders</a
                   >
                 </li>
+                <li>
+                  <a href="admin.html#user-rights" class="tab-link" data-tab="user-rights"
+                    ><i class="fas fa-user-shield"></i> User Rights</a
+                  >
+                </li>
               </ul>
             </li>
             <li>
@@ -158,6 +163,22 @@
                     ><i class="fas fa-store"></i> Store Reports</a
                   >
                 </li>
+                <li>
+                  <a
+                    href="admin.html#financial-reports"
+                    class="tab-link"
+                    data-tab="financial-reports"
+                    ><i class="fas fa-file-invoice-dollar"></i> Financial Reports</a
+                  >
+                </li>
+                 <li>
+                  <a
+                    href="admin.html#financial-dashboard"
+                    class="tab-link"
+                    data-tab="financial-dashboard"
+                    ><i class="fas fa-chart-line"></i> Financial Dashboard</a
+                  >
+                </li>
               </ul>
             </li>
             <li class="dropdown">
@@ -208,14 +229,7 @@
                 ></i
               ></a>
               <ul class="dropdown-menu">
-                <li>
-                  <a
-                    href="admin.html#financial-dashboard"
-                    class="tab-link"
-                    data-tab="financial-dashboard"
-                    ><i class="fas fa-chart-line"></i> Dashboard</a
-                  >
-                </li>
+               
                 <li>
                   <a
                     href="admin.html#payment-vouchers"
@@ -283,16 +297,9 @@
                     ><i class="fas fa-book"></i> JNV (Journal Voucher)</a
                   >
                 </li>
-                <li>
-                  <a
-                    href="admin.html#financial-reports"
-                    class="tab-link"
-                    data-tab="financial-reports"
-                    ><i class="fas fa-file-invoice-dollar"></i> Financial Reports</a
-                  >
-                </li>
               </ul>
             </li>
+
             <li>
               <a
                 href="admin.html#db-backup"
@@ -476,6 +483,7 @@
                     <option value="customer">Customer</option>
                     <option value="store_owner">Store Owner</option>
                     <option value="admin">Admin</option>
+                    <option value="standard_user">Standard User</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -2145,7 +2153,7 @@
 
     <!-- Order Wise Detail Summary Report Modal -->
     <div id="orderWiseDetailModal" class="modal">
-      <div class="modal-content" style="max-width: 900px;">
+      <div class="modal-content" style="max-width: 1125px;">
         <div class="modal-header">
           <h3>Order Wise Detail Summary</h3>
           <span class="close" data-modal="orderWiseDetailModal">&times;</span>
@@ -2293,9 +2301,42 @@
             </div>
           </div>
         </div>
+        <!-- User Rights Tab -->
+        <div id="user-rights" class="tab-content">
+          <h2>User Rights Assignment</h2>
+          <div style="background: white; padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color);">
+            <div class="form-group" style="margin-bottom: 1.5rem; max-width: 400px;">
+              <label for="rightsUserSelect">Select User (Standard User / Store Owner):</label>
+              <select id="rightsUserSelect" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px;">
+                <option value="">Select a user...</option>
+              </select>
+            </div>
+            
+            <div id="rightsContainer" style="display: none;">
+              <h3 style="margin-top: 0;">Assign Permissions</h3>
+              <p style="color: #666; margin-bottom: 1rem;">Select the menus and actions this user is allowed to access.</p>
+              
+              <div style="margin-bottom: 1.5rem;">
+                <button type="button" id="selectAllRightsBtn" class="btn btn-small btn-secondary">Select All</button>
+                <button type="button" id="deselectAllRightsBtn" class="btn btn-small btn-secondary">Deselect All</button>
+              </div>
+              
+              <form id="userRightsForm">
+                <div id="permissionsGrid" class="permissions-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1.5rem;">
+                  <!-- Checkboxes will be injected here -->
+                </div>
+                
+                <div style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem; text-align: right;">
+                  <button type="submit" class="btn btn-primary" style="padding: 0.8rem 2rem; font-size: 1rem;"><i class="fas fa-save"></i> Save User Rights</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
         <footer class="app-footer">
           <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
         </footer>
+
       </main>
     </div>
 
@@ -2337,6 +2378,7 @@
                   <option value="customer">Customer</option>
                   <option value="store_owner">Store Owner</option>
                   <option value="admin">Admin</option>
+                  <option value="standard_user">Standard User</option>
                 </select>
               </div>
               <div class="form-group">
@@ -2955,7 +2997,7 @@
 
     <!-- Edit Order Modal -->
     <div id="viewOrderModal" class="modal">
-      <div class="modal-content" style="max-width: 800px">
+      <div class="modal-content" style="max-width: 1000px">
         <div class="modal-header">
           <h3 id="viewOrderTitle">Order Details</h3>
           <span class="close" data-modal="viewOrderModal">&times;</span>
@@ -2978,7 +3020,7 @@
     </div>
 
     <div id="editOrderModal" class="modal">
-      <div class="modal-content" style="max-width: 900px; display: flex; flex-direction: column; max-height: 85vh;">
+      <div class="modal-content" style="max-width: 1125px; display: flex; flex-direction: column; max-height: 85vh;">
         <div class="modal-header">
           <h3>Edit Order</h3>
           <span class="close" data-modal="editOrderModal">&times;</span>
@@ -3180,7 +3222,7 @@
 
     <!-- Payment Voucher Modal -->
     <div id="paymentVoucherModal" class="modal persistent-modal">
-      <div class="modal-content">
+      <div class="modal-content" style="max-width: 575px;">
         <div class="modal-header">
           <h2>Create Payment Voucher</h2>
           <button class="close-btn" disabled title="Use Cancel button to close">
@@ -3197,6 +3239,8 @@
               <option value="rider">Rider</option>
               <option value="employee">Employee</option>
               <option value="expense">Expense</option>
+              <option value="customer">Customer</option>
+              <option value="bank">Bank</option>
               <option value="vendor">Vendor</option>
               <option value="other">Other</option>
             </select>
@@ -3206,7 +3250,7 @@
             <div style="display: flex; gap: 5px;">
                 <input type="text" id="payeeName" name="payeeName" class="form-control" required />
                 <select id="payeeSelect" class="form-control" style="display:none; flex-grow: 1;"></select>
-                <button type="button" id="addExpenseTypeBtn" class="btn btn-primary" style="display:none;" title="Add New Expense Type">+</button>
+                <button type="button" id="addExpenseTypeBtn" class="btn btn-primary" style="display:none;" title="Add New Bank">Add New Bank</button>
             </div>
             <input type="hidden" id="payeeId" name="payeeId">
           </div>
@@ -3227,11 +3271,15 @@
           </div>
           <div class="form-group">
             <label>Payment Method</label>
-            <select id="paymentMethodPV" name="paymentMethod" required>
+            <select id="paymentMethodPV" name="paymentMethod" required onchange="toggleChequeInput('paymentMethodPV', 'paymentChequeContainerPV')">
               <option value="cash">Cash</option>
               <option value="cheque">Cheque</option>
               <option value="bank_transfer">Bank Transfer</option>
             </select>
+          </div>
+          <div class="form-group" id="paymentChequeContainerPV" style="display: none;">
+            <label>Cheque Number</label>
+            <input type="text" id="paymentChequeNoPV" name="chequeNumber" placeholder="Enter Cheque Number" />
           </div>
           <div class="form-actions">
             <button
@@ -3251,7 +3299,7 @@
 
     <!-- Receipt Voucher Modal -->
     <div id="receiptVoucherModal" class="modal persistent-modal">
-      <div class="modal-content">
+      <div class="modal-content" style="max-width: 575px;">
         <div class="modal-header">
           <h2>Create Receipt Voucher</h2>
           <button class="close-btn" disabled title="Use Cancel button to close">
@@ -3269,6 +3317,7 @@
               <option value="employee">Employee</option>
               <option value="expense">Expense (Refund)</option>
               <option value="customer">Customer</option>
+              <option value="bank">Bank</option>
               <option value="vendor">Vendor</option>
               <option value="other">Other</option>
             </select>
@@ -3277,8 +3326,8 @@
             <label>Payer Name</label>
             <div style="display: flex; gap: 5px;">
                 <input type="text" id="payerName" name="payerName" class="form-control" required />
-                <select id="payerSelect" class="form-control" style="display:none; flex-grow: 1;"></select>
-                <button type="button" id="addPayerExpenseTypeBtn" class="btn btn-primary" style="display:none;" title="Add New Expense Type">+</button>
+                <select id="payerSelect" class="form-control" style="display:none; flex-grow: 1; padding: 2px 5px; height: 30px; font-size: 0.9rem;"></select>
+                <button type="button" id="addPayerExpenseTypeBtn" class="btn btn-primary" style="display:none; padding: 2px 10px; font-size: 0.8rem; height: 30px; line-height: 1.2;" title="Add New Bank">Add New Bank</button>
             </div>
             <input type="hidden" id="payerId" name="payerId">
           </div>
@@ -3299,11 +3348,15 @@
           </div>
           <div class="form-group">
             <label>Payment Method</label>
-            <select id="paymentMethodRV" name="paymentMethod" required>
+            <select id="paymentMethodRV" name="paymentMethod" required onchange="toggleChequeInput('paymentMethodRV', 'paymentChequeContainerRV')">
               <option value="cash">Cash</option>
               <option value="cheque">Cheque</option>
               <option value="bank_transfer">Bank Transfer</option>
             </select>
+          </div>
+          <div class="form-group" id="paymentChequeContainerRV" style="display: none;">
+            <label>Cheque Number</label>
+            <input type="text" id="paymentChequeNoRV" name="chequeNumber" placeholder="Enter Cheque Number" />
           </div>
           <div class="form-actions">
             <button
@@ -3531,6 +3584,52 @@
       </div>
     </div>
 
+    <!-- Add Bank Modal -->
+    <div id="addBankModal" class="modal persistent-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Add New Bank</h2>
+          <button class="close-btn" onclick="closeModal('addBankModal')">
+            &times;
+          </button>
+        </div>
+        <form id="addBankForm">
+          <div class="form-group">
+            <label>Bank Name</label>
+            <input type="text" id="bankName" name="name" required />
+          </div>
+          <div class="form-group">
+            <label>Account Number</label>
+            <input type="text" id="bankAccountNumber" name="accountNumber" />
+          </div>
+          <div class="form-group">
+            <label>Bank Code</label>
+            <input type="text" id="bankCode" name="bankCode" />
+          </div>
+          <div class="form-group">
+            <label>Branch Name</label>
+            <input type="text" id="bankBranchName" name="branchName" />
+          </div>
+          <div class="form-group">
+            <label>Account Title</label>
+            <input type="text" id="bankAccountTitle" name="accountTitle" />
+          </div>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick="closeModal('addBankModal')"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn btn-primary">
+              Add New Bank
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Store Settlement Modal -->
     <div id="storeSettlementModal" class="modal persistent-modal">
       <div class="modal-content">
@@ -3654,9 +3753,11 @@
               <option value="rider_cash_report">Rider Cash Report</option>
               <option value="rider_fuel_report">Rider Fuel Report</option>
               <option value="comprehensive_report">Comprehensive Cash Report</option>
+              <option value="transaction_summary">Transaction Summary</option>
               <option value="general_voucher">General Voucher (JNV)</option>
               <option value="expense_report">Expense Report</option>
               <option value="delivery_charges_breakdown">Delivery Charges Breakdown</option>
+              <option value="order_wise_sale_summary">Order Wise Sale Summary</option>
               <option value="custom">Custom</option>
             </select>
           </div>
@@ -3664,6 +3765,12 @@
             <label>Select Rider (Optional)</label>
             <select id="reportRiderSelect" name="riderId">
               <option value="">All Riders</option>
+            </select>
+          </div>
+          <div class="form-group" id="reportStoreSelectGroup" style="display: none;">
+            <label>Select Store (Optional)</label>
+            <select id="reportStoreSelect" name="storeId">
+              <option value="">All Stores</option>
             </select>
           </div>
           <div class="form-group">
@@ -3692,14 +3799,14 @@
 
     <!-- View Report Modal -->
     <div id="viewReportModal" class="modal">
-      <div class="modal-content" style="max-width: 800px; width: 90%;">
+      <div class="modal-content" style="max-width: 1250px; width: 95%;">
         <div class="modal-header">
           <h2>Report Details</h2>
           <button class="close-btn" onclick="closeModal('viewReportModal')">
             &times;
           </button>
         </div>
-        <div id="viewReportContent" style="margin-bottom: 20px; overflow-y: auto; max-height: 60vh;">
+        <div id="viewReportContent" style="margin-bottom: 20px;">
           <!-- Content will be injected here -->
         </div>
         <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">

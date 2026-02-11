@@ -86,6 +86,13 @@ async function displayAllStores(filteredStores = null) {
         storesToDisplay = allStores;
     }
 
+    // Sort stores: Open first, then Closed
+    storesToDisplay.sort((a, b) => {
+        const isOpenA = a.is_open ? 1 : 0;
+        const isOpenB = b.is_open ? 1 : 0;
+        return isOpenB - isOpenA;
+    });
+
     storeGrid.innerHTML = '';
 
     storesToDisplay.forEach(store => {

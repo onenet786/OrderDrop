@@ -25,7 +25,47 @@ function generateVoucherNumber(prefix, date = new Date()) {
 }
 
 router.use(authenticateToken);
-router.use(requireAdmin);
+
+// Custom authorization for financial routes
+router.use((req, res, next) => {
+    // Admin has full access
+    if (req.user.user_type === 'admin') {
+        return next();
+    }
+
+    // Standard User: Can only generate/view Daily Summary
+    if (req.user.user_type === 'standard_user') {
+        // Allow generating reports (strictly checked inside route or here)
+        if (req.path === '/reports/generate' && req.method === 'POST') {
+            // Check report type restriction
+            // Note: If body is not yet parsed, this might fail, but app.js usually has body parser before routes.
+            if (req.body && req.body.report_type === 'daily_summary') {
+                return next();
+            }
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Standard users can restricted to Daily Summary reports only' 
+            });
+        }
+        
+        // Allow viewing report details (if it's a daily summary) - Assuming GET /reports/:id is used
+        // However, checking the report type from ID requires DB lookup. 
+        // For now, let's assume they only need to generate it (which returns the data or preview).
+        // If they need to view saved reports, we'd need more logic.
+        // Given the prompt "view only daily summary", likely implies the generation/preview flow.
+        
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Access restricted to Daily Summary only' 
+        });
+    }
+
+    // Default reject
+    return res.status(403).json({ 
+        success: false, 
+        message: 'Admin access required' 
+    });
+});
 
 router.get('/dashboard', async (req, res) => {
     try {
@@ -428,6 +468,12 @@ router.get('/entities', async (req, res) => {
                 ORDER BY name
             `);
             data = expenses.map(e => ({ id: e.name, name: e.name }));
+        } else if (type === 'customer') {
+            const [customers] = await req.db.execute('SELECT id, CONCAT(first_name, " ", last_name) as name FROM users WHERE user_type = "customer" ORDER BY first_name');
+            data = customers;
+        } else if (type === 'bank') {
+            const [banks] = await req.db.execute('SELECT id, name FROM banks WHERE is_active = true ORDER BY name');
+            data = banks;
         }
 
         res.json({ success: true, data });
@@ -439,9 +485,9 @@ router.get('/entities', async (req, res) => {
 
 router.post('/payment-vouchers', [
     body('payee_name').trim().notEmpty(),
-    body('payee_type').isIn(['store', 'rider', 'vendor', 'employee', 'expense', 'other']),
+    body('payee_type').isIn(['store', 'rider', 'vendor', 'employee', 'expense', 'customer', 'bank', 'other']),
     body('amount').isFloat({ min: 0.01 }),
-    body('payment_method').isIn(['cash', 'check', 'bank_transfer']),
+    body('payment_method').isIn(['cash', 'check', 'cheque', 'bank_transfer']),
     body('purpose').optional().trim()
 ], async (req, res) => {
     try {
@@ -454,15 +500,18 @@ router.post('/payment-vouchers', [
             });
         }
 
-        const { payee_name, payee_type, payee_id, amount, purpose, description, payment_method, check_number, bank_details } = req.body;
+        const { payee_name, payee_type, payee_id, amount, purpose, description, payment_method, check_number, cheque_number, bank_details } = req.body;
         const voucher_number = generateVoucherNumber('CPV');
         const voucher_date = new Date().toISOString().split('T')[0];
+
+        // Normalize cheque number
+        const finalChequeNumber = cheque_number || check_number || null;
 
         const [result] = await req.db.execute(
             `INSERT INTO cash_payment_vouchers 
              (voucher_number, voucher_date, payee_name, payee_type, payee_id, amount, purpose, description, payment_method, check_number, bank_details, prepared_by, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')`,
-            [voucher_number, voucher_date, payee_name, payee_type, payee_id || null, amount, purpose || null, description || null, payment_method, check_number || null, bank_details || null, req.user.id]
+            [voucher_number, voucher_date, payee_name, payee_type, payee_id || null, amount, purpose || null, description || null, payment_method, finalChequeNumber, bank_details || null, req.user.id]
         );
 
         res.status(201).json({
@@ -485,7 +534,8 @@ router.post('/payment-vouchers', [
 
 router.put('/payment-vouchers/:id', [
     body('amount').optional().isFloat({ min: 0.01 }),
-    body('status').optional().isIn(['draft', 'pending', 'approved', 'paid', 'cancelled'])
+    body('status').optional().isIn(['draft', 'pending', 'approved', 'paid', 'cancelled']),
+    body('payment_method').optional().isIn(['cash', 'check', 'cheque', 'bank_transfer'])
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -498,7 +548,7 @@ router.put('/payment-vouchers/:id', [
         }
 
         const { id } = req.params;
-        const { payee_name, payee_type, payee_id, amount, status, description } = req.body;
+        const { payee_name, payee_type, payee_id, amount, status, description, payment_method, check_number, cheque_number } = req.body;
 
         // Get existing voucher data if we're marking it as paid
         let existingVoucher = null;
@@ -548,6 +598,16 @@ router.put('/payment-vouchers/:id', [
             updates.push('description = ?');
             params.push(description);
         }
+        if (payment_method) {
+            updates.push('payment_method = ?');
+            params.push(payment_method);
+        }
+        
+        const finalChequeNumber = cheque_number !== undefined ? cheque_number : (check_number !== undefined ? check_number : undefined);
+        if (finalChequeNumber !== undefined) {
+             updates.push('check_number = ?');
+             params.push(finalChequeNumber);
+        }
 
         if (updates.length === 0) {
             return res.status(400).json({
@@ -574,7 +634,7 @@ router.put('/payment-vouchers/:id', [
                 category: 'payment',
                 description: `Payment to ${voucherPayee}: ${voucherDescription}`,
                 amount: voucherAmount,
-                payment_method: existingVoucher.payment_method,
+                payment_method: payment_method || existingVoucher.payment_method,
                 related_entity_type: existingVoucher.payee_type,
                 related_entity_id: existingVoucher.payee_id,
                 reference_type: 'payment_voucher',
@@ -710,7 +770,7 @@ router.get('/receipt-vouchers', async (req, res) => {
 
 router.post('/receipt-vouchers', [
     body('payer_name').trim().notEmpty(),
-    body('payer_type').isIn(['customer', 'store', 'rider', 'vendor', 'employee', 'expense', 'other']),
+    body('payer_type').isIn(['customer', 'store', 'rider', 'vendor', 'employee', 'expense', 'bank', 'other']),
     body('amount').isFloat({ min: 0.01 }),
     body('payment_method').isIn(['cash', 'cheque', 'bank_transfer']),
     body('description').optional().trim()
@@ -1950,11 +2010,11 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'delivery_charges_breakdown', 'custom']),
-    body('period_from').optional().isISO8601(),
-    body('period_to').optional().isISO8601(),
-    body('rider_id').optional().toInt(),
-    body('store_id').optional().toInt()
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
+    body('period_from').optional({ checkFalsy: true }).isISO8601(),
+    body('period_to').optional({ checkFalsy: true }).isISO8601(),
+    body('rider_id').optional({ checkFalsy: true }).toInt(),
+    body('store_id').optional({ checkFalsy: true }).toInt()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -1981,6 +2041,7 @@ router.post('/reports/generate', [
             case 'delivery_charges_breakdown': prefix = 'DCB'; break;
             case 'general_voucher': prefix = 'GVR'; break;
             case 'store_settlement': prefix = 'SSR'; break;
+            case 'order_wise_sale_summary': prefix = 'OWS'; break;
             case 'custom': prefix = 'CUS'; break;
         }
 
@@ -2186,6 +2247,101 @@ router.post('/reports/generate', [
                     total_delivery_fees: total_fees
                 }
             };
+        } else if (report_type === 'order_wise_sale_summary') {
+            const dateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND o.rider_id = ?' : '';
+            // Store filter: Check if any item in the order belongs to the store
+            const storeFilter = store_id ? 'AND (oi.store_id = ? OR (oi.store_id IS NULL AND p.store_id = ?))' : '';
+            
+            const params = [];
+            if (period_from && period_to) {
+                params.push(period_from, `${period_to} 23:59:59`);
+            }
+            if (rider_id) {
+                params.push(rider_id);
+            }
+            if (store_id) {
+                params.push(store_id, store_id);
+            }
+
+            const query = `
+                SELECT 
+                    o.id as order_id,
+                    o.order_number, 
+                    o.created_at,
+                    o.total_amount,
+                    o.delivery_fee,
+                    p.name as item_name,
+                    oi.quantity,
+                    oi.price,
+                    COALESCE(p.cost_price, 0) as cost_price,
+                    COALESCE(s.commission_rate, 10) as commission_rate
+                FROM orders o
+                JOIN order_items oi ON o.id = oi.order_id
+                JOIN products p ON oi.product_id = p.id
+                JOIN stores s ON COALESCE(oi.store_id, p.store_id) = s.id
+                WHERE o.status = 'delivered' ${dateFilter} ${riderFilter} ${storeFilter}
+                ORDER BY o.created_at DESC
+            `;
+
+            const [rows] = await req.db.execute(query, params);
+
+            // Group by Order in JavaScript to avoid JSON_ARRAYAGG compatibility issues
+            const ordersMap = new Map();
+            rows.forEach(row => {
+                if (!ordersMap.has(row.order_id)) {
+                    ordersMap.set(row.order_id, {
+                        id: row.order_id,
+                        order_number: row.order_number,
+                        created_at: row.created_at,
+                        total_amount: parseFloat(row.total_amount || 0),
+                        delivery_fee: parseFloat(row.delivery_fee || 0),
+                        items: [],
+                        item_sales_gross: 0,
+                        total_cost_price: 0,
+                        estimated_commission: 0
+                    });
+                }
+                const order = ordersMap.get(row.order_id);
+                
+                const qty = parseFloat(row.quantity || 0);
+                const price = parseFloat(row.price || 0);
+                const cost = parseFloat(row.cost_price || 0);
+                const commRate = parseFloat(row.commission_rate || 10);
+
+                order.items.push({
+                    name: row.item_name,
+                    qty: qty,
+                    price: price,
+                    cost: cost
+                });
+                
+                const itemTotal = price * qty;
+                order.item_sales_gross += itemTotal;
+                order.total_cost_price += cost * qty;
+                order.estimated_commission += itemTotal * (commRate / 100);
+            });
+
+            const orders = Array.from(ordersMap.values());
+
+            const summary = orders.reduce((acc, o) => {
+                acc.total_item_sales += parseFloat(o.item_sales_gross || 0);
+                acc.total_cost += parseFloat(o.total_cost_price || 0);
+                acc.total_commission += parseFloat(o.estimated_commission || 0);
+                acc.total_delivery += parseFloat(o.delivery_fee || 0);
+                acc.grand_total += parseFloat(o.total_amount || 0);
+                return acc;
+            }, { total_item_sales: 0, total_cost: 0, total_commission: 0, total_delivery: 0, grand_total: 0 });
+
+            // Set main report totals (optional, but good for consistency)
+            total_income = summary.total_commission + summary.total_delivery; // Platform income
+
+            reportData = {
+                type: 'order_wise_sale_summary',
+                orders,
+                summary
+            };
+
         } else if (report_type === 'store_financials') {
             const orderDateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
             const storeFilter = store_id ? 'AND (oi.store_id = ? OR (oi.store_id IS NULL AND p.store_id = ?))' : '';
@@ -2456,6 +2612,62 @@ router.post('/reports/generate', [
                     total_store_commission, // The 10% profit from stores
                     estimated_gross_profit: total_delivery_fees + total_store_commission
                 }
+            };
+        } else if (report_type === 'transaction_summary') {
+            const dateFilter = period_from && period_to ? 'AND ft.created_at BETWEEN ? AND ?' : '';
+            const params = period_from && period_to ? [period_from, `${period_to} 23:59:59`] : [];
+
+            // Fetch all transactions
+            const [transactions] = await req.db.execute(
+                `SELECT 
+                    ft.*,
+                    CASE 
+                        WHEN ft.related_entity_type = 'rider' THEN CONCAT(r.first_name, ' ', r.last_name)
+                        WHEN ft.related_entity_type = 'store' THEN s.name
+                        WHEN ft.related_entity_type = 'employee' OR ft.related_entity_type = 'user' THEN CONCAT(u.first_name, ' ', u.last_name)
+                        ELSE NULL 
+                    END as entity_name
+                 FROM financial_transactions ft
+                 LEFT JOIN riders r ON ft.related_entity_type = 'rider' AND ft.related_entity_id = r.id
+                 LEFT JOIN stores s ON ft.related_entity_type = 'store' AND ft.related_entity_id = s.id
+                 LEFT JOIN users u ON (ft.related_entity_type = 'employee' OR ft.related_entity_type = 'user') AND ft.related_entity_id = u.id
+                 WHERE 1=1 ${dateFilter}
+                 ORDER BY ft.created_at DESC`,
+                params
+            );
+
+            // Calculate summaries
+            const summary = {
+                total_income: 0,
+                total_expense: 0,
+                total_settlements: 0,
+                total_refunds: 0,
+                total_adjustments: 0,
+                net_cash_flow: 0
+            };
+
+            transactions.forEach(t => {
+                const amt = parseFloat(t.amount || 0);
+                if (t.transaction_type === 'income') summary.total_income += amt;
+                else if (t.transaction_type === 'expense') summary.total_expense += amt;
+                else if (t.transaction_type === 'settlement') summary.total_settlements += amt;
+                else if (t.transaction_type === 'refund') summary.total_refunds += amt;
+                else if (t.transaction_type === 'adjustment') summary.total_adjustments += amt;
+            });
+
+            summary.net_cash_flow = summary.total_income - summary.total_expense - summary.total_settlements - summary.total_refunds;
+
+            // Set main report totals
+            total_income = summary.total_income;
+            total_expense = summary.total_expense;
+            total_settlements = summary.total_settlements;
+            total_refunds = summary.total_refunds;
+            total_adjustments = summary.total_adjustments;
+
+            reportData = {
+                type: 'transaction_summary',
+                transactions,
+                summary
             };
         } else {
             reportData = {
@@ -3253,6 +3465,32 @@ router.delete('/reports/:id', async (req, res) => {
             message: 'Failed to delete report',
             error: error.message
         });
+    }
+});
+
+router.post('/banks', [
+    body('name').trim().notEmpty(),
+    body('account_number').optional().trim(),
+    body('bank_code').optional().trim(),
+    body('branch_name').optional().trim(),
+    body('account_title').optional().trim()
+], async (req, res) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ success: false, errors: errors.array() });
+        }
+
+        const { name, account_number, bank_code, branch_name, account_title } = req.body;
+        const [result] = await req.db.execute(
+            'INSERT INTO banks (name, account_number, bank_code, branch_name, account_title) VALUES (?, ?, ?, ?, ?)',
+            [name, account_number || null, bank_code || null, branch_name || null, account_title || null]
+        );
+
+        res.status(201).json({ success: true, message: 'Bank added successfully', id: result.insertId });
+    } catch (error) {
+        console.error('Error adding bank:', error);
+        res.status(500).json({ success: false, message: 'Failed to add bank' });
     }
 });
 

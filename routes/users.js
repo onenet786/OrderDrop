@@ -43,7 +43,9 @@ router.post('/', authenticateToken, requireAdmin, [
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     body('phone').optional().isMobilePhone().withMessage('Invalid phone'),
     body('address').optional().trim(),
-    body('user_type').isIn(['customer', 'store_owner', 'admin']).withMessage('Invalid user type')
+    body('user_type').isIn(['customer', 'store_owner', 'admin', 'standard_user']).withMessage('Invalid user type'),
+    body('is_verified').optional().isBoolean(),
+    body('is_active').optional().isBoolean()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -55,7 +57,8 @@ router.post('/', authenticateToken, requireAdmin, [
             });
         }
 
-        const { firstName, lastName, email, password, phone, address, user_type } = req.body;
+        const { firstName, lastName, email, password, phone, address, user_type, is_verified, is_active } = req.body;
+        console.log('Creating user:', email, 'Type:', user_type);
 
         const [existing] = await req.db.execute('SELECT id FROM users WHERE email = ?', [email]);
         if (existing.length > 0) {
@@ -68,9 +71,13 @@ router.post('/', authenticateToken, requireAdmin, [
         const verificationCode = crypto.randomInt(100000, 999999).toString();
         const verificationExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+        // Use provided is_verified/is_active or default
+        const verified = is_verified !== undefined ? is_verified : false;
+        const active = is_active !== undefined ? is_active : true;
+
         const [result] = await req.db.execute(
             'INSERT INTO users (first_name, last_name, email, phone, password, address, user_type, verification_code, verification_expires_at, is_verified, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [firstName, lastName, email, phone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, false, true]
+            [firstName, lastName, email, phone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, verified, active]
         );
 
         try {
@@ -99,7 +106,7 @@ router.put('/:id', authenticateToken, requireAdmin, [
     body('phone').optional().isMobilePhone().withMessage('Invalid phone'),
     body('address').optional().trim(),
     body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-    body('user_type').optional().isIn(['customer', 'store_owner', 'admin']).withMessage('Invalid user type'),
+    body('user_type').optional().isIn(['customer', 'store_owner', 'admin', 'standard_user']).withMessage('Invalid user type'),
     body('is_active').optional().isBoolean().withMessage('is_active must be a boolean'),
     body('is_verified').optional().isBoolean().withMessage('is_verified must be a boolean')
 ], async (req, res) => {

@@ -1,5 +1,5 @@
 const express = require("express");
-const { authenticateToken, requireAdmin } = require("../middleware/auth");
+const { authenticateToken, requireAdmin, requireStaffAccess } = require("../middleware/auth");
 const { recordFinancialTransaction } = require("../utils/dbHelpers");
 
 const router = express.Router();
@@ -7,6 +7,21 @@ const fs = require("fs");
 const path = require("path");
 const { exec, spawn } = require("child_process");
 const mysqlLib = require("mysql2");
+
+// Helper to check specific permissions for non-admin staff
+async function hasPermission(req, permissionKey) {
+    if (req.user.user_type === 'admin') return true;
+    try {
+        const [rows] = await req.db.execute(
+            'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_key = ?',
+            [req.user.id, permissionKey]
+        );
+        return rows.length > 0;
+    } catch (e) {
+        console.error('Permission check failed:', e);
+        return false;
+    }
+}
 
 const BACKUP_DIR = path.join(__dirname, "..", "database", "backups");
 
@@ -206,9 +221,13 @@ router.get(
 router.get(
   "/inventory-report",
   authenticateToken,
-  requireAdmin,
+  requireStaffAccess,
   async (req, res) => {
     try {
+      if (!(await hasPermission(req, 'report_inventory'))) {
+          return res.status(403).json({ success: false, message: 'Permission denied: report_inventory required' });
+      }
+
       const [storeInventory] = await req.db.execute(`
             SELECT 
                 s.id as store_id,
@@ -311,9 +330,13 @@ router.get(
 router.get(
   "/store-sales-report",
   authenticateToken,
-  requireAdmin,
+  requireStaffAccess,
   async (req, res) => {
     try {
+      if (!(await hasPermission(req, 'report_sales'))) {
+          return res.status(403).json({ success: false, message: 'Permission denied: report_sales required' });
+      }
+
       const [storeSales] = await req.db.execute(`
             SELECT 
                 s.id as store_id,
@@ -854,9 +877,13 @@ router.post(
 router.get(
   "/payments/stats",
   authenticateToken,
-  requireAdmin,
+  requireStaffAccess,
   async (req, res) => {
     try {
+      if (!(await hasPermission(req, 'menu_payments'))) {
+          return res.status(403).json({ success: false, message: 'Permission denied: menu_payments required' });
+      }
+
       const [totalResult] = await req.db.execute(
         "SELECT COUNT(*) as total, SUM(amount) as total_amount FROM payments"
       );
@@ -918,8 +945,12 @@ router.get(
 );
 
 // Get all payments with filters and pagination
-router.get("/payments", authenticateToken, requireAdmin, async (req, res) => {
+router.get("/payments", authenticateToken, requireStaffAccess, async (req, res) => {
   try {
+    if (!(await hasPermission(req, 'menu_payments'))) {
+        return res.status(403).json({ success: false, message: 'Permission denied: menu_payments required' });
+    }
+
     const { page, limit, status, startDate, endDate, userId } = req.query;
     const pageVal = Math.max(1, parseInt(page) || 1);
     const limitVal = Math.max(1, parseInt(limit) || 20);
@@ -980,9 +1011,13 @@ router.get("/payments", authenticateToken, requireAdmin, async (req, res) => {
 router.get(
   "/payments/:paymentId",
   authenticateToken,
-  requireAdmin,
+  requireStaffAccess,
   async (req, res) => {
     try {
+      if (!(await hasPermission(req, 'menu_payments'))) {
+          return res.status(403).json({ success: false, message: 'Permission denied: menu_payments required' });
+      }
+
       const { paymentId } = req.params;
       const [payments] = await req.db.execute(
         "SELECT p.*, u.email, u.first_name, u.last_name, u.phone, o.total_amount, o.status as order_status FROM payments p JOIN users u ON p.user_id = u.id JOIN orders o ON p.order_id = o.id WHERE p.id = ?",
@@ -1013,9 +1048,13 @@ router.get(
 router.get(
   "/wallets/stats",
   authenticateToken,
-  requireAdmin,
+  requireStaffAccess,
   async (req, res) => {
     try {
+      if (!(await hasPermission(req, 'menu_payments'))) {
+          return res.status(403).json({ success: false, message: 'Permission denied: menu_payments required' });
+      }
+
       const [totalStats] = await req.db.execute(
         "SELECT COUNT(*) as total_wallets, SUM(balance) as total_balance, AVG(balance) as avg_balance FROM wallets"
       );
@@ -1056,8 +1095,12 @@ router.get(
 );
 
 // Get all wallets with pagination
-router.get("/wallets", authenticateToken, requireAdmin, async (req, res) => {
+router.get("/wallets", authenticateToken, requireStaffAccess, async (req, res) => {
   try {
+    if (!(await hasPermission(req, 'menu_payments'))) {
+        return res.status(403).json({ success: false, message: 'Permission denied: menu_payments required' });
+    }
+
     const { page, limit, minBalance, maxBalance } = req.query;
     const pageVal = Math.max(1, parseInt(page) || 1);
     const limitVal = Math.max(1, parseInt(limit) || 20);
@@ -1115,9 +1158,13 @@ router.get("/wallets", authenticateToken, requireAdmin, async (req, res) => {
 router.get(
   "/wallets/:walletId",
   authenticateToken,
-  requireAdmin,
+  requireStaffAccess,
   async (req, res) => {
     try {
+      if (!(await hasPermission(req, 'menu_payments'))) {
+          return res.status(403).json({ success: false, message: 'Permission denied: menu_payments required' });
+      }
+
       const { walletId } = req.params;
       const [wallets] = await req.db.execute(
         "SELECT w.*, u.email, u.first_name, u.last_name, u.phone FROM wallets w JOIN users u ON w.user_id = u.id WHERE w.id = ?",

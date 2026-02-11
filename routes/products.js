@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { authenticateToken, requireAdmin, requireStoreOwner, optionalAuth } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireStoreOwner, requireStaffAccess, optionalAuth } = require('../middleware/auth');
 const fs = require('fs');
 const path = require('path');
 
@@ -95,7 +95,11 @@ function getMinVariantPrice(variants) {
     return min;
 }
 
+let _productSchemaEnsured = false;
+let _productColumnsEnsured = false;
+
 async function ensureProductColumns(db) {
+    if (_productColumnsEnsured) return;
     try {
         const columns = [
             { name: 'discount_type', definition: "ENUM('amount', 'percent') NULL" },
@@ -115,12 +119,14 @@ async function ensureProductColumns(db) {
                 console.error(`Failed to ensure column ${col.name} in products:`, e);
             }
         }
+        _productColumnsEnsured = true;
     } catch (e) {
         console.error('Error ensuring product columns:', e);
     }
 }
 
 async function ensureProductSizePricesTable(db) {
+    if (_productSchemaEnsured) return true;
     try {
         await db.execute('SELECT 1 FROM product_size_prices LIMIT 1');
         try {
@@ -150,6 +156,7 @@ async function ensureProductSizePricesTable(db) {
         try { await db.execute('ALTER TABLE product_size_prices ADD INDEX idx_psp_size (size_id)'); } catch (e) {}
         try { await db.execute('ALTER TABLE product_size_prices ADD INDEX idx_psp_product (product_id)'); } catch (e) {}
         try { await db.execute('ALTER TABLE product_size_prices ADD CONSTRAINT fk_psp_unit FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE SET NULL'); } catch (e) {}
+        _productSchemaEnsured = true;
         return true;
     } catch (e) {
         if (e && (e.code === 'ER_NO_SUCH_TABLE' || e.code === 'ER_BAD_TABLE_ERROR')) {
@@ -173,6 +180,7 @@ async function ensureProductSizePricesTable(db) {
                     CONSTRAINT fk_psp_unit FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE SET NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             `);
+            _productSchemaEnsured = true;
             return true;
         }
         return false;
@@ -304,7 +312,7 @@ async function downloadImageToUploads(remoteUrl) {
         const variants = {};
         if (sharp) {
             const sizes = [320, 640, 1024];
-            for (const w of sizes) {
+            await Promise.all(sizes.map(async (w) => {
                 try {
                     const vname = `${baseName}_${w}${ext}`;
                     const vpath = path.join(uploadDir, vname);
@@ -313,7 +321,7 @@ async function downloadImageToUploads(remoteUrl) {
                 } catch (err) {
                     console.warn('sharp resize failed for downloaded image', filePath, err.message);
                 }
-            }
+            }));
         }
 
         // attempt to extract meta
@@ -453,7 +461,7 @@ function getImageVariants(imageUrl) {
 }
 
 // Upload image endpoint — accepts single file and generates resized variants
-router.post('/upload-image', authenticateToken, requireStoreOwner, upload.single('image'), async (req, res) => {
+router.post('/upload-image', authenticateToken, requireStaffAccess, upload.single('image'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
         const uploadDir = path.join(__dirname, '..', 'uploads');
@@ -473,7 +481,7 @@ router.post('/upload-image', authenticateToken, requireStoreOwner, upload.single
 
         if (sharp) {
             const sizes = [320, 640, 1024];
-            for (const w of sizes) {
+            await Promise.all(sizes.map(async (w) => {
                 try {
                     const vname = `${baseName}_${w}${ext}`;
                     const vpath = path.join(uploadDir, vname);
@@ -482,7 +490,7 @@ router.post('/upload-image', authenticateToken, requireStoreOwner, upload.single
                 } catch (err) {
                     console.warn('sharp resize failed for', outPath, err.message);
                 }
-            }
+            }));
         }
 
         // Try to extract image vars for this uploaded file and include in response
@@ -624,7 +632,7 @@ router.post('/export-base64-images', authenticateToken, requireAdmin, async (req
                 // If sharp is available, generate resized variants
                 if (sharp) {
                     const sizes = [320, 640, 1024];
-                    for (const w of sizes) {
+                    await Promise.all(sizes.map(async (w) => {
                         try {
                             const vname = `product_${id}_${Date.now()}_${w}${path.extname(filename)}`;
                             const vpath = path.join(uploadDir, vname);
@@ -632,7 +640,7 @@ router.post('/export-base64-images', authenticateToken, requireAdmin, async (req
                         } catch (err) {
                             console.warn('Failed to write variant for product', id, err.message);
                         }
-                    }
+                    }));
                 }
 
                 await req.db.execute('UPDATE products SET image_url = ? WHERE id = ?', [publicPath, id]);
@@ -664,7 +672,7 @@ router.post('/export-base64-images', authenticateToken, requireAdmin, async (req
 });
 
 // Create new product (Admin or Store Owner)
-router.post('/', authenticateToken, requireStoreOwner, [
+router.post('/', authenticateToken, requireStaffAccess, [
     body('name').trim().isLength({ min: 2 }).withMessage('Product name must be at least 2 characters'),
     body('price').isFloat({ min: 0 }).withMessage('Price must be a positive number'),
     body('cost_price').optional().isFloat({ min: 0 }).withMessage('Cost price must be a positive number'),
@@ -889,7 +897,7 @@ router.post('/', authenticateToken, requireStoreOwner, [
 });
 
 // Update product (Admin or Store Owner)
-router.put('/:id', authenticateToken, requireStoreOwner, [
+router.put('/:id', authenticateToken, requireStaffAccess, [
     body('name').optional().trim().isLength({ min: 2 }).withMessage('Product name must be at least 2 characters'),
     body('cost_price').optional().isFloat({ min: 0 }).withMessage('Cost price must be a positive number'),
     body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
@@ -1135,7 +1143,7 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
 });
 
 // Delete product (Admin or Store Owner)
-router.delete('/:id', authenticateToken, requireStoreOwner, async (req, res) => {
+router.delete('/:id', authenticateToken, requireStaffAccess, async (req, res) => {
     try {
         const { id } = req.params;
 

@@ -416,6 +416,50 @@ function initializeFinancialForms() {
             }
         });
     }
+
+    document.getElementById('addBankForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await submitAddBank();
+    });
+}
+
+async function submitAddBank() {
+    const form = document.getElementById('addBankForm');
+    const formData = new FormData(form);
+    const payload = Object.fromEntries(formData.entries());
+
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/banks`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Bank added successfully');
+            closeModal('addBankModal');
+            form.reset();
+            
+            // Refresh lists if currently selected type is bank
+            const payeeType = document.getElementById('payeeType');
+            if (payeeType && payeeType.value === 'bank') {
+                 payeeType.dispatchEvent(new Event('change'));
+            }
+            const payerType = document.getElementById('payerType');
+            if (payerType && payerType.value === 'bank') {
+                 payerType.dispatchEvent(new Event('change'));
+            }
+        } else {
+            showError('Error', data.message || 'Failed to add bank');
+        }
+    } catch (error) {
+        console.error('Error adding bank:', error);
+        showError('Error', 'Failed to add bank');
+    }
 }
 
 async function loadFinancialDashboard() {
@@ -887,6 +931,14 @@ function displayExpenses(expenses) {
     expenses.forEach(e => {
         const row = document.createElement('tr');
         const date = new Date(e.expense_date).toLocaleDateString();
+        let actionButtons = `<button class="btn-small btn-info" onclick="editExpense(${e.id})">Edit</button>`;
+        
+        if (e.status === 'pending') {
+            actionButtons += ` <button class="btn-small btn-primary" onclick="approveExpense(${e.id})">Approve</button>`;
+        } else if (e.status === 'approved') {
+            actionButtons += ` <button class="btn-small btn-success" onclick="payExpense(${e.id})">Pay</button>`;
+        }
+
         row.innerHTML = `
             <td>${e.expense_number}</td>
             <td>${date}</td>
@@ -895,10 +947,7 @@ function displayExpenses(expenses) {
             <td>₨ ${parseFloat(e.amount).toFixed(2)}</td>
             <td>${e.vendor_name || '-'}</td>
             <td><span class="status-${e.status}">${e.status}</span></td>
-            <td>
-                <button class="btn-small btn-info" onclick="editExpense(${e.id})">Edit</button>
-                <button class="btn-small btn-primary" onclick="approveExpense(${e.id})">Approve</button>
-            </td>
+            <td>${actionButtons}</td>
         `;
         tbody.appendChild(row);
     });
@@ -1137,6 +1186,7 @@ async function submitPaymentVoucher() {
     const amount = parseFloat(document.getElementById('paymentAmount').value);
     const purpose = document.getElementById('paymentPurpose').value;
     const paymentMethod = document.getElementById('paymentMethodPV').value;
+    const chequeNumber = document.getElementById('paymentChequeNoPV').value;
 
     const payload = {
         payee_name: payeeName,
@@ -1146,7 +1196,7 @@ async function submitPaymentVoucher() {
         purpose,
         description: '',
         payment_method: paymentMethod,
-        check_number: null,
+        check_number: (paymentMethod === 'cheque') ? chequeNumber : null,
         bank_details: null
     };
 
@@ -1185,6 +1235,17 @@ async function editPaymentVoucher(id) {
     document.getElementById('paymentAmount').value = voucher.amount;
     document.getElementById('paymentPurpose').value = voucher.purpose || '';
     document.getElementById('paymentMethodPV').value = voucher.payment_method;
+    
+    // Populate cheque number if applicable
+    const chequeInput = document.getElementById('paymentChequeNoPV');
+    if (chequeInput) {
+        // Fallback to check_number if cheque_number is missing (database inconsistency)
+        chequeInput.value = voucher.cheque_number || voucher.check_number || '';
+    }
+    // Trigger visibility toggle
+    if (typeof toggleChequeInput === 'function') {
+        toggleChequeInput('paymentMethodPV', 'paymentChequeContainerPV');
+    }
     
     const payeeType = document.getElementById('payeeType');
     payeeType.value = voucher.payee_type;
@@ -1877,6 +1938,32 @@ async function approveExpense(id) {
     }
 }
 
+async function payExpense(id) {
+    if (!confirm('Are you sure you want to mark this expense as PAID? This will record a financial transaction.')) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/expenses/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            },
+            body: JSON.stringify({ status: 'paid' })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Success', 'Expense marked as PAID');
+            loadExpenses();
+        } else {
+            showError('Error', data.message);
+        }
+    } catch (error) {
+        console.error('Error paying expense:', error);
+        showError('Error', 'Failed to mark expense as paid');
+    }
+}
+
 function generateFinancialReport() {
     document.getElementById('generateReportForm').reset();
     
@@ -1886,6 +1973,7 @@ function generateFinancialReport() {
     const reportType = document.getElementById('reportTypeFilter')?.value || 'monthly_summary';
     document.getElementById('reportTypeModal').value = reportType;
     populateReportRidersDropdown(); // Populate riders when modal opens
+    populateReportStoresDropdown(); // Populate stores when modal opens
     
     // Trigger change event to set initial visibility
     const reportTypeModal = document.getElementById('reportTypeModal');
@@ -1894,6 +1982,28 @@ function generateFinancialReport() {
     }
     
     openModal('generateReportModal');
+}
+
+async function populateReportStoresDropdown() {
+    try {
+        const response = await fetch(`${API_BASE}/api/stores`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        
+        const select = document.getElementById('reportStoreSelect');
+        if (select && data.stores) {
+            select.innerHTML = '<option value="">All Stores</option>';
+            data.stores.forEach(store => {
+                const option = document.createElement('option');
+                option.value = store.id;
+                option.textContent = store.name;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error populating report stores dropdown:', error);
+    }
 }
 
 async function populateReportRidersDropdown() {
@@ -1923,6 +2033,7 @@ async function submitGenerateReport() {
     const periodFromInput = document.getElementById('reportPeriodFrom').value;
     const periodToInput = document.getElementById('reportPeriodTo').value;
     const riderId = document.getElementById('reportRiderSelect')?.value;
+    const storeId = document.getElementById('reportStoreSelect')?.value;
 
     const payload = {
         report_type: reportType
@@ -1934,8 +2045,11 @@ async function submitGenerateReport() {
     if (periodToInput) {
         payload.period_to = periodToInput;
     }
-    if (riderId && (reportType === 'rider_fuel_report' || reportType === 'rider_cash_report')) {
+    if (riderId && (reportType === 'rider_fuel_report' || reportType === 'rider_cash_report' || reportType === 'order_wise_sale_summary')) {
         payload.rider_id = riderId;
+    }
+    if (storeId && reportType === 'order_wise_sale_summary') {
+        payload.store_id = storeId;
     }
 
     // Always default to preview first
@@ -2244,6 +2358,45 @@ function generatePDF(reportId) {
                 theme: 'grid',
                 styles: { fontSize: 7, cellPadding: 2 }
             });
+        } else if (data.type === 'transaction_summary') {
+            doc.text('Transaction Summary Report', 14, startY);
+            
+            // Summary Table
+            if (data.summary) {
+                doc.autoTable({
+                    startY: startY + 5,
+                    head: [['Metric', 'Amount', 'Metric', 'Amount']],
+                    body: [
+                        ['Total Income', `Rs ${parseFloat(data.summary.total_income).toFixed(2)}`, 'Total Expense', `Rs ${parseFloat(data.summary.total_expense).toFixed(2)}`],
+                        ['Total Settlements', `Rs ${parseFloat(data.summary.total_settlements).toFixed(2)}`, 'Total Refunds', `Rs ${parseFloat(data.summary.total_refunds).toFixed(2)}`],
+                        ['Net Cash Flow', `Rs ${parseFloat(data.summary.net_cash_flow).toFixed(2)}`, 'Total Adjustments', `Rs ${parseFloat(data.summary.total_adjustments).toFixed(2)}`]
+                    ],
+                    theme: 'grid',
+                    styles: { fontSize: 9 },
+                    headStyles: { fillColor: [41, 128, 185] }
+                });
+                startY = doc.lastAutoTable.finalY + 10;
+            }
+
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Date', 'Ref #', 'Type', 'Entity', 'In', 'Out', 'Desc']],
+                body: data.transactions.map(t => {
+                    const income = (t.transaction_type === 'income' || t.transaction_type === 'refund') ? parseFloat(t.amount || 0) : 0;
+                    const expense = (t.transaction_type === 'expense' || t.transaction_type === 'settlement') ? parseFloat(t.amount || 0) : 0;
+                    return [
+                        new Date(t.created_at).toLocaleDateString(),
+                        t.transaction_number,
+                        t.transaction_type.toUpperCase(),
+                        t.entity_name || t.related_entity_type || '-',
+                        income > 0 ? `Rs ${income.toFixed(2)}` : '-',
+                        expense > 0 ? `Rs ${expense.toFixed(2)}` : '-',
+                        t.description || ''
+                    ];
+                }),
+                theme: 'grid',
+                styles: { fontSize: 7, cellPadding: 2 }
+            });
         }
     }
 
@@ -2263,25 +2416,25 @@ function viewReport(reportId) {
 
     let extraDetails = '';
     if (data && data.type === 'rider_cash') {
-        extraDetails = '<h3>Rider Cash Movements</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Type</th><th>Amount</th></tr></thead><tbody>';
+        extraDetails = '<h3>Rider Cash Movements</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Type</th><th>Amount</th></tr></thead><tbody>';
         data.movements.forEach(m => {
             extraDetails += `<tr><td>${m.first_name} ${m.last_name}</td><td>${new Date(m.movement_date).toLocaleDateString()}</td><td>${m.movement_type}</td><td>₨ ${parseFloat(m.amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'store_financials') {
-        extraDetails = '<h3>Store Financials</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Store</th><th>Sales</th><th>Cost</th><th>Profit</th></tr></thead><tbody>';
+        extraDetails = '<h3>Store Financials</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Store</th><th>Sales</th><th>Cost</th><th>Profit</th></tr></thead><tbody>';
         data.stores.forEach(s => {
             extraDetails += `<tr><td>${s.store_name}</td><td>₨ ${parseFloat(s.total_sales).toFixed(2)}</td><td>₨ ${parseFloat(s.total_cost).toFixed(2)}</td><td>₨ ${parseFloat(s.estimated_profit).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'general_voucher') {
-        extraDetails = '<h3>Journal Vouchers</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Voucher #</th><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>';
+        extraDetails = '<h3>Journal Vouchers</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Voucher #</th><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>';
         data.vouchers.forEach(v => {
             extraDetails += `<tr><td>${v.voucher_number}</td><td>${new Date(v.voucher_date).toLocaleDateString()}</td><td>${v.description || '-'}</td><td>₨ ${parseFloat(v.total_amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'rider_fuel') {
-        extraDetails = '<h3>Rider Fuel History</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Distance</th><th>Cost</th></tr></thead><tbody>';
+        extraDetails = '<h3>Rider Fuel History</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Distance</th><th>Cost</th></tr></thead><tbody>';
         if (data.entries) {
             data.entries.forEach(e => {
                 extraDetails += `<tr><td>${e.first_name} ${e.last_name || ''}</td><td>${new Date(e.entry_date).toLocaleDateString()}</td><td>${e.distance} km</td><td>₨ ${parseFloat(e.fuel_cost).toFixed(2)}</td></tr>`;
@@ -2292,7 +2445,7 @@ function viewReport(reportId) {
             extraDetails += `<div style="margin-top: 10px;"><strong>Total Distance:</strong> ${data.summary.total_distance} km | <strong>Total Cost:</strong> ₨ ${parseFloat(data.summary.total_cost).toFixed(2)}</div>`;
         }
     } else if (data && data.type === 'store_settlement') {
-        extraDetails = '<h3>Store Settlements</h3><div style="max-height: 300px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Settlement #</th><th>Date</th><th>Store</th><th>Amount</th><th>Comm.</th><th>Status</th></tr></thead><tbody>';
+        extraDetails = '<h3>Store Settlements</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Settlement #</th><th>Date</th><th>Store</th><th>Amount</th><th>Comm.</th><th>Status</th></tr></thead><tbody>';
         if (data.settlements) {
             data.settlements.forEach(s => {
                 extraDetails += `<tr>
@@ -2307,7 +2460,7 @@ function viewReport(reportId) {
         }
         extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'delivery_charges_breakdown') {
-        extraDetails = '<h3>Delivery Charges Breakdown</h3><div style="max-height: 400px; overflow-y: auto;"><table class="report-detail-table"><thead><tr><th>Order #</th><th>Date</th><th>Rider</th><th>Store(s)</th><th>Fee</th></tr></thead><tbody>';
+        extraDetails = '<h3>Delivery Charges Breakdown</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Order #</th><th>Date</th><th>Rider</th><th>Store(s)</th><th>Fee</th></tr></thead><tbody>';
         if (data.orders) {
             data.orders.forEach(o => {
                 extraDetails += `<tr>
@@ -2324,7 +2477,7 @@ function viewReport(reportId) {
             extraDetails += `<div style="margin-top: 10px;"><strong>Total Orders:</strong> ${data.summary.total_orders} | <strong>Total Delivery Fees:</strong> ₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</div>`;
         }
     } else if (data && data.type === 'comprehensive_report') {
-        extraDetails = '<h3>Comprehensive Transactions</h3><div style="max-height: 400px; overflow-y: auto;"><table class="report-detail-table" style="font-size:0.8em"><thead><tr><th>Date</th><th>Ref #</th><th>Type</th><th>Entity</th><th>In</th><th>Out</th><th>Desc</th></tr></thead><tbody>';
+        extraDetails = '<h3>Comprehensive Transactions</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.8em"><thead><tr><th>Date</th><th>Ref #</th><th>Type</th><th>Entity</th><th>In</th><th>Out</th><th>Desc</th></tr></thead><tbody>';
         if (data.transactions) {
             data.transactions.forEach(t => {
                 const income = (t.transaction_type === 'income' || t.transaction_type === 'refund') ? `₨ ${parseFloat(t.amount).toFixed(2)}` : '-';
@@ -2402,6 +2555,75 @@ function viewReport(reportId) {
                 </div>` : ''}
             </div>
         `;
+    } else if (data && data.type === 'transaction_summary') {
+        extraDetails = '<h3>Transaction Summary</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.8em"><thead><tr><th>Date</th><th>Ref #</th><th>Type</th><th>Entity</th><th>In</th><th>Out</th><th>Desc</th></tr></thead><tbody>';
+        if (data.transactions) {
+            data.transactions.forEach(t => {
+                const income = (t.transaction_type === 'income' || t.transaction_type === 'refund') ? parseFloat(t.amount || 0) : 0;
+                const expense = (t.transaction_type === 'expense' || t.transaction_type === 'settlement') ? parseFloat(t.amount || 0) : 0;
+                // Adjustments usually positive, treat as income or handle by sign if we had signed amounts.
+                const entity = t.entity_name || t.related_entity_type || '-';
+                const ref = t.transaction_number || '-';
+                
+                extraDetails += `<tr>
+                    <td>${new Date(t.created_at).toLocaleDateString()}</td>
+                    <td>${ref}</td>
+                    <td><span class="badge badge-${t.transaction_type}">${t.transaction_type}</span></td>
+                    <td>${entity}</td>
+                    <td style="color:green">${income > 0 ? '₨ ' + income.toFixed(2) : '-'}</td>
+                    <td style="color:red">${expense > 0 ? '₨ ' + expense.toFixed(2) : '-'}</td>
+                    <td>${t.description || '-'}</td>
+                </tr>`;
+            });
+        }
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+             const flowColor = data.summary.net_cash_flow >= 0 ? 'green' : 'red';
+             extraDetails += `<div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px;">
+                <h4 style="margin: 0 0 10px 0;">Financial Summary</h4>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                    <div><strong>Total Income:</strong> <span style="color:green">₨ ${parseFloat(data.summary.total_income).toFixed(2)}</span></div>
+                    <div><strong>Total Expense:</strong> <span style="color:red">₨ ${parseFloat(data.summary.total_expense).toFixed(2)}</span></div>
+                    <div><strong>Net Cash Flow:</strong> <span style="color:${flowColor}; font-weight:bold">₨ ${parseFloat(data.summary.net_cash_flow).toFixed(2)}</span></div>
+                    <div><strong>Settlements:</strong> ₨ ${parseFloat(data.summary.total_settlements).toFixed(2)}</div>
+                    <div><strong>Refunds:</strong> ₨ ${parseFloat(data.summary.total_refunds).toFixed(2)}</div>
+                    <div><strong>Adjustments:</strong> ₨ ${parseFloat(data.summary.total_adjustments).toFixed(2)}</div>
+                </div>
+             </div>`;
+        }
+    } else if (data && data.type === 'order_wise_sale_summary') {
+        extraDetails = '<h3>Order Wise Sale Summary</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.85em"><thead><tr><th>Order #</th><th>Items</th><th>Item Sales</th><th>Total Cost</th><th>Comm.</th><th>Del. Charges</th><th>Total Amount</th></tr></thead><tbody>';
+        
+        if (data.orders) {
+            data.orders.forEach(o => {
+                let itemsList = '';
+                if (o.items && Array.isArray(o.items)) {
+                    itemsList = o.items.map(i => `${i.name} x${i.qty}`).join('<br>');
+                }
+                
+                extraDetails += `<tr>
+                    <td>${o.order_number}<br><small>${new Date(o.created_at).toLocaleDateString()}</small></td>
+                    <td>${itemsList}</td>
+                    <td>₨ ${parseFloat(o.item_sales_gross).toFixed(2)}</td>
+                    <td>₨ ${parseFloat(o.total_cost_price).toFixed(2)}</td>
+                    <td>₨ ${parseFloat(o.estimated_commission).toFixed(2)}</td>
+                    <td>₨ ${parseFloat(o.delivery_fee).toFixed(2)}</td>
+                    <td><strong>₨ ${parseFloat(o.total_amount).toFixed(2)}</strong></td>
+                </tr>`;
+            });
+        }
+        extraDetails += '</tbody></table></div>';
+        
+        if (data.summary) {
+             extraDetails += `<div style="margin-top: 15px; font-size: 1.0em; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px;">
+                <strong>Totals:</strong><br>
+                Item Sales: ₨ ${parseFloat(data.summary.total_item_sales).toFixed(2)} | 
+                Cost: ₨ ${parseFloat(data.summary.total_cost).toFixed(2)} | 
+                Commission: ₨ ${parseFloat(data.summary.total_commission).toFixed(2)} | 
+                Delivery: ₨ ${parseFloat(data.summary.total_delivery).toFixed(2)} | 
+                <strong>Grand Total: ₨ ${parseFloat(data.summary.grand_total).toFixed(2)}</strong>
+            </div>`;
+        }
     }
 
     const details = `
@@ -2629,7 +2851,11 @@ document.addEventListener('DOMContentLoaded', function() {
         reportTypeModal.addEventListener('change', function() {
             const riderGroup = document.getElementById('reportRiderSelectGroup');
             if (riderGroup) {
-                riderGroup.style.display = (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report' || this.value === 'delivery_charges_breakdown') ? 'block' : 'none';
+                riderGroup.style.display = (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report' || this.value === 'delivery_charges_breakdown' || this.value === 'order_wise_sale_summary') ? 'block' : 'none';
+            }
+            const storeGroup = document.getElementById('reportStoreSelectGroup');
+            if (storeGroup) {
+                storeGroup.style.display = (this.value === 'order_wise_sale_summary') ? 'block' : 'none';
             }
         });
     }

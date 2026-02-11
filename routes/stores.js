@@ -126,11 +126,11 @@ router.get('/', async (req, res) => {
 
         const whereClause = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
         const [stores] = await req.db.execute(`
-            SELECT s.*, u.first_name as owner_first_name, u.last_name as owner_last_name, u.email as owner_email
+            SELECT s.*, u.email as owner_email, CONCAT(u.first_name, ' ', u.last_name) as owner_name
             FROM stores s
             LEFT JOIN users u ON s.owner_id = u.id
             ${whereClause}
-            ORDER BY COALESCE(s.priority, 999999) ASC, s.rating DESC, s.name ASC
+            ORDER BY s.is_active DESC, s.priority DESC, s.id DESC
         `, params);
 
         res.json({
@@ -157,7 +157,7 @@ router.get('/', async (req, res) => {
                 owner_id: store.owner_id || null,
                 owner_email: store.owner_email || null,
                 owner_name: store.owner_name || null
-            }))
+            })).sort((a, b) => (b.is_open === true ? 1 : 0) - (a.is_open === true ? 1 : 0))
         });
 
     } catch (error) {
@@ -616,7 +616,7 @@ router.post('/upload-image', authenticateToken, requireStoreOwner, upload.single
 
         if (sharp) {
             const sizes = [320, 640, 1024];
-            for (const w of sizes) {
+            await Promise.all(sizes.map(async (w) => {
                 try {
                     const vname = `${baseName}_${w}${ext}`;
                     const vpath = path.join(uploadDir, vname);
@@ -625,7 +625,7 @@ router.post('/upload-image', authenticateToken, requireStoreOwner, upload.single
                 } catch (err) {
                     console.warn('sharp resize failed for', outPath, err.message);
                 }
-            }
+            }));
         }
 
         res.json({ success: true, image_url: publicPath, variants });

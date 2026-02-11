@@ -1024,6 +1024,16 @@ textarea:focus {
     border-collapse: collapse;
     margin-top: 1rem;
     font-size: 0.9rem;
+    min-width: 800px; /* Ensure table has minimum width to force scroll if needed */
+}
+
+.report-detail-table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
 }
 
 .report-detail-table th,
@@ -1031,6 +1041,7 @@ textarea:focus {
     padding: 0.75rem;
     text-align: left;
     border-bottom: 1px solid #e2e8f0;
+    white-space: nowrap; /* Prevent wrapping for cleaner table */
 }
 
 .report-detail-table th {

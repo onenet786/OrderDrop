@@ -4,6 +4,8 @@
 window._adminDiag = window._adminDiag || {};
 
 // API_BASE, currentUser, and authToken are provided by app.js (loaded in admin.html)
+let currentUserPermissions = new Set();
+
 // Centralized State Management
 const AppState = {
     orders: [],
@@ -169,8 +171,14 @@ if (typeof io !== 'undefined') {
         if (activeTab) {
             const tabId = activeTab.getAttribute('data-tab');
             if (tabId === 'dashboard') {
-                if (typeof loadDashboardStats === 'function') loadDashboardStats();
-                if (typeof loadRecentActivity === 'function') loadRecentActivity();
+                const todayTotalOrders = document.getElementById('todayTotalOrders');
+                if (todayTotalOrders) {
+                    todayTotalOrders.textContent = parseInt(todayTotalOrders.textContent) + 1;
+                }
+                const allTotalOrders = document.getElementById('allTotalOrders');
+                if (allTotalOrders) {
+                    allTotalOrders.textContent = parseInt(allTotalOrders.textContent) + 1;
+                }
             } else if (tabId === 'orders') {
                 if (typeof window.loadOrders === 'function') window.loadOrders();
             }
@@ -180,19 +188,16 @@ if (typeof io !== 'undefined') {
     socket.on('order_assigned', (data) => {
         showSuccess('Order Assigned', `Order #${data.order_number} assigned to ${data.rider_name}.`);
         if (typeof window.loadOrders === 'function') window.loadOrders();
-        if (typeof loadDashboardStats === 'function') loadDashboardStats();
     });
 
     socket.on('order_status_update', (data) => {
         showInfo('Order Status Updated', `Order #${data.order_number} is now ${data.status}.`);
         if (typeof window.loadOrders === 'function') window.loadOrders();
-        if (typeof loadDashboardStats === 'function') loadDashboardStats();
     });
 
     socket.on('payment_status_update', (data) => {
         showInfo('Payment Status Updated', `Order #${data.order_number} payment is now ${data.payment_status}.`);
         if (typeof window.loadOrders === 'function') window.loadOrders();
-        if (typeof loadDashboardStats === 'function') loadDashboardStats();
     });
 
     socket.on('order_completed', (data) => {
@@ -234,7 +239,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const data = await resp.json();
             if (data && data.success && data.user) {
-                if (data.user.user_type === 'admin') {
+                if (data.user.user_type === 'admin' || data.user.user_type === 'standard_user') {
                     currentUser = data.user;
                     initializeAdmin();
                 } else if (data.user.user_type === 'rider') {
@@ -330,15 +335,41 @@ function initializeAdmin() {
     
     // Load initial dashboard data
     const initialTab = window.location.hash ? window.location.hash.substring(1) : 'dashboard';
-    if (initialTab && initialTab !== 'dashboard') {
-        switchTab(initialTab);
+    
+    // Apply restrictions immediately
+    if (currentUser && currentUser.user_type === 'standard_user') {
+        applyRoleRestrictions().then(() => {
+             // If initial tab is restricted, it will be handled by applyRoleRestrictions redirection logic
+             // But we should try to load the requested tab if valid
+             if (initialTab && initialTab !== 'dashboard') {
+                 switchTab(initialTab);
+             } else {
+                 // If default was dashboard, and we might not have access, let applyRoleRestrictions handle it or default to orders
+                 // We don't call loadDashboardStats() blindly
+             }
+        });
     } else {
-        loadDashboardStats();
+        if (initialTab && initialTab !== 'dashboard') {
+            switchTab(initialTab);
+        } else {
+            
+        }
     }
 
     // Listen for hash changes to switch tabs
     window.addEventListener('hashchange', () => {
         const tab = window.location.hash.substring(1);
+        if (currentUser && currentUser.user_type === 'standard_user') {
+            // Check if tab is allowed (simple check, robust check is in applyRoleRestrictions)
+            const link = document.querySelector(`.tab-link[data-tab="${tab}"]`);
+            if (link && link.style.display === 'none') {
+                console.warn('Access denied to tab:', tab);
+                // Redirect to first visible
+                const first = document.querySelector('.tab-link[style="display: block;"]');
+                if (first) switchTab(first.dataset.tab);
+                return;
+            }
+        }
         if (tab) switchTab(tab);
     });
 
@@ -1256,6 +1287,9 @@ function switchTab(tabName) {
             break;
         case 'wallets':
             loadWallets();
+            break;
+        case 'user-rights':
+            if (typeof loadUserRights === 'function') loadUserRights();
             break;
         case 'order-reports':
             // Reports tab doesn't need initial loading, user will generate reports manually
@@ -2352,11 +2386,26 @@ function toggleProductStatus(productId, currentStatus) {
 
 // Orders Management
 function loadOrders() {
-    fetch(`${API_BASE}/api/orders`, {
+    let url = `${API_BASE}/api/orders`;
+    // If we wanted to support "My Orders" for standard users in admin panel, we could change this.
+    // But currently requirement says standard user should see ALL orders to assign riders.
+    // So we keep it as /api/orders which now allows standard_user.
+
+    fetch(url, {
         headers: { 'Authorization': `Bearer ${authToken}` }
     })
-    .then(response => response.json())
+    .then(response => {
+        if (response.status === 403) {
+            console.error('Access denied to fetch orders');
+            return { success: false, message: 'Access denied' };
+        }
+        return response.json();
+    })
     .then(data => {
+        if (!data.success) {
+            console.error('Failed to load orders:', data.message);
+            return;
+        }
         // Store orders data globally for edit functionality
         AppState.orders = data.orders || [];
         
@@ -2799,10 +2848,36 @@ function updateOrderSummary(items, deliveryFee) {
 
 async function editOrder(orderId) {
     try {
+        // Permission check
+        if (currentUser.user_type !== 'admin' && !currentUserPermissions.has('action_edit_order')) {
+            showError('Access Denied', 'You do not have permission to edit orders.');
+            return;
+        }
+
         const itemsResponse = await fetch(`${API_BASE}/api/orders/${orderId}/items`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
-        const itemsData = await itemsResponse.json();
+        let itemsData = await itemsResponse.json();
+
+        // Fallback if specific items endpoint fails (e.g. permission issues)
+        if (!itemsData.success) {
+            console.warn('Failed to fetch items from /items endpoint, trying /orders/:id fallback', itemsData.message);
+            const viewResponse = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            const viewData = await viewResponse.json();
+            if (viewData.success && viewData.order) {
+                itemsData = {
+                    success: true,
+                    order: viewData.order,
+                    items: viewData.order.items || [],
+                    availableStores: [] // Fallback won't have this, but it's optional
+                };
+            } else {
+                 // Propagate the original error if fallback also fails
+                 console.error('Fallback fetch also failed');
+            }
+        }
 
         // Use fresh order data from API if available, otherwise fallback to AppState.orders
         const freshOrder = itemsData.order || AppState.orders.find(o => o.id === orderId);
@@ -2819,7 +2894,12 @@ async function editOrder(orderId) {
         const ridersResponse = await fetch(`${API_BASE}/api/orders/available-riders`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
-        const ridersData = await ridersResponse.json();
+        
+        if (ridersResponse.status === 403) {
+             console.warn('Access denied to fetch riders');
+        }
+        
+        const ridersData = ridersResponse.ok ? await ridersResponse.json() : { success: false };
 
         const riderSelect = document.getElementById('orderRider');
         riderSelect.innerHTML = '<option value="">Select Rider</option>';
@@ -2828,6 +2908,11 @@ async function editOrder(orderId) {
                 const selected = freshOrder.rider_id == rider.id ? 'selected' : '';
                 riderSelect.innerHTML += `<option value="${rider.id}" ${selected}>${rider.first_name} ${rider.last_name}</option>`;
             });
+        }
+        
+        // Also add current rider if not in available list (e.g. busy)
+        if (freshOrder.rider_id && ridersData.success && !ridersData.riders.find(r => r.id == freshOrder.rider_id)) {
+             riderSelect.innerHTML += `<option value="${freshOrder.rider_id}" selected>${freshOrder.rider_first_name} ${freshOrder.rider_last_name} (Current)</option>`;
         }
 
         const storeSelect = document.getElementById('orderItemStore');
@@ -3783,6 +3868,12 @@ async function showAddStoreModal() {
 }
 
 async function saveStore() {
+    // Permission check
+    if (currentUser.user_type !== 'admin' && !currentUserPermissions.has('action_manage_stores')) {
+        showError('Access Denied', 'You do not have permission to manage stores.');
+        return;
+    }
+
     const formEl = document.getElementById('addStoreForm');
     const formData = new FormData(formEl);
     const storeData = {
@@ -4486,6 +4577,12 @@ async function showAddProductModal() {
 }
 
 async function saveProduct() {
+    // Permission check
+    if (currentUser.user_type !== 'admin' && !currentUserPermissions.has('action_manage_products')) {
+        showError('Access Denied', 'You do not have permission to manage products.');
+        return;
+    }
+
     const formEl = document.getElementById('addProductForm');
     const formData = new FormData(formEl);
     const rawStoreId = formData.get('store_id');
@@ -6660,5 +6757,235 @@ function displayDiagnostics(results) {
     document.getElementById('problemsChecksRun').textContent = totalChecks;
     document.getElementById('problemsIssuesFound').textContent = totalIssues;
     document.getElementById('problemsLastRun').textContent = new Date().toLocaleTimeString();
+}
+
+async function applyRoleRestrictions() {
+    if (!currentUser || currentUser.user_type !== 'standard_user') return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/permissions/my-permissions`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        
+        if (data.success && data.permissions) {
+            currentUserPermissions = new Set(data.permissions);
+            const perms = currentUserPermissions;
+            
+            // Map permissions to tab IDs
+            const tabMap = {
+                'menu_dashboard': 'dashboard',
+                'menu_orders': 'orders',
+                'menu_products': 'products',
+                'menu_stores': 'stores',
+                'menu_riders': 'riders',
+                'menu_users': 'accounts',
+                'menu_payments': ['payments', 'wallets'],
+                'menu_financial': ['payment-vouchers', 'bank-payment-vouchers', 'receipt-vouchers', 'bank-receipt-vouchers', 'journal-vouchers', 'store-settlements', 'expenses', 'rider-cash'],
+                'menu_reports': ['order-reports', 'inventory-report', 'rider-reports', 'store-reports', 'financial-reports'],
+                'menu_settings': ['settings', 'database', 'db-backup', 'logs', 'problems', 'units', 'sizes'],
+                'menu_user_rights': 'user-rights'
+            };
+
+            // Hide everything first (default deny)
+            const allTabs = document.querySelectorAll('.tab-link');
+            allTabs.forEach(link => {
+                link.style.display = 'none';
+                if (link.closest('li')) link.closest('li').style.display = 'none';
+            });
+            
+            // Show allowed
+            Object.entries(tabMap).forEach(([permKey, tabIds]) => {
+                if (perms.has(permKey)) {
+                    const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
+                    ids.forEach(tid => {
+                        const links = document.querySelectorAll(`.tab-link[data-tab="${tid}"]`);
+                        links.forEach(link => {
+                            link.style.display = 'block';
+                            if (link.closest('li')) link.closest('li').style.display = 'block';
+                        });
+                        // Show parent dropdown if needed
+                        const link = document.querySelector(`.tab-link[data-tab="${tid}"]`);
+                        if (link) {
+                            const dropdown = link.closest('.dropdown');
+                            if (dropdown) dropdown.style.display = 'block';
+                        }
+                    });
+                }
+            });
+            
+            // Handle Actions
+            if (!perms.has('action_edit_order')) {
+                // Hide edit buttons in orders
+                const style = document.createElement('style');
+                style.innerHTML = `.btn-edit { display: none !important; }`;
+                document.head.appendChild(style);
+            }
+        }
+    } catch (e) {
+        console.error('Error applying permissions:', e);
+    }
+}
+
+// --- User Rights Management ---
+
+const AVAILABLE_PERMISSIONS = [
+    { key: 'menu_dashboard', label: 'Dashboard', group: 'Menus' },
+    { key: 'menu_orders', label: 'Orders Management', group: 'Menus' },
+    { key: 'menu_products', label: 'Products Management', group: 'Menus' },
+    { key: 'menu_stores', label: 'Store Management', group: 'Menus' },
+    { key: 'menu_riders', label: 'Rider Management', group: 'Menus' },
+    { key: 'menu_users', label: 'User Accounts', group: 'Menus' },
+    { key: 'menu_payments', label: 'Payments & Wallets', group: 'Menus' },
+    { key: 'menu_financial', label: 'Financial Vouchers', group: 'Menus' },
+    { key: 'menu_reports', label: 'Reports', group: 'Menus' },
+    { key: 'menu_settings', label: 'Settings & Utilities', group: 'Menus' },
+    { key: 'menu_user_rights', label: 'User Rights', group: 'Menus' },
+    
+    { key: 'action_edit_order', label: 'Edit Order / Assign Rider', group: 'Actions' },
+    { key: 'action_manage_products', label: 'Add/Edit Products', group: 'Actions' },
+    { key: 'action_manage_stores', label: 'Add/Edit Stores', group: 'Actions' },
+    
+    { key: 'report_sales', label: 'Sales Reports', group: 'Reports' },
+    { key: 'report_inventory', label: 'Inventory Reports', group: 'Reports' },
+    { key: 'report_rider_performance', label: 'Rider Performance', group: 'Reports' }
+];
+
+async function loadUserRights() {
+    // Populate permissions grid
+    const grid = document.getElementById('permissionsGrid');
+    if (grid) {
+        grid.innerHTML = '';
+        const groups = {};
+        
+        AVAILABLE_PERMISSIONS.forEach(perm => {
+            if (!groups[perm.group]) groups[perm.group] = [];
+            groups[perm.group].push(perm);
+        });
+        
+        for (const [groupName, perms] of Object.entries(groups)) {
+            const groupDiv = document.createElement('div');
+            groupDiv.innerHTML = `<h4 style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px; color: #2c3e50;">${groupName}</h4>`;
+            
+            perms.forEach(perm => {
+                const label = document.createElement('label');
+                label.style.display = 'flex';
+                label.style.alignItems = 'center';
+                label.style.marginBottom = '8px';
+                label.style.cursor = 'pointer';
+                label.innerHTML = `
+                    <input type="checkbox" name="permissions" value="${perm.key}" style="margin-right: 10px; width: 18px; height: 18px;">
+                    <span>${perm.label}</span>
+                `;
+                groupDiv.appendChild(label);
+            });
+            grid.appendChild(groupDiv);
+        }
+    }
+
+    // Fetch Users
+    try {
+        const response = await fetch(`${API_BASE}/api/permissions/users`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        
+        const select = document.getElementById('rightsUserSelect');
+        if (select && data.success) {
+            select.innerHTML = '<option value="">Select a user...</option>';
+            data.users.forEach(u => {
+                select.innerHTML += `<option value="${u.id}">${u.first_name} ${u.last_name} (${u.email})</option>`;
+            });
+            
+            // Remove existing listener to avoid duplicates if called multiple times
+            const newSelect = select.cloneNode(true);
+            select.parentNode.replaceChild(newSelect, select);
+            
+            newSelect.addEventListener('change', async function() {
+                const userId = this.value;
+                const container = document.getElementById('rightsContainer');
+                if (!userId) {
+                    container.style.display = 'none';
+                    return;
+                }
+                container.style.display = 'block';
+                
+                // Fetch permissions for this user
+                try {
+                    const permRes = await fetch(`${API_BASE}/api/permissions/user/${userId}`, {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    });
+                    const permData = await permRes.json();
+                    
+                    // Reset checks
+                    document.querySelectorAll('#userRightsForm input[type="checkbox"]').forEach(cb => cb.checked = false);
+                    
+                    if (permData.success && permData.permissions) {
+                        permData.permissions.forEach(key => {
+                            const cb = document.querySelector(`#userRightsForm input[value="${key}"]`);
+                            if (cb) cb.checked = true;
+                        });
+                    }
+                } catch (e) {
+                    console.error('Error fetching user permissions:', e);
+                    showError('Error', 'Failed to load user permissions');
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Error loading users for rights:', e);
+    }
+    
+    // Select/Deselect All Handlers
+    const selectAllBtn = document.getElementById('selectAllRightsBtn');
+    if (selectAllBtn) {
+        selectAllBtn.onclick = () => {
+            document.querySelectorAll('#userRightsForm input[type="checkbox"]').forEach(cb => cb.checked = true);
+        };
+    }
+    
+    const deselectAllBtn = document.getElementById('deselectAllRightsBtn');
+    if (deselectAllBtn) {
+        deselectAllBtn.onclick = () => {
+            document.querySelectorAll('#userRightsForm input[type="checkbox"]').forEach(cb => cb.checked = false);
+        };
+    }
+    
+    // Save Form Handler
+    const form = document.getElementById('userRightsForm');
+    if (form) {
+        // Remove existing listener
+        const newForm = form.cloneNode(true);
+        form.parentNode.replaceChild(newForm, form);
+        
+        newForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const select = document.getElementById('rightsUserSelect');
+            const userId = select.value;
+            if (!userId) return;
+            
+            const selected = Array.from(document.querySelectorAll('#userRightsForm input[name="permissions"]:checked')).map(cb => cb.value);
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/permissions/user/${userId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ permissions: selected })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showSuccess('Saved', 'User rights updated successfully');
+                } else {
+                    showError('Error', data.message || 'Failed to save');
+                }
+            } catch (err) {
+                console.error('Error saving permissions:', err);
+                showError('Error', 'Failed to save permissions');
+            }
+        });
+    }
 }
 

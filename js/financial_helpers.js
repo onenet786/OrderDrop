@@ -18,13 +18,22 @@ async function updateVoucherTypeUI(type, nameInput, select, hidden, addBtn) {
     if (hidden) hidden.value = '';
     select.innerHTML = '<option value="">Select...</option>';
     
-    if (['store', 'rider', 'employee', 'expense'].includes(type)) {
+    if (['store', 'rider', 'employee', 'expense', 'customer', 'bank'].includes(type)) {
         nameInput.style.display = 'none';
         nameInput.removeAttribute('required');
         select.style.display = 'block';
         select.setAttribute('required', 'true');
         
-        if (addBtn) addBtn.style.display = (type === 'expense') ? 'block' : 'none';
+        if (addBtn) addBtn.style.display = (type === 'expense' || type === 'bank') ? 'block' : 'none';
+        if (addBtn.style.display === 'block') {
+            if (type === 'bank') {
+                addBtn.textContent = 'Add New Bank';
+                addBtn.title = 'Add New Bank';
+            } else {
+                addBtn.textContent = '+';
+                addBtn.title = 'Add New Expense Type';
+            }
+        }
         
         const entities = await fetchFinancialEntities(type);
         entities.forEach(entity => {
@@ -70,6 +79,25 @@ function handleVoucherTypeChange(typeSelectId, nameInputId, selectId, hiddenId, 
     
     if (addBtn) {
         addBtn.addEventListener('click', () => {
+            if (typeSelect.value === 'bank') {
+                if (typeof openModal === 'function') {
+                    // Explicitly set button text to ensure it's correct
+                    const bankModal = document.getElementById('addBankModal');
+                    if (bankModal) {
+                        const btn = bankModal.querySelector('.btn-primary');
+                        if (btn) btn.textContent = 'Add New Bank';
+                        // Force layout update to ensure text change is rendered
+                        btn.style.display = 'none';
+                        btn.offsetHeight; // Trigger reflow
+                        btn.style.display = '';
+                    }
+                    openModal('addBankModal');
+                } else {
+                    console.error('openModal function not found');
+                }
+                return;
+            }
+
             const newType = prompt("Enter new Expense Type:");
             if (newType && newType.trim()) {
                 const option = document.createElement('option');

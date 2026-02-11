@@ -22,19 +22,21 @@ async function displayOrders(status = 'pending') {
         const userData = localStorage.getItem('serveNowUser');
         const user = userData ? JSON.parse(userData) : null;
         const isAdmin = user && user.user_type === 'admin';
+        const isStandardUser = user && user.user_type === 'standard_user';
+        const isStaff = isAdmin || isStandardUser;
 
         // Show/Hide filter
         const assignmentFilter = document.getElementById('assignmentFilter');
-        if (assignmentFilter && !isAdmin) {
+        if (assignmentFilter && !isStaff) {
             assignmentFilter.style.display = 'none';
         }
 
         let url = `${API_BASE}/api/orders?status=${status}`;
-        if (isAdmin && assignmentFilter) {
+        if (isStaff && assignmentFilter) {
             url += `&assignment=${assignmentFilter.value}`;
         }
 
-        if (!isAdmin) {
+        if (!isStaff) {
             url = `${API_BASE}/api/orders/my-orders?status=${status}`;
             // Do NOT hide tabs for non-admin
         }
@@ -112,7 +114,7 @@ async function displayOrders(status = 'pending') {
                         ${contactRiderHtml}
                     </div>
                     <div class="order-actions">
-                        ${isAdmin ? (status === 'pending' ? `
+                        ${isStaff ? (status === 'pending' ? `
                             <button onclick="updateOrderStatus(${order.id}, 'confirmed')" class="btn btn-primary">Confirm Order</button>
                             <button onclick="assignRider(${order.id})" class="btn btn-secondary">Assign Rider</button>
                             <button onclick="updateOrderStatus(${order.id}, 'cancelled')" class="btn btn-danger">Cancel Order</button>
@@ -339,8 +341,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const user = JSON.parse(userData);
     const isAdmin = user.user_type === 'admin';
+    const isStandardUser = user.user_type === 'standard_user';
+    const isStaff = isAdmin || isStandardUser;
 
-    if (isAdmin) {
+    if (isStaff) {
         const assignmentFilter = document.getElementById('assignmentFilter');
         if (assignmentFilter) assignmentFilter.value = 'unassigned';
     }

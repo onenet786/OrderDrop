@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireDispatchAccess } = require('../middleware/auth');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -19,8 +19,8 @@ async function hasColumn(db, table, column) {
     return rows && rows[0] && rows[0].cnt > 0;
 }
 
-// Get all riders (Admin only)
-router.get('/', authenticateToken, requireAdmin, async (req, res) => {
+// Get all riders (Admin & Dispatch only)
+router.get('/', authenticateToken, requireDispatchAccess, async (req, res) => {
     try {
         const hasFullName = await hasColumn(req.db, 'riders', 'full_name');
         let sql;
