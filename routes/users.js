@@ -7,11 +7,37 @@ const { sendVerificationEmail, sendDeletionRequestEmail } = require('../services
 
 const router = express.Router();
 
-// Get all users (Admin only)
-router.get('/', authenticateToken, requireAdmin, async (req, res) => {
+// Middleware to allow standard_user with menu_users permission
+const requireUserManagement = async (req, res, next) => {
+    // If admin, allow
+    if (req.user.user_type === 'admin') {
+        return next();
+    }
+    
+    // If standard_user, check for menu_users permission
+    if (req.user.user_type === 'standard_user') {
+        try {
+            const [perms] = await req.db.execute(
+                'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_key = ?',
+                [req.user.id, 'menu_users']
+            );
+            if (perms.length > 0) {
+                return next();
+            }
+        } catch (e) {
+            console.error('Permission check error:', e);
+            return res.status(500).json({ success: false, message: 'Permission check failed' });
+        }
+    }
+
+    return res.status(403).json({ success: false, message: 'Access denied' });
+};
+
+// Get all users (Admin or Standard User with permission)
+router.get('/', authenticateToken, requireUserManagement, async (req, res) => {
     try {
         const [users] = await req.db.execute(
-            'SELECT id, first_name, last_name, email, phone, address, user_type, is_active, is_verified, created_at FROM users ORDER BY created_at DESC'
+            'SELECT id, first_name, last_name, email, phone, address, user_type, is_active, is_verified, created_at, store_id FROM users ORDER BY created_at DESC'
         );
 
         const formattedUsers = users.map(user => ({
@@ -45,7 +71,8 @@ router.post('/', authenticateToken, requireAdmin, [
     body('address').optional().trim(),
     body('user_type').isIn(['customer', 'store_owner', 'admin', 'standard_user']).withMessage('Invalid user type'),
     body('is_verified').optional().isBoolean(),
-    body('is_active').optional().isBoolean()
+    body('is_active').optional().isBoolean(),
+    body('store_id').optional().toInt()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -57,8 +84,8 @@ router.post('/', authenticateToken, requireAdmin, [
             });
         }
 
-        const { firstName, lastName, email, password, phone, address, user_type, is_verified, is_active } = req.body;
-        console.log('Creating user:', email, 'Type:', user_type);
+        const { firstName, lastName, email, password, phone, address, user_type, is_verified, is_active, store_id } = req.body;
+        console.log('Creating user:', email, 'Type:', user_type, 'Store:', store_id);
 
         const [existing] = await req.db.execute('SELECT id FROM users WHERE email = ?', [email]);
         if (existing.length > 0) {
@@ -76,8 +103,8 @@ router.post('/', authenticateToken, requireAdmin, [
         const active = is_active !== undefined ? is_active : true;
 
         const [result] = await req.db.execute(
-            'INSERT INTO users (first_name, last_name, email, phone, password, address, user_type, verification_code, verification_expires_at, is_verified, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [firstName, lastName, email, phone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, verified, active]
+            'INSERT INTO users (first_name, last_name, email, phone, password, address, user_type, verification_code, verification_expires_at, is_verified, is_active, store_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [firstName, lastName, email, phone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, verified, active, store_id || null]
         );
 
         try {
@@ -108,7 +135,8 @@ router.put('/:id', authenticateToken, requireAdmin, [
     body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     body('user_type').optional().isIn(['customer', 'store_owner', 'admin', 'standard_user']).withMessage('Invalid user type'),
     body('is_active').optional().isBoolean().withMessage('is_active must be a boolean'),
-    body('is_verified').optional().isBoolean().withMessage('is_verified must be a boolean')
+    body('is_verified').optional().isBoolean().withMessage('is_verified must be a boolean'),
+    body('store_id').optional().toInt()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -123,7 +151,7 @@ router.put('/:id', authenticateToken, requireAdmin, [
         const { id } = req.params;
         const {
             firstName, lastName, email, phone, address, password,
-            user_type, is_active, is_verified
+            user_type, is_active, is_verified, store_id
         } = req.body;
 
         const updateFields = [];
@@ -137,6 +165,7 @@ router.put('/:id', authenticateToken, requireAdmin, [
         if (user_type !== undefined) { updateFields.push('user_type = ?'); updateValues.push(user_type); }
         if (is_active !== undefined) { updateFields.push('is_active = ?'); updateValues.push(is_active); }
         if (is_verified !== undefined) { updateFields.push('is_verified = ?'); updateValues.push(is_verified); }
+        if (store_id !== undefined) { updateFields.push('store_id = ?'); updateValues.push(store_id || null); }
 
         // Handle password separately (hash)
         if (password !== undefined && password !== '') {

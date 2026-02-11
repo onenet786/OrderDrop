@@ -1988,6 +1988,36 @@ function showAddAccountModal() {
     document.getElementById('editAccountForm').reset();
     document.getElementById('editAccountId').value = '';
     document.querySelector('#editAccountModal h3').textContent = 'Add New Account';
+
+    // Handle store selection logic for Add Mode
+    const storeGroup = document.getElementById('editAccountStoreGroup');
+    const storeSelect = document.getElementById('editAccountStore');
+    const userTypeSelect = document.getElementById('editAccountType');
+
+    // Reset visibility
+    storeGroup.style.display = 'none';
+    storeSelect.value = "";
+
+    // Populate store select if empty (preload it)
+    if (storeSelect.options.length <= 1) {
+        populateStoreDropdown(storeSelect);
+    }
+
+    // Attach listener for type change
+    userTypeSelect.onchange = function() {
+        if (this.value === 'store_owner') {
+            storeGroup.style.display = 'block';
+            if (storeSelect.options.length <= 1) populateStoreDropdown(storeSelect);
+        } else {
+            storeGroup.style.display = 'none';
+        }
+    };
+    
+    // Check initial state (e.g. if form reset defaulted to store_owner, though unlikely)
+    if (userTypeSelect.value === 'store_owner') {
+        storeGroup.style.display = 'block';
+    }
+
     showModal('editAccountModal');
 }
 
@@ -2012,8 +2042,71 @@ function editAccount(accountId) {
     document.getElementById('editAccountVerified').value = isVerified ? '1' : '0';
     document.getElementById('editAccountAddress').value = account.address || '';
     document.getElementById('editAccountPassword').value = '';
+
+    // Handle store selection logic
+    const storeGroup = document.getElementById('editAccountStoreGroup');
+    const storeSelect = document.getElementById('editAccountStore');
+    
+    // Populate store select if empty
+    if (storeSelect.options.length <= 1) {
+        populateStoreDropdown(storeSelect);
+    }
+
+    if (account.user_type === 'store_owner') {
+        storeGroup.style.display = 'block';
+        // Set selected store if available
+        if (account.store_id) {
+            storeSelect.value = account.store_id;
+        } else {
+            storeSelect.value = "";
+        }
+    } else {
+        storeGroup.style.display = 'none';
+        storeSelect.value = "";
+    }
+
+    // Attach listener for type change
+    document.getElementById('editAccountType').onchange = function() {
+        if (this.value === 'store_owner') {
+            storeGroup.style.display = 'block';
+            if (storeSelect.options.length <= 1) populateStoreDropdown(storeSelect);
+        } else {
+            storeGroup.style.display = 'none';
+        }
+    };
+
     document.querySelector('#editAccountModal h3').textContent = 'Edit Account';
     showModal('editAccountModal');
+}
+
+function populateStoreDropdown(selectElement) {
+    if (AppState.stores && AppState.stores.length > 0) {
+        selectElement.innerHTML = '<option value="">Select Store...</option>';
+        AppState.stores.forEach(store => {
+            const option = document.createElement('option');
+            option.value = store.id;
+            option.textContent = store.name;
+            selectElement.appendChild(option);
+        });
+    } else {
+        // Fallback fetch if AppState.stores not ready
+        fetch(`${API_BASE}/api/stores`, {
+             headers: { 'Authorization': `Bearer ${authToken}` }
+        })
+        .then(res => res.json())
+        .then(data => {
+             if (data.success && data.stores) {
+                 AppState.stores = data.stores;
+                 selectElement.innerHTML = '<option value="">Select Store...</option>';
+                 data.stores.forEach(store => {
+                    const option = document.createElement('option');
+                    option.value = store.id;
+                    option.textContent = store.name;
+                    selectElement.appendChild(option);
+                 });
+             }
+        });
+    }
 }
 
 function saveAccount() {
@@ -2027,6 +2120,7 @@ function saveAccount() {
     const isVerified = document.getElementById('editAccountVerified').value === '1';
     const address = document.getElementById('editAccountAddress').value;
     const password = document.getElementById('editAccountPassword').value;
+    const storeId = document.getElementById('editAccountStore').value;
 
     if (!firstName || !lastName || !email || !userType) {
         showWarning('Validation Error', 'Please fill in all required fields');
@@ -2043,6 +2137,10 @@ function saveAccount() {
         is_verified: isVerified,
         address
     };
+
+    if (userType === 'store_owner' && storeId) {
+        payload.store_id = storeId;
+    }
 
     if (password) {
         payload.password = password;
