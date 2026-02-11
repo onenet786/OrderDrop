@@ -1,5 +1,5 @@
 const express = require("express");
-const { authenticateToken, requireAdmin, requireStaffAccess } = require("../middleware/auth");
+const { authenticateToken, requireAdmin, requireStaffAccess, requirePermission } = require("../middleware/auth");
 const { recordFinancialTransaction } = require("../utils/dbHelpers");
 
 const router = express.Router();
@@ -38,12 +38,12 @@ function ensureBackupDir() {
   if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 }
 
-// Execute a limited ALTER TABLE statement (admin-only)
+// Execute a limited ALTER TABLE statement
 // Body: { sql: "ALTER TABLE ..." }
 router.post(
   "/execute-sql",
   authenticateToken,
-  requireAdmin,
+  requirePermission('menu_settings_database'),
   async (req, res) => {
     try {
       const { sql } = req.body || {};
@@ -126,8 +126,38 @@ router.get(
 router.get(
   "/recent-activity",
   authenticateToken,
-  requireAdmin,
   async (req, res) => {
+    console.log('[DEBUG] GET /api/admin/recent-activity hit. User:', req.user ? `${req.user.id} (${req.user.user_type})` : 'No user');
+    // Permission check
+    if (req.user.user_type === 'admin') {
+       // Allowed
+    } else if (req.user.user_type === 'standard_user') {
+        // Check permissions
+        try {
+            // Debug: Check which permissions the user has
+            const [debugPerms] = await req.db.execute(
+                'SELECT permission_key FROM user_permissions WHERE user_id = ?',
+                [req.user.id]
+            );
+            console.log(`[DEBUG] User ${req.user.id} permissions:`, debugPerms.map(p => p.permission_key));
+
+            // CHANGED: Allow recent-activity if user has dashboard OR orders permission
+            const [perms] = await req.db.execute(
+                'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_key IN (?, ?)',
+                [req.user.id, 'menu_dashboard', 'menu_orders']
+            );
+            if (perms.length === 0) {
+                 console.log(`[DEBUG] User ${req.user.id} denied access to recent-activity. Missing menu_dashboard or menu_orders.`);
+                 return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+        } catch (e) {
+            console.error('[DEBUG] Permission check error:', e);
+            return res.status(500).json({ success: false, message: 'Permission check failed' });
+        }
+    } else {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
     try {
       // Fetch recent orders
       const [orders] = await req.db.execute(`
@@ -378,7 +408,12 @@ router.get(
 // GET  /api/admin/backup-db/list -> list available dumps
 // GET  /api/admin/backup-db/download?file=<name> -> download a dump file
 
-router.post("/backup-db", authenticateToken, requireAdmin, async (req, res) => {
+// Trigger manual backup
+router.post(
+  "/backup-db",
+  authenticateToken,
+  requirePermission('menu_settings_backup'),
+  async (req, res) => {
   try {
     ensureBackupDir();
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -464,10 +499,11 @@ router.post("/backup-db", authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+// List available backups
 router.get(
   "/backup-db/list",
   authenticateToken,
-  requireAdmin,
+  requirePermission('menu_settings_backup'),
   async (req, res) => {
     try {
       ensureBackupDir();
@@ -489,11 +525,11 @@ router.get(
   }
 );
 
-// Diagnostic check for backup prerequisites (admin-only)
+// Diagnostic check for backup prerequisites
 router.get(
   "/backup-db/check",
   authenticateToken,
-  requireAdmin,
+  requirePermission('menu_settings_backup'),
   async (req, res) => {
     try {
       ensureBackupDir();
@@ -553,7 +589,7 @@ router.get(
 router.get(
   "/backup-db/download",
   authenticateToken,
-  requireAdmin,
+  requirePermission('menu_settings_backup'),
   async (req, res) => {
     try {
       const file = req.query.file;
@@ -587,7 +623,7 @@ router.get(
 router.post(
   "/restore-db",
   authenticateToken,
-  requireAdmin,
+  requirePermission('menu_settings_backup'),
   async (req, res) => {
     try {
       const { filename } = req.body || {};
@@ -1291,7 +1327,12 @@ router.post(
 
 // ===== SYSTEM DIAGNOSTICS (ADMIN) =====
 
-router.get("/diagnostics", authenticateToken, requireAdmin, async (req, res) => {
+// Run single diagnostic
+router.post(
+  "/diagnostics/run",
+  authenticateToken,
+  requirePermission('menu_settings_problems'),
+  async (req, res) => {
   try {
     const { type } = req.query;
     const results = [];

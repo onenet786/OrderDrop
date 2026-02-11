@@ -344,15 +344,24 @@ function initializeAdmin() {
              if (initialTab && initialTab !== 'dashboard') {
                  switchTab(initialTab);
              } else {
-                 // If default was dashboard, and we might not have access, let applyRoleRestrictions handle it or default to orders
-                 // We don't call loadDashboardStats() blindly
+                 // Check if dashboard is visible (it might have been enabled by menu_orders check)
+                 const dashboardLink = document.querySelector('.tab-link[data-tab="dashboard"]');
+                 if (dashboardLink && dashboardLink.style.display !== 'none') {
+                     switchTab('dashboard');
+                 } else {
+                     // If default was dashboard but access denied, try orders
+                     const ordersLink = document.querySelector('.tab-link[data-tab="orders"]');
+                     if (ordersLink && ordersLink.style.display !== 'none') {
+                         switchTab('orders');
+                     }
+                 }
              }
         });
     } else {
         if (initialTab && initialTab !== 'dashboard') {
             switchTab(initialTab);
         } else {
-            
+            switchTab('dashboard');
         }
     }
 
@@ -1224,6 +1233,9 @@ function switchTab(tabName) {
 
     // Load data for the tab
     switch(tabName) {
+        case 'dashboard':
+            if (typeof loadDashboardStats === 'function') loadDashboardStats();
+            break;
         case 'accounts':
             loadAccounts();
             break;
@@ -6781,9 +6793,22 @@ async function applyRoleRestrictions() {
                 'menu_riders': 'riders',
                 'menu_users': 'accounts',
                 'menu_payments': ['payments', 'wallets'],
-                'menu_financial': ['payment-vouchers', 'bank-payment-vouchers', 'receipt-vouchers', 'bank-receipt-vouchers', 'journal-vouchers', 'store-settlements', 'expenses', 'rider-cash'],
+                'menu_financial_cpv': 'payment-vouchers',
+                'menu_financial_settlements': 'store-settlements',
+                'menu_financial_expenses': 'expenses',
+                'menu_financial_crv': 'receipt-vouchers',
+                'menu_financial_rider_cash': 'rider-cash',
+                'menu_financial_bpv': 'bank-payment-vouchers',
+                'menu_financial_brv': 'bank-receipt-vouchers',
+                'menu_financial_jnv': 'journal-vouchers',
+                'menu_financial_dashboard': 'financial-dashboard',
                 'menu_reports': ['order-reports', 'inventory-report', 'rider-reports', 'store-reports', 'financial-reports'],
-                'menu_settings': ['settings', 'database', 'db-backup', 'logs', 'problems', 'units', 'sizes'],
+                'menu_settings': ['settings', 'database', 'db-backup', 'logs', 'problems', 'units', 'sizes', 'categories'],
+                'menu_settings_general': 'settings',
+                'menu_settings_database': 'database',
+                'menu_settings_backup': 'db-backup',
+                'menu_settings_logs': 'logs',
+                'menu_settings_problems': 'problems',
                 'menu_user_rights': 'user-rights'
             };
 
@@ -6796,6 +6821,17 @@ async function applyRoleRestrictions() {
             
             // Show allowed
             Object.entries(tabMap).forEach(([permKey, tabIds]) => {
+                // Special handling for dashboard: show if user has orders permission too
+                if (permKey === 'menu_dashboard' && !perms.has('menu_dashboard') && perms.has('menu_orders')) {
+                     // Auto-grant dashboard view if they have orders access (matches backend logic)
+                     const links = document.querySelectorAll(`.tab-link[data-tab="dashboard"]`);
+                     links.forEach(link => {
+                         link.style.display = 'block';
+                         if (link.closest('li')) link.closest('li').style.display = 'block';
+                     });
+                     return;
+                }
+
                 if (perms.has(permKey)) {
                     const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
                     ids.forEach(tid => {
@@ -6814,12 +6850,108 @@ async function applyRoleRestrictions() {
                 }
             });
             
+            // Special handling for Financial Reports tab:
+            // If the user has ANY individual report permission (starting with report_), show the main 'financial-reports' tab
+            let hasAnyReportPerm = false;
+            for (let p of perms) {
+                if (p.startsWith('report_')) {
+                    hasAnyReportPerm = true;
+                    break;
+                }
+            }
+
+            if (hasAnyReportPerm) {
+                // Show financial-reports tab
+                const links = document.querySelectorAll(`.tab-link[data-tab="financial-reports"]`);
+                links.forEach(link => {
+                    link.style.display = 'block';
+                    if (link.closest('li')) link.closest('li').style.display = 'block';
+                });
+                // Ensure parent dropdown is visible if applicable
+                const link = document.querySelector(`.tab-link[data-tab="financial-reports"]`);
+                if (link) {
+                    const dropdown = link.closest('.dropdown');
+                    if (dropdown) dropdown.style.display = 'block';
+                }
+            }
+
             // Handle Actions
             if (!perms.has('action_edit_order')) {
                 // Hide edit buttons in orders
                 const style = document.createElement('style');
-                style.innerHTML = `.btn-edit { display: none !important; }`;
+                style.innerHTML = `#ordersTable .btn-edit { display: none !important; }`;
                 document.head.appendChild(style);
+            }
+            
+            // Manage Categories
+            if (!perms.has('action_manage_categories')) {
+                const btn = document.getElementById('addCategoryBtn');
+                if (btn) btn.style.display = 'none';
+                
+                const style = document.createElement('style');
+                style.innerHTML = `#categoriesTable .btn-edit, #categoriesTable .btn-delete { display: none !important; }`;
+                document.head.appendChild(style);
+            }
+
+            // Manage Units
+            if (!perms.has('action_manage_units')) {
+                const btn = document.getElementById('addUnitBtn');
+                if (btn) btn.style.display = 'none';
+                
+                const style = document.createElement('style');
+                style.innerHTML = `#unitsTable .btn-edit, #unitsTable .btn-delete { display: none !important; }`;
+                document.head.appendChild(style);
+            }
+
+            // Manage Sizes
+            if (!perms.has('action_manage_sizes')) {
+                const btn = document.getElementById('addSizeBtn');
+                if (btn) btn.style.display = 'none';
+                
+                const style = document.createElement('style');
+                style.innerHTML = `#sizesTable .btn-edit, #sizesTable .btn-delete { display: none !important; }`;
+                document.head.appendChild(style);
+            }
+
+            // Financial Reports Filter Handling
+            const reportTypeSelect = document.getElementById('financialReportType');
+            if (reportTypeSelect) {
+                const reportOptions = reportTypeSelect.querySelectorAll('option');
+                reportOptions.forEach(opt => {
+                    // Skip "all" or generic options if any
+                    if (opt.value) {
+                         const permKey = `report_${opt.value.replace(/-/g, '_')}`;
+                         // If we have a matching permission key for this report type
+                         // and the user DOES NOT have it, disable/hide the option
+                         // Note: We need to ensure the value in <option> matches the key suffix
+                         
+                         // Map option values to permission keys
+                         // NOTE: Keys here MUST match value="" in admin.html <option> tags
+                         const permMap = {
+                             'daily_summary': 'report_daily_summary',
+                             'weekly_summary': 'report_weekly_summary',
+                             'monthly_summary': 'report_monthly_summary',
+                             'store_settlement': 'report_store_settlement',
+                             'store_financials': 'report_store_financials',
+                             'rider_cash_report': 'report_rider_cash',
+                             'rider_fuel_report': 'report_rider_fuel',
+                             'comprehensive_report': 'report_comprehensive_cash',
+                             'transaction_summary': 'report_transactions_summary',
+                             'general_voucher': 'report_general_voucher',
+                             'expense_report': 'report_expense',
+                             'delivery_charges_breakdown': 'report_delivery_charges',
+                             'order_wise_sale_summary': 'report_order_summary',
+                             'custom': 'report_custom'
+                         };
+
+                         const requiredPerm = permMap[opt.value];
+                         if (requiredPerm && !perms.has(requiredPerm)) {
+                             opt.disabled = true;
+                             opt.hidden = true; // Modern browsers
+                             opt.style.display = 'none'; // Fallback
+                         }
+                    }
+                });
             }
         }
     } catch (e) {
@@ -6845,10 +6977,44 @@ const AVAILABLE_PERMISSIONS = [
     { key: 'action_edit_order', label: 'Edit Order / Assign Rider', group: 'Actions' },
     { key: 'action_manage_products', label: 'Add/Edit Products', group: 'Actions' },
     { key: 'action_manage_stores', label: 'Add/Edit Stores', group: 'Actions' },
+    { key: 'action_manage_categories', label: 'Add/Edit Categories', group: 'Actions' },
+    { key: 'action_manage_units', label: 'Add/Edit Units', group: 'Actions' },
+    { key: 'action_manage_sizes', label: 'Add/Edit Sizes', group: 'Actions' },
     
     { key: 'report_sales', label: 'Sales Reports', group: 'Reports' },
     { key: 'report_inventory', label: 'Inventory Reports', group: 'Reports' },
-    { key: 'report_rider_performance', label: 'Rider Performance', group: 'Reports' }
+    { key: 'report_rider_performance', label: 'Rider Performance', group: 'Reports' },
+
+    { key: 'report_daily_summary', label: 'Daily Summary', group: 'Financial Reports' },
+    { key: 'report_weekly_summary', label: 'Weekly Summary', group: 'Financial Reports' },
+    { key: 'report_monthly_summary', label: 'Monthly Summary', group: 'Financial Reports' },
+    { key: 'report_store_settlement', label: 'Store Settlement', group: 'Financial Reports' },
+    { key: 'report_store_financials', label: 'Store Financials (Cost Analysis)', group: 'Financial Reports' },
+    { key: 'report_rider_cash', label: 'Rider Cash Report', group: 'Financial Reports' },
+    { key: 'report_rider_fuel', label: 'Rider Fuel Report', group: 'Financial Reports' },
+    { key: 'report_comprehensive_cash', label: 'Comprehensive Cash Report', group: 'Financial Reports' },
+    { key: 'report_transactions_summary', label: 'Transactions Summary', group: 'Financial Reports' },
+    { key: 'report_general_voucher', label: 'General Voucher (JNV)', group: 'Financial Reports' },
+    { key: 'report_expense', label: 'Expense Report', group: 'Financial Reports' },
+    { key: 'report_delivery_charges', label: 'Delivery Charges Breakdown', group: 'Financial Reports' },
+    { key: 'report_order_summary', label: 'Order Summary', group: 'Financial Reports' },
+    { key: 'report_custom', label: 'Custom', group: 'Financial Reports' },
+    
+    { key: 'menu_financial_cpv', label: 'CPV (Cash Payment Voucher)', group: 'Financial Transactions' },
+    { key: 'menu_financial_settlements', label: 'Store Settlements', group: 'Financial Transactions' },
+    { key: 'menu_financial_expenses', label: 'Expenses', group: 'Financial Transactions' },
+    { key: 'menu_financial_crv', label: 'CRV (Cash Receive Voucher)', group: 'Financial Transactions' },
+    { key: 'menu_financial_rider_cash', label: 'Rider Cash', group: 'Financial Transactions' },
+    { key: 'menu_financial_bpv', label: 'BPV (Bank Payment Voucher)', group: 'Financial Transactions' },
+    { key: 'menu_financial_brv', label: 'BRV (Bank Receive Voucher)', group: 'Financial Transactions' },
+    { key: 'menu_financial_jnv', label: 'JNV (Journal Voucher)', group: 'Financial Transactions' },
+    { key: 'menu_financial_dashboard', label: 'Financial Dashboard', group: 'Financial Transactions' },
+    
+    { key: 'menu_settings_general', label: 'General Settings', group: 'Utilities' },
+    { key: 'menu_settings_database', label: 'Database Management', group: 'Utilities' },
+    { key: 'menu_settings_backup', label: 'Database Backup', group: 'Utilities' },
+    { key: 'menu_settings_logs', label: 'System Logs', group: 'Utilities' },
+    { key: 'menu_settings_problems', label: 'Problem Diagnostics', group: 'Utilities' }
 ];
 
 async function loadUserRights() {

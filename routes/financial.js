@@ -27,43 +27,49 @@ function generateVoucherNumber(prefix, date = new Date()) {
 router.use(authenticateToken);
 
 // Custom authorization for financial routes
-router.use((req, res, next) => {
+router.use(async (req, res, next) => {
     // Admin has full access
     if (req.user.user_type === 'admin') {
         return next();
     }
 
-    // Standard User: Can only generate/view Daily Summary
-    if (req.user.user_type === 'standard_user') {
-        // Allow generating reports (strictly checked inside route or here)
-        if (req.path === '/reports/generate' && req.method === 'POST') {
-            // Check report type restriction
-            // Note: If body is not yet parsed, this might fail, but app.js usually has body parser before routes.
-            if (req.body && req.body.report_type === 'daily_summary') {
-                return next();
-            }
-            return res.status(403).json({ 
-                success: false, 
-                message: 'Standard users can restricted to Daily Summary reports only' 
-            });
-        }
-        
-        // Allow viewing report details (if it's a daily summary) - Assuming GET /reports/:id is used
-        // However, checking the report type from ID requires DB lookup. 
-        // For now, let's assume they only need to generate it (which returns the data or preview).
-        // If they need to view saved reports, we'd need more logic.
-        // Given the prompt "view only daily summary", likely implies the generation/preview flow.
-        
-        return res.status(403).json({ 
-            success: false, 
-            message: 'Access restricted to Daily Summary only' 
-        });
+    // Check specific permissions based on path
+    const path = req.path;
+    let requiredPerm = null;
+
+    if (path.startsWith('/payment-vouchers')) requiredPerm = 'menu_financial_cpv';
+    else if (path.startsWith('/receipt-vouchers')) requiredPerm = 'menu_financial_crv';
+    else if (path.startsWith('/store-settlements')) requiredPerm = 'menu_financial_settlements';
+    else if (path.startsWith('/expenses')) requiredPerm = 'menu_financial_expenses';
+    else if (path.startsWith('/rider-cash')) requiredPerm = 'menu_financial_rider_cash';
+    else if (path.startsWith('/bank-payment-vouchers')) requiredPerm = 'menu_financial_bpv';
+    else if (path.startsWith('/bank-receipt-vouchers')) requiredPerm = 'menu_financial_brv';
+    else if (path.startsWith('/journal-vouchers')) requiredPerm = 'menu_financial_jnv';
+    else if (path.startsWith('/dashboard') || path.startsWith('/cash-ledger') || path.startsWith('/transactions')) requiredPerm = 'menu_financial_dashboard';
+    else if (path.startsWith('/reports')) {
+        // Delegate permission checks to the specific route handlers
+        return next();
     }
 
-    // Default reject
+    if (requiredPerm) {
+        try {
+            // Check DB for permission
+            const [rows] = await req.db.execute(
+                'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_key = ?',
+                [req.user.id, requiredPerm]
+            );
+            if (rows.length > 0) {
+                return next();
+            }
+        } catch (e) {
+            console.error('Permission check error:', e);
+        }
+    }
+
+    // Default reject if no specific permission matched or permission check failed
     return res.status(403).json({ 
         success: false, 
-        message: 'Admin access required' 
+        message: 'Admin access required or missing permission' 
     });
 });
 
@@ -2027,6 +2033,46 @@ router.post('/reports/generate', [
         }
 
         const { report_type, period_from, period_to, rider_id, store_id } = req.body;
+
+        // Permission Check for Reports
+        // Admin always allowed. Standard User needs specific report permission.
+        if (req.user.user_type !== 'admin') {
+            // Map report_type to permission key
+            const reportTypeToPermKey = {
+                'daily_summary': 'report_daily_summary',
+                'weekly_summary': 'report_weekly_summary',
+                'monthly_summary': 'report_monthly_summary',
+                'store_settlement': 'report_store_settlement',
+                'store_financials': 'report_store_financials',
+                'rider_cash_report': 'report_rider_cash',
+                'rider_fuel_report': 'report_rider_fuel',
+                'comprehensive_report': 'report_comprehensive_cash',
+                'transaction_summary': 'report_transactions_summary',
+                'general_voucher': 'report_general_voucher',
+                'expense_report': 'report_expense',
+                'delivery_charges_breakdown': 'report_delivery_charges',
+                'order_wise_sale_summary': 'report_order_summary',
+                'custom': 'report_custom'
+            };
+
+            const permKey = reportTypeToPermKey[report_type] || `report_${report_type}`;
+
+            try {
+                const [perms] = await req.db.execute(
+                    'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_key = ?',
+                    [req.user.id, permKey]
+                );
+                if (perms.length === 0) {
+                     return res.status(403).json({ 
+                         success: false, 
+                         message: `Access denied. You do not have permission to generate ${report_type.replace(/_/g, ' ')}.` 
+                     });
+                }
+            } catch (e) {
+                console.error('Report permission check error:', e);
+                return res.status(500).json({ success: false, message: 'Permission check failed' });
+            }
+        }
         
         let prefix = 'RPT';
         switch (report_type) {

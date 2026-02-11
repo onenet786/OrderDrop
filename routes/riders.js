@@ -20,7 +20,25 @@ async function hasColumn(db, table, column) {
 }
 
 // Get all riders (Admin & Dispatch only)
-router.get('/', authenticateToken, requireDispatchAccess, async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
+    // Permission check
+    if (req.user.user_type !== 'admin' && req.user.user_type !== 'standard_user') {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    if (req.user.user_type === 'standard_user') {
+        try {
+            const [perms] = await req.db.execute(
+                'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_key IN (?, ?)',
+                [req.user.id, 'menu_riders', 'action_edit_order']
+            );
+            if (perms.length === 0) {
+                 return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+        } catch (e) {
+            return res.status(500).json({ success: false, message: 'Permission check failed' });
+        }
+    }
     try {
         const hasFullName = await hasColumn(req.db, 'riders', 'full_name');
         let sql;

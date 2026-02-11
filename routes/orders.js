@@ -983,8 +983,39 @@ router.get('/:id(\\d+)', authenticateToken, async (req, res) => {
 });
 
 // Get all orders (Admin & Dispatch only)
-router.get('/', authenticateToken, requireDispatchAccess, async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
+    console.log('[DEBUG] GET /api/orders hit. User:', req.user ? `${req.user.id} (${req.user.user_type})` : 'No user');
     try {
+        // Permission check: Admin, Dispatch, or Dashboard Viewer
+        if (req.user.user_type === 'admin') {
+            // Admin allowed
+        } else if (req.user.user_type === 'standard_user') {
+            // Check for specific permissions
+            try {
+                // Debug permissions
+                const [debugPerms] = await req.db.execute(
+                    'SELECT permission_key FROM user_permissions WHERE user_id = ?',
+                    [req.user.id]
+                );
+                console.log(`[DEBUG] Orders Route - User ${req.user.id} permissions:`, debugPerms.map(p => p.permission_key));
+
+                const [perms] = await req.db.execute(
+                    'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_key IN (?, ?)',
+                    [req.user.id, 'menu_dashboard', 'menu_orders']
+                );
+                if (perms.length === 0) {
+                     console.log(`[DEBUG] User ${req.user.id} denied access to orders. Missing menu_dashboard or menu_orders.`);
+                     return res.status(403).json({ success: false, message: 'Access denied' });
+                }
+            } catch (e) {
+                console.error('[DEBUG] Orders permission check error:', e);
+                return res.status(500).json({ success: false, message: 'Permission check failed' });
+            }
+        } else {
+             // Other roles (e.g. store owner) might need access logic here or be blocked
+             return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+
         const { status, assignment, startDate, endDate } = req.query;
         let conditions = [];
         let params = [];

@@ -113,11 +113,47 @@ const optionalAuth = (req, res, next) => {
     }
 };
 
+// Middleware factory for permission checking
+const requirePermission = (permissionKey) => {
+    return async (req, res, next) => {
+        // Admins bypass all checks
+        if (req.user.user_type === 'admin') {
+            return next();
+        }
+        
+        // Check if DB is available (it should be via server.js middleware)
+        if (!req.db) {
+            console.error('Database connection missing in request');
+            return res.status(500).json({ success: false, message: 'Database error' });
+        }
+        
+        try {
+            const [rows] = await req.db.execute(
+                'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_key = ?',
+                [req.user.id, permissionKey]
+            );
+            
+            if (rows.length > 0) {
+                return next();
+            }
+            
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied. Missing permission: ' + permissionKey
+            });
+        } catch (error) {
+            console.error('Permission check failed:', error);
+            return res.status(500).json({ success: false, message: 'Permission check failed' });
+        }
+    };
+};
+
 module.exports = {
     authenticateToken,
     requireAdmin,
     requireStoreOwner,
     requireStaffAccess,
     requireDispatchAccess,
-    optionalAuth
+    optionalAuth,
+    requirePermission
 };

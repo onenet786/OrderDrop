@@ -1,5 +1,5 @@
 const express = require('express');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requirePermission } = require('../middleware/auth');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -65,8 +65,8 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// Create new category (Admin only)
-router.post('/', authenticateToken, requireAdmin, async (req, res) => {
+// Create new category
+router.post('/', authenticateToken, requirePermission('action_manage_categories'), async (req, res) => {
     try {
         let { name, description, image_url } = req.body;
         if (description === undefined) description = null;
@@ -130,8 +130,8 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
-// Update category (Admin only)
-router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Update category
+router.put('/:id', authenticateToken, requirePermission('action_manage_categories'), async (req, res) => {
     try {
         const { id } = req.params;
         let { name, description, image_url, is_active } = req.body;
@@ -247,7 +247,7 @@ async function downloadImageToUploads(remoteUrl) {
 }
 
 // Upload image endpoint — accepts single file
-router.post('/upload-image', authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
+router.post('/upload-image', authenticateToken, requirePermission('action_manage_categories'), upload.single('image'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
         const uploadDir = path.join(__dirname, '..', 'uploads');

@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -15,8 +15,8 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Create unit (admin)
-router.post('/', authenticateToken, requireAdmin, [
+// Create unit
+router.post('/', authenticateToken, requirePermission('action_manage_units'), [
     body('name').trim().isLength({ min: 1 }).withMessage('Name required')
 ], async (req, res) => {
     const errors = validationResult(req);
@@ -31,8 +31,8 @@ router.post('/', authenticateToken, requireAdmin, [
     }
 });
 
-// Update unit (admin)
-router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Update unit
+router.put('/:id', authenticateToken, requirePermission('action_manage_units'), async (req, res) => {
     try {
         const { id } = req.params;
         const { name, abbreviation, multiplier } = req.body;
@@ -51,8 +51,8 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
-// Delete unit (admin)
-router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Delete unit
+router.delete('/:id', authenticateToken, requirePermission('action_manage_units'), async (req, res) => {
     try {
         const { id } = req.params;
         await req.db.execute('DELETE FROM units WHERE id = ?', [id]);

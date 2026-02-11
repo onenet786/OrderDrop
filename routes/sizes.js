@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -15,8 +15,8 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Create size (admin)
-router.post('/', authenticateToken, requireAdmin, [
+// Create size
+router.post('/', authenticateToken, requirePermission('action_manage_sizes'), [
     body('label').trim().isLength({ min: 1 }).withMessage('Label required')
 ], async (req, res) => {
     const errors = validationResult(req);
@@ -31,8 +31,8 @@ router.post('/', authenticateToken, requireAdmin, [
     }
 });
 
-// Update size (admin)
-router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Update size
+router.put('/:id', authenticateToken, requirePermission('action_manage_sizes'), async (req, res) => {
     try {
         const { id } = req.params;
         const { label, description } = req.body;
@@ -50,8 +50,8 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
 });
 
-// Delete size (admin)
-router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
+// Delete size
+router.delete('/:id', authenticateToken, requirePermission('action_manage_sizes'), async (req, res) => {
     try {
         const { id } = req.params;
         await req.db.execute('DELETE FROM sizes WHERE id = ?', [id]);
