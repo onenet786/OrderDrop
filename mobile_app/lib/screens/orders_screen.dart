@@ -390,9 +390,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 'Store Total:',
                                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
                               ),
-                              Text(
-                                'PKR $storeTotal',
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                              Flexible(
+                                child: Text(
+                                  'PKR $storeTotal',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
                           ),

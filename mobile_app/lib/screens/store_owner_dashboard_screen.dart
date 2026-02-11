@@ -224,39 +224,45 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Order #${order['order_number']}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (order['rider_first_name'] != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.delivery_dining,
-                              size: 16,
-                              color: Colors.blue,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Rider: ${order['rider_first_name']}',
-                              style: const TextStyle(
-                                color: Colors.blue,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Order #${order['order_number']}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                  ],
+                      if (order['rider_first_name'] != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.delivery_dining,
+                                size: 16,
+                                color: Colors.blue,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Rider: ${order['rider_first_name']}',
+                                  style: const TextStyle(
+                                    color: Colors.blue,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,

@@ -1333,11 +1333,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                 'Items Subtotal:',
                                 style: TextStyle(fontSize: 13),
                               ),
-                              Text(
-                                'PKR ${itemsSubtotal.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
+                              Flexible(
+                                child: Text(
+                                  'PKR ${itemsSubtotal.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -1350,11 +1353,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                 'Delivery Fee ($numStores store${numStores > 1 ? 's' : ''}):',
                                 style: const TextStyle(fontSize: 13),
                               ),
-                              Text(
-                                'PKR ${deliveryFee.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
+                              Flexible(
+                                child: Text(
+                                  'PKR ${deliveryFee.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -1372,12 +1378,15 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              Text(
-                                'PKR ${grandTotal.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue,
+                              Flexible(
+                                child: Text(
+                                  'PKR ${grandTotal.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
