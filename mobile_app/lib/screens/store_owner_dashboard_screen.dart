@@ -153,6 +153,8 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Colors.white,
         title: const Text('Store Dashboard'),
         actions: [
           const NotificationBellWidget(),
@@ -170,6 +172,8 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicatorWeight: 3,
           tabs: const [
             Tab(text: 'New Orders'),
             Tab(text: 'Active'),
