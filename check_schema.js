@@ -9,8 +9,8 @@ require('dotenv').config();
             password: process.env.DB_PASSWORD || '',
             database: process.env.DB_NAME || 'servenow'
         });
-        const [users] = await conn.execute("SELECT email, password FROM users WHERE user_type = 'admin'");
-        console.log(users);
+        const [columns] = await conn.execute('SHOW COLUMNS FROM order_items');
+        console.log(columns);
         await conn.end();
     } catch (e) {
         console.error(e);
