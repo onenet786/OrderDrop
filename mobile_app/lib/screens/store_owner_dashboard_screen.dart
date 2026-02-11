@@ -259,7 +259,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(status).withOpacity(0.1),
+                    color: _getStatusColor(status).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: _getStatusColor(status)),
                   ),
