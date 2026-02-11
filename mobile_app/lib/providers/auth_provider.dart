@@ -18,6 +18,7 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthenticated => _token != null;
   bool get isAdmin => _user?.userType == 'admin';
   bool get isRider => _user?.userType == 'rider';
+  bool get isStoreOwner => _user?.userType == 'store_owner';
 
   Future<void> login(String email, String password) async {
     _isLoading = true;
@@ -190,7 +191,7 @@ class AuthProvider with ChangeNotifier {
   Future<void> logout() async {
     _token = null;
     _user = null;
-        final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     await prefs.remove('user');
     notifyListeners();

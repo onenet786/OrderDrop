@@ -9,6 +9,7 @@ import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'screens/rider_dashboard_screen.dart';
+import 'screens/store_owner_dashboard_screen.dart';
 import 'screens/cart_screen.dart';
 import 'screens/checkout_screen.dart';
 import 'screens/inventory_report_screen.dart';
@@ -39,7 +40,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
           create: (_) => NotificationProvider(navigatorKey),
-          update: (_, auth, previous) => (previous ?? NotificationProvider(navigatorKey))..update(auth),
+          update: (_, auth, previous) =>
+              (previous ?? NotificationProvider(navigatorKey))..update(auth),
         ),
       ],
       child: MaterialApp(
@@ -71,6 +73,7 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const HomeScreen(),
           '/admin': (context) => const AdminDashboardScreen(),
           '/rider': (context) => const RiderDashboardScreen(),
+          '/store_owner': (context) => const StoreOwnerDashboardScreen(),
           '/orders': (context) => const OrdersScreen(),
           '/cart': (context) => const CartScreen(),
           '/checkout': (context) => const CheckoutScreen(),
@@ -120,6 +123,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
         Navigator.of(context).pushReplacementNamed('/admin');
       } else if (auth.isRider) {
         Navigator.of(context).pushReplacementNamed('/rider');
+      } else if (auth.isStoreOwner) {
+        Navigator.of(context).pushReplacementNamed('/store_owner');
       } else {
         Navigator.of(context).pushReplacementNamed('/home');
       }

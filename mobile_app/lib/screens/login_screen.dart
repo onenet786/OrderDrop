@@ -32,6 +32,8 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.of(context).pushReplacementNamed('/admin');
       } else if (auth.isRider) {
         Navigator.of(context).pushReplacementNamed('/rider');
+      } else if (auth.isStoreOwner) {
+        Navigator.of(context).pushReplacementNamed('/store_owner');
       } else {
         Navigator.of(context).pushReplacementNamed('/home');
       }
@@ -45,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
@@ -108,7 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
-            
+
             // Login Form
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
@@ -132,7 +134,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Email Field
                     TextFormField(
                       controller: _emailController,
@@ -149,13 +151,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       validator: (value) {
-                        if (value == null || value.isEmpty) return 'Please enter email';
+                        if (value == null || value.isEmpty)
+                          return 'Please enter email';
                         if (!value.contains('@')) return 'Enter a valid email';
                         return null;
                       },
                     ),
                     const SizedBox(height: 20),
-                    
+
                     // Password Field
                     TextFormField(
                       controller: _passwordController,
@@ -165,10 +168,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         prefixIcon: const Icon(Icons.lock_outline),
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                            _obscurePassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
                           ),
                           onPressed: () {
-                            setState(() => _obscurePassword = !_obscurePassword);
+                            setState(
+                              () => _obscurePassword = !_obscurePassword,
+                            );
                           },
                         ),
                         border: OutlineInputBorder(
@@ -179,10 +186,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           borderSide: BorderSide(color: Colors.grey.shade300),
                         ),
                       ),
-                      validator: (value) =>
-                          value == null || value.isEmpty ? 'Please enter password' : null,
+                      validator: (value) => value == null || value.isEmpty
+                          ? 'Please enter password'
+                          : null,
                     ),
-                    
+
                     // Forgot Password
                     Align(
                       alignment: Alignment.centerRight,
@@ -200,7 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    
+
                     // Login Button
                     SizedBox(
                       width: double.infinity,
@@ -219,7 +227,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               elevation: 2,
                             ),
                             child: isLoading
-                                ? const CircularProgressIndicator(color: Colors.white)
+                                ? const CircularProgressIndicator(
+                                    color: Colors.white,
+                                  )
                                 : const Text(
                                     'LOGIN',
                                     style: TextStyle(
@@ -233,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Register Link
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,

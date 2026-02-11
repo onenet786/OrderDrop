@@ -7,7 +7,9 @@ class NotificationService {
   static io.Socket? _socket;
   static Function(Map<String, dynamic>)? _onNotification;
 
-  static void initialize({required Function(Map<String, dynamic>) onNotification}) {
+  static void initialize({
+    required Function(Map<String, dynamic>) onNotification,
+  }) {
     _onNotification = onNotification;
   }
 
@@ -40,6 +42,13 @@ class NotificationService {
 
       _socket!.on('rider_notification', (data) {
         _logger.d('Rider notification: $data');
+        if (_onNotification != null) {
+          _onNotification!(Map<String, dynamic>.from(data));
+        }
+      });
+
+      _socket!.on('store_owner_notification', (data) {
+        _logger.d('Store Owner notification: $data');
         if (_onNotification != null) {
           _onNotification!(Map<String, dynamic>.from(data));
         }
