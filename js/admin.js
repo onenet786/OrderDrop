@@ -842,6 +842,48 @@ function initializeAdmin() {
     if (typeof initializeFinancialForms === 'function') {
         initializeFinancialForms();
     }
+
+    // Listen for socket events to auto-refresh
+    if (socket) {
+        socket.on('order_status_update', (data) => {
+            console.log('Order status update received:', data);
+            // If we are on the dashboard or orders page, refresh data
+            // Simple check: if loadOrders function exists and we have an orders table
+            if (document.getElementById('ordersTableBody')) {
+                // Update local state and re-render without full reload if possible, 
+                // but loadOrders() is safer to sync everything.
+                loadOrders();
+            }
+            // Also update dashboard stats if they exist
+            if (document.getElementById('todayTotalOrders')) {
+                loadDashboardStats();
+            }
+        });
+        
+        socket.on('new_order', (data) => {
+             if (document.getElementById('ordersTableBody')) loadOrders();
+             if (document.getElementById('todayTotalOrders')) loadDashboardStats();
+             showInfo('New Order', `Order #${data.order_number} received!`);
+        });
+    }
+
+    // Load default tab
+    // We check hash to see if we should load specific tab
+    const hash = window.location.hash.substring(1);
+    if (hash) {
+        // Find matching sidebar link
+        const link = document.querySelector(`.sidebar a[href="#${hash}"]`);
+        if (link) {
+            link.click();
+        } else {
+            // Default to dashboard
+            const defaultLink = document.querySelector('.sidebar a[href="#dashboard"]');
+            if (defaultLink) defaultLink.click();
+        }
+    } else {
+        const defaultLink = document.querySelector('.sidebar a[href="#dashboard"]');
+        if (defaultLink) defaultLink.click();
+    }
 }
 
 document.addEventListener('click', function(e) {

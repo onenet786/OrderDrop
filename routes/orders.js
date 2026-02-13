@@ -1558,13 +1558,17 @@ router.put(
               // If any item is out/picked up, global status is out_for_delivery
               newGlobalStatus = 'out_for_delivery';
           } else if (has('ready_for_pickup')) {
-              // If any item is ready for pickup, global might still be preparing if others aren't ready
-              // But if ALL active are ready/ready_for_pickup, then Ready.
+              // If ANY item is ready for pickup, the order is effectively in a "ready" state for that store.
+              // BUT for global status, if there are still items "preparing", global should stay "preparing".
+              // If there are "ready" and "ready_for_pickup" and no "preparing", then global is "ready".
+              
               const activeStatuses = statuses.filter(s => !['delivered', 'cancelled'].includes(s));
-              if (activeStatuses.every(s => ['ready', 'ready_for_pickup'].includes(s))) {
-                  newGlobalStatus = 'ready';
-              } else {
+              // Check if anything is still preparing or pending
+              if (activeStatuses.some(s => ['preparing', 'pending', 'confirmed'].includes(s))) {
                   newGlobalStatus = 'preparing';
+              } else {
+                  // Everything is at least ready or ready_for_pickup
+                  newGlobalStatus = 'ready';
               }
           } else if (has('preparing')) {
               // If any item is still preparing, the whole order is preparing
@@ -1668,6 +1672,27 @@ router.put(
               message: 'Order status updated',
               order_id: id
           });
+          
+          // NEW: Notify Store Owners as well so their dashboard updates automatically
+          // We need to notify ALL store owners involved in this order, not just the one who made the change
+          // because if one store updates, the others might see a change in global status or just need a refresh.
+          const [storeOwners] = await req.db.execute(
+            `SELECT DISTINCT s.owner_id 
+             FROM order_items oi
+             JOIN stores s ON oi.store_id = s.id
+             WHERE oi.order_id = ?`,
+            [id]
+          );
+          
+          for (const owner of storeOwners) {
+              if (owner.owner_id) {
+                  req.io.to(`user_${owner.owner_id}`).emit('store_owner_notification', {
+                      type: 'refresh_orders',
+                      order_id: id,
+                      message: 'Order updated'
+                  });
+              }
+          }
 
           const fs = require("fs");
           const path = require("path");

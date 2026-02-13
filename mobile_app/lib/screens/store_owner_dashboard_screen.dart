@@ -65,7 +65,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       ),
     );
 
-    if (type == 'new_order' || type == 'rider_assigned') {
+    if (type == 'new_order' || type == 'rider_assigned' || type == 'refresh_orders') {
       _loadOrders();
     }
   }
@@ -100,6 +100,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                 (o) =>
                     o['status'] == 'preparing' ||
                     o['status'] == 'ready' ||
+                    o['status'] == 'ready_for_pickup' || // Include ready_for_pickup in Active
                     o['status'] == 'out_for_delivery',
               )
               .toList();
