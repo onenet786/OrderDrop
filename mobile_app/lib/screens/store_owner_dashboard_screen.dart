@@ -505,6 +505,29 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
           ),
         ),
       );
+    } else if (currentStatus == 'ready') {
+      buttons.add(
+        ElevatedButton(
+          onPressed: () => _updateStatus(id, 'ready_for_pickup'),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+          child: const Text(
+            'Ready to Pick Up',
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+      );
+    } else if (currentStatus == 'ready_for_pickup' && order['rider_id'] != null) {
+      // Only show "Picked Up" if a rider is assigned
+      buttons.add(
+        ElevatedButton(
+          onPressed: () => _updateStatus(id, 'picked_up'),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
+          child: const Text(
+            'Confirm Picked Up',
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+      );
     }
 
     return buttons;
@@ -517,11 +540,14 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       case 'cancelled':
         return Colors.red;
       case 'out_for_delivery':
+      case 'picked_up': // Treat as out for delivery visually
         return Colors.blue;
       case 'preparing':
         return Colors.orange;
       case 'ready':
         return Colors.indigo;
+      case 'ready_for_pickup':
+        return Colors.cyan;
       case 'pending':
         return Colors.amber;
       default:

@@ -1376,11 +1376,11 @@ router.get("/", authenticateToken, async (req, res) => {
                    r.first_name as rider_first_name, r.last_name as rider_last_name,
                    CAST((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS SIGNED) as items_count,
                    (
-                       SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                       SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT(
                            'store_id', s2.id, 
                            'store_name', s2.name, 
                            'status', COALESCE(oi2.item_status, 'pending')
-                       ))
+                       )), ']')
                        FROM order_items oi2
                        JOIN stores s2 ON oi2.store_id = s2.id
                        WHERE oi2.order_id = o.id
@@ -1422,6 +1422,8 @@ router.put(
         "confirmed",
         "preparing",
         "ready",
+        "ready_for_pickup", // New status
+        "picked_up", // New status
         "delivered",
         "cancelled",
         "out_for_delivery",
@@ -1443,9 +1445,11 @@ router.put(
       const { status } = req.body;
 
       // Check if order exists and user has permission
+      // NOTE: For multi-store orders, o.store_id might be null or one of them. 
+      // We need to check if the user owns ANY of the stores in this order.
       const [orders] = await req.db.execute(
         `
-            SELECT o.*, s.owner_id
+            SELECT o.*, s.owner_id as main_store_owner_id
             FROM orders o
             LEFT JOIN stores s ON o.store_id = s.id
             WHERE o.id = ?
@@ -1462,12 +1466,25 @@ router.put(
 
       const order = orders[0];
 
-      // Check ownership permission
-      if (
-        req.user.user_type !== "admin" &&
-        req.user.user_type !== "standard_user" &&
-        (!order.owner_id || order.owner_id !== req.user.id)
-      ) {
+      // Check permission
+      let hasPermission = false;
+      if (req.user.user_type === "admin" || req.user.user_type === "standard_user") {
+          hasPermission = true;
+      } else if (req.user.user_type === "store_owner") {
+          // Check if this user owns ANY store involved in this order
+          const [myStores] = await req.db.execute(
+              `SELECT 1 FROM order_items oi
+               JOIN stores s ON oi.store_id = s.id
+               WHERE oi.order_id = ? AND s.owner_id = ?
+               LIMIT 1`,
+              [id, req.user.id]
+          );
+          if (myStores.length > 0) {
+              hasPermission = true;
+          }
+      }
+
+      if (!hasPermission) {
         return res.status(403).json({
           success: false,
           message: "You do not have permission to update this order",
@@ -1531,9 +1548,18 @@ router.put(
               newGlobalStatus = 'cancelled';
           } else if (statuses.every(s => s === 'delivered' || s === 'cancelled')) {
               newGlobalStatus = 'delivered';
-          } else if (has('out_for_delivery')) {
-              // If any item is out for delivery, the order is effectively out (rider has it)
+          } else if (has('out_for_delivery') || has('picked_up')) {
+              // If any item is out/picked up, global status is out_for_delivery
               newGlobalStatus = 'out_for_delivery';
+          } else if (has('ready_for_pickup')) {
+              // If any item is ready for pickup, global might still be preparing if others aren't ready
+              // But if ALL active are ready/ready_for_pickup, then Ready.
+              const activeStatuses = statuses.filter(s => !['delivered', 'cancelled'].includes(s));
+              if (activeStatuses.every(s => ['ready', 'ready_for_pickup'].includes(s))) {
+                  newGlobalStatus = 'ready';
+              } else {
+                  newGlobalStatus = 'preparing';
+              }
           } else if (has('preparing')) {
               // If any item is still preparing, the whole order is preparing
               newGlobalStatus = 'preparing';
@@ -1585,6 +1611,33 @@ router.put(
             .to(`user_${order.user_id}`)
             .emit("order_status_update", statusUpdateData);
           req.io.to("admins").emit("order_status_update", statusUpdateData);
+
+          // NEW: Custom Notification for "Picked Up"
+          if (status === 'picked_up') {
+              // Fetch Store Name and Rider Name for the message
+              const [details] = await req.db.execute(
+                  `SELECT s.name as store_name, r.first_name as rider_name 
+                   FROM order_items oi
+                   JOIN stores s ON oi.store_id = s.id
+                   LEFT JOIN orders o ON oi.order_id = o.id
+                   LEFT JOIN riders r ON o.rider_id = r.id
+                   WHERE oi.id = ?`,
+                  [targetItemIds[0]] // Use first item to get store/rider details
+              );
+              
+              if (details.length > 0) {
+                  const { store_name, rider_name } = details[0];
+                  const message = `Your order #${order.order_number} containing ${store_name} products has been picked up by rider ${rider_name || 'Assigned Rider'}. Please act accordingly.`;
+                  
+                  // Emit specific notification event
+                  req.io.to(`user_${order.user_id}`).emit('notification', {
+                      type: 'order_update',
+                      title: 'Order Picked Up',
+                      message: message,
+                      order_id: id
+                  });
+              }
+          }
 
           const fs = require("fs");
           const path = require("path");

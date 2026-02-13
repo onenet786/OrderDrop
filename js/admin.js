@@ -2607,26 +2607,37 @@ function displayOrders(orders = AppState.orders) {
         if (order.store_statuses) {
             try {
                 // Determine if there are delays or mixed statuses
-                const statuses = order.store_statuses;
-                const isMixed = statuses.length > 1 && new Set(statuses.map(s => s.status)).size > 1;
-                const isDelayed = order.status === 'preparing' && statuses.some(s => s.status === 'ready'); // One ready, others still preparing
+                let statuses = order.store_statuses;
+                if (typeof statuses === 'string') {
+                   try {
+                       statuses = JSON.parse(statuses);
+                   } catch (e) {
+                       // Fallback if GROUP_CONCAT truncated JSON or something else
+                       statuses = [];
+                   }
+                }
+                
+                if (statuses && Array.isArray(statuses)) {
+                    const isMixed = statuses.length > 1 && new Set(statuses.map(s => s.status)).size > 1;
+                    const isDelayed = order.status === 'preparing' && statuses.some(s => s.status === 'ready'); // One ready, others still preparing
 
-                if (isMixed || isDelayed) {
-                    const tooltipContent = statuses.map(s => 
-                        `<div><strong>${s.store_name}:</strong> <span class="status-${s.status}">${s.status.toUpperCase()}</span></div>`
-                    ).join('');
-                    
-                    statusHtml += `
-                        <div class="store-status-details" style="font-size: 0.8em; margin-top: 4px;">
-                            ${isDelayed ? '<span style="color: orange;"><i class="fas fa-exclamation-triangle"></i> Delayed</span>' : ''}
-                            <div class="store-status-tooltip">
-                                <i class="fas fa-info-circle" style="color: #666; cursor: pointer;" title="Store Details"></i>
-                                <div class="tooltip-content" style="display: none; position: absolute; background: white; border: 1px solid #ccc; padding: 5px; z-index: 100; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);">
-                                    ${tooltipContent}
+                    if (isMixed || isDelayed) {
+                        const tooltipContent = statuses.map(s => 
+                            `<div><strong>${s.store_name}:</strong> <span class="status-${s.status}">${s.status.toUpperCase()}</span></div>`
+                        ).join('');
+                        
+                        statusHtml += `
+                            <div class="store-status-details" style="font-size: 0.8em; margin-top: 4px;">
+                                ${isDelayed ? '<span style="color: orange;"><i class="fas fa-exclamation-triangle"></i> Delayed</span>' : ''}
+                                <div class="store-status-tooltip">
+                                    <i class="fas fa-info-circle" style="color: #666; cursor: pointer;" title="Store Details"></i>
+                                    <div class="tooltip-content" style="display: none; position: absolute; background: white; border: 1px solid #ccc; padding: 5px; z-index: 100; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);">
+                                        ${tooltipContent}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                    }
                 }
             } catch (e) { console.error('Error parsing store statuses', e); }
         }
