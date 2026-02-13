@@ -6899,6 +6899,62 @@ async function runDiagnostics(type) {
     }
 }
 
+// ===== DATABASE UTILITIES =====
+async function clearTransactionalData() {
+    const tableSelect = document.getElementById('clearTableSelect');
+    const table = tableSelect ? tableSelect.value : 'all';
+    
+    let confirmMsg = 'Are you sure you want to clear ALL transactional data? This includes orders, payments, and history. Wallets will be reset to 0.';
+    if (table !== 'all') {
+        confirmMsg = `Are you sure you want to clear table '${table}'? This action cannot be undone.`;
+    }
+    
+    if (!confirm(confirmMsg)) return;
+    
+    // Double confirmation for safety
+    const verification = prompt(`Type "CLEAR" to confirm deletion of ${table === 'all' ? 'ALL DATA' : table}:`);
+    if (verification !== 'CLEAR') {
+        showInfo('Cancelled', 'Deletion cancelled.');
+        return;
+    }
+    
+    try {
+        const btn = document.getElementById('clearDataBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Clearing...';
+        }
+        
+        const response = await fetch(`${API_BASE}/api/admin/clear-transactional-data`, {
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ table })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showSuccess('Data Cleared', data.message);
+            // Refresh dashboard stats if visible
+            loadDashboardStats();
+        } else {
+            showError('Failed', data.message);
+        }
+    } catch (error) {
+        console.error('Clear data error:', error);
+        showError('Error', 'Failed to clear data');
+    } finally {
+        const btn = document.getElementById('clearDataBtn');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-trash-alt"></i> Clear Data';
+        }
+    }
+}
+
 function displayDiagnostics(results) {
     const tbody = document.getElementById('diagnosticsTableBody');
     if (!tbody) return;

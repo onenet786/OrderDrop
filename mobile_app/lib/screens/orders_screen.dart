@@ -40,7 +40,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final message = notification['message'] as String? ?? 'Order update';
     final type = notification['type'] as String?;
 
-    if (type == 'order_update') {
+    if (type == 'order_update' || type == 'refresh_orders') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -222,6 +222,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final subOrders = order['sub_orders'] as List?;
     final orderNumber = order['order_number']?.toString() ?? '';
     final isExpanded = _expandedOrders.contains(orderNumber);
+    // Use the top-level status which should be 'preparing' or 'delayed' etc based on backend logic
+    final globalStatus = order['status'] ?? 'pending'; 
     
     final deliveryFee = double.tryParse(order['delivery_fee']?.toString() ?? '0') ?? 0.0;
     final grandTotal = double.tryParse(order['total_amount']?.toString() ?? '0') ?? 0.0;
@@ -252,22 +254,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue),
-                          ),
-                          child: const Text(
-                            'MULTIPLE STORES',
-                            style: TextStyle(
-                              color: Colors.blue,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
+                        // Only show global status if it's NOT a multi-store group
+                        // OR if it is a group, show a summary status if desired, but individual statuses are inside.
+                        // Here we show the global status badge for the whole order card
+                        _buildStatusBadge(globalStatus),
                       ],
                     ),
                   ),
@@ -331,6 +321,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
+                            // Display status for this specific store shipment
                             _buildStatusBadge(sub['status'] ?? 'pending'),
                           ],
                         ),

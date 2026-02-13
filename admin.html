@@ -983,45 +983,36 @@
           </p>
 
           <div class="filter-controls">
-            <div class="filter-group">
-                <label for="utilUsername">Super Admin Username</label>
-                <input
-                  type="text"
-                  id="utilUsername"
-                  class="form-control"
-                  placeholder="Username"
-                  style="min-width: 180px"
-                />
-            </div>
-            <div class="filter-group">
-                <label for="utilPassword">Super Admin Password</label>
-                <input
-                  type="password"
-                  id="utilPassword"
-                  class="form-control"
-                  placeholder="Password"
-                  style="min-width: 180px"
-                />
-            </div>
             <button class="btn btn-primary" id="createBackupBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Create Backup
             </button>
             <button class="btn btn-secondary" id="refreshBackupsBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Refresh List
             </button>
-            <button class="btn btn-warning" id="restoreBackupBtn" style="align-self: flex-end; margin-bottom: 2px;">
-              Restore Selected
-            </button>
-            <button class="btn btn-danger" id="clearDatabaseBtn" style="align-self: flex-end; margin-bottom: 2px;">
-              Clear DB (Keep Admin)
-            </button>
-            <button class="btn btn-danger" id="clearDatabaseKeepOneBtn" style="align-self: flex-end; margin-bottom: 2px;">
-              Clear DB (Keep One+Admin)
-            </button>
             <span
               id="backupStatus"
               style="font-size: 0.95rem; color: #666; margin-left: 0.5rem; align-self: center;"
             ></span>
+          </div>
+
+          <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+            <h3 style="color: #dc3545;"><i class="fas fa-exclamation-triangle"></i> Danger Zone</h3>
+            <p>Irreversible actions. Use with extreme caution.</p>
+            
+            <div class="filter-controls">
+                <div class="filter-group">
+                    <label for="clearTableSelect">Clear Specific Data:</label>
+                    <select id="clearTableSelect" class="form-control">
+                        <option value="all">ALL Transactional Data (Orders, Payments, History)</option>
+                        <option value="orders">Orders Only</option>
+                        <option value="payments">Payments Only</option>
+                        <option value="notifications">Notifications Only</option>
+                    </select>
+                </div>
+                <button class="btn btn-danger" id="clearDataBtn" onclick="clearTransactionalData()" style="align-self: flex-end; margin-bottom: 2px;">
+                    <i class="fas fa-trash-alt"></i> Clear Data
+                </button>
+            </div>
           </div>
 
           <div class="table-container">

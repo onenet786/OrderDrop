@@ -1432,4 +1432,108 @@ router.get(
   }
 });
 
+// Clear Transactional Data (Orders, Payments, Transactions)
+router.post(
+  "/clear-transactional-data",
+  authenticateToken,
+  requirePermission('menu_settings_database'),
+  async (req, res) => {
+    const { table } = req.body;
+    
+    // Safety check: Only allow specific tables or "all"
+    const validTables = ['orders', 'payments', 'wallet_transactions', 'notifications', 'order_items', 'all'];
+    
+    if (!table || !validTables.includes(table)) {
+        return res.status(400).json({ success: false, message: "Invalid table specified" });
+    }
+
+    // Use connection from pool for transaction support if req.db is pool, 
+    // BUT middleware usually attaches pool to req.db. 
+    // To use transactions, we need a dedicated connection.
+    let connection;
+    try {
+        // If req.db has getConnection (pool), use it. If it IS a connection, use it directly (but dangerous for transactions if shared)
+        // Standard pattern: req.db is pool.
+        if (typeof req.db.getConnection === 'function') {
+            connection = await req.db.getConnection();
+        } else {
+            // Fallback if req.db is already a connection (unlikely in this setup but safe)
+            // However, mysql2/promise connection does not have 'beginTransaction' directly if it's a pool connection?
+            // Actually, pool.execute works, but transactions need connection.
+            // If req.db is a connection, we can use it.
+            connection = req.db; 
+        }
+
+        // Check if beginTransaction is available
+        // NOTE: mysql2/promise connection object DOES support beginTransaction.
+        // If it's missing, maybe it's not a connection object or something else is wrong.
+        // We'll skip transaction if not available but warn.
+        if (typeof connection.beginTransaction !== 'function') {
+             console.warn("Database connection does not support transactions. Proceeding without transaction.");
+             // Fallback: Just execute queries directly without transaction wrapper
+             // We can't use commit/rollback here.
+        } else {
+             await connection.beginTransaction();
+        }
+
+        if (table === 'all') {
+            // Clear all transactional data in correct order
+            await connection.execute('DELETE FROM order_items');
+            await connection.execute('DELETE FROM orders');
+            await connection.execute('DELETE FROM payments');
+            await connection.execute('DELETE FROM wallet_transactions');
+            
+            // Try to delete notifications, ignore if table doesn't exist
+            try {
+                await connection.execute('DELETE FROM notifications');
+            } catch (e) {
+                console.warn("Could not clear notifications table (might not exist):", e.message);
+            }
+            
+            // Reset wallet balances to 0
+            await connection.execute('UPDATE wallets SET balance = 0.00');
+            
+            if (typeof connection.commit === 'function') {
+                await connection.commit();
+            }
+            return res.json({ success: true, message: "All transactional data cleared and wallets reset." });
+        } else {
+            // Clear specific table
+            if (table === 'orders') {
+                await connection.execute('DELETE FROM order_items'); // FK dependency
+                await connection.execute('DELETE FROM orders');
+            } else if (table === 'order_items') {
+                await connection.execute('DELETE FROM order_items');
+            } else if (table === 'payments') {
+                await connection.execute('DELETE FROM payments');
+            } else if (table === 'wallet_transactions') {
+                await connection.execute('DELETE FROM wallet_transactions');
+                // Note: Deleting transactions might make balances inconsistent if not reset
+            } else if (table === 'notifications') {
+                try {
+                    await connection.execute('DELETE FROM notifications');
+                } catch (e) {
+                    throw new Error("Notifications table does not exist or cannot be cleared.");
+                }
+            }
+            
+            if (typeof connection.commit === 'function') {
+                await connection.commit();
+            }
+            return res.json({ success: true, message: `Table '${table}' cleared successfully.` });
+        }
+
+    } catch (error) {
+        if (connection && typeof connection.rollback === 'function') {
+            await connection.rollback();
+        }
+        console.error("Clear data error:", error);
+        res.status(500).json({ success: false, message: "Failed to clear data", error: error.message });
+    } finally {
+        if (connection && typeof connection.release === 'function') {
+            connection.release();
+        }
+    }
+});
+
 module.exports = router;

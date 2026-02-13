@@ -1618,8 +1618,9 @@ router.put(
             .emit("order_status_update", statusUpdateData);
           req.io.to("admins").emit("order_status_update", statusUpdateData);
 
-          // NEW: Custom Notification for "Picked Up"
+          // NEW: Custom Notification for "Picked Up" or "Ready for Pickup"
           if (status === 'picked_up') {
+              // ... existing picked_up logic ...
               // Fetch Store Name and Rider Name for the message
               const [details] = await req.db.execute(
                   `SELECT s.name as store_name, r.first_name as rider_name 
@@ -1643,7 +1644,30 @@ router.put(
                       order_id: id
                   });
               }
+          } else if (status === 'ready_for_pickup') {
+              // ALSO notify when "Ready for Pickup"
+              const [details] = await req.db.execute(
+                  `SELECT s.name as store_name FROM stores s WHERE s.id = (SELECT store_id FROM order_items WHERE id = ? LIMIT 1)`,
+                  [targetItemIds[0]]
+              );
+              
+              if (details.length > 0) {
+                  const { store_name } = details[0];
+                  req.io.to(`user_${order.user_id}`).emit('notification', {
+                      type: 'order_update',
+                      title: 'Order Ready',
+                      message: `Your items from ${store_name} are ready for pickup.`,
+                      order_id: id
+                  });
+              }
           }
+
+          // Force refresh for customer screen by sending a generic "update" event
+          req.io.to(`user_${order.user_id}`).emit('user_notification', {
+              type: 'refresh_orders',
+              message: 'Order status updated',
+              order_id: id
+          });
 
           const fs = require("fs");
           const path = require("path");
