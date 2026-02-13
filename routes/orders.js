@@ -1082,7 +1082,7 @@ router.get(
 
       // Find stores owned by this user
       const [myStores] = await req.db.execute(
-        "SELECT id FROM stores WHERE owner_id = ?",
+        "SELECT id, name FROM stores WHERE owner_id = ?",
         [req.user.id],
       );
 
@@ -1148,16 +1148,22 @@ router.get(
       `, [...storeIds]);
 
       // 3. Wallet Balance (Received Balance)
-      // Note: We check for 'store_owner' user_type, or just user_id if wallets are unified
       const [walletRows] = await req.db.execute(
           'SELECT balance FROM wallets WHERE user_id = ?', 
           [req.user.id]
       );
       const balance = walletRows.length > 0 ? walletRows[0].balance : 0;
 
+      // 4. Get Store Name explicitly for dashboard display
+      const [storeInfo] = await req.db.execute(
+          'SELECT name FROM stores WHERE id = ?', 
+          [myStores[0].id]
+      );
+      const storeName = storeInfo.length > 0 ? storeInfo[0].name : myStores[0].name;
+
       const stats = {
           store_id: myStores[0].id,
-          store_name: myStores.map(s => s.name).join(', '), // Join names if multiple
+          store_name: storeName, // Ensure this is populated correctly
           total_orders: countRows[0].total_orders,
           delivered: countRows[0].delivered,
           preparing: countRows[0].preparing,
@@ -1817,10 +1823,7 @@ router.put(
               const path = require("path");
               fs.appendFileSync(path.join(__dirname, "../socket_debug.log"), logMsg);
           }
-        }
-      } catch (e) {
-        console.error("Socket emit error:", e);
-      }
+
           const riderRoomName = `rider_${rider_id}`;
           const userRoomName = `user_${order.user_id}`;
 
@@ -1837,53 +1840,6 @@ router.put(
             timestamp: new Date(),
           });
 
-          // Notify Store Owners
-          const [storeItems] = await req.db.execute(
-            `SELECT DISTINCT s.id, s.name, s.owner_id 
-             FROM order_items oi
-             JOIN stores s ON oi.store_id = s.id
-             WHERE oi.order_id = ?`,
-            [id],
-          );
-
-          for (const store of storeItems) {
-            if (store.owner_id) {
-              const [products] = await req.db.execute(
-                `SELECT p.name, oi.quantity 
-                 FROM order_items oi
-                 JOIN products p ON oi.product_id = p.id
-                 WHERE oi.order_id = ? AND oi.store_id = ?`,
-                [id, store.id],
-              );
-
-              const productList = products
-                .map((p) => `${p.quantity}x ${p.name}`)
-                .join(", ");
-
-              req.io
-                .to(`user_${store.owner_id}`)
-                .emit("store_owner_notification", {
-                  type: "rider_assigned",
-                  order_id: id,
-                  order_number: order.order_number,
-                  store_id: store.id,
-                  store_name: store.name,
-                  products: productList,
-                  rider_name: `${rider.first_name} ${rider.last_name}`,
-                  message: `Rider assigned for order ${order.order_number}. Preparing: ${productList}`,
-                  timestamp: new Date(),
-                });
-
-              const fs = require("fs");
-              const path = require("path");
-              const logMsg = `[${new Date().toISOString()}] Store notification sent to owner ${store.owner_id} for store ${store.name}\n`;
-              fs.appendFileSync(
-                path.join(__dirname, "../socket_debug.log"),
-                logMsg,
-              );
-            }
-          }
-
           console.log(
             `[Orders] Emitting user_notification to room: ${userRoomName}`,
             { user_id: order.user_id, order_number: order.order_number },
@@ -1897,7 +1853,7 @@ router.put(
             message: `Your order ${order.order_number} has been assigned to rider ${rider.first_name}.`,
             timestamp: new Date(),
           });
-
+          
           const fs = require("fs");
           const path = require("path");
           const logMsg = `[${new Date().toISOString()}] Order assigned: ${order.order_number} to ${rider.first_name}. Sent to rooms: ${riderRoomName}, ${userRoomName}\n`;

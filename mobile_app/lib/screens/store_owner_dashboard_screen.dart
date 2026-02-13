@@ -105,7 +105,11 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
               .toList();
           _historyOrders = orders
               .where(
-                (o) => o['status'] == 'delivered' || o['status'] == 'cancelled',
+                (o) =>
+                    o['status'] == 'delivered' ||
+                    o['status'] == 'cancelled' ||
+                    o['status'] == 'picked_up' || // Show picked_up in history as it's done for the store
+                    o['status'] == 'out_for_delivery', // Also show out_for_delivery in history
               )
               .toList();
         });
