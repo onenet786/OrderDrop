@@ -511,13 +511,18 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
         ),
       );
     } else if (currentStatus == 'ready') {
+      // Check if rider is assigned
+      final hasRider = order['rider_id'] != null;
+      
       buttons.add(
         ElevatedButton(
-          onPressed: () => _updateStatus(id, 'ready_for_pickup'),
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-          child: const Text(
-            'Ready to Pick Up',
-            style: TextStyle(color: Colors.white),
+          onPressed: hasRider ? () => _updateStatus(id, 'ready_for_pickup') : null,
+          style: ElevatedButton.styleFrom(
+              backgroundColor: hasRider ? Colors.blue : Colors.grey
+          ),
+          child: Text(
+            hasRider ? 'Ready to Pick Up' : 'Waiting for Rider',
+            style: const TextStyle(color: Colors.white),
           ),
         ),
       );

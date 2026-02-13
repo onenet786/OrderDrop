@@ -1140,10 +1140,19 @@ router.get(
       `, [...storeIds]);
 
       // 2. Total Revenue (Sum of items for this store in delivered orders)
+      // Apply commission rate (default 10% if not set)
+      // Formula: sum(price * quantity) * (1 - commission_rate/100)
       const [revenueRows] = await req.db.execute(`
-          SELECT COALESCE(SUM(oi.price * oi.quantity), 0) as revenue
+          SELECT 
+            COALESCE(
+                SUM(
+                    (oi.price * oi.quantity) * 
+                    (1 - COALESCE(s.commission_rate, 10.00) / 100)
+                ), 
+            0) as revenue
           FROM order_items oi
           JOIN orders o ON oi.order_id = o.id
+          JOIN stores s ON oi.store_id = s.id
           WHERE oi.store_id IN (${placeholders}) AND o.status = 'delivered'
       `, [...storeIds]);
 
@@ -1550,6 +1559,10 @@ router.put(
           // Mixed statuses - Determine lowest common denominator
           const has = (s) => statuses.includes(s);
           
+          // Custom logic: If status requested is 'ready_for_pickup', allow it to influence global state
+          // The issue is if Store A is 'ready_for_pickup' and Store B is 'pending', global is 'preparing'.
+          // But if Store A says 'ready_for_pickup', the customer should see 'ready' for Store A.
+          
           if (statuses.every(s => s === 'cancelled')) {
               newGlobalStatus = 'cancelled';
           } else if (statuses.every(s => s === 'delivered' || s === 'cancelled')) {
@@ -1565,6 +1578,8 @@ router.put(
               const activeStatuses = statuses.filter(s => !['delivered', 'cancelled'].includes(s));
               // Check if anything is still preparing or pending
               if (activeStatuses.some(s => ['preparing', 'pending', 'confirmed'].includes(s))) {
+                  // If specifically THIS request was setting it to ready_for_pickup, we want to ensure
+                  // the frontend reflects this progress, but 'preparing' is technically correct for the whole order.
                   newGlobalStatus = 'preparing';
               } else {
                   // Everything is at least ready or ready_for_pickup
@@ -1686,10 +1701,11 @@ router.put(
           
           for (const owner of storeOwners) {
               if (owner.owner_id) {
+                  // Use 'silent_refresh' type to avoid visible notifications on other stores
                   req.io.to(`user_${owner.owner_id}`).emit('store_owner_notification', {
-                      type: 'refresh_orders',
+                      type: 'silent_refresh',
                       order_id: id,
-                      message: 'Order updated'
+                      message: '' 
                   });
               }
           }
@@ -2144,6 +2160,12 @@ router.put("/:id(\\d+)/deliver", authenticateToken, async (req, res) => {
       "delivered",
       id,
     ]);
+
+    // Force update all order items to 'delivered' so they move to history in store dashboard
+    await req.db.execute(
+      "UPDATE order_items SET item_status = 'delivered' WHERE order_id = ?",
+      [id]
+    );
 
     // Notifications - only to specific rooms to avoid duplicates
     try {
