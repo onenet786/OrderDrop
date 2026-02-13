@@ -275,6 +275,17 @@ class NotificationProvider with ChangeNotifier {
       }
     });
 
+    _socket!.on('notification', (data) {
+      debugPrint('Socket: notification received: $data');
+      // Generic handler for targeted notifications
+      addNotification(
+        title: data['title'] ?? 'Notification',
+        message: data['message'] ?? '',
+        type: data['type'] ?? 'info',
+        icon: 'notifications',
+      );
+    });
+
     _socket!.on('rider_notification', (data) {
       final riderId = data['rider_id'].toString();
       final currentUserId = _authProvider?.user?.id.toString();

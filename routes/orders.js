@@ -1788,6 +1788,39 @@ router.put(
           );
           req.io.to("admins").emit("order_assigned", orderData);
 
+          // NEW: Send "Store Owner Notification" to all store owners involved in this order
+          // Identify unique stores in this order
+          const [storeOwners] = await req.db.execute(
+            `SELECT DISTINCT s.owner_id, s.name as store_name
+             FROM order_items oi
+             JOIN stores s ON oi.store_id = s.id
+             WHERE oi.order_id = ?`,
+            [id]
+          );
+
+          for (const owner of storeOwners) {
+              const message = `Order #${order.order_number} containing ${owner.store_name} products has been assigned to rider ${rider.first_name} ${rider.last_name}.`;
+              
+              // Emit specific notification event to store owner
+              // Assuming store owners join room 'user_{id}' just like customers
+              req.io.to(`user_${owner.owner_id}`).emit('store_owner_notification', {
+                  type: 'rider_assigned',
+                  title: 'Rider Assigned',
+                  message: message,
+                  order_id: id,
+                  rider_name: `${rider.first_name} ${rider.last_name}`
+              });
+
+              // Log notification
+              const logMsg = `[${new Date().toISOString()}] Store notification sent to owner ${owner.owner_id} for store ${owner.store_name}\n`;
+              const fs = require("fs");
+              const path = require("path");
+              fs.appendFileSync(path.join(__dirname, "../socket_debug.log"), logMsg);
+          }
+        }
+      } catch (e) {
+        console.error("Socket emit error:", e);
+      }
           const riderRoomName = `rider_${rider_id}`;
           const userRoomName = `user_${order.user_id}`;
 
