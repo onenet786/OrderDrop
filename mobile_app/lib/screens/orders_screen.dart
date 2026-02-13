@@ -574,8 +574,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
       case 'ready':
         color = Colors.indigo;
         break;
-      case 'out_for_delivery':
+      case 'ready_for_pickup':
         color = Colors.cyan;
+        break;
+      case 'picked_up':
+      case 'out_for_delivery':
+        color = Colors.blue;
         break;
       case 'delivered':
         color = Colors.green;
@@ -595,7 +599,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         border: Border.all(color: color),
       ),
       child: Text(
-        status.toUpperCase(),
+        status.toUpperCase().replaceAll('_', ' '),
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.bold,

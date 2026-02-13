@@ -259,7 +259,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      storeName,
+                      '$storeName ($storeId)',
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -267,9 +267,9 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(
-                      'Store ID: $storeId',
-                      style: const TextStyle(
+                    const Text(
+                      'Store Dashboard',
+                      style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey,
                       ),
