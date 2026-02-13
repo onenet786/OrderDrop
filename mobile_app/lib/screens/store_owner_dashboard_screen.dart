@@ -362,8 +362,13 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
   }
 
   Widget _buildOrderCard(Map<String, dynamic> order, bool showActions) {
-    final status = order['status'] ?? 'unknown';
+    // Use item_status if available (specific to this store), otherwise fallback to global order status
+    String displayStatus = order['status'] ?? 'unknown';
     final items = (order['items'] as List?) ?? [];
+    
+    if (items.isNotEmpty && items[0]['item_status'] != null) {
+      displayStatus = items[0]['item_status'];
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -422,14 +427,14 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(status).withValues(alpha: 0.1),
+                    color: _getStatusColor(displayStatus).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _getStatusColor(status)),
+                    border: Border.all(color: _getStatusColor(displayStatus)),
                   ),
                   child: Text(
-                    status.toUpperCase(),
+                    displayStatus.toUpperCase(),
                     style: TextStyle(
-                      color: _getStatusColor(status),
+                      color: _getStatusColor(displayStatus),
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
                     ),
@@ -465,7 +470,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
-                children: _buildActionButtons(order),
+                children: _buildActionButtons(order, displayStatus),
               ),
             ],
           ],
@@ -474,12 +479,11 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     );
   }
 
-  List<Widget> _buildActionButtons(Map<String, dynamic> order) {
-    final status = order['status'];
+  List<Widget> _buildActionButtons(Map<String, dynamic> order, String currentStatus) {
     final id = order['id'];
     List<Widget> buttons = [];
 
-    if (status == 'pending' || status == 'confirmed') {
+    if (currentStatus == 'pending' || currentStatus == 'confirmed') {
       buttons.add(
         ElevatedButton(
           onPressed: () => _updateStatus(id, 'preparing'),
@@ -490,7 +494,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
           ),
         ),
       );
-    } else if (status == 'preparing') {
+    } else if (currentStatus == 'preparing') {
       buttons.add(
         ElevatedButton(
           onPressed: () => _updateStatus(id, 'ready'),

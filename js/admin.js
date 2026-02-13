@@ -2600,12 +2600,43 @@ function displayOrders(orders = AppState.orders) {
             ? `${order.rider_first_name} ${order.rider_last_name || ''}`.trim()
             : 'Not Assigned';
         const row = document.createElement('tr');
+        
+        // Multi-store status tooltip
+        let statusHtml = `<span class="status-${order.status}">${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</span>`;
+        
+        if (order.store_statuses) {
+            try {
+                // Determine if there are delays or mixed statuses
+                const statuses = order.store_statuses;
+                const isMixed = statuses.length > 1 && new Set(statuses.map(s => s.status)).size > 1;
+                const isDelayed = order.status === 'preparing' && statuses.some(s => s.status === 'ready'); // One ready, others still preparing
+
+                if (isMixed || isDelayed) {
+                    const tooltipContent = statuses.map(s => 
+                        `<div><strong>${s.store_name}:</strong> <span class="status-${s.status}">${s.status.toUpperCase()}</span></div>`
+                    ).join('');
+                    
+                    statusHtml += `
+                        <div class="store-status-details" style="font-size: 0.8em; margin-top: 4px;">
+                            ${isDelayed ? '<span style="color: orange;"><i class="fas fa-exclamation-triangle"></i> Delayed</span>' : ''}
+                            <div class="store-status-tooltip">
+                                <i class="fas fa-info-circle" style="color: #666; cursor: pointer;" title="Store Details"></i>
+                                <div class="tooltip-content" style="display: none; position: absolute; background: white; border: 1px solid #ccc; padding: 5px; z-index: 100; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);">
+                                    ${tooltipContent}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (e) { console.error('Error parsing store statuses', e); }
+        }
+
         row.innerHTML = `
             <td>${order.order_number}</td>
             <td>${order.first_name} ${order.last_name}</td>
-            <td>${order.store_name}</td>
+            <td>${order.store_name || 'Multiple Stores'}</td>
             <td>PKR ${parseFloat(order.total_amount).toFixed(2)}</td>
-            <td><span class="status-${order.status}">${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</span></td>
+            <td>${statusHtml}</td>
             <td>${riderName}</td>
             <td>${order.rider_latitude && order.rider_longitude ? 
                 `${Number(order.rider_latitude).toFixed(4)}, ${Number(order.rider_longitude).toFixed(4)}` : 
@@ -2622,6 +2653,15 @@ function displayOrders(orders = AppState.orders) {
                 </div>
             </td>
         `;
+        
+        // Add hover effect for tooltip
+        const tooltipTrigger = row.querySelector('.fa-info-circle');
+        if (tooltipTrigger) {
+            const tooltipContent = row.querySelector('.tooltip-content');
+            tooltipTrigger.addEventListener('mouseenter', () => tooltipContent.style.display = 'block');
+            tooltipTrigger.addEventListener('mouseleave', () => tooltipContent.style.display = 'none');
+        }
+
         tbody.appendChild(row);
     });
 }

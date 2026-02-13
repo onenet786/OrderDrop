@@ -33,6 +33,11 @@ async function ensureOrderItemsSchema(db) {
     },
     { name: "discount_type", definition: "ENUM('amount', 'percent') NULL" },
     { name: "discount_value", definition: "DECIMAL(10, 2) NULL" },
+    {
+      name: "item_status",
+      definition:
+        "ENUM('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled', 'out_for_delivery') DEFAULT 'pending'",
+    },
   ];
 
   for (const col of columns) {
@@ -1281,6 +1286,12 @@ router.get("/:id(\\d+)", authenticateToken, async (req, res) => {
   }
 });
 
+// Helper to get store ID for owner
+async function getStoreIdForOwner(db, userId) {
+    const [rows] = await db.execute('SELECT id FROM stores WHERE owner_id = ? LIMIT 1', [userId]);
+    return rows.length > 0 ? rows[0].id : null;
+}
+
 // Get all orders (Admin & Dispatch only)
 router.get("/", authenticateToken, async (req, res) => {
   console.log(
@@ -1363,7 +1374,18 @@ router.get("/", authenticateToken, async (req, res) => {
       `
             SELECT o.*, u.first_name, u.last_name, u.email, s.name as store_name,
                    r.first_name as rider_first_name, r.last_name as rider_last_name,
-                   CAST((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS SIGNED) as items_count
+                   CAST((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS SIGNED) as items_count,
+                   (
+                       SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                           'store_id', s2.id, 
+                           'store_name', s2.name, 
+                           'status', COALESCE(oi2.item_status, 'pending')
+                       ))
+                       FROM order_items oi2
+                       JOIN stores s2 ON oi2.store_id = s2.id
+                       WHERE oi2.order_id = o.id
+                       GROUP BY oi2.order_id
+                   ) as store_statuses
             FROM orders o
             JOIN users u ON o.user_id = u.id
             LEFT JOIN stores s ON o.store_id = s.id
@@ -1452,8 +1474,92 @@ router.put(
         });
       }
 
+      // --- Multi-Store Status Logic ---
+
+      // 1. Identify which items to update
+      let targetItemIds = [];
+      if (req.user.user_type === 'store_owner') {
+          // Store Owner: Only update their own items
+          const [myItems] = await req.db.execute(
+              `SELECT oi.id FROM order_items oi 
+               JOIN stores s ON oi.store_id = s.id 
+               WHERE oi.order_id = ? AND s.owner_id = ?`,
+              [id, req.user.id]
+          );
+          targetItemIds = myItems.map(i => i.id);
+      } else {
+          // Admin/Staff: Update ALL items (force sync)
+          const [allItems] = await req.db.execute(
+              'SELECT id FROM order_items WHERE order_id = ?', 
+              [id]
+          );
+          targetItemIds = allItems.map(i => i.id);
+      }
+
+      // 2. Update Item Statuses
+      if (targetItemIds.length > 0) {
+          const placeholders = targetItemIds.map(() => '?').join(',');
+          await req.db.execute(
+              `UPDATE order_items SET item_status = ? WHERE id IN (${placeholders})`,
+              [status, ...targetItemIds]
+          );
+      }
+
+      // 3. Recalculate Global Status
+      // We need to know the status of ALL items to determine the global order status
+      const [allOrderItems] = await req.db.execute(
+          'SELECT item_status FROM order_items WHERE order_id = ?', 
+          [id]
+      );
+      
+      // Default nulls to 'pending'
+      const statuses = allOrderItems.map(i => i.item_status || 'pending');
+      
+      let newGlobalStatus = 'pending';
+      const uniqueStatuses = new Set(statuses);
+
+      if (statuses.length === 0) {
+          newGlobalStatus = status; // Fallback if no items
+      } else if (uniqueStatuses.size === 1) {
+          // All items have same status
+          newGlobalStatus = statuses[0];
+      } else {
+          // Mixed statuses - Determine lowest common denominator
+          const has = (s) => statuses.includes(s);
+          
+          if (statuses.every(s => s === 'cancelled')) {
+              newGlobalStatus = 'cancelled';
+          } else if (statuses.every(s => s === 'delivered' || s === 'cancelled')) {
+              newGlobalStatus = 'delivered';
+          } else if (has('out_for_delivery')) {
+              // If any item is out for delivery, the order is effectively out (rider has it)
+              newGlobalStatus = 'out_for_delivery';
+          } else if (has('preparing')) {
+              // If any item is still preparing, the whole order is preparing
+              newGlobalStatus = 'preparing';
+          } else if (has('pending') || has('confirmed')) {
+              // If things are ready but some are still pending/confirmed (not started), it's confirmed/pending
+              // But effectively "Preparing" is a better summary if work has started elsewhere? 
+              // No, if Store A is Ready and Store B is Pending, we are waiting.
+              // Let's stick to: If ANY is preparing, it's preparing.
+              // If ALL are Ready (ignoring done ones), it's Ready.
+              const activeStatuses = statuses.filter(s => !['delivered', 'cancelled'].includes(s));
+              if (activeStatuses.every(s => s === 'ready')) {
+                  newGlobalStatus = 'ready';
+              } else if (activeStatuses.some(s => s === 'preparing')) {
+                  newGlobalStatus = 'preparing';
+              } else {
+                  // Mixed Ready + Pending? effectively "Confirmed" or "Preparing"?
+                  // Let's say "Preparing" to indicate work is needed/ongoing.
+                  newGlobalStatus = 'preparing';
+              }
+          } else {
+              newGlobalStatus = 'preparing'; // Default fallthrough
+          }
+      }
+
       await req.db.execute("UPDATE orders SET status = ? WHERE id = ?", [
-        status,
+        newGlobalStatus,
         id,
       ]);
 
@@ -1463,10 +1569,17 @@ router.put(
           const statusUpdateData = {
             id: id,
             order_number: order.order_number,
-            status: status,
+            status: newGlobalStatus, // Emit the calculated global status
             user_id: order.user_id,
             updated_at: new Date(),
+            // ADDED: Include which specific store updated which status
+            store_update: req.user.user_type === 'store_owner' ? {
+                store_id: req.user.store_id || (await getStoreIdForOwner(req.db, req.user.id)),
+                status: status, // The specific status requested (e.g., 'preparing')
+                item_ids: targetItemIds
+            } : null
           };
+          
           // Send to user room only (avoid duplicate by not sending to all)
           req.io
             .to(`user_${order.user_id}`)
@@ -1475,7 +1588,7 @@ router.put(
 
           const fs = require("fs");
           const path = require("path");
-          const logMsg = `[${new Date().toISOString()}] Status updated: ${order.order_number} -> ${status}. Total clients: ${req.io.engine.clientsCount}\n`;
+          const logMsg = `[${new Date().toISOString()}] Status updated: ${order.order_number} -> ${newGlobalStatus} (Requested: ${status}). Store Owner Update: ${req.user.user_type === 'store_owner'}. Total clients: ${req.io.engine.clientsCount}\n`;
           fs.appendFileSync(
             path.join(__dirname, "../socket_debug.log"),
             logMsg,
@@ -1488,6 +1601,7 @@ router.put(
       res.json({
         success: true,
         message: "Order status updated successfully",
+        global_status: newGlobalStatus
       });
     } catch (error) {
       console.error("Error updating order:", error);
