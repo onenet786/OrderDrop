@@ -254,9 +254,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        // Only show global status if it's NOT a multi-store group
-                        // OR if it is a group, show a summary status if desired, but individual statuses are inside.
-                        // Here we show the global status badge for the whole order card
                         _buildStatusBadge(globalStatus),
                       ],
                     ),
@@ -321,7 +318,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // Display status for this specific store shipment
                             _buildStatusBadge(sub['status'] ?? 'pending'),
                           ],
                         ),

@@ -157,9 +157,11 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
     for (let order of orders) {
       const [items] = await req.db.execute(
         `
-                SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name
+                SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name,
+                       v.label as variant_label
                 FROM order_items oi
                 JOIN products p ON oi.product_id = p.id
+                LEFT JOIN product_variants v ON oi.variant_id = v.id
                 LEFT JOIN stores s ON oi.store_id = s.id
                 WHERE oi.order_id = ?
             `,
@@ -179,8 +181,11 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
           if (!storeGroups[item.store_id]) {
             storeGroups[item.store_id] = {
               store_name: item.item_store_name,
-              status: order.status, // Inherit main order status
+              status: item.item_status || 'pending', // Use item-specific status!
               items: [],
+              rider_first_name: order.rider_first_name,
+              rider_last_name: order.rider_last_name,
+              rider_phone: order.rider_phone
             };
           }
           storeGroups[item.store_id].items.push(item);
