@@ -2276,24 +2276,33 @@ async function editStoreType() {
     showInfo('Coming Soon', 'Edit store functionality is being implemented.');
 }
 
-function toggleStoreStatus(storeId, currentStatus) {
+function deleteStore(storeId) {
+    if (!confirm('Are you sure you want to permanently delete this store? This action cannot be undone.')) return;
+
     fetch(`${API_BASE}/api/stores/${storeId}`, {
-        method: 'PUT',
+        method: 'DELETE',
         headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({ is_active: !currentStatus })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            loadStores();
-        } else {
-            showError('Error', 'Failed to update store status. Please try again.');
         }
     })
-    .catch(error => console.error('Error updating store:', error));
+    .then(async response => {
+        const data = await response.json();
+        if (response.ok) {
+            showSuccess('Success', 'Store deleted successfully');
+            loadStores();
+        } else {
+            // Handle 409 Conflict (Foreign Key Constraint)
+            if (response.status === 409) {
+                showError('Cannot Delete', data.message);
+            } else {
+                showError('Error', data.message || 'Failed to delete store');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting store:', error);
+        showError('Error', 'An unexpected error occurred');
+    });
 }
 
 function showSetPriorityModal(storeId, storeName, currentPriority) {
@@ -6182,8 +6191,8 @@ function displayStores(stores) {
                     <button class="btn-small btn-info" onclick="showSetPriorityModal(${store.id}, '${store.name}', ${store.priority || 'null'})">
                         <i class="fas fa-star"></i> Priority
                     </button>
-                    <button class="btn-small btn-secondary" onclick="toggleStoreStatus(${store.id}, ${store.is_active})">
-                        <i class="fas fa-${store.is_active ? 'ban' : 'check'}"></i> ${store.is_active ? 'Deactivate' : 'Activate'}
+                    <button class="btn-small btn-secondary" onclick="deleteStore(${store.id})">
+                        <i class="fas fa-trash"></i> Delete
                     </button>
                 </div>
             </td>

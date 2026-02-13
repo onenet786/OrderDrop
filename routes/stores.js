@@ -567,8 +567,9 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const { id } = req.params;
 
+        // Hard delete the store record
         const [result] = await req.db.execute(
-            'UPDATE stores SET is_active = false WHERE id = ?',
+            'DELETE FROM stores WHERE id = ?',
             [id]
         );
 
@@ -581,10 +582,19 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Store deactivated successfully'
+            message: 'Store deleted successfully'
         });
 
     } catch (error) {
+        // Handle foreign key constraint errors specifically
+        if (error.code === 'ER_ROW_IS_REFERENCED_2' || error.errno === 1451) {
+            return res.status(409).json({
+                success: false,
+                message: 'Cannot delete store because it has associated records (products, orders, etc.). Please delete or reassign them first.',
+                error: error.message
+            });
+        }
+
         console.error('Error deleting store:', error);
         res.status(500).json({
             success: false,

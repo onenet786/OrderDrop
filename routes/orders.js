@@ -1120,7 +1120,48 @@ router.get(
         order.items = items;
       }
 
-      res.json({ success: true, orders });
+      // --- NEW: Calculate Dashboard Stats ---
+      
+      // 1. Order Counts (Distinct Orders)
+      const [countRows] = await req.db.execute(`
+          SELECT 
+              COUNT(DISTINCT o.id) as total_orders,
+              COUNT(DISTINCT CASE WHEN o.status = 'delivered' THEN o.id END) as delivered,
+              COUNT(DISTINCT CASE WHEN o.status = 'preparing' THEN o.id END) as preparing,
+              COUNT(DISTINCT CASE WHEN o.status = 'ready' THEN o.id END) as ready
+          FROM orders o
+          JOIN order_items oi ON o.id = oi.order_id
+          WHERE oi.store_id IN (${placeholders})
+      `, [...storeIds]);
+
+      // 2. Total Revenue (Sum of items for this store in delivered orders)
+      const [revenueRows] = await req.db.execute(`
+          SELECT COALESCE(SUM(oi.price * oi.quantity), 0) as revenue
+          FROM order_items oi
+          JOIN orders o ON oi.order_id = o.id
+          WHERE oi.store_id IN (${placeholders}) AND o.status = 'delivered'
+      `, [...storeIds]);
+
+      // 3. Wallet Balance (Received Balance)
+      // Note: We check for 'store_owner' user_type, or just user_id if wallets are unified
+      const [walletRows] = await req.db.execute(
+          'SELECT balance FROM wallets WHERE user_id = ?', 
+          [req.user.id]
+      );
+      const balance = walletRows.length > 0 ? walletRows[0].balance : 0;
+
+      const stats = {
+          store_id: myStores[0].id,
+          store_name: myStores.map(s => s.name).join(', '), // Join names if multiple
+          total_orders: countRows[0].total_orders,
+          delivered: countRows[0].delivered,
+          preparing: countRows[0].preparing,
+          ready: countRows[0].ready,
+          total_amount: revenueRows[0].revenue,
+          received_balance: balance
+      };
+
+      res.json({ success: true, orders, stats });
     } catch (error) {
       console.error("Error fetching store orders:", error);
       res.status(500).json({

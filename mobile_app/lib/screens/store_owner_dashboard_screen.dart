@@ -23,6 +23,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
   List<dynamic> _pendingOrders = [];
   List<dynamic> _activeOrders = []; // Preparing, Ready
   List<dynamic> _historyOrders = []; // Delivered, Cancelled
+  Map<String, dynamic> _stats = {};
 
   @override
   void initState() {
@@ -82,10 +83,13 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null) return;
 
-      final orders = await ApiService.getStoreOrders(token);
+      final data = await ApiService.getStoreOrders(token);
+      final orders = (data['orders'] as List?) ?? [];
+      final stats = (data['stats'] as Map<String, dynamic>?) ?? {};
 
       if (mounted) {
         setState(() {
+          _stats = stats;
           _pendingOrders = orders
               .where(
                 (o) => o['status'] == 'pending' || o['status'] == 'confirmed',
@@ -151,10 +155,13 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.primary,
+        backgroundColor: primaryColor,
         foregroundColor: Colors.white,
+        elevation: 0, // Remove shadow to blend with body container
         title: const Text('Store Dashboard'),
         actions: [
           const NotificationBellWidget(),
@@ -167,30 +174,176 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
           ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          indicatorSize: TabBarIndicatorSize.tab,
-          indicatorWeight: 3,
-          tabs: const [
-            Tab(text: 'New Orders'),
-            Tab(text: 'Active'),
-            Tab(text: 'History'),
-          ],
-        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
+          : Column(
               children: [
-                _buildOrderList(_pendingOrders, showActions: true),
-                _buildOrderList(_activeOrders, showActions: true),
-                _buildOrderList(_historyOrders, showActions: false),
+                // Dashboard Stats Header
+                Container(
+                  color: primaryColor,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(
+                    children: [
+                      _buildDashboardStats(),
+                      const SizedBox(height: 16),
+                      TabBar(
+                        controller: _tabController,
+                        labelColor: Colors.white,
+                        unselectedLabelColor: Colors.white70,
+                        indicatorColor: Colors.white,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicatorWeight: 3,
+                        tabs: const [
+                          Tab(text: 'New Orders'),
+                          Tab(text: 'Active'),
+                          Tab(text: 'History'),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Order Lists
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildOrderList(_pendingOrders, showActions: true),
+                      _buildOrderList(_activeOrders, showActions: true),
+                      _buildOrderList(_historyOrders, showActions: false),
+                    ],
+                  ),
+                ),
               ],
             ),
+    );
+  }
+
+  Widget _buildDashboardStats() {
+    if (_stats.isEmpty) return const SizedBox.shrink();
+
+    final storeName = _stats['store_name'] ?? 'Loading...';
+    final storeId = _stats['store_id']?.toString() ?? '-';
+    final totalOrders = _stats['total_orders']?.toString() ?? '0';
+    final delivered = _stats['delivered']?.toString() ?? '0';
+    final preparing = _stats['preparing']?.toString() ?? '0';
+    final ready = _stats['ready']?.toString() ?? '0';
+    final totalAmount =
+        double.tryParse(_stats['total_amount']?.toString() ?? '0')
+                ?.toStringAsFixed(2) ??
+            '0.00';
+    final balance = double.tryParse(_stats['received_balance']?.toString() ?? '0')
+            ?.toStringAsFixed(2) ??
+        '0.00';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      storeName,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'Store ID: $storeId',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text(
+                    'Balance',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  Text(
+                    'PKR $balance',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatItem('Total Orders', totalOrders, Colors.blue),
+              _buildStatItem('Delivered', delivered, Colors.green),
+              _buildStatItem('Preparing', preparing, Colors.orange),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatItem('Ready', ready, Colors.purple),
+              _buildStatItem('Revenue', 'PKR $totalAmount', Colors.teal, flex: 2),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, Color color, {int flex = 1}) {
+    return Expanded(
+      flex: flex,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

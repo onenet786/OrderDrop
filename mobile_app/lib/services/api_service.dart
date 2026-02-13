@@ -334,7 +334,7 @@ class ApiService {
   }
 
   // Store Owner APIs
-  static Future<List<dynamic>> getStoreOrders(
+  static Future<Map<String, dynamic>> getStoreOrders(
     String token, {
     String status = 'all',
   }) async {
@@ -344,8 +344,7 @@ class ApiService {
       uri,
       headers: {'Authorization': 'Bearer $token'},
     );
-    final data = _handleResponse(response);
-    return data['orders'] ?? [];
+    return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> updateOrderStatus(
