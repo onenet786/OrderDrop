@@ -1328,8 +1328,8 @@ router.post(
 // ===== SYSTEM DIAGNOSTICS (ADMIN) =====
 
 // Run single diagnostic
-router.post(
-  "/diagnostics/run",
+router.get(
+  "/diagnostics",
   authenticateToken,
   requirePermission('menu_settings_problems'),
   async (req, res) => {
