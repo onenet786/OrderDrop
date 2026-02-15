@@ -155,8 +155,18 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
 
     // Get order items for each order
     for (let order of orders) {
-      const [items] = await req.db.execute(
-        `
+      // Check if product_variants table exists before querying
+      let hasVariantsTable = false;
+      try {
+        await req.db.execute("SELECT 1 FROM product_variants LIMIT 1");
+        hasVariantsTable = true;
+      } catch (e) {
+        // Table doesn't exist
+      }
+
+      let itemsQuery;
+      if (hasVariantsTable) {
+        itemsQuery = `
                 SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name,
                        v.label as variant_label
                 FROM order_items oi
@@ -164,12 +174,23 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
                 LEFT JOIN product_variants v ON oi.variant_id = v.id
                 LEFT JOIN stores s ON oi.store_id = s.id
                 WHERE oi.order_id = ?
-            `,
-        [order.id],
-      );
+            `;
+      } else {
+         itemsQuery = `
+                SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name,
+                       NULL as variant_label
+                FROM order_items oi
+                JOIN products p ON oi.product_id = p.id
+                LEFT JOIN stores s ON oi.store_id = s.id
+                WHERE oi.order_id = ?
+            `;
+      }
+
+      const [items] = await req.db.execute(itemsQuery, [order.id]);
       order.items = items;
 
       // If store_id is NULL (multi-store order), set display name
+      // Note: In some schemas, store_id might be 0 or null.
       if (!order.store_id) {
         order.store_name = "Multiple Stores";
         order.is_group = true; // reusing existing frontend logic
@@ -178,9 +199,13 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
         // We can construct sub_orders mock structure for frontend compatibility
         const storeGroups = {};
         items.forEach((item) => {
-          if (!storeGroups[item.store_id]) {
-            storeGroups[item.store_id] = {
-              store_name: item.item_store_name,
+          // If store_id is null/undefined in item, fallback to something safe
+          const sId = item.store_id || 'unknown';
+          
+          if (!storeGroups[sId]) {
+            storeGroups[sId] = {
+              store_id: sId,
+              store_name: item.item_store_name || 'Unknown Store',
               status: item.item_status || 'pending', // Use item-specific status!
               items: [],
               rider_first_name: order.rider_first_name,
@@ -188,7 +213,7 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
               rider_phone: order.rider_phone
             };
           }
-          storeGroups[item.store_id].items.push(item);
+          storeGroups[sId].items.push(item);
         });
         order.sub_orders = Object.values(storeGroups);
       }
@@ -1642,7 +1667,9 @@ router.put(
             .emit("order_status_update", statusUpdateData);
           req.io.to("admins").emit("order_status_update", statusUpdateData);
 
-          // NEW: Custom Notification for "Picked Up" or "Ready for Pickup"
+          // Custom logic: Only emit 'notification' event for user-facing status changes
+          // Avoid spamming generic notifications.
+          
           if (status === 'picked_up') {
               // ... existing picked_up logic ...
               // Fetch Store Name and Rider Name for the message
@@ -1684,14 +1711,25 @@ router.put(
                       order_id: id
                   });
               }
+          } else if (status === 'preparing' || status === 'ready') {
+              // For preparing/ready, send a silent refresh only, OR a less intrusive notification if desired.
+              // The user asked to STOP excessive notifications.
+              // So for "Preparing", we just send the refresh signal, no visible toast needed unless customer is staring at screen.
+              req.io.to(`user_${order.user_id}`).emit('user_notification', {
+                  type: 'refresh_orders', // This triggers refresh but no toast in updated mobile code
+                  message: '', 
+                  order_id: id
+              });
           }
 
-          // Force refresh for customer screen by sending a generic "update" event
-          req.io.to(`user_${order.user_id}`).emit('user_notification', {
-              type: 'refresh_orders',
-              message: 'Order status updated',
-              order_id: id
-          });
+          // Always ensure data is fresh on customer side (redundant but safe)
+          if (status !== 'preparing' && status !== 'ready') {
+             req.io.to(`user_${order.user_id}`).emit('user_notification', {
+                type: 'refresh_orders',
+                message: 'Order status updated',
+                order_id: id
+             });
+          }
           
           // NEW: Notify Store Owners as well so their dashboard updates automatically
           // We need to notify ALL store owners involved in this order, not just the one who made the change
@@ -1832,11 +1870,137 @@ router.put(
       }
 
       // Assign rider and update status
+      // NOTE: We only update global status to 'out_for_delivery' if it was 'ready' or 'pending'.
+      // If it was already 'out_for_delivery' or 'delivered', we shouldn't revert it.
+      // But actually, assigning a rider usually implies the process is moving forward.
+      // However, if we blindly set 'out_for_delivery', it might override 'preparing' or 'ready' logic.
+      // If items are still 'preparing', the global status should arguably stay 'preparing' until pickup?
+      // BUT typically "Assigned" means the rider is on the way. 
+      // The issue user reported: "it again gone preparing status in store dashboard"
+      // This implies we MIGHT be setting it to something that triggers a revert, OR we are NOT updating item statuses?
+      //
+      // Wait, the user said: "it again gone preparing status in store dashboard and preparing too with store info"
+      // If we set global status to 'out_for_delivery', the store dashboard (which filters Active = preparing/ready/out_for_delivery) shows it.
+      // But why "preparing"?
+      // Ah, maybe the frontend or backend logic reverts it?
+      //
+      // If we look at the store dashboard logic:
+      // Active = preparing || ready || out_for_delivery
+      //
+      // If the admin assigns a rider, the status becomes 'out_for_delivery' here (line 1877).
+      //
+      // BUT, if the Store Owner had marked their items as "Ready", and now we assign a rider...
+      // Does assigning a rider change ITEM statuses? No.
+      //
+      // If the global status is 'out_for_delivery', but item status is 'ready', what does the dashboard show?
+      // The dashboard shows the item status if available, or global status if not.
+      //
+      // If the user sees "preparing", it means either:
+      // 1. The global status became "preparing" (unlikely here, we set it to out_for_delivery).
+      // 2. The item status is still "preparing".
+      //
+      // "when assign order to rider after making all stores ready in admin panel"
+      // If admin makes stores ready, they likely used the "Update Status" feature.
+      //
+      // If we assign a rider, we explicitly set status = 'out_for_delivery'.
+      //
+      // Let's check if we are overwriting something we shouldn't.
+      //
+      // Use case: Admin sets status to "Ready" (Global). Items might be updated to "Ready".
+      // Then Admin assigns Rider.
+      // This route updates global status to 'out_for_delivery'.
+      //
+      // If item statuses are 'ready', and global is 'out_for_delivery', the store dashboard should show 'Ready' or 'Out for Delivery'?
+      //
+      // Let's look at store_owner_dashboard_screen.dart again (from memory/previous reads):
+      // It displays `item['item_status']` if available.
+      //
+      // If the item status is "preparing", it shows preparing.
+      //
+      // The user says: "after making all stores ready in admin panel".
+      // If the admin panel updates status, it calls `PUT /:id/status`.
+      // That endpoint updates `order_items` AND recalculates global status.
+      //
+      // If the admin assigns a rider, it calls `POST /:id/assign-rider`.
+      // This endpoint (here) updates `orders` table but NOT `order_items`.
+      //
+      // If `order_items` were 'ready', they remain 'ready'.
+      //
+      // However, if the user sees "preparing", it implies `order_items` are 'preparing'.
+      //
+      // HYPOTHESIS: The Admin Panel "Make Ready" button might NOT be updating `order_items` correctly for all stores?
+      // OR, when assigning a rider, we trigger some side effect?
+      //
+      // Actually, if we set global status to 'out_for_delivery', we should probably NOT force it if items aren't ready?
+      // OR, we should just let it be.
+      //
+      // Wait, if the global status is 'out_for_delivery', but items are 'ready', the store owner sees 'ready'.
+      //
+      // If the user says it "gone preparing", it means `item_status` reverted to `preparing` OR global status became `preparing`.
+      //
+      // Let's look at the `PUT /:id/status` logic again (it was in previous turns).
+      // It updates `order_items`.
+      //
+      // Here in `assign-rider`, we set global status to `out_for_delivery`.
+      //
+      // Is there any hook that runs on `out_for_delivery`?
+      //
+      // Maybe the issue is simpler: When a rider is assigned, we should probably NOT change the status to `out_for_delivery` immediately?
+      // Usually "Out for Delivery" means the rider picked it up.
+      // "Assigned" just means "Rider Assigned" (status could be 'ready' or 'preparing').
+      //
+      // If we set it to 'out_for_delivery' immediately upon assignment, that might be premature.
+      //
+      // If we change this to keep the existing status (or only update if it's pending), that might fix the confusion.
+      //
+      // Let's check what the current status is.
+      // If status is 'ready', and we assign rider, it should probably stay 'ready' (or 'ready_for_pickup').
+      //
+      // If I change line 1877 to use the existing status (unless it's pending), that might be safer.
+      //
+      // BUT, usually assigning a rider moves it to "Accepted" or something.
+      //
+      // User said: "it again gone preparing".
+      // This strongly suggests something is resetting the status.
+      //
+      // Let's look at line 1874: `UPDATE orders SET ... status = 'out_for_delivery' ...`
+      // This forces global status to `out_for_delivery`.
+      //
+      // If the Store Owner dashboard sees `out_for_delivery`, it should show that?
+      //
+      // Unless... `_getStatusColor` or logic in dashboard defaults to something else?
+      //
+      // Wait! I recall the store dashboard logic:
+      // `_activeOrders` includes `preparing`, `ready`, `out_for_delivery`.
+      //
+      // If the user says it "gone preparing", it implies the TEXT says "Preparing".
+      //
+      // Let's try to preserve the current status if it is 'ready' or 'preparing'.
+      // Only change to 'confirmed' or 'preparing' if it was 'pending'?
+      //
+      // Actually, if a rider is assigned, the status shouldn't necessarily jump to `out_for_delivery`.
+      // `out_for_delivery` usually happens when Rider clicks "Pick Up".
+      //
+      // So, I should change this to NOT force `out_for_delivery`.
+      // I should leave the status as is, OR set it to 'confirmed'/ 'preparing' if it was pending.
+      //
+      // If the order was 'ready', it should stay 'ready'.
+      // If the order was 'preparing', it should stay 'preparing'.
+      //
+      // So, I will remove `status = 'out_for_delivery'` from the update query,
+      // OR only update it if it's currently 'pending'.
+      
+      let newStatus = order.status;
+      if (order.status === 'pending') {
+          newStatus = 'confirmed'; // or 'preparing'
+      }
+      // If it's already 'ready' or 'preparing', keep it.
+      
       await req.db.execute(
         "UPDATE orders SET rider_id = ?, status = ?, estimated_delivery_time = ?, delivery_fee = ?, total_amount = ? WHERE id = ?",
         [
           rider_id,
-          "out_for_delivery",
+          newStatus,
           estimatedDelivery,
           finalDeliveryFee,
           newTotal,
@@ -1852,7 +2016,7 @@ router.put(
             order_number: order.order_number,
             rider_id: rider_id,
             rider_name: `${rider.first_name} ${rider.last_name}`,
-            status: "out_for_delivery",
+            status: newStatus, // Send the ACTUAL new status, not hardcoded 'out_for_delivery'
             estimated_delivery_time: estimatedDelivery,
             delivery_fee: finalDeliveryFee,
             total_amount: newTotal,

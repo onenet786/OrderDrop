@@ -2652,6 +2652,7 @@ function displayOrders(orders = AppState.orders) {
                 let statuses = order.store_statuses;
                 if (typeof statuses === 'string') {
                    try {
+                       // Try to parse if it's a JSON string
                        statuses = JSON.parse(statuses);
                    } catch (e) {
                        // Fallback if GROUP_CONCAT truncated JSON or something else
@@ -2660,11 +2661,20 @@ function displayOrders(orders = AppState.orders) {
                 }
                 
                 if (statuses && Array.isArray(statuses)) {
-                    const isMixed = statuses.length > 1 && new Set(statuses.map(s => s.status)).size > 1;
-                    const isDelayed = order.status === 'preparing' && statuses.some(s => s.status === 'ready'); // One ready, others still preparing
+                    // Filter duplicates based on store_id or store_name
+                    const uniqueStores = new Map();
+                    statuses.forEach(s => {
+                        if (!uniqueStores.has(s.store_id)) {
+                            uniqueStores.set(s.store_id, s);
+                        }
+                    });
+                    const uniqueStatuses = Array.from(uniqueStores.values());
+
+                    const isMixed = uniqueStatuses.length > 1 && new Set(uniqueStatuses.map(s => s.status)).size > 1;
+                    const isDelayed = order.status === 'preparing' && uniqueStatuses.some(s => s.status === 'ready'); // One ready, others still preparing
 
                     if (isMixed || isDelayed) {
-                        const tooltipContent = statuses.map(s => 
+                        const tooltipContent = uniqueStatuses.map(s => 
                             `<div><strong>${s.store_name}:</strong> <span class="status-${s.status}">${s.status.toUpperCase()}</span></div>`
                         ).join('');
                         

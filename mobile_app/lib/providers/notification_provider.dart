@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../services/api_service.dart';
 import 'auth_provider.dart';
 
@@ -39,11 +40,22 @@ class NotificationProvider with ChangeNotifier {
   socket_io.Socket? _socket;
   final GlobalKey<NavigatorState> navigatorKey;
   AuthProvider? _authProvider;
+  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
   final List<Notification> _notifications = [];
   static const int _maxNotifications = 20;
 
-  NotificationProvider(this.navigatorKey);
+  NotificationProvider(this.navigatorKey) {
+    _initLocalNotifications();
+  }
+
+  void _initLocalNotifications() async {
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosSettings = DarwinInitializationSettings();
+    const settings = InitializationSettings(android: androidSettings, iOS: iosSettings);
+    
+    await _localNotifications.initialize(settings);
+  }
 
   List<Notification> get notifications => _notifications;
   int get unreadCount => _notifications.where((n) => n.unread).length;
@@ -315,6 +327,15 @@ class NotificationProvider with ChangeNotifier {
         '[NotificationProvider] user_notification: received=$userId, currentUser=$currentUserId',
       );
 
+      // If type is 'refresh_orders', we don't show a notification, just consume it (UI will refresh)
+      // BUT if the app is in background, we might want to show it?
+      // The user requested: "send system notification which shown if application is closed"
+      // So we should show it if the type implies an update.
+      // However, for 'refresh_orders' with empty message (from my previous fix), we skip it.
+      if (data['type'] == 'refresh_orders' && (data['message'] == null || data['message'].toString().isEmpty)) {
+          return;
+      }
+
       if (currentUserId == userId) {
         debugPrint('[NotificationProvider] Showing user notification');
         addNotification(
@@ -336,9 +357,8 @@ class NotificationProvider with ChangeNotifier {
         '[NotificationProvider] store_owner_notification (store $storeId): $data',
       );
 
-      // Since we don't track which stores the user owns in AuthProvider easily,
-      // we rely on the backend sending this event to the correct user room.
-      // The backend emits to `user_{owner_id}`, so if we receive it, it's for us.
+      // Skip silent refresh
+      if (data['type'] == 'silent_refresh') return;
 
       addNotification(
         title: 'Store Order Update',
@@ -399,7 +419,8 @@ class NotificationProvider with ChangeNotifier {
     _socket!.onDisconnect((_) => debugPrint('Socket disconnected'));
   }
 
-  void _showNotification(String title, String message) {
+  void _showNotification(String title, String message) async {
+    // 1. Show in-app SnackBar (only if app is in foreground - controlled by context)
     final context = navigatorKey.currentContext;
     if (context != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -425,6 +446,24 @@ class NotificationProvider with ChangeNotifier {
         ),
       );
     }
+
+    // 2. Show System Notification (Local Notification)
+    // This will appear in the system tray even if the app is in the background or closed (if service is running)
+    const androidDetails = AndroidNotificationDetails(
+      'servenow_channel', 
+      'ServeNow Notifications',
+      importance: Importance.max,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher', // Ensure this icon exists
+    );
+    const details = NotificationDetails(android: androidDetails);
+    
+    await _localNotifications.show(
+      DateTime.now().millisecond, 
+      title, 
+      message, 
+      details
+    );
   }
 
   @override
