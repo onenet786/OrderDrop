@@ -488,18 +488,8 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     final id = order['id'];
     List<Widget> buttons = [];
 
-    if (currentStatus == 'pending' || currentStatus == 'confirmed') {
-      buttons.add(
-        ElevatedButton(
-          onPressed: () => _updateStatus(id, 'preparing'),
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-          child: const Text(
-            'Start Preparing',
-            style: TextStyle(color: Colors.white),
-          ),
-        ),
-      );
-    } else if (currentStatus == 'preparing') {
+    final hasRider = order['rider_id'] != null;
+    if (currentStatus == 'pending' || currentStatus == 'confirmed' || currentStatus == 'preparing') {
       buttons.add(
         ElevatedButton(
           onPressed: () => _updateStatus(id, 'ready'),
@@ -510,24 +500,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
           ),
         ),
       );
-    } else if (currentStatus == 'ready') {
-      // Check if rider is assigned
-      final hasRider = order['rider_id'] != null;
-      
-      buttons.add(
-        ElevatedButton(
-          onPressed: hasRider ? () => _updateStatus(id, 'ready_for_pickup') : null,
-          style: ElevatedButton.styleFrom(
-              backgroundColor: hasRider ? Colors.blue : Colors.grey
-          ),
-          child: Text(
-            hasRider ? 'Ready to Pick Up' : 'Waiting for Rider',
-            style: const TextStyle(color: Colors.white),
-          ),
-        ),
-      );
-    } else if (currentStatus == 'ready_for_pickup' && order['rider_id'] != null) {
-      // Only show "Picked Up" if a rider is assigned
+    } else if ((currentStatus == 'ready' || currentStatus == 'ready_for_pickup') && hasRider) {
       buttons.add(
         ElevatedButton(
           onPressed: () => _updateStatus(id, 'picked_up'),

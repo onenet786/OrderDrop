@@ -51,7 +51,7 @@ const AppState = {
 
 
 // ===== MODERN TOAST NOTIFICATION SYSTEM =====
-function showToast(title, message, type = 'info', duration = 3000) {
+function showToast(title, message, type = 'info', duration = 2000) {
     const toastContainer = document.getElementById('toastContainer');
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
@@ -81,19 +81,11 @@ function showToast(title, message, type = 'info', duration = 3000) {
     contentDiv.appendChild(titleEl);
     contentDiv.appendChild(messageEl);
     
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'toast-close';
-    closeBtn.textContent = '✕';
-    closeBtn.onclick = function() {
-        this.closest('.toast').remove();
-    };
-    
     const progressDiv = document.createElement('div');
     progressDiv.className = 'toast-progress';
     
     toast.appendChild(iconDiv);
     toast.appendChild(contentDiv);
-    toast.appendChild(closeBtn);
     toast.appendChild(progressDiv);
     
     toastContainer.appendChild(toast);
@@ -112,19 +104,19 @@ function showToast(title, message, type = 'info', duration = 3000) {
 }
 
 // Convenience functions for different toast types
-function showSuccess(title, message, duration = 3000) {
+function showSuccess(title, message, duration = 2000) {
     showToast(title, message, 'success', duration);
 }
 
-function showError(title, message, duration = 3000) {
+function showError(title, message, duration = 2000) {
     showToast(title, message, 'error', duration);
 }
 
-function showWarning(title, message, duration = 3000) {
+function showWarning(title, message, duration = 2000) {
     showToast(title, message, 'warning', duration);
 }
 
-function showInfo(title, message, duration = 3000) {
+function showInfo(title, message, duration = 2000) {
     showToast(title, message, 'info', duration);
 }
 
@@ -133,9 +125,26 @@ let socket;
 if (typeof io !== 'undefined') {
     socket = io();
     
+    let __notifyRequested = false;
+    const canSystemNotify = () => ('Notification' in window) && Notification.permission === 'granted';
+    const ensureNotifyPermission = () => {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'default' && !__notifyRequested) {
+            __notifyRequested = true;
+            try { Notification.requestPermission(); } catch (_e) {}
+        }
+    };
+    const systemNotify = (title, body) => {
+        if (canSystemNotify()) {
+            try { new Notification(title, { body }); return true; } catch (_e) { return false; }
+        }
+        return false;
+    };
+    
     socket.on('connect', () => {
         console.log('Connected to notification server. ID:', socket.id);
-        showInfo('System', 'Connected to real-time notification server.');
+        ensureNotifyPermission();
+        showInfo('System', 'Connected to real-time server.');
     });
 
     socket.on('heartbeat', (data) => {
@@ -148,9 +157,9 @@ if (typeof io !== 'undefined') {
     });
 
     socket.on('new_user', (data) => {
-        showInfo('New User Registered', `${data.first_name} ${data.last_name} (${data.user_type}) has joined.`);
+        const msg = `${data.first_name} ${data.last_name} (${data.user_type}) joined.`;
+        if (!systemNotify('New User', msg)) showInfo('New User', msg, 2000);
         
-        // Update data if on relevant tab
         const activeTab = document.querySelector('.tab-link.active');
         if (activeTab) {
             const tabId = activeTab.getAttribute('data-tab');
@@ -164,7 +173,8 @@ if (typeof io !== 'undefined') {
     });
 
     socket.on('new_order', (data) => {
-        showInfo('New Order Placed', `Order #${data.order_number} received. Total: $${data.total_amount}`);
+        const msg = `#${data.order_number} • PKR ${data.total_amount}`;
+        if (!systemNotify('New Order', msg)) showSuccess('New Order', msg, 2000);
         
         // Update data if on relevant tab
         const activeTab = document.querySelector('.tab-link.active');
@@ -186,22 +196,30 @@ if (typeof io !== 'undefined') {
     });
 
     socket.on('order_assigned', (data) => {
-        showSuccess('Order Assigned', `Order #${data.order_number} assigned to ${data.rider_name}.`);
+        const msg = `#${data.order_number} → ${data.rider_name}`;
+        if (!systemNotify('Order Assigned', msg)) showSuccess('Order Assigned', msg, 2000);
         if (typeof window.loadOrders === 'function') window.loadOrders();
     });
 
     socket.on('order_status_update', (data) => {
-        showInfo('Order Status Updated', `Order #${data.order_number} is now ${data.status}.`);
+        if (data.status === 'delivered') {
+            const msg = `#${data.order_number} delivered`;
+            if (!systemNotify('Delivered', msg)) showSuccess('Delivered', msg, 2000);
+        }
         if (typeof window.loadOrders === 'function') window.loadOrders();
     });
 
     socket.on('payment_status_update', (data) => {
-        showInfo('Payment Status Updated', `Order #${data.order_number} payment is now ${data.payment_status}.`);
+        if (data.payment_status === 'paid') {
+            const msg = `#${data.order_number} payment received`;
+            if (!systemNotify('Payment Received', msg)) showSuccess('Payment Received', msg, 2000);
+        }
         if (typeof window.loadOrders === 'function') window.loadOrders();
     });
 
     socket.on('order_completed', (data) => {
-        showSuccess('Order Completed', `Order #${data.order_number} has been delivered and paid.`);
+        const msg = `#${data.order_number} delivered & paid`;
+        if (!systemNotify('Order Completed', msg)) showSuccess('Order Completed', msg, 2000);
         if (typeof window.loadOrders === 'function') window.loadOrders();
         if (typeof loadDashboardStats === 'function') loadDashboardStats();
     });
@@ -3316,6 +3334,8 @@ async function editOrder(orderId) {
         }
         
         document.getElementById('orderStatus').value = freshOrder.status;
+        const originalStatusInput = document.getElementById('originalOrderStatus');
+        if (originalStatusInput) originalStatusInput.value = freshOrder.status;
         document.getElementById('riderLocation').value = freshOrder.rider_location || '';
         document.getElementById('riderLatitude').value = freshOrder.rider_latitude || '';
         document.getElementById('riderLongitude').value = freshOrder.rider_longitude || '';
@@ -3335,6 +3355,7 @@ async function saveOrder() {
     const formData = new FormData(form);
 
     const status = formData.get('status');
+    const originalStatus = formData.get('original_status');
     const riderId = formData.get('rider_id') || null;
     const riderLocation = formData.get('rider_location') || null;
     const riderLatitude = formData.get('rider_latitude') || null;
@@ -3378,7 +3399,7 @@ async function saveOrder() {
             }
         }
 
-        if (status) {
+        if (status && (!originalStatus || status !== originalStatus)) {
             await fetch(`${API_BASE}/api/orders/${orderId}/status`, {
                 method: 'PUT',
                 headers: {

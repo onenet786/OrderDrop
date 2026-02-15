@@ -426,7 +426,7 @@
         }
 
         // ===== MODERN TOAST NOTIFICATION SYSTEM =====
-        function showToast(title, message, type = 'info', duration = 3000) {
+        function showToast(title, message, type = 'info', duration = 2000) {
             const toastContainer = document.getElementById('toastContainer');
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
@@ -444,7 +444,6 @@
                     <h4 class="toast-title">${title}</h4>
                     <p class="toast-message">${message}</p>
                 </div>
-                <button class="toast-close" onclick="this.closest('.toast').remove()">✕</button>
                 <div class="toast-progress"></div>
             `;
             
@@ -462,19 +461,19 @@
             }, duration);
         }
 
-        function showSuccess(title, message, duration = 3000) {
+        function showSuccess(title, message, duration = 2000) {
             showToast(title, message, 'success', duration);
         }
 
-        function showError(title, message, duration = 3000) {
+        function showError(title, message, duration = 2000) {
             showToast(title, message, 'error', duration);
         }
 
-        function showWarning(title, message, duration = 3000) {
+        function showWarning(title, message, duration = 2000) {
             showToast(title, message, 'warning', duration);
         }
 
-        function showInfo(title, message, duration = 3000) {
+        function showInfo(title, message, duration = 2000) {
             showToast(title, message, 'info', duration);
         }
     </script>

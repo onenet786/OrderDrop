@@ -1488,6 +1488,7 @@ router.put(
 
       const { id } = req.params;
       const { status } = req.body;
+      const itemStatusForDB = status === 'picked_up' ? 'out_for_delivery' : (status === 'ready_for_pickup' ? 'ready' : status);
 
       // Check if order exists and user has permission
       // NOTE: For multi-store orders, o.store_id might be null or one of them. 
@@ -1563,7 +1564,7 @@ router.put(
           const placeholders = targetItemIds.map(() => '?').join(',');
           await req.db.execute(
               `UPDATE order_items SET item_status = ? WHERE id IN (${placeholders})`,
-              [status, ...targetItemIds]
+              [itemStatusForDB, ...targetItemIds]
           );
       }
 

@@ -2,7 +2,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Check if we are on the orders page
     if (document.getElementById('ordersContainer')) {
-        displayOrders('pending');
+        displayOrders();
     }
 });
 
@@ -154,7 +154,7 @@ async function updateOrderStatus(orderId, status) {
         const data = await response.json();
         if (data.success) {
             showSuccess('Status Updated', 'Order status updated successfully!');
-            displayOrders('pending');
+            displayOrders();
         } else {
             showError('Update Failed', 'Failed to update order status: ' + data.message);
         }
@@ -246,7 +246,7 @@ async function assignRider(orderId) {
             if (data.success) {
                 showSuccess('Assigned', 'Rider assigned successfully!');
                 modal.remove();
-                displayOrders('pending');
+                displayOrders();
             } else {
                 showError('Assignment Failed', 'Failed to assign rider: ' + data.message);
             }
@@ -288,7 +288,7 @@ async function updateRiderLocation(orderId) {
         const data = await response.json();
         if (data.success) {
             showSuccess('Location Updated', 'Rider location updated successfully!');
-            displayOrders('pending');
+            displayOrders();
         } else {
             showError('Update Failed', 'Failed to update rider location: ' + data.message);
         }
@@ -313,7 +313,7 @@ async function markAsDelivered(orderId) {
         const data = await response.json();
         if (data.success) {
             showSuccess('Delivered', 'Order marked as delivered successfully! Customer has been notified.');
-            displayOrders('pending');
+            displayOrders();
         } else {
             showError('Update Failed', 'Failed to mark order as delivered: ' + data.message);
         }
@@ -349,5 +349,5 @@ document.addEventListener('DOMContentLoaded', function() {
         if (assignmentFilter) assignmentFilter.value = 'unassigned';
     }
 
-    displayOrders('pending');
+    displayOrders();
 });

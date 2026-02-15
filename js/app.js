@@ -70,7 +70,7 @@ function toggleMobileMenu() {
 }
 
 // Toast Notification System
-function showToast(title, message, type = "info", duration = 3000) {
+function showToast(title, message, type = "info", duration = 2000) {
   let container = document.getElementById("toastContainer");
   if (!container) {
     container = document.createElement("div");
@@ -99,7 +99,6 @@ function showToast(title, message, type = "info", duration = 3000) {
             <div class="toast-title">${title}</div>
             <div class="toast-message">${message}</div>
         </div>
-        <button class="toast-close" onclick="document.getElementById('${toastId}').remove()">×</button>
         <div class="toast-progress" style="animation: progressBar ${duration}ms linear forwards;"></div>
     `;
   container.appendChild(toast);
@@ -114,19 +113,19 @@ function showToast(title, message, type = "info", duration = 3000) {
   }, duration);
 }
 
-function showSuccess(title, message, duration = 3000) {
+function showSuccess(title, message, duration = 2000) {
   showToast(title, message, "success", duration);
 }
 
-function showError(title, message, duration = 3000) {
+function showError(title, message, duration = 2000) {
   showToast(title, message, "error", duration);
 }
 
-function showWarning(title, message, duration = 3000) {
+function showWarning(title, message, duration = 2000) {
   showToast(title, message, "warning", duration);
 }
 
-function showInfo(title, message, duration = 3000) {
+function showInfo(title, message, duration = 2000) {
   showToast(title, message, "info", duration);
 }
 

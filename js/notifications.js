@@ -22,6 +22,31 @@
     // Notification bell management
     const notificationsStore = [];
     const MAX_NOTIFICATIONS = 20;
+    let notifyPermissionRequested = false;
+
+    function canSystemNotify() {
+        return 'Notification' in window && Notification.permission === 'granted';
+    }
+
+    function ensureNotifyPermission() {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'default' && !notifyPermissionRequested) {
+            notifyPermissionRequested = true;
+            try { Notification.requestPermission(); } catch (_) {}
+        }
+    }
+
+    function systemNotify(title, body) {
+        if (canSystemNotify()) {
+            try {
+                new Notification(title, { body });
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+        return false;
+    }
 
     function emitUserIdentification() {
         const user = getCurrentUser();
@@ -37,11 +62,13 @@
     socket.on('connect', () => {
         console.log('[Socket] Connected to server. Socket ID:', socket.id);
         emitUserIdentification();
+        ensureNotifyPermission();
     });
 
     socket.on('reconnect', () => {
         console.log('[Socket] Reconnected to server. Socket ID:', socket.id);
         emitUserIdentification();
+        ensureNotifyPermission();
     });
 
     function playNotificationSound() {
@@ -206,6 +233,7 @@
     socket.off('new_order');
     socket.off('rider_notification');
     socket.off('user_notification');
+    socket.off('notification');
     socket.off('order_status_update');
     socket.off('payment_status_update');
     socket.off('order_completed');
@@ -220,7 +248,9 @@
                 'success',
                 'fa-shopping-bag'
             );
-            showToast('New Order Received', `Order ${data.order_number} has been placed. Amount: PKR ${data.total_amount}`, 'success');
+            if (!systemNotify('New Order Received', `Order ${data.order_number} • PKR ${data.total_amount}`)) {
+                if (typeof showToast === 'function') showToast('New Order Received', `Order ${data.order_number} - PKR ${data.total_amount}`, 'success', 2000);
+            }
             
             // Refresh admin dashboards if present
             if (typeof loadOrders === 'function') loadOrders();
@@ -238,7 +268,9 @@
                 'info',
                 'fa-tasks'
             );
-            showToast('New Assignment', data.message, 'info');
+            if (!systemNotify('New Assignment', data.message)) {
+                if (typeof showToast === 'function') showToast('New Assignment', data.message, 'info', 2000);
+            }
             
             // Refresh rider dashboard if function exists
             if (typeof switchTab === 'function') {
@@ -254,17 +286,40 @@
     socket.on('user_notification', (data) => {
         const user = getCurrentUser();
         if (user && (user.id == data.user_id || user.user_type === 'admin')) {
+            if (!data || data.type === 'refresh_orders' || !data.message) {
+                if (typeof displayOrders === 'function') displayOrders();
+                if (typeof loadOrders === 'function') loadOrders();
+                return;
+            }
             addNotification(
                 'Order Update',
                 data.message,
                 'info',
                 'fa-box'
             );
-            showToast('Order Update', data.message, 'info');
+            if (!systemNotify('Order Update', data.message)) {
+                if (typeof showToast === 'function') showToast('Order Update', data.message, 'info', 2000);
+            }
             
             // Refresh orders if function exists (e.g. on orders.html)
             if (typeof displayOrders === 'function') displayOrders();
         }
+    });
+
+    // Generic Notification events (server may emit for picked_up/ready)
+    socket.on('notification', (data) => {
+        const user = getCurrentUser();
+        if (!user) return;
+        const title = data.title || 'Notification';
+        const message = data.message || '';
+        if (!message) return;
+        const icon = data.icon || 'fa-bell';
+        addNotification(title, message, 'info', icon);
+        if (!systemNotify(title, message)) {
+            if (typeof showToast === 'function') showToast(title, message, 'info', 2000);
+        }
+        if (typeof displayOrders === 'function') displayOrders();
+        if (typeof loadOrders === 'function') loadOrders();
     });
 
     // Order Status Updates (Generic)
@@ -287,9 +342,10 @@
             if (typeof displayOrders === 'function') displayOrders();
             if (typeof loadOrders === 'function') loadOrders();
             
-            // If admin, we might want a toast for delivered orders too
             if (user.user_type === 'admin' && data.status === 'delivered') {
-                showToast('Order Delivered', `Order ${data.order_number} has been marked as delivered.`, 'info');
+                if (!systemNotify('Order Delivered', `Order ${data.order_number} delivered`)) {
+                    if (typeof showToast === 'function') showToast('Order Delivered', `Order ${data.order_number} delivered`, 'info', 2000);
+                }
             }
         }
     });
@@ -309,7 +365,9 @@
             if (typeof loadOrders === 'function') loadOrders();
             
             if (user.user_type === 'admin' && data.payment_status === 'paid') {
-                showToast('Payment Received', `Payment for order ${data.order_number} has been confirmed.`, 'success');
+                if (!systemNotify('Payment Received', `Order ${data.order_number} payment confirmed`)) {
+                    if (typeof showToast === 'function') showToast('Payment Received', `Order ${data.order_number} payment confirmed`, 'success', 2000);
+                }
             }
         }
     });
@@ -324,7 +382,9 @@
                 'success',
                 'fa-check-circle'
             );
-            showToast('Order Completed', data.message || 'Your order is completed. Thank you!', 'success');
+            if (!systemNotify('Order Completed', data.message || 'Thanks for ordering with ServeNow.')) {
+                if (typeof showToast === 'function') showToast('Order Completed', data.message || 'Thanks for ordering with ServeNow.', 'success', 2000);
+            }
             if (typeof displayOrders === 'function') displayOrders();
         }
         
@@ -335,7 +395,9 @@
                 'success',
                 'fa-check-double'
             );
-            showToast('Order Fully Completed', `Order ${data.order_number} is now delivered and paid.`, 'success');
+            if (!systemNotify('Order Fully Completed', `Order ${data.order_number} delivered and paid`)) {
+                if (typeof showToast === 'function') showToast('Order Fully Completed', `Order ${data.order_number} delivered and paid`, 'success', 2000);
+            }
             if (typeof loadOrders === 'function') loadOrders();
         }
     });
