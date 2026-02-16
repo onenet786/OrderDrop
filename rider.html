@@ -15,15 +15,20 @@
             border-radius: 8px;
         }
         .tab-btn {
-            padding: 8px 24px;
-            border-radius: 6px;
+            min-height: 44px;
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
             font-weight: 600;
             font-size: 0.9rem;
-            transition: all 0.2s;
+            transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
             border: none;
             background: transparent;
             color: #64748b;
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
         }
         .tab-btn.active {
             background: white;

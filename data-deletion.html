@@ -49,17 +49,25 @@
             box-sizing: border-box;
         }
         .btn-delete {
-            background: #dc3545;
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
             color: white;
             border: none;
-            padding: 12px 20px;
-            border-radius: 4px;
+            min-height: 44px;
+            padding: 0.625rem 1rem;
+            border-radius: 12px;
             cursor: pointer;
             width: 100%;
-            font-size: 16px;
-            font-weight: bold;
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+            box-shadow: 0 8px 20px rgba(220, 38, 38, 0.28);
         }
-        .btn-delete:hover { background: #c82333; }
+        .btn-delete:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.02);
+            box-shadow: 0 12px 24px rgba(220, 38, 38, 0.35);
+        }
         .footer {
             text-align: center;
             margin-top: 30px;

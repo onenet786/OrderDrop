@@ -28,6 +28,10 @@ html {
     --transition-ease: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
     --transition-fast: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
     --transition-bounce: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    --btn-height: 44px;
+    --btn-small-height: 36px;
+    --btn-radius: 12px;
+    --icon-btn-size: 44px;
 }
 
 body {
@@ -85,8 +89,8 @@ h5 { font-size: 1.25rem; }
 .scroll-arrow {
     position: absolute;
     z-index: 10;
-    width: 40px;
-    height: 40px;
+    width: var(--icon-btn-size);
+    height: var(--icon-btn-size);
     border-radius: 50%;
     border: none;
     background: white;
@@ -118,8 +122,8 @@ h5 { font-size: 1.25rem; }
 /* Adjust for mobile */
 @media (max-width: 768px) {
     .scroll-arrow {
-        width: 32px;
-        height: 32px;
+        width: var(--btn-small-height);
+        height: var(--btn-small-height);
         font-size: 1rem;
     }
     .scroll-arrow.left-arrow {
@@ -308,18 +312,24 @@ main {
 }
 
 #getLocation {
+    min-height: var(--btn-height);
     background: linear-gradient(45deg, #ffffff, #f8f9fa);
     color: #667eea;
     border: 2px solid rgba(255, 255, 255, 0.3);
-    padding: 1.2rem 2.5rem;
+    padding: 0.625rem 1.5rem;
     font-size: 1.1rem;
     font-weight: 600;
-    border-radius: 50px;
+    border-radius: var(--btn-radius);
     cursor: pointer;
     transition: var(--transition-ease);
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     position: relative;
     z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    line-height: 1;
 }
 
 #getLocation:hover {
@@ -874,18 +884,20 @@ footer p {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.75rem 1.5rem;
+    min-height: var(--btn-height);
+    padding: 0.625rem 1.125rem;
     font-size: 0.9rem;
     font-weight: 600;
     text-decoration: none;
-    border: none;
-    border-radius: var(--border-radius-sm);
+    border: 1px solid transparent;
+    border-radius: var(--btn-radius);
     cursor: pointer;
     transition: var(--transition);
     position: relative;
     overflow: hidden;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    line-height: 1;
 }
 
 .btn::before {
@@ -934,6 +946,15 @@ footer p {
 .btn-success:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(79, 172, 254, 0.6);
+}
+
+.btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.25);
+}
+
+.btn:active {
+    transform: translateY(0);
 }
 
 /* Modern Search Bar Styling */
@@ -1014,12 +1035,14 @@ footer p {
 }
 
 .search-clear-btn {
-    padding: 12px 25px;
-    border-radius: 30px;
+    min-height: var(--btn-height);
+    padding: 0.625rem 1rem;
+    border-radius: var(--btn-radius);
     font-size: 0.95rem;
     gap: 8px;
     white-space: nowrap;
     min-width: 120px;
+    line-height: 1;
 }
 
 .search-clear-btn i {
@@ -1082,8 +1105,8 @@ footer p {
     background: white;
     border: none;
     border-radius: 50%;
-    width: 40px;
-    height: 40px;
+    width: var(--icon-btn-size);
+    height: var(--icon-btn-size);
     box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     cursor: pointer;
     z-index: 10;

@@ -34,6 +34,10 @@
   --transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-ease: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
   --transition-fast: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  --btn-height: 44px;
+  --btn-small-height: 36px;
+  --btn-radius: 12px;
+  --icon-btn-size: 44px;
 }
 
 /* Reset & Base */
@@ -190,8 +194,19 @@ button {
 
 .sidebar-toggle {
   display: none; /* Hidden on desktop */
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  border-radius: var(--btn-radius);
   font-size: 1.5rem;
   color: var(--text-muted);
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition-fast);
+}
+
+.sidebar-toggle:hover {
+  background: var(--primary-light);
+  color: var(--primary);
 }
 
 .header-right {
@@ -306,12 +321,15 @@ tr:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: var(--btn-height);
   padding: 0.625rem 1.25rem;
-  border-radius: var(--border-radius);
+  border-radius: var(--btn-radius);
+  border: 1px solid transparent;
   font-weight: 500;
   font-size: 0.875rem;
   transition: var(--transition);
   gap: 0.5rem;
+  line-height: 1;
 }
 
 .btn-primary {
@@ -338,8 +356,18 @@ tr:hover {
 }
 
 .btn-small {
+  min-height: var(--btn-small-height);
   padding: 0.375rem 0.75rem;
   font-size: 0.75rem;
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.btn:active {
+  transform: translateY(0);
 }
 
 /* Forms */
@@ -583,6 +611,7 @@ textarea:focus {
   margin-bottom: 1.5rem;
 }
 .topup-amount-btn {
+  min-height: var(--btn-height);
   padding: 0.75rem;
   border: 2px solid var(--border-color);
   background: var(--bg-surface);
@@ -905,7 +934,7 @@ textarea:focus {
   }
 
   .sidebar-toggle {
-    display: block;
+    display: inline-flex;
   }
 }
 
@@ -996,18 +1025,24 @@ textarea:focus {
 }
 
 #getLocation {
+  min-height: var(--btn-height);
   background: linear-gradient(45deg, #ffffff, #f8f9fa);
   color: var(--primary);
   border: 2px solid rgba(255, 255, 255, 0.3);
-  padding: 1rem 2rem;
+  padding: 0.625rem 1.5rem;
   font-size: 1rem;
   font-weight: 600;
-  border-radius: 50px;
+  border-radius: var(--btn-radius);
   cursor: pointer;
   transition: var(--transition-ease);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
   position: relative;
   z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  line-height: 1;
 }
 
 #getLocation:hover {
@@ -1059,8 +1094,8 @@ textarea:focus {
 .scroll-arrow {
   position: absolute;
   z-index: 10;
-  width: 40px;
-  height: 40px;
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
   border-radius: 50%;
   border: none;
   background: white;
@@ -1551,8 +1586,10 @@ textarea:focus {
   font-size: 1.5rem;
   color: var(--text-muted);
   transition: var(--transition-ease);
-  padding: 0.5rem;
-  border-radius: 8px;
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  padding: 0;
+  border-radius: var(--btn-radius);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1956,6 +1993,8 @@ textarea:focus {
 
   .notification-bell {
     font-size: 1.25rem;
+    width: var(--btn-small-height);
+    height: var(--btn-small-height);
   }
 
   .notification-badge {
