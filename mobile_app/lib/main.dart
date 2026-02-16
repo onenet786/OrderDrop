@@ -48,6 +48,18 @@ class MyApp extends StatelessWidget {
         navigatorKey: navigatorKey,
         title: 'ServeNow',
         debugShowCheckedModeBanner: false,
+        builder: (context, child) {
+          return Stack(
+            children: [
+              if (child != null) child,
+              const Positioned(
+                right: 6,
+                bottom: 4,
+                child: _VersionBadge(),
+              ),
+            ],
+          );
+        },
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           fontFamily: 'Roboto',
@@ -86,6 +98,31 @@ class MyApp extends StatelessWidget {
           '/change-password': (context) => const ChangePasswordScreen(),
           '/forgot-password': (context) => const ForgotPasswordScreen(),
         },
+      ),
+    );
+  }
+}
+
+class _VersionBadge extends StatelessWidget {
+  const _VersionBadge();
+  static const String _tag =
+      String.fromEnvironment('APP_VERSION_TAG', defaultValue: '');
+  @override
+  Widget build(BuildContext context) {
+    if (_tag.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        _tag,
+        style: const TextStyle(
+          fontSize: 10,
+          color: Colors.black54,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

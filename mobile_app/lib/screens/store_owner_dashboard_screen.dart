@@ -169,6 +169,11 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
         elevation: 0, // Remove shadow to blend with body container
         title: const Text('Store Dashboard'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.inventory_2),
+            tooltip: 'Manage Products',
+            onPressed: () => Navigator.of(context).pushNamed('/manage-products'),
+          ),
           const NotificationBellWidget(),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadOrders),
           IconButton(

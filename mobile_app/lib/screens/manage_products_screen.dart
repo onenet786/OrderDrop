@@ -36,7 +36,13 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null) return;
 
-      final products = await ApiService.getProductsForAdmin(token);
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      List<dynamic> products = [];
+      if (auth.isStoreOwner && auth.user != null) {
+        products = await ApiService.getProductsForOwner(token, auth.user!.id);
+      } else {
+        products = await ApiService.getProductsForAdmin(token);
+      }
 
       setState(() {
         _products = products;
@@ -57,7 +63,9 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
   void _filterProducts() {
     final query = _searchController.text.toLowerCase();
     final List<dynamic> filtered = _products.where((product) {
-      final name = (product['product_name'] ?? '').toString().toLowerCase();
+      final name = (product['name'] ?? product['product_name'] ?? '')
+          .toString()
+          .toLowerCase();
       final description = (product['description'] ?? '')
           .toString()
           .toLowerCase();
@@ -154,7 +162,7 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        product['product_name'] ?? 'Unknown',
+                        (product['name'] ?? product['product_name'] ?? 'Unknown').toString(),
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -165,7 +173,7 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        product['store_name'] ?? 'Unknown Store',
+                        (product['store_name'] ?? 'Unknown Store').toString(),
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                       const SizedBox(height: 8),
@@ -178,6 +186,16 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () => _openEditPriceSheet(product),
+                  icon: const Icon(Icons.edit, size: 18),
+                  label: const Text('Edit'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo,
+                    foregroundColor: Colors.white,
                   ),
                 ),
               ],
@@ -196,6 +214,143 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
     );
   }
 
+  void _openEditPriceSheet(dynamic product) {
+    final TextEditingController basePriceCtrl = TextEditingController(
+      text: (product['price']?.toString() ?? ''),
+    );
+    final List<dynamic> variants = (product['size_variants'] as List<dynamic>? ?? []);
+    final List<TextEditingController> variantCtrls = variants
+        .map<TextEditingController>((v) => TextEditingController(text: (v['price']?.toString() ?? '')))
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Update Price',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              if (variants.isEmpty) ...[
+                TextField(
+                  controller: basePriceCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Price (PKR)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ] else ...[
+                const Text('Variant Prices', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                ...List.generate(variants.length, (i) {
+                  final v = variants[i];
+                  final label = (v['size_label'] ?? v['unit_name'] ?? 'Variant').toString();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: TextField(
+                      controller: variantCtrls[i],
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: '$label (PKR)',
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        try {
+                          final token = Provider.of<AuthProvider>(context, listen: false).token;
+                          if (token == null) return;
+                          final int productId = int.parse(product['id'].toString());
+                          if (variants.isEmpty) {
+                            final price = double.tryParse(basePriceCtrl.text);
+                            if (price == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Please enter a valid price')),
+                              );
+                              return;
+                            }
+                            await ApiService.updateProduct(
+                              token,
+                              productId: productId,
+                              price: price,
+                            );
+                          } else {
+                            final List<Map<String, dynamic>> newVariants = [];
+                            for (int i = 0; i < variants.length; i++) {
+                              final v = variants[i];
+                              final p = double.tryParse(variantCtrls[i].text);
+                              if (p == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Please enter valid variant prices')),
+                                );
+                                return;
+                              }
+                              newVariants.add({
+                                'size_id': v['size_id'],
+                                'unit_id': v['unit_id'],
+                                'price': p,
+                              });
+                            }
+                            await ApiService.updateProduct(
+                              token,
+                              productId: productId,
+                              sizeVariants: newVariants,
+                            );
+                          }
+                          if (mounted) {
+                            Navigator.of(ctx).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Price updated')),
+                            );
+                            _loadProducts();
+                          }
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to update: $e')),
+                          );
+                        }
+                      },
+                      child: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
   Widget _buildProductImage(String? imageUrl) {
     return Container(
       width: 60,

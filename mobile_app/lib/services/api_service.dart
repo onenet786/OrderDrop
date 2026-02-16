@@ -684,6 +684,67 @@ class ApiService {
     return data['products'] ?? [];
   }
 
+  static Future<List<dynamic>> getProductsForOwner(
+    String token,
+    int ownerId,
+  ) async {
+    // Load all stores and filter by owner
+    final stores = await getStoresForAdmin(token);
+    final ownerStores =
+        stores.where((s) => (s['owner_id']?.toString() ?? '') == ownerId.toString()).toList();
+    if (ownerStores.isEmpty) return [];
+
+    // Fetch products for each store
+    final List<dynamic> products = [];
+    for (final s in ownerStores) {
+      final sid = s['id'];
+      if (sid == null) continue;
+      final uri = Uri.parse('$baseUrl/api/products?store=$sid&admin=1');
+      _logger.d('ApiService: GET $uri');
+      final resp = await http.get(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      final data = _handleResponse(resp);
+      final list = (data['products'] as List<dynamic>? ?? []);
+      products.addAll(list);
+    }
+    return products;
+  }
+
+  static Future<Map<String, dynamic>> updateProduct(
+    String token, {
+    required int productId,
+    String? name,
+    double? price,
+    List<Map<String, dynamic>>? sizeVariants,
+    double? costPrice,
+    String? discountType,
+    double? discountValue,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/products/$productId');
+    _logger.d('ApiService: PUT $uri');
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (price != null) body['price'] = price;
+    if (sizeVariants != null) {
+      body['size_variants'] = sizeVariants;
+    }
+    if (costPrice != null) body['cost_price'] = costPrice;
+    if (discountType != null) body['discount_type'] = discountType;
+    if (discountValue != null) body['discount_value'] = discountValue;
+
+    final response = await http.put(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _handleResponse(response);
+  }
+
   static Future<List<dynamic>> getRiders(String token) async {
     final uri = Uri.parse('$baseUrl/api/riders');
     _logger.d('ApiService: GET $uri');
