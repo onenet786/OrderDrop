@@ -244,9 +244,10 @@ router.get("/test-notification", (req, res) => {
     const fs = require("fs");
     const path = require("path");
     const logEvent = (msg) => {
-      fs.appendFileSync(
+      fs.appendFile(
         path.join(__dirname, "../socket_debug.log"),
         `[${new Date().toISOString()}] ${msg}\n`,
+        () => {},
       );
     };
 
@@ -641,14 +642,13 @@ router.post("/", authenticateToken, async (req, res) => {
       const fs = require("fs");
       const path = require("path");
       const logEvent = (msg) => {
-        try {
-          fs.appendFileSync(
-            path.join(__dirname, "../socket_debug.log"),
-            `[${new Date().toISOString()}] ${msg}\n`,
-          );
-        } catch (e) {
-          console.error("Failed to write to socket_debug.log:", e);
-        }
+        fs.appendFile(
+          path.join(__dirname, "../socket_debug.log"),
+          `[${new Date().toISOString()}] ${msg}\n`,
+          (e) => {
+            if (e) console.error("Failed to write to socket_debug.log:", e);
+          },
+        );
       };
 
       logEvent(
@@ -1762,9 +1762,10 @@ router.put(
           const fs = require("fs");
           const path = require("path");
           const logMsg = `[${new Date().toISOString()}] Status updated: ${order.order_number} -> ${newGlobalStatus} (Requested: ${status}). Store Owner Update: ${req.user.user_type === 'store_owner'}. Total clients: ${req.io.engine.clientsCount}\n`;
-          fs.appendFileSync(
+          fs.appendFile(
             path.join(__dirname, "../socket_debug.log"),
             logMsg,
+            () => {},
           );
         }
       } catch (e) {
@@ -2061,7 +2062,7 @@ router.put(
               const logMsg = `[${new Date().toISOString()}] Store notification sent to owner ${owner.owner_id} for store ${owner.store_name}\n`;
               const fs = require("fs");
               const path = require("path");
-              fs.appendFileSync(path.join(__dirname, "../socket_debug.log"), logMsg);
+              fs.appendFile(path.join(__dirname, "../socket_debug.log"), logMsg, () => {});
           }
 
           const riderRoomName = `rider_${rider_id}`;
@@ -2097,9 +2098,10 @@ router.put(
           const fs = require("fs");
           const path = require("path");
           const logMsg = `[${new Date().toISOString()}] Order assigned: ${order.order_number} to ${rider.first_name}. Sent to rooms: ${riderRoomName}, ${userRoomName}\n`;
-          fs.appendFileSync(
+          fs.appendFile(
             path.join(__dirname, "../socket_debug.log"),
             logMsg,
+            () => {},
           );
         }
       } catch (e) {

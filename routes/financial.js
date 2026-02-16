@@ -9,13 +9,11 @@ const router = express.Router();
 
 // Helper to log errors to file
 const logDebugError = (error) => {
-    try {
-        const logPath = path.join(__dirname, '..', 'debug_error.log');
-        const msg = `[${new Date().toISOString()}] ${error.message}\n${error.stack}\n\n`;
-        fs.appendFileSync(logPath, msg);
-    } catch (e) {
-        console.error('Failed to write debug log:', e);
-    }
+    const logPath = path.join(__dirname, '..', 'debug_error.log');
+    const msg = `[${new Date().toISOString()}] ${error.message}\n${error.stack}\n\n`;
+    fs.appendFile(logPath, msg, (e) => {
+        if (e) console.error('Failed to write debug log:', e);
+    });
 };
 
 function generateVoucherNumber(prefix, date = new Date()) {
@@ -1324,31 +1322,6 @@ router.put('/rider-cash/:id', [
                     // Rider settlement is an expense/payout for the platform
                     transactionType = 'settlement';
                     descriptionPrefix = 'Rider Settlement';
-                } else if (movement.movement_type === 'cash_collection') {
-                    // Debit from rider wallet for cash collections (rider collected from customer)
-                    // ONLY if not already handled by orders route
-                    if (movement.reference_type !== 'order') {
-                        await recordRiderWalletTransaction(
-                            req.db,
-                            movement.rider_id,
-                            'debit',
-                            effectiveAmount,
-                            `Cash collection via ${movement.movement_number}`,
-                            movement.id,
-                            movement.movement_type
-                        );
-                        // Treat manual cash collection as income too? 
-                        // Or just internal movement? Usually cash collection means Rider has cash.
-                        // It becomes Company Income only when submitted?
-                        // Actually, if it's a sale, it's income.
-                        transactionType = 'income';
-                        descriptionPrefix = 'Manual Cash Collection';
-                    } else {
-                         // Even if it IS an order, if the user manually approved a "cash_collection" movement,
-                         // we might want to ensure a financial transaction exists if one doesn't?
-                         // But usually orders create financial transactions separately.
-                    }
-                } else if (movement.movement_type === 'settlement') {
                 } else if (movement.movement_type === 'advance') {
                     // Advances are already debited on POST
                     transactionType = 'expense';

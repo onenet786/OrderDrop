@@ -228,69 +228,6 @@ router.post(
   }
 );
 
-// Change Password (Authenticated)
-router.post(
-  "/change-password",
-  authenticateToken,
-  [
-    body("currentPassword").notEmpty().withMessage("Current password is required"),
-    body("newPassword")
-      .isLength({ min: 6 })
-      .withMessage("New password must be at least 6 characters"),
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: errors.array(),
-        });
-      }
-
-      const { currentPassword, newPassword } = req.body;
-      const userId = req.user.id;
-      const userType = req.user.user_type;
-
-      let user;
-      if (userType === "rider") {
-        const [riders] = await req.db.execute("SELECT * FROM riders WHERE id = ?", [userId]);
-        user = riders[0];
-      } else {
-        const [users] = await req.db.execute("SELECT * FROM users WHERE id = ?", [userId]);
-        user = users[0];
-      }
-
-      if (!user) {
-        return res.status(404).json({ success: false, message: "User not found" });
-      }
-
-      const isMatch = await bcrypt.compare(currentPassword, user.password);
-      if (!isMatch) {
-        return res.status(400).json({ success: false, message: "Incorrect current password" });
-      }
-
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-      if (userType === "rider") {
-        await req.db.execute("UPDATE riders SET password = ? WHERE id = ?", [hashedPassword, userId]);
-      } else {
-        await req.db.execute("UPDATE users SET password = ? WHERE id = ?", [hashedPassword, userId]);
-      }
-
-      return res.json({ success: true, message: "Password updated successfully" });
-    } catch (error) {
-      console.error("Change password error:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to change password.",
-        error: error.message,
-      });
-    }
-  }
-);
-
 // Register user
 router.post(
   "/register",

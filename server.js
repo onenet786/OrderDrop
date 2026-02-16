@@ -74,8 +74,11 @@ module.exports = { io };
 
 const fs = require("fs");
 const debugLog = (msg) => {
+  if (process.env.NODE_ENV === "production") return;
   const logMsg = `[${new Date().toISOString()}] ${msg}\n`;
-  fs.appendFileSync(path.join(__dirname, "socket_debug.log"), logMsg);
+  fs.appendFile(path.join(__dirname, "socket_debug.log"), logMsg, (err) => {
+    if (err) console.error("Failed to write socket debug log:", err.message);
+  });
 };
 
 io.on("connection", (socket) => {
@@ -361,17 +364,19 @@ app.get("/data-deletion.html", (req, res) => {
   res.sendFile(path.join(__dirname, "data-deletion.html"));
 });
 
-// Serve static files from the root directory for the frontend
-console.log("Setting up frontend static file serving...");
-app.use(express.static(path.join(__dirname)));
-console.log("Frontend static files configured.");
-
 // Caching strategy for frontend assets
 app.use((req, res, next) => {
-  if (req.path.endsWith(".js") || req.path.endsWith(".css") || req.path.endsWith(".html")) {
+  if (req.path.endsWith(".js") || req.path.endsWith(".css")) {
     if (process.env.NODE_ENV === "production") {
       res.setHeader("Cache-Control", "public, max-age=86400");
-      res.setHeader("ETag", require("crypto").createHash("md5").update(req.path).digest("hex"));
+    } else {
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+    }
+  } else if (req.path.endsWith(".html")) {
+    if (process.env.NODE_ENV === "production") {
+      res.setHeader("Cache-Control", "no-cache");
     } else {
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("Pragma", "no-cache");
@@ -382,6 +387,11 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Serve static files from the root directory for the frontend
+console.log("Setting up frontend static file serving...");
+app.use(express.static(path.join(__dirname), { etag: true }));
+console.log("Frontend static files configured.");
 
 // Catch all handler: send back index.html for any non-API routes
 console.log("Setting up catch-all handler for frontend routing...");

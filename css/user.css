@@ -31,7 +31,7 @@
     0 4px 6px -4px rgb(0 0 0 / 0.1);
 
   /* Transitions */
-  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Reset & Base */
@@ -842,7 +842,7 @@ textarea:focus {
   font-weight: bold;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
-  transition: all 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s, color 0.2s, border-color 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1002,7 +1002,7 @@ textarea:focus {
   font-weight: 600;
   border-radius: 50px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
   position: relative;
   z-index: 1;
@@ -1068,7 +1068,7 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   color: var(--primary);
-  transition: all 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 .scroll-arrow:hover {
@@ -1248,7 +1248,7 @@ textarea:focus {
   border-radius: 20px;
   font-weight: 600;
   font-size: 0.9rem;
-  transition: all 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s, color 0.2s, border-color 0.2s;
   text-align: center;
   align-self: flex-start;
   border: none;
@@ -1548,7 +1548,7 @@ textarea:focus {
   position: relative;
   font-size: 1.5rem;
   color: var(--text-muted);
-  transition: all 0.3s ease;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
   padding: 0.5rem;
   border-radius: 8px;
   display: flex;
@@ -1650,7 +1650,7 @@ textarea:focus {
   color: var(--text-muted);
   font-size: 0.9rem;
   padding: 0.5rem;
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 .notification-header .btn-small:hover {
@@ -1669,7 +1669,7 @@ textarea:focus {
 .notification-item {
   padding: 1rem;
   border-bottom: 1px solid var(--border-color);
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   cursor: pointer;
   display: flex;
   align-items: flex-start;

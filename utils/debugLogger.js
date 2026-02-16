@@ -9,11 +9,9 @@ const logError = (context, error) => {
     
     const logEntry = `[${timestamp}] CONTEXT: ${context}\nERROR: ${errorMessage}\nSTACK: ${errorStack}\n-----------------------------------\n`;
     
-    try {
-        fs.appendFileSync(logPath, logEntry);
-    } catch (e) {
-        console.error('Failed to write to debug log:', e);
-    }
+    fs.appendFile(logPath, logEntry, (e) => {
+        if (e) console.error('Failed to write to debug log:', e);
+    });
 };
 
 module.exports = { logError };
