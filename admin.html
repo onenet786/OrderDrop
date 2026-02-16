@@ -2176,7 +2176,7 @@
               </div>
             </div>
             <div class="modal-footer">
-              <button type="submit" class="btn btn-primary">Generate Report</button>
+              <button type="submit" class="btn btn-primary report-action-btn">Generate Report</button>
             </div>
           </form>
           
@@ -2184,7 +2184,7 @@
             <hr>
             <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h4>Report Preview</h4>
-                <button id="downloadOrderDetailPdf" class="btn btn-secondary"><i class="fas fa-file-pdf"></i> Download PDF</button>
+                <button id="downloadOrderDetailPdf" class="btn btn-secondary report-action-btn"><i class="fas fa-file-pdf"></i> Download PDF</button>
             </div>
             <div id="orderDetailPreviewContent" class="table-container" style="max-height: 400px; overflow-y: auto;">
                 <!-- Content will be injected here -->
@@ -3790,7 +3790,7 @@
             >
               Cancel
             </button>
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" class="btn btn-primary report-action-btn">
               Generate Report
             </button>
           </div>
@@ -3811,10 +3811,10 @@
           <!-- Content will be injected here -->
         </div>
         <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
-            <button type="button" class="btn btn-primary" id="viewReportDownloadBtn">
+            <button type="button" class="btn btn-primary report-action-btn" id="viewReportDownloadBtn">
                 Download PDF
             </button>
-            <button type="button" class="btn btn-secondary" onclick="closeModal('viewReportModal')">
+            <button type="button" class="btn btn-secondary report-action-btn" onclick="closeModal('viewReportModal')">
                 Close
             </button>
         </div>
@@ -4059,7 +4059,7 @@
         border-top: 1px solid var(--border-color);
       }
 
-      .form-actions button {
+      .form-actions button:not(.btn) {
         padding: 0.5rem 1rem;
       }
     </style>

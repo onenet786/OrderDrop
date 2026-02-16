@@ -690,6 +690,18 @@ textarea:focus {
     line-height: 1;
 }
 
+/* Keep report action buttons visually consistent across form-actions and modal-footers */
+.report-action-btn {
+  min-height: var(--btn-height);
+  padding: 0.625rem 1.25rem !important;
+  border-radius: var(--btn-radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  line-height: 1;
+}
+
 /* Modals */
 .modal {
   display: none;
