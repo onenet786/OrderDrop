@@ -129,15 +129,40 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   void _handleNotification(Map<String, dynamic> notification) {
     if (!mounted) return;
 
-    final message = notification['message'] as String? ?? 'New notification';
-    final type = notification['type'] as String?;
+    final nestedData = (notification['data'] is Map<String, dynamic>)
+        ? notification['data'] as Map<String, dynamic>
+        : null;
+    final type =
+        (notification['type'] ?? nestedData?['type'])?.toString().toLowerCase();
+    final message = (notification['message'] ??
+                nestedData?['message'] ??
+                notification['title'] ??
+                'New notification')
+            .toString();
 
-    if (type == 'assigned') {
+    final bool hasAssignmentPayload = notification['rider_id'] != null ||
+        nestedData?['rider_id'] != null ||
+        notification['order_number'] != null ||
+        nestedData?['order_number'] != null;
+
+    final bool shouldRefresh = type == 'assigned' ||
+        type == 'rider_notification' ||
+        type == 'order_assigned' ||
+        type == 'refresh_orders' ||
+        type == 'new_order' ||
+        type == 'order_status_update' ||
+        type == 'payment_status_update' ||
+        hasAssignmentPayload;
+
+    if (shouldRefresh) {
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
           backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          showCloseIcon: true,
         ),
       );
       _loadAllData();
@@ -1723,6 +1748,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final stats = _walletStats!;
     final cashReceived = _parseDouble(stats['cash_received']);
     final deliveryFees = _parseDouble(stats['total_delivery_fees']);
+    final netCashReceived = cashReceived - deliveryFees;
     final paymentSummary =
         (stats['payment_summary'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
@@ -1732,9 +1758,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           children: [
             Expanded(
               child: _buildStatCard(
-                title: 'Cash Received',
-                value: 'PKR ${cashReceived.toStringAsFixed(2)}',
-                icon: Icons.attach_money,
+                title: 'Cash Received (Net)',
+                value: 'PKR ${netCashReceived.toStringAsFixed(2)}',
+                icon: Icons.payments_outlined,
                 backgroundColor: Colors.green.shade50,
                 iconColor: Colors.green,
               ),

@@ -2,10 +2,25 @@ import 'dart:convert';
 import 'dart:io';
 
 Future<void> main(List<String> args) async {
-  final pubspec = File('pubspec.yaml');
+  Directory projectDir = Directory.current;
+  File pubspec = File('${projectDir.path}${Platform.pathSeparator}pubspec.yaml');
+
   if (!await pubspec.exists()) {
-    stderr.writeln('pubspec.yaml not found. Run from mobile_app directory.');
-    exit(1);
+    final nested = Directory(
+      '${projectDir.path}${Platform.pathSeparator}mobile_app',
+    );
+    final nestedPubspec = File(
+      '${nested.path}${Platform.pathSeparator}pubspec.yaml',
+    );
+    if (await nestedPubspec.exists()) {
+      projectDir = nested;
+      pubspec = nestedPubspec;
+    } else {
+      stderr.writeln(
+        'pubspec.yaml not found. Run from mobile_app or project root.',
+      );
+      exit(1);
+    }
   }
 
   final text = await pubspec.readAsString();
@@ -46,6 +61,7 @@ Future<void> main(List<String> args) async {
       ...flutterArgs,
       '--dart-define=APP_VERSION_TAG=v$base+$nextBuild',
     ],
+    workingDirectory: projectDir.path,
     mode: ProcessStartMode.inheritStdio,
   );
   final code = await proc.exitCode;

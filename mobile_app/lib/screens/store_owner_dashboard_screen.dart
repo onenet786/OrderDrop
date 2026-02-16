@@ -49,24 +49,57 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
   void _handleNotification(Map<String, dynamic> notification) {
     if (!mounted) return;
 
-    final message = notification['message'] as String? ?? 'New notification';
-    final type = notification['type'] as String?;
+    final nestedData = (notification['data'] is Map<String, dynamic>)
+        ? notification['data'] as Map<String, dynamic>
+        : null;
+    final message = (notification['message'] ??
+                nestedData?['message'] ??
+                notification['title'] ??
+                'New notification')
+            .toString();
+    final type =
+        (notification['type'] ?? nestedData?['type'])?.toString().toLowerCase();
+    final status = (notification['status'] ?? nestedData?['status'])
+        ?.toString()
+        .toLowerCase();
 
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.green,
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: 'REFRESH',
-          textColor: Colors.white,
-          onPressed: _loadOrders,
-        ),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        showCloseIcon: true,
       ),
     );
 
-    if (type == 'new_order' || type == 'rider_assigned' || type == 'refresh_orders') {
+    final isNewOrder = type == 'new_order';
+    final isHistoryUpdate = status == 'delivered' ||
+        status == 'cancelled' ||
+        status == 'picked_up' ||
+        type == 'order_completed' ||
+        type == 'delivered';
+    final isActiveUpdate = status == 'preparing' ||
+        status == 'ready' ||
+        status == 'ready_for_pickup' ||
+        status == 'out_for_delivery' ||
+        type == 'rider_assigned';
+
+    if (isNewOrder ||
+        isHistoryUpdate ||
+        isActiveUpdate ||
+        type == 'refresh_orders' ||
+        type == 'order_status_update') {
       _loadOrders();
+
+      if (isNewOrder) {
+        _tabController.animateTo(0); // Switch to New Orders tab
+      } else if (isHistoryUpdate) {
+        _tabController.animateTo(2); // Switch to History tab
+      } else if (isActiveUpdate) {
+        _tabController.animateTo(1); // Switch to Active tab
+      }
     }
   }
 
@@ -136,9 +169,20 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
 
       await ApiService.updateOrderStatus(token, orderId, newStatus);
       if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Order marked as ${newStatus.toUpperCase()}')),
+          SnackBar(
+            content: Text('Order marked as ${newStatus.toUpperCase()}'),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            showCloseIcon: true,
+          ),
         );
+        if (newStatus == 'ready') {
+          _tabController.animateTo(1); // Switch to Active tab
+        } else if (newStatus == 'picked_up') {
+          _tabController.animateTo(2); // Move to History after pickup confirmation
+        }
         _loadOrders();
       }
     } catch (e) {
@@ -253,7 +297,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),

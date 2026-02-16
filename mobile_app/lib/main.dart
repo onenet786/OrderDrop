@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cart_provider.dart';
@@ -103,17 +104,47 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class _VersionBadge extends StatelessWidget {
+class _VersionBadge extends StatefulWidget {
   const _VersionBadge();
-  static const String _tag =
+
+  @override
+  State<_VersionBadge> createState() => _VersionBadgeState();
+}
+
+class _VersionBadgeState extends State<_VersionBadge> {
+  static const String _envTag =
       String.fromEnvironment('APP_VERSION_TAG', defaultValue: '');
+  String _tag = _envTag;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersionTag();
+  }
+
+  Future<void> _loadVersionTag() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final version = info.version.trim();
+      final build = info.buildNumber.trim();
+      if (!mounted) return;
+      if (version.isNotEmpty) {
+        setState(() {
+          _tag = build.isNotEmpty ? 'v$version+$build' : 'v$version';
+        });
+      }
+    } catch (_) {
+      // Keep environment tag fallback if package info is unavailable.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_tag.isEmpty) return const SizedBox.shrink();
+    if (_tag.trim().isEmpty) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.05),
+        color: Colors.black.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(

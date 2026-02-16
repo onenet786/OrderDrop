@@ -6,6 +6,8 @@ class NotificationService {
   static final Logger _logger = Logger();
   static io.Socket? _socket;
   static Function(Map<String, dynamic>)? _onNotification;
+  static int? _currentUserId;
+  static String? _currentUserType;
 
   static void initialize({
     required Function(Map<String, dynamic>) onNotification,
@@ -15,13 +17,33 @@ class NotificationService {
 
   static void connect(int userId, String userType) {
     if (_socket != null && _socket!.connected) {
-      _logger.d('Socket.IO already connected');
+      _logger.d('Socket.IO already connected, re-identifying user');
+      _currentUserId = userId;
+      _currentUserType = userType;
+      _socket!.emit('identify_user', {
+        'user_id': userId,
+        'user_type': userType,
+      });
       return;
     }
 
     try {
+      _currentUserId = userId;
+      _currentUserType = userType;
+
+      // Normalize to origin for socket endpoint safety.
+      String socketBase = ApiService.baseUrl;
+      try {
+        final uri = Uri.parse(socketBase);
+        final origin =
+            '${uri.scheme.isEmpty ? 'http' : uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+        socketBase = origin.endsWith('/')
+            ? origin.substring(0, origin.length - 1)
+            : origin;
+      } catch (_) {}
+
       _socket = io.io(
-        ApiService.baseUrl,
+        socketBase,
         io.OptionBuilder()
             .setTransports(['websocket', 'polling'])
             .enableAutoConnect()
@@ -35,8 +57,8 @@ class NotificationService {
       _socket!.onConnect((_) {
         _logger.d('Socket.IO connected');
         _socket!.emit('identify_user', {
-          'user_id': userId,
-          'user_type': userType,
+          'user_id': _currentUserId,
+          'user_type': _currentUserType,
         });
       });
 

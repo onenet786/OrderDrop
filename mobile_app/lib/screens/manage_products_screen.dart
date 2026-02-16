@@ -327,14 +327,14 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                               sizeVariants: newVariants,
                             );
                           }
-                          if (mounted) {
-                            Navigator.of(ctx).pop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Price updated')),
-                            );
-                            _loadProducts();
-                          }
+                          if (!mounted || !ctx.mounted) return;
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Price updated')),
+                          );
+                          _loadProducts();
                         } catch (e) {
+                          if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('Failed to update: $e')),
                           );
