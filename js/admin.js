@@ -45,6 +45,58 @@ const AppState = {
     }
 };
 
+const ADMIN_THEME_STORAGE_KEY = 'serveNowAdminTheme';
+const ADMIN_THEME_DEFAULT = 'default';
+const ADMIN_THEME_ALLOWED = new Set(['default', 'ocean', 'emerald', 'sunset', 'mint', 'pearl', 'rose', 'sky']);
+
+function normalizeAdminTheme(themeName) {
+    if (typeof themeName !== 'string') return ADMIN_THEME_DEFAULT;
+    const value = themeName.trim().toLowerCase();
+    return ADMIN_THEME_ALLOWED.has(value) ? value : ADMIN_THEME_DEFAULT;
+}
+
+function applyAdminTheme(themeName) {
+    const theme = normalizeAdminTheme(themeName);
+    if (theme === ADMIN_THEME_DEFAULT) {
+        document.body.removeAttribute('data-theme');
+    } else {
+        document.body.setAttribute('data-theme', theme);
+    }
+    return theme;
+}
+
+function getSavedAdminTheme() {
+    return normalizeAdminTheme(localStorage.getItem(ADMIN_THEME_STORAGE_KEY));
+}
+
+function saveAdminTheme(themeName) {
+    const theme = normalizeAdminTheme(themeName);
+    localStorage.setItem(ADMIN_THEME_STORAGE_KEY, theme);
+    return theme;
+}
+
+function initializeThemeSettings() {
+    const themeSelect = document.getElementById('themeSelect');
+    const saveThemeBtn = document.getElementById('saveThemeBtn');
+    if (!themeSelect || !saveThemeBtn) return;
+
+    const savedTheme = getSavedAdminTheme();
+    applyAdminTheme(savedTheme);
+    themeSelect.value = savedTheme;
+
+    themeSelect.addEventListener('change', () => {
+        applyAdminTheme(themeSelect.value);
+    });
+
+    saveThemeBtn.addEventListener('click', () => {
+        const saved = saveAdminTheme(themeSelect.value);
+        applyAdminTheme(saved);
+        if (typeof showSuccess === 'function') {
+            showSuccess('Theme Saved', `Theme saved as ${saved}.`, 1800);
+        }
+    });
+}
+
 // Backward compatibility (optional, but good for transition)
 // These getters allow existing code to work while we refactor usages
 // Note: We cannot easily proxy local 'let' variables, so we will replace usages.
@@ -227,6 +279,9 @@ if (typeof io !== 'undefined') {
 
 // Initialize admin dashboard
 document.addEventListener('DOMContentLoaded', function() {
+    // Apply saved theme and bind theme controls immediately.
+    initializeThemeSettings();
+
     // Check if user is logged in and is admin
     authToken = localStorage.getItem('serveNowToken');
     // Debug: log token presence to help diagnose 401 issues

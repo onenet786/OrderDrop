@@ -4,7 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - ServeNow</title>
-    <link rel="stylesheet" href="css/user.css?v=4">
+    <script>
+        (function () {
+            try {
+                var savedTheme = (localStorage.getItem('serveNowAdminTheme') || 'default').toLowerCase();
+                var allowed = ['default', 'ocean', 'emerald', 'sunset', 'mint', 'pearl', 'rose', 'sky'];
+                if (allowed.indexOf(savedTheme) !== -1 && savedTheme !== 'default') {
+                    document.documentElement.setAttribute('data-theme', savedTheme);
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="css/user.css?v=5">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="icon" type="image/png" href="images/servenow.png">
 </head>

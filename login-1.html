@@ -4,6 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - ServeNow</title>
+    <script>
+        (function () {
+            try {
+                var savedTheme = (localStorage.getItem('serveNowAdminTheme') || 'default').toLowerCase();
+                var allowed = ['default', 'ocean', 'emerald', 'sunset', 'mint', 'pearl', 'rose', 'sky'];
+                if (allowed.indexOf(savedTheme) !== -1 && savedTheme !== 'default') {
+                    document.documentElement.setAttribute('data-theme', savedTheme);
+                }
+            } catch (e) {}
+        })();
+    </script>
     <link rel="stylesheet" href="style/main.css?v=3">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="icon" type="image/png" href="images/servenow.png">
@@ -17,6 +28,14 @@
             display: flex;
             flex-direction: column;
         }
+
+        html[data-theme="ocean"] body { background: linear-gradient(to right, #c7e7ff, #e0efff); }
+        html[data-theme="emerald"] body { background: linear-gradient(to right, #d9f7ea, #eefcf6); }
+        html[data-theme="sunset"] body { background: linear-gradient(to right, #ffe5d6, #fff1ea); }
+        html[data-theme="mint"] body { background: linear-gradient(to right, #dff8ee, #f0fdf8); }
+        html[data-theme="pearl"] body { background: linear-gradient(to right, #eef2f7, #f8fafc); }
+        html[data-theme="rose"] body { background: linear-gradient(to right, #ffe5ec, #fff6f8); }
+        html[data-theme="sky"] body { background: linear-gradient(to right, #dff2ff, #f2faff); }
 
         .login-container {
             margin: auto;

@@ -40,6 +40,104 @@
   --icon-btn-size: 44px;
 }
 
+html[data-theme="ocean"] {
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --primary-light: #dbeafe;
+  --bg-body: #eef6ff;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #102542;
+  --bg-sidebar-hover: #17325a;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-light: #e0ecff;
+  --border-color: #d6e6fb;
+}
+
+html[data-theme="emerald"] {
+  --primary: #059669;
+  --primary-dark: #047857;
+  --primary-light: #d1fae5;
+  --bg-body: #eefcf6;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #10261f;
+  --bg-sidebar-hover: #1a352d;
+  --text-main: #052e16;
+  --text-muted: #3f5f53;
+  --text-light: #d8f8ea;
+  --border-color: #d2f5e5;
+}
+
+html[data-theme="sunset"] {
+  --primary: #ea580c;
+  --primary-dark: #c2410c;
+  --primary-light: #ffedd5;
+  --bg-body: #fff5f0;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #3a1f1a;
+  --bg-sidebar-hover: #4a281f;
+  --text-main: #431407;
+  --text-muted: #7c2d12;
+  --text-light: #ffe7dd;
+  --border-color: #fde0d3;
+}
+
+html[data-theme="mint"] {
+  --primary: #10b981;
+  --primary-dark: #059669;
+  --primary-light: #d1fae5;
+  --bg-body: #f0fdf8;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #e7fbf3;
+  --bg-sidebar-hover: #d8f6ea;
+  --text-main: #14532d;
+  --text-muted: #3d6657;
+  --text-light: #14532d;
+  --border-color: #ccefe1;
+}
+
+html[data-theme="pearl"] {
+  --primary: #64748b;
+  --primary-dark: #475569;
+  --primary-light: #e2e8f0;
+  --bg-body: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #f3f6fa;
+  --bg-sidebar-hover: #e8eef5;
+  --text-main: #334155;
+  --text-muted: #64748b;
+  --text-light: #334155;
+  --border-color: #dde4ed;
+}
+
+html[data-theme="rose"] {
+  --primary: #e11d48;
+  --primary-dark: #be123c;
+  --primary-light: #ffe4e6;
+  --bg-body: #fff6f8;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #fff0f4;
+  --bg-sidebar-hover: #ffe3eb;
+  --text-main: #881337;
+  --text-muted: #9f3255;
+  --text-light: #831843;
+  --border-color: #ffdce3;
+}
+
+html[data-theme="sky"] {
+  --primary: #0ea5e9;
+  --primary-dark: #0284c7;
+  --primary-light: #e0f2fe;
+  --bg-body: #f2faff;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #eaf7ff;
+  --bg-sidebar-hover: #dff2ff;
+  --text-main: #0c4a6e;
+  --text-muted: #4e7591;
+  --text-light: #0c4a6e;
+  --border-color: #d6eefc;
+}
+
 /* Reset & Base */
 * {
   box-sizing: border-box;
@@ -133,7 +231,7 @@ button {
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
   border-radius: var(--border-radius);
-  color: #cbd5e1;
+  color: var(--text-light);
   transition: var(--transition);
   font-weight: 500;
 }

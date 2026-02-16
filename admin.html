@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Dashboard - ServeNow</title>
     <link rel="stylesheet" href="css/style.css?v=4" />
-    <link rel="stylesheet" href="css/admin.css?v=4" />
+    <link rel="stylesheet" href="css/admin.css?v=5" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
@@ -27,6 +27,22 @@
         </div>
 
         <div class="sidebar-nav">
+          <div class="sidebar-theme-settings">
+            <label for="themeSelect" class="theme-label">Theme Style</label>
+            <div class="theme-control-row">
+              <select id="themeSelect" class="theme-select">
+                <option value="default">Default</option>
+                <option value="ocean">Ocean</option>
+                <option value="emerald">Emerald</option>
+                <option value="sunset">Sunset</option>
+                <option value="mint">Mint</option>
+                <option value="pearl">Pearl</option>
+                <option value="rose">Rose</option>
+                <option value="sky">Sky</option>
+              </select>
+              <button type="button" id="saveThemeBtn" class="theme-save-btn">Save</button>
+            </div>
+          </div>
           <ul class="nav-menu" id="navMenu">
             <li>
               <a
@@ -3185,7 +3201,7 @@
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
     <script src="js/financial.js?v=8" defer></script>
-    <script src="js/admin.js?v=18" defer></script>
+    <script src="js/admin.js?v=19" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");
