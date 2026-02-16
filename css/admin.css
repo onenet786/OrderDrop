@@ -161,6 +161,7 @@ button {
 /* Sidebar */
 .app-sidebar {
   width: var(--sidebar-width);
+  height: 100vh;
   min-height: 100vh;
   background: #1e1e2e;
   color: #cdd6f4;
@@ -174,6 +175,7 @@ button {
   align-self: flex-start;
   flex-shrink: 0;
   border-right: 1px solid #313244;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -204,9 +206,13 @@ button {
 }
 
 .sidebar-nav {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 0.5rem 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .nav-menu {
@@ -702,6 +708,69 @@ textarea:focus {
   line-height: 1;
 }
 
+/* Dedicated action style for Generate Financial Report preview modal buttons */
+.report-modal-action-btn {
+  height: var(--btn-height);
+  min-height: var(--btn-height);
+  padding: 0 1.1rem !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  border-radius: 999px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.report-modal-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+
+#viewReportModal #btnSaveReport.report-modal-action-btn {
+  border-color: transparent;
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  color: #ffffff;
+}
+
+#viewReportModal #btnSaveReport.report-modal-action-btn:hover {
+  background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+}
+
+#viewReportModal #viewReportDownloadBtn.report-modal-action-btn {
+  border-color: transparent;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+}
+
+#viewReportModal #viewReportDownloadBtn.report-modal-action-btn:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+}
+
+#viewReportModal .report-modal-action-btn.btn-secondary {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: 1px solid transparent;
+  color: #ffffff;
+}
+
+#viewReportModal .report-modal-action-btn.btn-secondary:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+}
+
+#viewReportModal .modal-footer {
+  display: flex !important;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.625rem;
+}
+
+#viewReportModal .modal-footer .report-modal-action-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 /* Modals */
 .modal {
   display: none;
@@ -932,7 +1001,8 @@ textarea:focus {
     left: 0;
     top: 0;
     bottom: 0;
-    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     width: var(--sidebar-width);
     transform: translateX(-100%);
     box-shadow: 20px 0 50px rgba(0,0,0,0.3);
@@ -952,6 +1022,42 @@ textarea:focus {
     height: calc(100vh - var(--header-height));
     padding: 1rem;
     overflow-y: auto;
+  }
+
+  .sidebar-nav {
+    max-height: calc(100dvh - var(--header-height));
+    padding-bottom: 1rem;
+  }
+
+  .dropdown-menu {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    z-index: auto !important;
+    margin: 0.35rem 0 0.5rem 0;
+    min-width: 0;
+    width: 100%;
+    box-shadow: none;
+    border: 1px solid #45475a;
+    border-radius: 10px;
+    background: #313244;
+    max-height: 40vh !important;
+    overflow-y: auto !important;
+  }
+
+  .nav-menu li.dropdown:hover .dropdown-menu {
+    display: none;
+  }
+
+  .nav-menu li.dropdown.open .dropdown-menu {
+    display: block;
+  }
+}
+
+@media (max-height: 720px) {
+  .sidebar-nav {
+    padding-top: 0.35rem;
+    padding-bottom: 0.75rem;
   }
 }
 

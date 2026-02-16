@@ -993,7 +993,7 @@ try {
             });
             const menu = li.querySelector('.dropdown-menu');
             if (menu) {
-                if (nowOpen) {
+                if (nowOpen && window.innerWidth > 1024) {
                     const rect = this.getBoundingClientRect();
                     menu.style.position = 'fixed';
                     // Open to the right side
@@ -1041,6 +1041,15 @@ try {
             if (!li) return;
             const menu = li.querySelector('.dropdown-menu');
             if (!menu) return;
+            if (window.innerWidth <= 1024) {
+                menu.style.position = '';
+                menu.style.left = '';
+                menu.style.top = '';
+                menu.style.zIndex = '';
+                menu.style.maxHeight = '';
+                menu.style.overflow = '';
+                return;
+            }
             const rect = openToggle.getBoundingClientRect();
             menu.style.position = 'fixed';
             // Open to the right side

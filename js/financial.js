@@ -2098,9 +2098,9 @@ async function submitGenerateReport() {
                     
                     const saveBtn = document.createElement('button');
                     saveBtn.id = 'btnSaveReport';
-                    saveBtn.className = 'btn btn-success';
+                    saveBtn.type = 'button';
+                    saveBtn.className = 'btn btn-success report-action-btn report-modal-action-btn';
                     saveBtn.innerHTML = 'Save Report';
-                    saveBtn.style.marginLeft = '10px';
                     saveBtn.onclick = () => saveGeneratedReport(payload); // Pass original payload without preview flag
                     
                     // Insert before Close button
