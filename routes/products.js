@@ -1127,6 +1127,20 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
             }
         }
 
+        const shouldEmitPriceUpdate = ((normalizedPrice.present && normalizedPrice.ok) || variantsProvided);
+        if (shouldEmitPriceUpdate && req.io) {
+            const productName = name !== undefined ? name : product.name;
+            req.io.to(`user_${product.owner_id}`).emit('store_owner_notification', {
+                type: 'product_price_update',
+                title: 'Price Updated',
+                message: `Price updated for ${productName}: PKR ${finalPrice}`,
+                product_id: Number(id),
+                product_name: productName,
+                store_id: product.store_id,
+                new_price: finalPrice
+            });
+        }
+
         res.json({
             success: true,
             message: 'Product updated successfully'

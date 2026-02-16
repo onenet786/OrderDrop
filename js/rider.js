@@ -865,3 +865,36 @@ document.addEventListener('DOMContentLoaded', function() {
     // Cleanup on page unload
     // window.addEventListener('beforeunload', stopLocationTracking);
 });
+
+// Minimal socket fallback to auto-refresh assignments if notifications.js isn't loaded
+(function () {
+    if (window.__serveNowNotificationsInitialized || window.__riderInlineSocketInitialized) return;
+    if (typeof io === 'undefined') return;
+    try {
+        const userStr = localStorage.getItem('serveNowUser');
+        const user = userStr ? JSON.parse(userStr) : null;
+        if (!user || user.user_type !== 'rider') return;
+        window.__riderInlineSocketInitialized = true;
+        const socket = io(API_BASE || window.location.origin, {
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: 5,
+            transports: ['websocket', 'polling']
+        });
+        socket.on('connect', () => {
+            try {
+                socket.emit('identify_user', { user_id: user.id, user_type: user.user_type });
+            } catch (_) {}
+        });
+        socket.on('rider_notification', (data) => {
+            if (!data) return;
+            if (String(data.rider_id) !== String(user.id)) return;
+            if (typeof switchTab === 'function') {
+                switchTab('assigned');
+            } else if (typeof displayRiderDeliveries === 'function') {
+                displayRiderDeliveries('assigned', 'deliveriesContainer');
+            }
+        });
+    } catch (_) {}
+})();

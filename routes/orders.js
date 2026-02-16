@@ -36,7 +36,7 @@ async function ensureOrderItemsSchema(db) {
     {
       name: "item_status",
       definition:
-        "ENUM('pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled', 'out_for_delivery') DEFAULT 'pending'",
+        "ENUM('pending', 'confirmed', 'preparing', 'ready', 'ready_for_pickup', 'picked_up', 'out_for_delivery', 'delivered', 'cancelled') DEFAULT 'pending'",
     },
   ];
 
@@ -59,6 +59,11 @@ async function ensureOrderItemsSchema(db) {
       console.error(`Failed to ensure column ${col.name}:`, e);
     }
   }
+  try {
+    await db.execute(
+      "ALTER TABLE order_items MODIFY COLUMN item_status ENUM('pending','confirmed','preparing','ready','ready_for_pickup','picked_up','out_for_delivery','delivered','cancelled') DEFAULT 'pending'"
+    );
+  } catch (_) {}
 }
 
 async function ensureOrdersParentColumn(db) {

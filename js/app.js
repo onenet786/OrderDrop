@@ -71,11 +71,22 @@ function toggleMobileMenu() {
 
 // Toast Notification System
 function showToast(title, message, type = "info", duration = 2000) {
+  try {
+    const d = Number(duration);
+    if (!isFinite(d) || d < 500) {
+      duration = 2000;
+    } else {
+      duration = d;
+    }
+  } catch (_) {
+    duration = 2000;
+  }
   let container = document.getElementById("toastContainer");
   if (!container) {
     container = document.createElement("div");
     container.id = "toastContainer";
     container.className = "toast-container";
+    container.style.pointerEvents = "none";
     document.body.appendChild(container);
   }
 
