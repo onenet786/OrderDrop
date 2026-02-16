@@ -1748,7 +1748,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final stats = _walletStats!;
     final cashReceived = _parseDouble(stats['cash_received']);
     final deliveryFees = _parseDouble(stats['total_delivery_fees']);
-    final netCashReceived = cashReceived - deliveryFees;
+    // Backend already returns cash_received as (cash total - delivery fee),
+    // so do not subtract delivery fees again on client.
+    final netCashReceived = cashReceived;
     final paymentSummary =
         (stats['payment_summary'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 

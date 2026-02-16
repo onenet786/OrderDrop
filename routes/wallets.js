@@ -76,6 +76,72 @@ router.get('/balance', authenticateToken, async (req, res) => {
         
         const wallet = await getOrCreateWallet(req.db, userId, req.user.user_type);
 
+        // One-time legacy correction for rider wallets:
+        // Old order payment logic posted:
+        //   + delivery fee (credit) and - full cash collection (debit)
+        // New logic credits cash collection for cash orders.
+        // Apply an idempotent correction so existing balances are repaired.
+        if (req.user.user_type === 'rider') {
+            const [existingFixRows] = await req.db.execute(
+                `SELECT id
+                 FROM wallet_transactions
+                 WHERE wallet_id = ?
+                   AND reference_type = 'system_correction'
+                   AND description = 'Legacy rider wallet correction for cash-order postings'
+                 LIMIT 1`,
+                [wallet.id]
+            );
+
+            if (existingFixRows.length === 0) {
+                const [legacyRows] = await req.db.execute(
+                    `SELECT
+                        COALESCE(SUM(d.amount), 0) AS legacy_debit_total,
+                        COALESCE(SUM(c.amount), 0) AS legacy_credit_total
+                     FROM wallet_transactions d
+                     INNER JOIN wallet_transactions c
+                        ON c.wallet_id = d.wallet_id
+                       AND c.reference_type = 'order'
+                       AND c.reference_id = d.reference_id
+                       AND c.type = 'credit'
+                       AND c.description LIKE 'Delivery fee for order #%'
+                     WHERE d.wallet_id = ?
+                       AND d.reference_type = 'order'
+                       AND d.type = 'debit'
+                       AND d.description LIKE 'Cash collection for order #%'
+                    `,
+                    [wallet.id]
+                );
+
+                const legacyDebitTotal = parseFloat(legacyRows[0]?.legacy_debit_total || 0);
+                const legacyCreditTotal = parseFloat(legacyRows[0]?.legacy_credit_total || 0);
+                const correctionAmount = (2 * legacyDebitTotal) - legacyCreditTotal;
+
+                if (correctionAmount > 0) {
+                    const updatedBalance = parseFloat(wallet.balance || 0) + correctionAmount;
+
+                    await req.db.execute(
+                        'UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?',
+                        [updatedBalance, correctionAmount, wallet.id]
+                    );
+
+                    await req.db.execute(
+                        `INSERT INTO wallet_transactions
+                         (wallet_id, type, amount, description, reference_type, reference_id, balance_after)
+                         VALUES (?, 'credit', ?, ?, 'system_correction', ?, ?)`,
+                        [
+                            wallet.id,
+                            correctionAmount,
+                            'Legacy rider wallet correction for cash-order postings',
+                            wallet.id,
+                            updatedBalance
+                        ]
+                    );
+
+                    wallet.balance = updatedBalance;
+                }
+            }
+        }
+
         return sendSuccess(res, { 
             wallet,
             stripePublicKey: process.env.STRIPE_PUBLIC_KEY 

@@ -146,16 +146,16 @@ router.get('/dashboard', async (req, res) => {
         let riderCashFilter = '';
         let riderCashParams = [];
         if (period === 'today') {
-            riderCashFilter = 'WHERE status = \'completed\' AND DATE(movement_date) = DATE(?)';
+            riderCashFilter = 'WHERE status IN (\'approved\', \'completed\') AND DATE(movement_date) = DATE(?)';
             riderCashParams = [dateParams[0]];
         } else if (period === 'week') {
-            riderCashFilter = 'WHERE status = \'completed\' AND movement_date >= ? AND movement_date < ?';
+            riderCashFilter = 'WHERE status IN (\'approved\', \'completed\') AND movement_date >= ? AND movement_date < ?';
             riderCashParams = dateParams;
         } else if (period === 'month') {
-            riderCashFilter = 'WHERE status = \'completed\' AND YEAR(movement_date) = ? AND MONTH(movement_date) = ?';
+            riderCashFilter = 'WHERE status IN (\'approved\', \'completed\') AND YEAR(movement_date) = ? AND MONTH(movement_date) = ?';
             riderCashParams = dateParams;
         } else {
-            riderCashFilter = 'WHERE status = \'completed\'';
+            riderCashFilter = 'WHERE status IN (\'approved\', \'completed\')';
         }
 
         const [riderCash] = await req.db.execute(
@@ -2814,7 +2814,7 @@ router.get('/riders/:id/pending-cash-orders', async (req, res) => {
         // Temporary fix: Filter out orders if their order_number appears in any approved submission description
         const [submissions] = await req.db.execute(
             `SELECT description FROM rider_cash_movements 
-             WHERE rider_id = ? AND movement_type = 'cash_submission' AND status = 'approved'`,
+             WHERE rider_id = ? AND movement_type = 'cash_submission' AND status IN ('approved', 'completed')`,
             [id]
         );
         
@@ -3222,10 +3222,10 @@ router.get('/reports/store-performance', async (req, res) => {
 router.get('/reports/cash-flow', async (req, res) => {
     try {
         const [collections] = await req.db.execute(
-            `SELECT SUM(amount) as total FROM rider_cash_movements WHERE movement_type = 'cash_collection' AND status = 'completed'`
+            `SELECT SUM(amount) as total FROM rider_cash_movements WHERE movement_type = 'cash_collection' AND status IN ('approved', 'completed')`
         );
         const [submissions] = await req.db.execute(
-            `SELECT SUM(amount) as total FROM rider_cash_movements WHERE movement_type = 'cash_submission' AND status = 'completed'`
+            `SELECT SUM(amount) as total FROM rider_cash_movements WHERE movement_type = 'cash_submission' AND status IN ('approved', 'completed')`
         );
         const [vouchers] = await req.db.execute(
             `SELECT SUM(amount) as total FROM cash_receipt_vouchers WHERE status = 'received'`
@@ -3291,8 +3291,8 @@ router.get('/reports/riders-detailed', async (req, res) => {
                 COUNT(CASE WHEN o.status = 'delivered' THEN 1 END) as total_delivered,
                 COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) as total_cancelled,
                 SUM(CASE WHEN o.status = 'delivered' THEN o.delivery_fee ELSE 0 END) as total_fees,
-                COALESCE((SELECT SUM(amount) FROM rider_cash_movements WHERE rider_id = r.id AND movement_type = 'cash_collection' AND status = 'completed'), 0) as cash_collection,
-                COALESCE((SELECT SUM(amount) FROM rider_cash_movements WHERE rider_id = r.id AND movement_type = 'cash_submission' AND status = 'completed'), 0) as cash_submission
+                COALESCE((SELECT SUM(amount) FROM rider_cash_movements WHERE rider_id = r.id AND movement_type = 'cash_collection' AND status IN ('approved', 'completed')), 0) as cash_collection,
+                COALESCE((SELECT SUM(amount) FROM rider_cash_movements WHERE rider_id = r.id AND movement_type = 'cash_submission' AND status IN ('approved', 'completed')), 0) as cash_submission
             FROM riders r
             LEFT JOIN orders o ON r.id = o.rider_id ${dateFilter}
             ${riderFilter}

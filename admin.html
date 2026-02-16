@@ -999,6 +999,29 @@
           </p>
 
           <div class="filter-controls">
+            <div class="filter-group" style="min-width: 260px;">
+              <label for="utilUsername">Restore Username</label>
+              <input
+                type="text"
+                id="utilUsername"
+                class="form-control"
+                placeholder="Enter your admin email/username"
+                autocomplete="username"
+              />
+            </div>
+            <div class="filter-group" style="min-width: 260px;">
+              <label for="utilPassword">Restore Passphrase</label>
+              <input
+                type="password"
+                id="utilPassword"
+                class="form-control"
+                placeholder="Enter restore passphrase"
+                autocomplete="current-password"
+              />
+            </div>
+          </div>
+
+          <div class="filter-controls">
             <button class="btn btn-primary" id="createBackupBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Create Backup
             </button>
@@ -1020,8 +1043,12 @@
                     <label for="clearTableSelect">Clear Specific Data:</label>
                     <select id="clearTableSelect" class="form-control">
                         <option value="all">ALL Transactional Data (Orders, Payments, History)</option>
+                        <option value="all_except_user_store">ALL Tables EXCEPT User/Store Related</option>
+                        <option value="all_tables">ALL Tables (Dangerous)</option>
                         <option value="orders">Orders Only</option>
+                        <option value="order_items">Order Items Only</option>
                         <option value="payments">Payments Only</option>
+                        <option value="wallet_transactions">Wallet Transactions Only</option>
                         <option value="notifications">Notifications Only</option>
                     </select>
                 </div>

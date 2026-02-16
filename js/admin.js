@@ -379,6 +379,12 @@ function initializeAdmin() {
         window.location.href = 'login.html';
     });
 
+    // Prefill utilities username from logged in user profile when available
+    const utilUsernameEl = document.getElementById('utilUsername');
+    if (utilUsernameEl && !utilUsernameEl.value && currentUser) {
+        utilUsernameEl.value = currentUser.email || currentUser.username || '';
+    }
+
     // Tab switching
     const tabLinks = document.querySelectorAll('.tab-link');
 
@@ -610,6 +616,8 @@ function initializeAdmin() {
     if (createBackupBtn) createBackupBtn.addEventListener('click', createBackup);
     const refreshBackupsBtn = document.getElementById('refreshBackupsBtn');
     if (refreshBackupsBtn) refreshBackupsBtn.addEventListener('click', loadBackups);
+    // Populate danger-zone clear table options with all tables from DB
+    if (typeof loadClearableTables === 'function') loadClearableTables();
     const restoreBackupBtn = document.getElementById('restoreBackupBtn');
     function updateRestoreButtonState() {
         const sel = document.querySelector('input[name="selBackup"]:checked');
@@ -1444,6 +1452,7 @@ function switchTab(tabName) {
         case 'db-backup':
             // Load list of available backups when backup tab is opened
             loadBackups();
+            if (typeof loadClearableTables === 'function') loadClearableTables();
             break;
         case 'financial-dashboard':
             if (typeof loadFinancialDashboard === 'function') loadFinancialDashboard();
@@ -1788,7 +1797,7 @@ async function restoreBackup(filename) {
     const pEl = document.getElementById('utilPassword');
     const u = uEl ? String(uEl.value || '') : '';
     const p = pEl ? String(pEl.value || '') : '';
-    if (!u || !p) { showError('Restore', 'Enter super admin username and password'); return; }
+    if (!u || !p) { showError('Restore', 'Enter restore username and restore passphrase in Utilities.'); return; }
     showInfo('Restore', `Restoring from ${filename}...`);
     try {
         const resp = await fetch(`${API_BASE}/api/admin/restore-db`, {
@@ -7042,7 +7051,11 @@ async function clearTransactionalData() {
     const table = tableSelect ? tableSelect.value : 'all';
     
     let confirmMsg = 'Are you sure you want to clear ALL transactional data? This includes orders, payments, and history. Wallets will be reset to 0.';
-    if (table !== 'all') {
+    if (table === 'all_except_user_store') {
+        confirmMsg = 'Are you sure you want to clear ALL tables except user/store related tables? This action cannot be undone.';
+    } else if (table === 'all_tables') {
+        confirmMsg = 'Are you sure you want to clear ALL tables in the database? This is extremely destructive and cannot be undone.';
+    } else if (table !== 'all') {
         confirmMsg = `Are you sure you want to clear table '${table}'? This action cannot be undone.`;
     }
     
@@ -7089,6 +7102,54 @@ async function clearTransactionalData() {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-trash-alt"></i> Clear Data';
         }
+    }
+}
+
+async function loadClearableTables() {
+    const tableSelect = document.getElementById('clearTableSelect');
+    if (!tableSelect) return;
+
+    const staticOptions = [
+        { value: 'all', label: 'ALL Transactional Data (Orders, Payments, History)' },
+        { value: 'all_except_user_store', label: 'ALL Tables EXCEPT User/Store Related' },
+        { value: 'all_tables', label: 'ALL Tables (Dangerous)' }
+    ];
+
+    try {
+        const response = await fetch(`${API_BASE}/api/admin/clearable-tables`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!data.success || !Array.isArray(data.tables)) return;
+
+        const current = tableSelect.value;
+        tableSelect.innerHTML = '';
+
+        staticOptions.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            tableSelect.appendChild(option);
+        });
+
+        const divider = document.createElement('option');
+        divider.disabled = true;
+        divider.textContent = '────────────';
+        tableSelect.appendChild(divider);
+
+        data.tables.forEach(t => {
+            const option = document.createElement('option');
+            option.value = t.name;
+            option.textContent = t.protected
+                ? `${t.name} (User/Store related)`
+                : t.name;
+            tableSelect.appendChild(option);
+        });
+
+        const hasCurrent = Array.from(tableSelect.options).some(o => o.value === current);
+        tableSelect.value = hasCurrent ? current : 'all';
+    } catch (error) {
+        console.error('Failed to load clearable tables:', error);
     }
 }
 

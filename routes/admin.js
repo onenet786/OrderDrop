@@ -8,6 +8,45 @@ const path = require("path");
 const { exec, spawn } = require("child_process");
 const mysqlLib = require("mysql2");
 
+const INTERNAL_SKIP_TABLES = new Set([
+  "schema_migrations",
+  "migrations",
+  "sqlite_sequence",
+]);
+
+const PROTECTED_EXACT_TABLES = new Set([
+  "users",
+  "user_permissions",
+  "riders",
+  "stores",
+  "products",
+  "categories",
+  "units",
+  "sizes",
+  "product_size_prices",
+  "wallets",
+]);
+
+function isUserStoreRelatedTable(tableName) {
+  const t = String(tableName || "").toLowerCase();
+  if (!t) return false;
+  if (PROTECTED_EXACT_TABLES.has(t)) return true;
+  if (t.includes("store")) return true;
+  if (t.startsWith("user_") || t.endsWith("_user") || t.includes("user")) return true;
+  return false;
+}
+
+async function getAllBaseTables(connection) {
+  const [rows] = await connection.execute(
+    `SELECT TABLE_NAME AS name
+       FROM information_schema.tables
+      WHERE table_schema = DATABASE()
+        AND TABLE_TYPE = 'BASE TABLE'
+      ORDER BY TABLE_NAME`
+  );
+  return rows.map((r) => r.name).filter(Boolean);
+}
+
 // Helper to check specific permissions for non-admin staff
 async function hasPermission(req, permissionKey) {
     if (req.user.user_type === 'admin') return true;
@@ -1439,12 +1478,9 @@ router.post(
   requirePermission('menu_settings_database'),
   async (req, res) => {
     const { table } = req.body;
-    
-    // Safety check: Only allow specific tables or "all"
-    const validTables = ['orders', 'payments', 'wallet_transactions', 'notifications', 'order_items', 'all'];
-    
-    if (!table || !validTables.includes(table)) {
-        return res.status(400).json({ success: false, message: "Invalid table specified" });
+    const specialModes = new Set(["all", "all_except_user_store", "all_tables"]);
+    if (!table || typeof table !== "string") {
+      return res.status(400).json({ success: false, message: "Invalid table specified" });
     }
 
     // Use connection from pool for transaction support if req.db is pool, 
@@ -1476,7 +1512,34 @@ router.post(
              await connection.beginTransaction();
         }
 
-        if (table === 'all') {
+        const allTables = await getAllBaseTables(connection);
+        const tablesByLower = new Map(allTables.map((t) => [String(t).toLowerCase(), t]));
+
+        let selected = String(table).trim().toLowerCase();
+        // Backward-compatible aliases for UI values
+        const modeAliases = {
+          all_except_users_stores: "all_except_user_store",
+          all_except_store_user: "all_except_user_store",
+          except_user_store: "all_except_user_store",
+          all_db: "all_tables",
+          all_data: "all_tables",
+        };
+        selected = modeAliases[selected] || selected;
+
+        const actualTableName = tablesByLower.get(selected);
+
+        if (!specialModes.has(selected) && !actualTableName) {
+          // For optional tables, treat as no-op instead of hard failure.
+          return res.json({
+            success: true,
+            message: `Table '${table}' not found. Nothing to clear.`,
+          });
+        }
+        if (!specialModes.has(selected) && INTERNAL_SKIP_TABLES.has(actualTableName)) {
+          return res.status(400).json({ success: false, message: `Table '${actualTableName}' cannot be cleared` });
+        }
+
+        if (selected === 'all') {
             // Clear all transactional data in correct order
             await connection.execute('DELETE FROM order_items');
             await connection.execute('DELETE FROM orders');
@@ -1497,30 +1560,74 @@ router.post(
                 await connection.commit();
             }
             return res.json({ success: true, message: "All transactional data cleared and wallets reset." });
+        } else if (selected === 'all_except_user_store') {
+            const clearTargets = allTables.filter(
+              (t) => !INTERNAL_SKIP_TABLES.has(t) && !isUserStoreRelatedTable(t)
+            );
+
+            await connection.execute("SET FOREIGN_KEY_CHECKS = 0");
+            try {
+              for (const t of clearTargets) {
+                await connection.execute(`DELETE FROM ${mysqlLib.escapeId(t)}`);
+              }
+            } finally {
+              await connection.execute("SET FOREIGN_KEY_CHECKS = 1");
+            }
+
+            if (typeof connection.commit === 'function') {
+                await connection.commit();
+            }
+            return res.json({
+              success: true,
+              message: `Cleared ${clearTargets.length} tables. User/store related tables were preserved.`,
+              cleared_tables: clearTargets,
+            });
+        } else if (selected === 'all_tables') {
+            const clearTargets = allTables.filter((t) => !INTERNAL_SKIP_TABLES.has(t));
+
+            await connection.execute("SET FOREIGN_KEY_CHECKS = 0");
+            try {
+              for (const t of clearTargets) {
+                await connection.execute(`DELETE FROM ${mysqlLib.escapeId(t)}`);
+              }
+            } finally {
+              await connection.execute("SET FOREIGN_KEY_CHECKS = 1");
+            }
+
+            if (typeof connection.commit === 'function') {
+                await connection.commit();
+            }
+            return res.json({
+              success: true,
+              message: `Cleared ALL tables (${clearTargets.length}).`,
+              cleared_tables: clearTargets,
+            });
         } else {
             // Clear specific table
-            if (table === 'orders') {
+            if (selected === 'orders') {
                 await connection.execute('DELETE FROM order_items'); // FK dependency
                 await connection.execute('DELETE FROM orders');
-            } else if (table === 'order_items') {
+            } else if (selected === 'order_items') {
                 await connection.execute('DELETE FROM order_items');
-            } else if (table === 'payments') {
+            } else if (selected === 'payments') {
                 await connection.execute('DELETE FROM payments');
-            } else if (table === 'wallet_transactions') {
+            } else if (selected === 'wallet_transactions') {
                 await connection.execute('DELETE FROM wallet_transactions');
                 // Note: Deleting transactions might make balances inconsistent if not reset
-            } else if (table === 'notifications') {
+            } else if (selected === 'notifications') {
                 try {
                     await connection.execute('DELETE FROM notifications');
                 } catch (e) {
                     throw new Error("Notifications table does not exist or cannot be cleared.");
                 }
+            } else {
+                await connection.execute(`DELETE FROM ${mysqlLib.escapeId(actualTableName)}`);
             }
             
             if (typeof connection.commit === 'function') {
                 await connection.commit();
             }
-            return res.json({ success: true, message: `Table '${table}' cleared successfully.` });
+            return res.json({ success: true, message: `Table '${actualTableName || table}' cleared successfully.` });
         }
 
     } catch (error) {
@@ -1535,5 +1642,30 @@ router.post(
         }
     }
 });
+
+router.get(
+  "/clearable-tables",
+  authenticateToken,
+  requirePermission("menu_settings_database"),
+  async (req, res) => {
+    try {
+      const tables = await getAllBaseTables(req.db);
+      return res.json({
+        success: true,
+        tables: tables
+          .filter((t) => !INTERNAL_SKIP_TABLES.has(t))
+          .map((t) => ({
+            name: t,
+            protected: isUserStoreRelatedTable(t),
+          })),
+      });
+    } catch (error) {
+      console.error("clearable-tables error:", error);
+      return res
+        .status(500)
+        .json({ success: false, message: "Failed to load table list", error: error.message });
+    }
+  }
+);
 
 module.exports = router;

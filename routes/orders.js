@@ -2538,10 +2538,9 @@ router.put(
         });
 
         // 3. Update Rider Wallet
-        // Logic: Credit Delivery Fee (Earnings) - Debit Cash Collected (Liability)
-        // Balance = What Company Owes Rider.
-        // +Delivery Fee (Company owes Rider)
-        // -Cash Collected (Rider owes Company)
+        // Wallet balance in mobile app is treated as rider's available amount.
+        // For cash orders, credit full collected amount.
+        // For non-cash orders, credit only delivery fee earnings.
         const isCash = order.payment_method === "cash";
         const cashCollected = isCash ? parseFloat(order.total_amount || 0) : 0;
         const riderDrAmount = cashCollected;
@@ -2570,12 +2569,13 @@ router.put(
           walletId = newWallets[0].id;
         }
 
-        // 3a. Credit Delivery Fee
-        if (deliveryFee > 0) {
-          currentBalance += deliveryFee;
+        // 3a. Credit rider wallet
+        const walletCreditAmount = isCash ? cashCollected : deliveryFee;
+        if (walletCreditAmount > 0) {
+          currentBalance += walletCreditAmount;
           await req.db.execute(
             "UPDATE wallets SET balance = ?, total_credited = total_credited + ? WHERE id = ?",
-            [currentBalance, deliveryFee, walletId],
+            [currentBalance, walletCreditAmount, walletId],
           );
           await req.db.execute(
             `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
@@ -2583,30 +2583,10 @@ router.put(
             [
               walletId,
               "credit",
-              deliveryFee,
-              `Delivery fee for order #${order.order_number}`,
-              "order",
-              id,
-              currentBalance,
-            ],
-          );
-        }
-
-        // 3b. Debit Cash Collected
-        if (cashCollected > 0) {
-          currentBalance -= cashCollected;
-          await req.db.execute(
-            "UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?",
-            [currentBalance, cashCollected, walletId],
-          );
-          await req.db.execute(
-            `INSERT INTO wallet_transactions (wallet_id, type, amount, description, reference_type, reference_id, balance_after) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [
-              walletId,
-              "debit",
-              cashCollected,
-              `Cash collection for order #${order.order_number}`,
+              walletCreditAmount,
+              isCash
+                ? `Cash collection for order #${order.order_number}`
+                : `Delivery fee for order #${order.order_number}`,
               "order",
               id,
               currentBalance,
