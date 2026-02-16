@@ -2396,7 +2396,7 @@ function updatePriorityWarning() {
 
 // Products Management
 function loadProducts() {
-    fetch(`${API_BASE}/api/products?admin=true`, {
+    fetch(`${API_BASE}/api/products?admin=true&include_variants=0&include_image_variants=0`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
     })
     .then(response => response.json())
@@ -4652,9 +4652,9 @@ async function showAddProductModal() {
     // Load stores and categories for dropdowns
     try {
         const [storesResponse, categoriesResponse, productsResponse, unitsResp, sizesResp] = await Promise.all([
-            fetch(`${API_BASE}/api/stores`),
+            fetch(`${API_BASE}/api/stores?lite=1`),
             fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' }),
-            fetch(`${API_BASE}/api/products?admin=1`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+            fetch(`${API_BASE}/api/products?admin=1&include_variants=0&include_image_variants=0`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             fetch(`${API_BASE}/api/units?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' }),
             fetch(`${API_BASE}/api/sizes?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' })
         ]);
@@ -4985,9 +4985,9 @@ async function editProduct(productId) {
         }
         const p = data.product;
         const [storesResponse, categoriesResponse, productsResponse, unitsResp, sizesResp] = await Promise.all([
-            fetch(`${API_BASE}/api/stores`),
+            fetch(`${API_BASE}/api/stores?lite=1`),
             fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' }),
-            fetch(`${API_BASE}/api/products?admin=1`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+            fetch(`${API_BASE}/api/products?admin=1&include_variants=0&include_image_variants=0`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             fetch(`${API_BASE}/api/units?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' }),
             fetch(`${API_BASE}/api/sizes?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' })
         ]);

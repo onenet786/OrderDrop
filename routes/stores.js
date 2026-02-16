@@ -80,7 +80,8 @@ const calculateIsOpen = (opening_time, closing_time) => {
 // Get all stores (optionally filter by category via products)
 router.get('/', async (req, res) => {
     try {
-        const { category, category_id, search, admin } = req.query;
+        const { category, category_id, search, admin, lite } = req.query;
+        const liteMode = String(lite || '').toLowerCase() === '1' || String(lite || '').toLowerCase() === 'true';
         const whereClauses = admin === '1' ? [] : ['s.is_active = true'];
         const params = [];
 
@@ -125,13 +126,35 @@ router.get('/', async (req, res) => {
         }
 
         const whereClause = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
-        const [stores] = await req.db.execute(`
+        const [stores] = await req.db.execute(
+            liteMode
+                ? `
+            SELECT s.id, s.name, s.payment_term, s.is_active
+            FROM stores s
+            ${whereClause}
+            ORDER BY s.name ASC
+        `
+                : `
             SELECT s.*, u.email as owner_email, CONCAT(u.first_name, ' ', u.last_name) as owner_name
             FROM stores s
             LEFT JOIN users u ON s.owner_id = u.id
             ${whereClause}
             ORDER BY s.is_active DESC, s.priority DESC, s.id DESC
-        `, params);
+        `,
+            params
+        );
+
+        if (liteMode) {
+            return res.json({
+                success: true,
+                stores: (stores || []).map((store) => ({
+                    id: store.id,
+                    name: store.name,
+                    payment_term: store.payment_term || null,
+                    is_active: !!store.is_active
+                }))
+            });
+        }
 
         res.json({
             success: true,

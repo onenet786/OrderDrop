@@ -25,6 +25,9 @@ html {
     --border-radius: 16px;
     --border-radius-sm: 12px;
     --transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-ease: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    --transition-fast: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    --transition-bounce: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 body {
@@ -98,7 +101,7 @@ nav ul li a {
     font-weight: 500;
     padding: 0.5rem 1rem;
     border-radius: 8px;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
     position: relative;
 }
 
@@ -116,7 +119,7 @@ nav ul li a::after {
     width: 0;
     height: 2px;
     background: #ffffff;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
     transform: translateX(-50%);
 }
 
@@ -232,7 +235,7 @@ main {
     font-weight: 600;
     border-radius: 50px;
     cursor: pointer;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     position: relative;
     z-index: 1;
@@ -273,7 +276,7 @@ main {
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: var(--transition-bounce);
     border: 1px solid rgba(255, 255, 255, 0.8);
     position: relative;
 }
@@ -335,7 +338,7 @@ main {
     font-weight: 600;
     font-size: 0.9rem;
     letter-spacing: 0.5px;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     text-align: center;
     width: 100%;
@@ -736,7 +739,7 @@ main {
     transform: scale(1.05);
 }
 
-/* Image-fit mode overrides — toggle by adding class to <body> */
+/* Image-fit mode overrides - toggle by adding class to <body> */
 body.image-fit-cover .product-image img { object-fit: cover !important; }
 body.image-fit-fill .product-image img { object-fit: fill !important; }
 
@@ -1132,7 +1135,7 @@ footer {
     font-size: 1rem;
     font-family: inherit;
     background: #ffffff;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
@@ -1158,7 +1161,7 @@ footer {
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -1322,7 +1325,7 @@ footer {
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
@@ -1372,7 +1375,7 @@ footer p {
     cursor: pointer;
     opacity: 0;
     visibility: hidden;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
     z-index: 1000;
 }
@@ -1388,7 +1391,7 @@ footer p {
 }
 
 .scroll-to-top::after {
-    content: '↑';
+    content: '^';
     font-size: 1.2rem;
     font-weight: bold;
 }
@@ -1411,7 +1414,7 @@ footer p {
     color: #4a5568;
     border-radius: 8px;
     cursor: pointer;
-    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    transition: var(--transition-ease);
 }
 
 .tab.active {
@@ -1742,7 +1745,7 @@ footer p {
         transform: translateY(-100%);
         opacity: 0;
         visibility: hidden;
-        transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        transition: var(--transition-ease);
         z-index: 999;
     }
 

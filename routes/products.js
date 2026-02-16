@@ -192,12 +192,6 @@ async function loadProductSizeVariants(db, productIds) {
         const ids = (Array.isArray(productIds) ? productIds : []).map(x => parseInt(String(x), 10)).filter(x => Number.isInteger(x) && x > 0);
         if (!ids.length) return {};
 
-        try {
-            await ensureProductSizePricesTable(db);
-        } catch (e) {
-            return {};
-        }
-
         const placeholders = ids.map(() => '?').join(',');
         const [rows] = await db.execute(
             `
@@ -340,6 +334,14 @@ router.get('/', optionalAuth, async (req, res) => {
     try {
         const { category, store, admin } = req.query;
         const isAdminUser = req.user && req.user.user_type === 'admin';
+        const isAdminDataRequest = String(admin || '').toLowerCase() === '1'
+            || String(admin || '').toLowerCase() === 'true';
+        const includeVariants = String(req.query.include_variants || '').toLowerCase() === '1'
+            || String(req.query.include_variants || '').toLowerCase() === 'true'
+            || !isAdminDataRequest;
+        const includeImageVariants = String(req.query.include_image_variants || '').toLowerCase() === '1'
+            || String(req.query.include_image_variants || '').toLowerCase() === 'true'
+            || !isAdminDataRequest;
 
         let query = `
             SELECT p.*, c.name as category_name, s.name as store_name, s.location as store_location,
@@ -383,7 +385,9 @@ router.get('/', optionalAuth, async (req, res) => {
         query += ' ORDER BY p.name ASC';
 
         const [products] = await req.db.execute(query, queryParams);
-        const variantsByProductId = await loadProductSizeVariants(req.db, (products || []).map(p => p.id));
+        const variantsByProductId = includeVariants
+            ? await loadProductSizeVariants(req.db, (products || []).map(p => p.id))
+            : {};
 
         res.json({
             success: true,
@@ -394,7 +398,7 @@ router.get('/', optionalAuth, async (req, res) => {
                 cost_price: product.cost_price,
                 price: product.price,
                 image_url: product.image_url,
-                image_variants: getImageVariants(product.image_url),
+                image_variants: includeImageVariants ? getImageVariants(product.image_url) : null,
                 image_bg_r: product.image_bg_r,
                 image_bg_g: product.image_bg_g,
                 image_bg_b: product.image_bg_b,
@@ -411,17 +415,19 @@ router.get('/', optionalAuth, async (req, res) => {
                 unit_name: product.unit_name,
                 size_id: product.size_id,
                 size_label: product.size_label,
-                size_variants: (variantsByProductId[product.id] && variantsByProductId[product.id].length)
-                    ? variantsByProductId[product.id]
-                    : (product.size_id ? [{
-                        size_id: product.size_id,
-                        size_label: product.size_label || null,
-                        unit_id: product.unit_id || null,
-                        unit_name: product.unit_name || null,
-                        unit_abbreviation: null,
-                        price: Number(product.price),
-                        cost_price: product.cost_price === null || product.cost_price === undefined ? null : Number(product.cost_price)
-                    }] : [])
+                size_variants: includeVariants
+                    ? ((variantsByProductId[product.id] && variantsByProductId[product.id].length)
+                        ? variantsByProductId[product.id]
+                        : (product.size_id ? [{
+                            size_id: product.size_id,
+                            size_label: product.size_label || null,
+                            unit_id: product.unit_id || null,
+                            unit_name: product.unit_name || null,
+                            unit_abbreviation: null,
+                            price: Number(product.price),
+                            cost_price: product.cost_price === null || product.cost_price === undefined ? null : Number(product.cost_price)
+                        }] : []))
+                    : []
             }))
         });
 
