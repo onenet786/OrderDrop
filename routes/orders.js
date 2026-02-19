@@ -2359,6 +2359,40 @@ router.put("/:id(\\d+)/deliver", authenticateToken, async (req, res) => {
           .to(`user_${order.user_id}`)
           .emit("order_status_update", statusUpdateData);
         req.io.to("admins").emit("order_status_update", statusUpdateData);
+        if (order.rider_id) {
+          req.io.to(`rider_${order.rider_id}`).emit("order_status_update", {
+            ...statusUpdateData,
+            rider_id: order.rider_id,
+          });
+          req.io.to(`rider_${order.rider_id}`).emit("rider_notification", {
+            type: "order_status_update",
+            rider_id: order.rider_id,
+            order_id: id,
+            order_number: order.order_number,
+            status: "delivered",
+            message: `Order ${order.order_number} marked as delivered.`,
+            timestamp: new Date(),
+          });
+        }
+
+        const [storeOwners] = await req.db.execute(
+          `SELECT DISTINCT s.owner_id
+           FROM order_items oi
+           JOIN stores s ON oi.store_id = s.id
+           WHERE oi.order_id = ?`,
+          [id],
+        );
+        for (const owner of storeOwners) {
+          if (!owner.owner_id) continue;
+          req.io.to(`user_${owner.owner_id}`).emit("store_owner_notification", {
+            type: "order_status_update",
+            order_id: id,
+            order_number: order.order_number,
+            status: "delivered",
+            message: `Order ${order.order_number} delivered.`,
+            timestamp: new Date(),
+          });
+        }
 
         // User notification
         const userNotifData = {

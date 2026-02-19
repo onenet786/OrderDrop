@@ -442,6 +442,51 @@ router.get(
   }
 );
 
+router.get(
+  "/store-order-breakdown",
+  authenticateToken,
+  requireStaffAccess,
+  async (req, res) => {
+    try {
+      const [rows] = await req.db.execute(`
+            SELECT
+                s.id as store_id,
+                s.name as store_name,
+                o.id as order_id,
+                o.order_number,
+                o.status,
+                o.created_at,
+                COALESCE(SUM(oi.price * oi.quantity), 0) as store_order_amount
+            FROM order_items oi
+            JOIN orders o ON oi.order_id = o.id
+            JOIN stores s ON oi.store_id = s.id
+            GROUP BY s.id, s.name, o.id, o.order_number, o.status, o.created_at
+            ORDER BY o.created_at DESC
+        `);
+
+      return res.json({
+        success: true,
+        store_orders: rows.map((row) => ({
+          store_id: Number(row.store_id),
+          store_name: row.store_name,
+          order_id: Number(row.order_id),
+          order_number: row.order_number,
+          status: String(row.status || "").toLowerCase(),
+          created_at: row.created_at,
+          store_order_amount: parseFloat(row.store_order_amount || 0),
+        })),
+      });
+    } catch (err) {
+      console.error("Store order breakdown error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch store order breakdown",
+        error: err.message,
+      });
+    }
+  },
+);
+
 // --- Database backup endpoints ---
 // POST /api/admin/backup-db  -> create a new dump (admin only)
 // GET  /api/admin/backup-db/list -> list available dumps

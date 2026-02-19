@@ -62,17 +62,22 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     final status = (notification['status'] ?? nestedData?['status'])
         ?.toString()
         .toLowerCase();
+    final isSilentRefresh = type == 'silent_refresh';
+    final isSilentOrderRefresh =
+        type == 'refresh_orders' && message.trim().isEmpty;
 
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
-        showCloseIcon: true,
-      ),
-    );
+    if (!isSilentRefresh && !isSilentOrderRefresh) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          showCloseIcon: true,
+        ),
+      );
+    }
 
     final isNewOrder = type == 'new_order';
     final isHistoryUpdate = status == 'delivered' ||
@@ -89,6 +94,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     if (isNewOrder ||
         isHistoryUpdate ||
         isActiveUpdate ||
+        isSilentRefresh ||
         type == 'refresh_orders' ||
         type == 'order_status_update') {
       _loadOrders();

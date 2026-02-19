@@ -106,7 +106,10 @@ class NotificationService {
       _socket!.on('order_status_update', (data) {
         _logger.d('Order status update: $data');
         if (_onNotification != null) {
-          _onNotification!(Map<String, dynamic>.from(data));
+          _onNotification!({
+            'type': 'order_status_update',
+            'data': Map<String, dynamic>.from(data),
+          });
         }
       });
 

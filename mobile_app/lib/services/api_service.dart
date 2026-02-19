@@ -651,6 +651,32 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> getStoreOrderBreakdown(
+    String token,
+  ) async {
+    final uri = Uri.parse('$baseUrl/api/admin/store-order-breakdown');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> getAdminWallets(
+    String token, {
+    int page = 1,
+    int limit = 500,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/admin/wallets?page=$page&limit=$limit');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
   static Future<List<dynamic>> getUsers(String token) async {
     final uri = Uri.parse('$baseUrl/api/users');
     _logger.d('ApiService: GET $uri');

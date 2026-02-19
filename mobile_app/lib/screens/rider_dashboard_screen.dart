@@ -134,6 +134,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         : null;
     final type =
         (notification['type'] ?? nestedData?['type'])?.toString().toLowerCase();
+    final status =
+        (notification['status'] ?? nestedData?['status'])?.toString().toLowerCase();
     final message = (notification['message'] ??
                 nestedData?['message'] ??
                 notification['title'] ??
@@ -152,19 +154,26 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         type == 'new_order' ||
         type == 'order_status_update' ||
         type == 'payment_status_update' ||
+        status == 'out_for_delivery' ||
+        status == 'delivered' ||
+        status == 'cancelled' ||
         hasAssignmentPayload;
 
     if (shouldRefresh) {
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-          showCloseIcon: true,
-        ),
-      );
+      final isSilent =
+          type == 'refresh_orders' && (message.isEmpty || message == ' ');
+      if (!isSilent) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.blue,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            showCloseIcon: true,
+          ),
+        );
+      }
       _loadAllData();
       _tabController.animateTo(0); // Switch to Home tab
     }
