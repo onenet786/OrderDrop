@@ -170,6 +170,8 @@ class _StoreScreenState extends State<StoreScreen> {
 
           final store = data['store'];
           final bool isOpen = store['is_open'] == true || store['is_open'] == 1;
+          final String closedReason =
+              (store['status_message'] ?? '').toString().trim();
           final productsList = data['products'] as List<dynamic>? ?? [];
           final products = productsList
               .map((json) => Product.fromJson(json))
@@ -224,6 +226,18 @@ class _StoreScreenState extends State<StoreScreen> {
                                   ),
                                 ),
                               ),
+                              if (!isOpen && closedReason.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                                  child: Text(
+                                    closedReason,
+                                    style: TextStyle(
+                                      color: Colors.red.shade700,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
                               if (ApiService.getImageUrl(
                                 store['image_url'],
                               ).isNotEmpty)

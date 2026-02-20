@@ -15,11 +15,21 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
   final Logger _logger = Logger();
   bool _isLoading = true;
   List<dynamic> _stores = [];
+  List<dynamic> _filteredStores = [];
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadStores();
+    _searchController.addListener(_applySearch);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_applySearch);
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadStores() async {
@@ -27,10 +37,14 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null) return;
 
-      final stores = await ApiService.getStoresForAdmin(token);
+      final stores = await ApiService.getStoresForAdmin(
+        token,
+        includeInactive: true,
+      );
 
       setState(() {
         _stores = stores;
+        _filteredStores = stores;
         _isLoading = false;
       });
     } catch (e) {
@@ -42,6 +56,22 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
         ).showSnackBar(SnackBar(content: Text('Error loading stores: $e')));
       }
     }
+  }
+
+  void _applySearch() {
+    final q = _searchController.text.trim().toLowerCase();
+    if (q.isEmpty) {
+      setState(() => _filteredStores = _stores);
+      return;
+    }
+    setState(() {
+      _filteredStores = _stores.where((s) {
+        final name = (s['name'] ?? s['store_name'] ?? '').toString().toLowerCase();
+        final id = (s['id'] ?? '').toString();
+        final location = (s['location'] ?? '').toString().toLowerCase();
+        return name.contains(q) || id.contains(q) || location.contains(q);
+      }).toList();
+    });
   }
 
   @override
@@ -64,20 +94,46 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadStores,
-              child: _stores.isEmpty
+              child: _filteredStores.isEmpty && _searchController.text.isNotEmpty
+                  ? Center(
+                      child: Text(
+                        'No matching store found',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    )
+                  : _stores.isEmpty
                   ? Center(
                       child: Text(
                         'No stores found',
                         style: TextStyle(color: Colors.grey[600]),
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _stores.length,
-                      itemBuilder: (context, index) {
-                        final store = _stores[index];
-                        return _buildStoreCard(store);
-                      },
+                  : Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search store by name, id, location...',
+                              prefixIcon: const Icon(Icons.search),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _filteredStores.length,
+                            itemBuilder: (context, index) {
+                              final store = _filteredStores[index];
+                              return _buildStoreCard(store);
+                            },
+                          ),
+                        ),
+                      ],
                     ),
             ),
     );
@@ -112,14 +168,19 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            store['name'] ?? store['store_name'] ?? 'Unknown',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                          Expanded(
+                            child: Text(
+                              store['name'] ?? store['store_name'] ?? 'Unknown',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
                             ),
                           ),
+                          const SizedBox(width: 8),
                           _buildStatusBadge(store),
                         ],
                       ),
@@ -185,8 +246,11 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildInfoColumn('Phone', store['phone'] ?? '-'),
-                _buildInfoColumn('Address', store['address'] ?? '-'),
+                Expanded(child: _buildInfoColumn('Phone', store['phone'] ?? '-')),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildInfoColumn('Address', store['address'] ?? '-'),
+                ),
               ],
             ),
           ],
@@ -229,7 +293,9 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
   }
 
   Widget _buildStatusBadge(dynamic store) {
-    final bool isOpen = _checkIsOpen(store['opening_time'], store['closing_time']);
+    final manuallyClosed = store['is_closed'] == true || store['is_closed'] == 1;
+    final bool isOpen =
+        !manuallyClosed && _checkIsOpen(store['opening_time'], store['closing_time']);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -262,7 +328,9 @@ class _ManageStoresScreenState extends State<ManageStoresScreen> {
       children: [
         Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
         Text(
-          value.length > 15 ? '${value.substring(0, 15)}...' : value,
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
         ),
       ],

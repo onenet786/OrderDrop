@@ -366,6 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildStoreCard(dynamic store) {
     final bool isOpen = store['is_open'] == true || store['is_open'] == 1;
+    final String closedReason = (store['status_message'] ?? '').toString().trim();
 
     return GestureDetector(
       onTap: () {
@@ -415,16 +416,44 @@ class _HomeScreenState extends State<HomeScreen> {
             // Second Row: Store image container (best fit image)
             Expanded(
               child: ClipRRect(
-                child: Image.network(
-                  ApiService.getImageUrl(store['image_url']),
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (ctx, err, _) => Container(
-                    color: Colors.grey[300],
-                    child: const Center(
-                      child: Icon(Icons.store, size: 40, color: Colors.grey),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.network(
+                      ApiService.getImageUrl(store['image_url']),
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (ctx, err, _) => Container(
+                        color: Colors.grey[300],
+                        child: const Center(
+                          child: Icon(Icons.store, size: 40, color: Colors.grey),
+                        ),
+                      ),
                     ),
-                  ),
+                    if (!isOpen && closedReason.isNotEmpty)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          color: Colors.red.withValues(alpha: 0.88),
+                          child: Text(
+                            closedReason,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),

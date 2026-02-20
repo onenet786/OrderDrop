@@ -95,6 +95,7 @@ const calculateIsOpen = (opening_time, closing_time) => {
 // Get all stores (optionally filter by category via products)
 router.get('/', async (req, res) => {
     try {
+        await ensureStoreStatusMessagesTable(req.db);
         const { category, category_id, search, admin, lite } = req.query;
         const liteMode = String(lite || '').toLowerCase() === '1' || String(lite || '').toLowerCase() === 'true';
         const whereClauses = admin === '1' ? [] : ['s.is_active = true'];
@@ -144,14 +145,16 @@ router.get('/', async (req, res) => {
         const [stores] = await req.db.execute(
             liteMode
                 ? `
-            SELECT s.id, s.name, s.payment_term, s.is_active
+            SELECT s.id, s.name, s.payment_term, s.is_active, sm.is_closed, sm.status_message
             FROM stores s
+            LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             ${whereClause}
             ORDER BY s.name ASC
         `
                 : `
-            SELECT s.*, u.email as owner_email, CONCAT(u.first_name, ' ', u.last_name) as owner_name
+            SELECT s.*, sm.is_closed, sm.status_message, u.email as owner_email, CONCAT(u.first_name, ' ', u.last_name) as owner_name
             FROM stores s
+            LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             LEFT JOIN users u ON s.owner_id = u.id
             ${whereClause}
             ORDER BY s.is_active DESC, s.priority DESC, s.id DESC
@@ -166,36 +169,44 @@ router.get('/', async (req, res) => {
                     id: store.id,
                     name: store.name,
                     payment_term: store.payment_term || null,
-                    is_active: !!store.is_active
+                    is_active: !!store.is_active,
+                    is_closed: !!store.is_closed,
+                    status_message: store.status_message || ''
                 }))
             });
         }
 
         res.json({
             success: true,
-            stores: stores.map(store => ({
-                id: store.id,
-                name: store.name,
-                location: store.location,
-                opening_time: store.opening_time || null,
-                closing_time: store.closing_time || null,
-                payment_term: store.payment_term || null,
-                latitude: store.latitude,
-                longitude: store.longitude,
-                rating: store.rating,
-                delivery_time: store.delivery_time,
-                phone: store.phone,
-                email: store.email,
-                address: store.address,
-                description: store.description,
-                image_url: store.cover_image || null,
-                is_active: store.is_active,
-                is_open: calculateIsOpen(store.opening_time, store.closing_time),
-                priority: store.priority || null,
-                owner_id: store.owner_id || null,
-                owner_email: store.owner_email || null,
-                owner_name: store.owner_name || null
-            })).sort((a, b) => (b.is_open === true ? 1 : 0) - (a.is_open === true ? 1 : 0))
+            stores: stores.map(store => {
+                const manuallyClosed = !!store.is_closed;
+                const scheduleOpen = calculateIsOpen(store.opening_time, store.closing_time);
+                return {
+                    id: store.id,
+                    name: store.name,
+                    location: store.location,
+                    opening_time: store.opening_time || null,
+                    closing_time: store.closing_time || null,
+                    payment_term: store.payment_term || null,
+                    latitude: store.latitude,
+                    longitude: store.longitude,
+                    rating: store.rating,
+                    delivery_time: store.delivery_time,
+                    phone: store.phone,
+                    email: store.email,
+                    address: store.address,
+                    description: store.description,
+                    image_url: store.cover_image || null,
+                    is_active: store.is_active,
+                    is_closed: manuallyClosed,
+                    status_message: store.status_message || '',
+                    is_open: !manuallyClosed && scheduleOpen,
+                    priority: store.priority || null,
+                    owner_id: store.owner_id || null,
+                    owner_email: store.owner_email || null,
+                    owner_name: store.owner_name || null
+                };
+            }).sort((a, b) => (b.is_open === true ? 1 : 0) - (a.is_open === true ? 1 : 0))
         });
 
     } catch (error) {
@@ -386,11 +397,13 @@ router.put('/status-message', authenticateToken, requireStoreOwner, async (req, 
 
 router.get('/:id', async (req, res) => {
     try {
+        await ensureStoreStatusMessagesTable(req.db);
         const { id } = req.params;
 
         const [stores] = await req.db.execute(`
-            SELECT s.*, u.first_name as owner_first_name, u.last_name as owner_last_name, u.email as owner_email
+            SELECT s.*, sm.is_closed, sm.status_message, u.first_name as owner_first_name, u.last_name as owner_last_name, u.email as owner_email
             FROM stores s
+            LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             LEFT JOIN users u ON s.owner_id = u.id
             WHERE s.id = ? AND s.is_active = true
         `, [id]);
@@ -417,6 +430,8 @@ router.get('/:id', async (req, res) => {
         `, [id]);
 
         const variantsByProductId = await loadProductSizeVariants(req.db, (products || []).map(p => p.id));
+        const manuallyClosed = !!store.is_closed;
+        const scheduleOpen = calculateIsOpen(store.opening_time, store.closing_time);
 
         res.json({
             success: true,
@@ -438,7 +453,9 @@ router.get('/:id', async (req, res) => {
                 owner_id: store.owner_id,
                 category_id: store.category_id || null,
                 image_url: store.cover_image || null,
-                is_open: calculateIsOpen(store.opening_time, store.closing_time),
+                is_closed: manuallyClosed,
+                status_message: store.status_message || '',
+                is_open: !manuallyClosed && scheduleOpen,
                 priority: store.priority || null,
                 owner_email: store.owner_email || null,
                 owner_name: store.owner_name || null

@@ -124,7 +124,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Set Store Closed Message',
+            tooltip: 'Update Store Status',
             icon: const Icon(Icons.campaign, color: Colors.indigo),
             onPressed: _openStoreStatusMessageDialog,
           ),
@@ -279,7 +279,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.campaign),
-            title: const Text('Store Closed Message'),
+            title: const Text('Store Status'),
             onTap: () {
               Navigator.of(context).pop();
               _openStoreStatusMessageDialog();
@@ -436,6 +436,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       int selectedStoreId = normalizedStores.first['id'] as int;
       bool isClosed = false;
       final messageCtrl = TextEditingController();
+      final searchCtrl = TextEditingController();
+      List<Map<String, dynamic>> visibleStores = List<Map<String, dynamic>>.from(
+        normalizedStores,
+      );
 
       Future<void> loadStoreStatus(int storeId, void Function(VoidCallback) setDialogState) async {
         try {
@@ -472,35 +476,90 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return StatefulBuilder(
             builder: (dialogContext, setDialogState) {
               return AlertDialog(
-                title: const Text('Set Store Closed Message'),
+                title: const Text('Update Store Status'),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      DropdownButtonFormField<int>(
-                        initialValue: selectedStoreId,
+                      TextField(
+                        controller: searchCtrl,
                         decoration: const InputDecoration(
-                          labelText: 'Store',
+                          prefixIcon: Icon(Icons.search),
+                          labelText: 'Search Store',
                           border: OutlineInputBorder(),
                         ),
-                        items: normalizedStores
-                            .map(
-                              (s) => DropdownMenuItem<int>(
-                                value: s['id'] as int,
-                                child: Text((s['name'] ?? 'Store').toString()),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) async {
-                          if (value == null) return;
-                          setDialogState(() => selectedStoreId = value);
-                          await loadStoreStatus(value, setDialogState);
+                        onChanged: (value) {
+                          final q = value.trim().toLowerCase();
+                          setDialogState(() {
+                            visibleStores = normalizedStores.where((s) {
+                              final name = (s['name'] ?? '')
+                                  .toString()
+                                  .toLowerCase();
+                              final id = (s['id'] ?? '').toString();
+                              return q.isEmpty ||
+                                  name.contains(q) ||
+                                  id.contains(q);
+                            }).toList();
+                            if (visibleStores.isNotEmpty &&
+                                !visibleStores.any((s) => s['id'] == selectedStoreId)) {
+                              selectedStoreId = visibleStores.first['id'] as int;
+                            }
+                          });
                         },
                       ),
+                      const SizedBox(height: 8),
+                      if (visibleStores.isEmpty)
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text('No stores match your search'),
+                          ),
+                        )
+                      else
+                        DropdownButtonFormField<int>(
+                          key: ValueKey('store-$selectedStoreId'),
+                          isExpanded: true,
+                          initialValue: visibleStores.any(
+                            (s) => s['id'] == selectedStoreId,
+                          )
+                              ? selectedStoreId
+                              : (visibleStores.first['id'] as int),
+                          decoration: const InputDecoration(
+                            labelText: 'Select Store',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: visibleStores
+                              .map(
+                                (s) => DropdownMenuItem<int>(
+                                  value: s['id'] as int,
+                                  child: Text(
+                                    (s['name'] ?? 'Store').toString(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          selectedItemBuilder: (context) => visibleStores
+                              .map(
+                                (s) => Text(
+                                  (s['name'] ?? 'Store').toString(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) async {
+                            if (value == null) return;
+                            setDialogState(() => selectedStoreId = value);
+                            await loadStoreStatus(value, setDialogState);
+                          },
+                        ),
                       const SizedBox(height: 10),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Mark Store as Closed'),
+                        title: const Text('Mark as Closed'),
                         value: isClosed,
                         onChanged: (v) => setDialogState(() => isClosed = v),
                       ),
@@ -509,7 +568,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         maxLines: 4,
                         maxLength: 500,
                         decoration: const InputDecoration(
-                          labelText: 'Closed Message',
+                          labelText: 'Status Message',
                           hintText: 'Store is closed due to maintenance...',
                           border: OutlineInputBorder(),
                         ),
@@ -534,7 +593,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 statusMessage: messageCtrl.text.trim(),
                                 isClosed: isClosed,
                               );
-                              if (!mounted) return;
+                              if (!mounted || !ctx.mounted) return;
                               Navigator.of(ctx).pop();
                               Notifier.success(
                                 context,
@@ -561,41 +620,63 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildQuickMenu(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _buildQuickMenuItem(
-          context: context,
-          icon: Icons.store,
-          label: 'Stores',
-          route: '/manage-stores',
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white70),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _buildQuickMenuItem(
+              context: context,
+              icon: Icons.store,
+              label: 'Stores',
+              route: '/manage-stores',
+            ),
+            const SizedBox(width: 10),
+            _buildQuickMenuItem(
+              context: context,
+              icon: Icons.shopping_bag,
+              label: 'Products',
+              route: '/manage-products',
+            ),
+            const SizedBox(width: 10),
+            _buildQuickMenuItem(
+              context: context,
+              icon: Icons.people,
+              label: 'Users',
+              route: '/manage-users',
+            ),
+            const SizedBox(width: 10),
+            _buildQuickMenuItem(
+              context: context,
+              icon: Icons.delivery_dining,
+              label: 'Riders',
+              route: '/manage-riders',
+            ),
+            const SizedBox(width: 10),
+            _buildQuickMenuItem(
+              context: context,
+              icon: Icons.inventory_2,
+              label: 'Inventory',
+              route: '/inventory-report',
+            ),
+            const SizedBox(width: 10),
+            _buildQuickMenuItem(
+              context: context,
+              icon: Icons.campaign,
+              label: 'Status',
+              onTap: _openStoreStatusMessageDialog,
+            ),
+            const SizedBox(width: 4),
+          ],
         ),
-        _buildQuickMenuItem(
-          context: context,
-          icon: Icons.shopping_bag,
-          label: 'Products & Variants',
-          route: '/manage-products',
-        ),
-        _buildQuickMenuItem(
-          context: context,
-          icon: Icons.people,
-          label: 'Users',
-          route: '/manage-users',
-        ),
-        _buildQuickMenuItem(
-          context: context,
-          icon: Icons.delivery_dining,
-          label: 'Riders',
-          route: '/manage-riders',
-        ),
-        _buildQuickMenuItem(
-          context: context,
-          icon: Icons.inventory_2,
-          label: 'Inventory Reports',
-          route: '/inventory-report',
-        ),
-      ],
+      ),
     );
   }
 
@@ -603,28 +684,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required BuildContext context,
     required IconData icon,
     required String label,
-    required String route,
+    String? route,
+    VoidCallback? onTap,
   }) {
+    final VoidCallback handleTap =
+        onTap ?? () => Navigator.of(context).pushNamed(route!);
     return InkWell(
-      onTap: () => Navigator.of(context).pushNamed(route),
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        width: 120,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.grey.shade300),
-        ),
+      onTap: handleTap,
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 56,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: Colors.indigo),
-            const SizedBox(height: 6),
+            Icon(icon, color: Colors.indigo, size: 19),
+            const SizedBox(height: 2),
             Text(
               label,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 9.5),
             ),
           ],
         ),
@@ -681,7 +761,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6.8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -693,7 +773,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   value,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -710,12 +790,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ),
           Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: Colors.white, size: 18),
+            child: Icon(icon, color: Colors.white, size: 16),
           ),
         ],
       ),

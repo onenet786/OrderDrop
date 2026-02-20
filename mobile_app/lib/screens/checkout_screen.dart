@@ -182,14 +182,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         final data = await ApiService.getStoreDetails(storeId);
         if (data['success'] == true) {
           final store = data['store'];
-          if (!_checkIsOpen(store['opening_time'], store['closing_time'])) {
+          final bool isOpen = store['is_open'] == true || store['is_open'] == 1;
+          if (!isOpen || !_checkIsOpen(store['opening_time'], store['closing_time'])) {
+            final reason = (store['status_message'] ?? '').toString().trim();
             if (!mounted) return;
             setState(() {
               _isLoading = false;
             });
             Notifier.error(
               context,
-              'The store "${store['name']}" is currently closed. You cannot place orders at this time.',
+              reason.isNotEmpty
+                  ? 'The store "${store['name']}" is currently closed. Reason: $reason'
+                  : 'The store "${store['name']}" is currently closed. You cannot place orders at this time.',
               duration: const Duration(seconds: 4),
               sanitize: false,
             );

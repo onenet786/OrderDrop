@@ -480,7 +480,12 @@ router.post("/", authenticateToken, async (req, res) => {
     if (storeIdArray.length > 0) {
       const placeholders = storeIdArray.map(() => "?").join(",");
       const [storeRows] = await req.db.execute(
-        `SELECT id, name, opening_time, closing_time, is_active FROM stores WHERE id IN (${placeholders})`,
+        `SELECT s.id, s.name, s.opening_time, s.closing_time, s.is_active,
+                COALESCE(sm.is_closed, 0) as is_closed,
+                sm.status_message
+           FROM stores s
+           LEFT JOIN store_status_messages sm ON sm.store_id = s.id
+          WHERE s.id IN (${placeholders})`,
         storeIdArray,
       );
 
@@ -500,6 +505,15 @@ router.post("/", authenticateToken, async (req, res) => {
           return res.status(400).json({
             success: false,
             message: `Store "${s.name}" is not active at the moment. Please try later.`,
+          });
+        }
+        if (s.is_closed) {
+          const reason = s.status_message
+            ? ` Reason: ${s.status_message}`
+            : "";
+          return res.status(400).json({
+            success: false,
+            message: `Store "${s.name}" is currently closed.${reason}`,
           });
         }
         const openD = parseTimeStr(s.opening_time);

@@ -218,10 +218,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       String initialMessage = '';
       bool initialClosed = false;
       try {
-        final status = await ApiService.getStoreStatusMessage(
-          token,
-          storeId: storeId,
-        );
+        final status = await ApiService.getStoreStatusMessage(token);
         initialMessage = (status['status_message'] ?? '').toString();
         initialClosed = status['is_closed'] == true;
       } catch (_) {}
@@ -237,14 +234,14 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
           return StatefulBuilder(
             builder: (dialogContext, setDialogState) {
               return AlertDialog(
-                title: const Text('Set Store Closed Message'),
+                title: const Text('Update Store Status'),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Mark Store as Closed'),
+                        title: const Text('Mark as Closed'),
                         value: isClosed,
                         onChanged: (v) => setDialogState(() => isClosed = v),
                       ),
@@ -253,7 +250,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                         maxLines: 4,
                         maxLength: 500,
                         decoration: const InputDecoration(
-                          labelText: 'Closed Message',
+                          labelText: 'Status Message',
                           hintText: 'Store is closed due to maintenance...',
                           border: OutlineInputBorder(),
                         ),
@@ -274,11 +271,10 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                             try {
                               await ApiService.setStoreStatusMessage(
                                 token,
-                                storeId: storeId,
                                 statusMessage: messageCtrl.text.trim(),
                                 isClosed: isClosed,
                               );
-                              if (!mounted) return;
+                              if (!mounted || !ctx.mounted) return;
                               Navigator.of(ctx).pop();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
@@ -327,24 +323,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
         elevation: 0, // Remove shadow to blend with body container
         title: const Text('Store Dashboard'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.inventory_2),
-            tooltip: 'My Products (Price Update)',
-            onPressed: () => Navigator.of(context).pushNamed('/manage-products'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.campaign),
-            tooltip: 'Set Store Closed Message',
-            onPressed: _openStoreStatusMessageDialog,
-          ),
           const NotificationBellWidget(),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadOrders),
-          IconButton(
-            icon: const Icon(Icons.key),
-            onPressed: () =>
-                Navigator.of(context).pushNamed('/change-password'),
-            tooltip: 'Change Password',
-          ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
       ),
@@ -523,65 +502,71 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
   }
 
   Widget _buildQuickActions() {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          InkWell(
-            onTap: () => Navigator.of(context).pushNamed('/manage-products'),
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white70),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.inventory_2, color: Colors.indigo),
-                  SizedBox(width: 8),
-                  Text(
-                    'My Products (Price Update)',
-                    style: TextStyle(
-                      color: Colors.black87,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white70),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _buildQuickBarItem(
+              icon: Icons.inventory_2,
+              label: 'Products',
+              onTap: () => Navigator.of(context).pushNamed('/manage-products'),
             ),
-          ),
-          InkWell(
-            onTap: _openStoreStatusMessageDialog,
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white70),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.campaign, color: Colors.indigo),
-                  SizedBox(width: 8),
-                  Text(
-                    'Store Closed Message',
-                    style: TextStyle(
-                      color: Colors.black87,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+            const SizedBox(width: 12),
+            _buildQuickBarItem(
+              icon: Icons.campaign,
+              label: 'Status',
+              onTap: _openStoreStatusMessageDialog,
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            _buildQuickBarItem(
+              icon: Icons.refresh,
+              label: 'Refresh',
+              onTap: _loadOrders,
+            ),
+            const SizedBox(width: 12),
+            _buildQuickBarItem(
+              icon: Icons.key,
+              label: 'Password',
+              onTap: () => Navigator.of(context).pushNamed('/change-password'),
+            ),
+            const SizedBox(width: 6),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickBarItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 58,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.indigo, size: 20),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }

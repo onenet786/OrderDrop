@@ -398,8 +398,6 @@ router.post(
       }
 
       const { email, password } = req.body;
-      if (process.env.NODE_ENV === "development")
-        console.log("[auth] Login attempt:", email);
 
       // Try USERS first
       const [users] = await req.db.execute(

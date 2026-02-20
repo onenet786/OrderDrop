@@ -85,7 +85,6 @@ router.post('/', authenticateToken, requireAdmin, [
         }
 
         const { firstName, lastName, email, password, phone, address, user_type, is_verified, is_active, store_id } = req.body;
-        console.log('Creating user:', email, 'Type:', user_type, 'Store:', store_id);
 
         const [existing] = await req.db.execute('SELECT id FROM users WHERE email = ?', [email]);
         if (existing.length > 0) {
