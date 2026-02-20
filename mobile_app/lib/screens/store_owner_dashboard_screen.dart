@@ -201,6 +201,114 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     }
   }
 
+  Future<void> _openStoreStatusMessageDialog() async {
+    try {
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      if (token == null) return;
+
+      final storeId = int.tryParse((_stats['store_id'] ?? '').toString());
+      if (storeId == null || storeId <= 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Store info not loaded yet')),
+        );
+        return;
+      }
+
+      String initialMessage = '';
+      bool initialClosed = false;
+      try {
+        final status = await ApiService.getStoreStatusMessage(
+          token,
+          storeId: storeId,
+        );
+        initialMessage = (status['status_message'] ?? '').toString();
+        initialClosed = status['is_closed'] == true;
+      } catch (_) {}
+
+      if (!mounted) return;
+      final messageCtrl = TextEditingController(text: initialMessage);
+      bool isClosed = initialClosed;
+      bool saving = false;
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) {
+              return AlertDialog(
+                title: const Text('Set Store Closed Message'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Mark Store as Closed'),
+                        value: isClosed,
+                        onChanged: (v) => setDialogState(() => isClosed = v),
+                      ),
+                      TextField(
+                        controller: messageCtrl,
+                        maxLines: 4,
+                        maxLength: 500,
+                        decoration: const InputDecoration(
+                          labelText: 'Closed Message',
+                          hintText: 'Store is closed due to maintenance...',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            setDialogState(() => saving = true);
+                            try {
+                              await ApiService.setStoreStatusMessage(
+                                token,
+                                storeId: storeId,
+                                statusMessage: messageCtrl.text.trim(),
+                                isClosed: isClosed,
+                              );
+                              if (!mounted) return;
+                              Navigator.of(ctx).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Store message updated'),
+                                ),
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              setDialogState(() => saving = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Failed to save: $e')),
+                              );
+                            }
+                          },
+                    child: const Text('Save'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to open store message dialog: $e')),
+      );
+    }
+  }
+
   void _logout() {
     Provider.of<AuthProvider>(context, listen: false).logout();
     Navigator.of(
@@ -223,6 +331,11 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
             icon: const Icon(Icons.inventory_2),
             tooltip: 'My Products (Price Update)',
             onPressed: () => Navigator.of(context).pushNamed('/manage-products'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.campaign),
+            tooltip: 'Set Store Closed Message',
+            onPressed: _openStoreStatusMessageDialog,
           ),
           const NotificationBellWidget(),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _loadOrders),
@@ -433,6 +546,32 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                   SizedBox(width: 8),
                   Text(
                     'My Products (Price Update)',
+                    style: TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: _openStoreStatusMessageDialog,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white70),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.campaign, color: Colors.indigo),
+                  SizedBox(width: 8),
+                  Text(
+                    'Store Closed Message',
                     style: TextStyle(
                       color: Colors.black87,
                       fontWeight: FontWeight.w600,

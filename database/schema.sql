@@ -47,6 +47,20 @@ CREATE TABLE stores (
     UNIQUE KEY unique_priority (priority)
 );
 
+-- Store status messages (closed reason / temporary notices)
+CREATE TABLE store_status_messages (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    store_id INT NOT NULL,
+    status_message TEXT,
+    is_closed BOOLEAN DEFAULT FALSE,
+    updated_by INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_store_status_message_store (store_id),
+    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
 -- Categories table
 CREATE TABLE categories (
     id INT PRIMARY KEY AUTO_INCREMENT,

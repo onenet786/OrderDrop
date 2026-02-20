@@ -123,6 +123,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Set Store Closed Message',
+            icon: const Icon(Icons.campaign, color: Colors.indigo),
+            onPressed: _openStoreStatusMessageDialog,
+          ),
           const NotificationBellWidget(),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
@@ -273,6 +278,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             },
           ),
           ListTile(
+            leading: const Icon(Icons.campaign),
+            title: const Text('Store Closed Message'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _openStoreStatusMessageDialog();
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.shopping_bag),
             title: const Text('Products & Variants'),
             onTap: () {
@@ -391,6 +404,160 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _openStoreStatusMessageDialog() async {
+    try {
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      if (token == null) return;
+
+      final stores = await ApiService.getStoresForAdmin(
+        token,
+        includeInactive: true,
+      );
+      if (!mounted) return;
+      if (stores.isEmpty) {
+        Notifier.error(context, 'No stores found');
+        return;
+      }
+
+      final normalizedStores = stores
+          .map((s) => {
+                'id': int.tryParse((s['id'] ?? '').toString()),
+                'name': (s['name'] ?? 'Store').toString(),
+              })
+          .where((s) => s['id'] != null)
+          .toList();
+      if (normalizedStores.isEmpty) {
+        Notifier.error(context, 'No valid stores found');
+        return;
+      }
+
+      int selectedStoreId = normalizedStores.first['id'] as int;
+      bool isClosed = false;
+      final messageCtrl = TextEditingController();
+
+      Future<void> loadStoreStatus(int storeId, void Function(VoidCallback) setDialogState) async {
+        try {
+          final status = await ApiService.getStoreStatusMessage(
+            token,
+            storeId: storeId,
+          );
+          setDialogState(() {
+            isClosed = status['is_closed'] == true;
+            messageCtrl.text = (status['status_message'] ?? '').toString();
+          });
+        } catch (_) {
+          setDialogState(() {
+            isClosed = false;
+            messageCtrl.text = '';
+          });
+        }
+      }
+
+      try {
+        final initial = await ApiService.getStoreStatusMessage(
+          token,
+          storeId: selectedStoreId,
+        );
+        isClosed = initial['is_closed'] == true;
+        messageCtrl.text = (initial['status_message'] ?? '').toString();
+      } catch (_) {}
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          bool saving = false;
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) {
+              return AlertDialog(
+                title: const Text('Set Store Closed Message'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<int>(
+                        initialValue: selectedStoreId,
+                        decoration: const InputDecoration(
+                          labelText: 'Store',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: normalizedStores
+                            .map(
+                              (s) => DropdownMenuItem<int>(
+                                value: s['id'] as int,
+                                child: Text((s['name'] ?? 'Store').toString()),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) async {
+                          if (value == null) return;
+                          setDialogState(() => selectedStoreId = value);
+                          await loadStoreStatus(value, setDialogState);
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Mark Store as Closed'),
+                        value: isClosed,
+                        onChanged: (v) => setDialogState(() => isClosed = v),
+                      ),
+                      TextField(
+                        controller: messageCtrl,
+                        maxLines: 4,
+                        maxLength: 500,
+                        decoration: const InputDecoration(
+                          labelText: 'Closed Message',
+                          hintText: 'Store is closed due to maintenance...',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            setDialogState(() => saving = true);
+                            try {
+                              await ApiService.setStoreStatusMessage(
+                                token,
+                                storeId: selectedStoreId,
+                                statusMessage: messageCtrl.text.trim(),
+                                isClosed: isClosed,
+                              );
+                              if (!mounted) return;
+                              Navigator.of(ctx).pop();
+                              Notifier.success(
+                                context,
+                                'Store message updated successfully',
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              setDialogState(() => saving = false);
+                              Notifier.error(context, 'Failed to save: $e');
+                            }
+                          },
+                    child: const Text('Save'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Notifier.error(context, 'Failed to open store message dialog: $e');
+    }
   }
 
   Widget _buildQuickMenu(BuildContext context) {

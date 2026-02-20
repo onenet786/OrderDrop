@@ -11,6 +11,21 @@ const upload = multer({ dest: path.join(__dirname, '..', 'uploads', 'tmp') });
 
 const router = express.Router();
 
+async function ensureStoreStatusMessagesTable(db) {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS store_status_messages (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            store_id INT NOT NULL,
+            status_message TEXT NULL,
+            is_closed BOOLEAN DEFAULT FALSE,
+            updated_by INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_store_status_message_store (store_id)
+        )
+    `);
+}
+
 async function loadProductSizeVariants(db, productIds) {
     try {
         const ids = (Array.isArray(productIds) ? productIds : [])
@@ -194,6 +209,181 @@ router.get('/', async (req, res) => {
 });
 
 // Get store by ID
+router.get('/status-message', authenticateToken, requireStoreOwner, async (req, res) => {
+    try {
+        await ensureStoreStatusMessagesTable(req.db);
+
+        const requestedStoreId = req.query.store_id === undefined
+            ? null
+            : parseInt(String(req.query.store_id), 10);
+
+        let storeId = null;
+        if (req.user.user_type === 'admin') {
+            if (!Number.isInteger(requestedStoreId) || requestedStoreId <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'store_id is required for admin users'
+                });
+            }
+            storeId = requestedStoreId;
+        } else {
+            if (Number.isInteger(requestedStoreId) && requestedStoreId > 0) {
+                const [owned] = await req.db.execute(
+                    'SELECT id FROM stores WHERE id = ? AND owner_id = ? LIMIT 1',
+                    [requestedStoreId, req.user.id]
+                );
+                if (!owned.length) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'You do not have permission for this store'
+                    });
+                }
+                storeId = requestedStoreId;
+            } else {
+                const [ownedStores] = await req.db.execute(
+                    'SELECT id FROM stores WHERE owner_id = ? ORDER BY id ASC LIMIT 1',
+                    [req.user.id]
+                );
+                if (!ownedStores.length) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'No store found for this owner'
+                    });
+                }
+                storeId = ownedStores[0].id;
+            }
+        }
+
+        const [existingStore] = await req.db.execute(
+            'SELECT id FROM stores WHERE id = ? LIMIT 1',
+            [storeId]
+        );
+        if (!existingStore.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'Store not found'
+            });
+        }
+
+        const [rows] = await req.db.execute(
+            'SELECT status_message, is_closed, updated_at FROM store_status_messages WHERE store_id = ? LIMIT 1',
+            [storeId]
+        );
+
+        const row = rows[0] || null;
+        return res.json({
+            success: true,
+            store_id: storeId,
+            status_message: row?.status_message || '',
+            is_closed: !!row?.is_closed,
+            updated_at: row?.updated_at || null
+        });
+    } catch (error) {
+        console.error('Error fetching store status message:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch store status message',
+            error: error.message
+        });
+    }
+});
+
+router.put('/status-message', authenticateToken, requireStoreOwner, async (req, res) => {
+    try {
+        await ensureStoreStatusMessagesTable(req.db);
+
+        const requestedStoreId = req.body.store_id === undefined
+            ? null
+            : parseInt(String(req.body.store_id), 10);
+        const rawMessage = (req.body.status_message ?? '').toString();
+        const isClosed = !!req.body.is_closed;
+        const statusMessage = rawMessage.trim();
+
+        if (statusMessage.length > 500) {
+            return res.status(400).json({
+                success: false,
+                message: 'Status message must be 500 characters or less'
+            });
+        }
+
+        let storeId = null;
+        if (req.user.user_type === 'admin') {
+            if (!Number.isInteger(requestedStoreId) || requestedStoreId <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'store_id is required for admin users'
+                });
+            }
+            storeId = requestedStoreId;
+        } else {
+            if (Number.isInteger(requestedStoreId) && requestedStoreId > 0) {
+                const [owned] = await req.db.execute(
+                    'SELECT id FROM stores WHERE id = ? AND owner_id = ? LIMIT 1',
+                    [requestedStoreId, req.user.id]
+                );
+                if (!owned.length) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'You do not have permission for this store'
+                    });
+                }
+                storeId = requestedStoreId;
+            } else {
+                const [ownedStores] = await req.db.execute(
+                    'SELECT id FROM stores WHERE owner_id = ? ORDER BY id ASC LIMIT 1',
+                    [req.user.id]
+                );
+                if (!ownedStores.length) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'No store found for this owner'
+                    });
+                }
+                storeId = ownedStores[0].id;
+            }
+        }
+
+        const [existingStore] = await req.db.execute(
+            'SELECT id FROM stores WHERE id = ? LIMIT 1',
+            [storeId]
+        );
+        if (!existingStore.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'Store not found'
+            });
+        }
+
+        await req.db.execute(
+            `
+            INSERT INTO store_status_messages (store_id, status_message, is_closed, updated_by)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                status_message = VALUES(status_message),
+                is_closed = VALUES(is_closed),
+                updated_by = VALUES(updated_by),
+                updated_at = CURRENT_TIMESTAMP
+            `,
+            [storeId, statusMessage || null, isClosed ? 1 : 0, req.user.id]
+        );
+
+        return res.json({
+            success: true,
+            message: 'Store status message updated successfully',
+            store_id: storeId,
+            status_message: statusMessage,
+            is_closed: isClosed
+        });
+    } catch (error) {
+        console.error('Error updating store status message:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to update store status message',
+            error: error.message
+        });
+    }
+});
+
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;

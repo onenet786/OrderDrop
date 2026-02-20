@@ -219,6 +219,46 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> getStoreStatusMessage(
+    String token, {
+    int? storeId,
+  }) async {
+    final query = (storeId != null && storeId > 0) ? '?store_id=$storeId' : '';
+    final uri = Uri.parse('$baseUrl/api/stores/status-message$query');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> setStoreStatusMessage(
+    String token, {
+    int? storeId,
+    required String statusMessage,
+    required bool isClosed,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/stores/status-message');
+    _logger.d('ApiService: PUT $uri');
+    final body = <String, dynamic>{
+      'status_message': statusMessage,
+      'is_closed': isClosed,
+    };
+    if (storeId != null && storeId > 0) {
+      body['store_id'] = storeId;
+    }
+    final response = await http.put(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _handleResponse(response);
+  }
+
   static Future<List<dynamic>> getOrders(String token) async {
     final uri = Uri.parse('$baseUrl/api/orders');
     _logger.d('ApiService: GET $uri');
@@ -688,8 +728,13 @@ class ApiService {
     return data['users'] ?? [];
   }
 
-  static Future<List<dynamic>> getStoresForAdmin(String token) async {
-    final uri = Uri.parse('$baseUrl/api/stores');
+  static Future<List<dynamic>> getStoresForAdmin(
+    String token, {
+    bool includeInactive = false,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/api/stores${includeInactive ? '?admin=1' : ''}',
+    );
     _logger.d('ApiService: GET $uri');
     final response = await http.get(
       uri,
