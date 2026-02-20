@@ -30,11 +30,79 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
       if (token == null) return;
 
       final data = await ApiService.getInventoryReport(token);
+      final rawStoreItems =
+          (data['store_items'] as List?) ?? (data['store_wise'] as List?) ?? [];
+      final rawCategoryItems =
+          (data['category_items'] as List?) ??
+          (data['category_wise'] as List?) ??
+          [];
+      final breakdown = (data['store_category_breakdown'] as List?) ?? [];
+      final summary = data['total_stats'] ?? data['summary'];
+
+      final storeBreakdownMap = <String, List<Map<String, dynamic>>>{};
+      final categoryBreakdownMap = <String, List<Map<String, dynamic>>>{};
+
+      for (final row in breakdown) {
+        final item = Map<String, dynamic>.from(row as Map);
+        final storeKey = (item['store_id'] ?? '').toString();
+        final categoryKey = (item['category_id'] ?? '').toString();
+        final stockQty = _asInt(item['stock_quantity']);
+        final value = _asDouble(item['inventory_value']);
+        final unitPrice = stockQty > 0 ? value / stockQty : 0.0;
+
+        storeBreakdownMap.putIfAbsent(storeKey, () => []).add({
+          'product_name': item['category_name'] ?? 'Uncategorized',
+          'stock_quantity': stockQty,
+          'price': unitPrice,
+          'inventory_value': value,
+        });
+
+        categoryBreakdownMap.putIfAbsent(categoryKey, () => []).add({
+          'product_name': item['store_name'] ?? 'Unknown Store',
+          'store_name': item['store_name'] ?? 'Unknown Store',
+          'stock_quantity': stockQty,
+          'price': unitPrice,
+          'inventory_value': value,
+        });
+      }
+
+      final normalizedStoreItems = rawStoreItems.map((row) {
+        final item = Map<String, dynamic>.from(row as Map);
+        final storeKey = (item['store_id'] ?? '').toString();
+        return {
+          ...item,
+          'items':
+              (item['items'] as List?) ?? storeBreakdownMap[storeKey] ?? <Map>[],
+          'total_quantity': _asInt(item['total_quantity'] ?? item['total_stock']),
+          'total_value':
+              _asDouble(item['total_value'] ?? item['total_inventory_value']),
+        };
+      }).toList();
+
+      final normalizedCategoryItems = rawCategoryItems.map((row) {
+        final item = Map<String, dynamic>.from(row as Map);
+        final categoryKey = (item['category_id'] ?? '').toString();
+        return {
+          ...item,
+          'products':
+              (item['products'] as List?) ??
+              categoryBreakdownMap[categoryKey] ??
+              <Map>[],
+          'total_quantity': _asInt(item['total_quantity'] ?? item['total_stock']),
+          'inventory_value':
+              _asDouble(item['inventory_value'] ?? item['total_inventory_value']),
+          'total_products':
+              _asInt(item['total_products']) > 0
+                  ? _asInt(item['total_products'])
+                  : ((item['products'] as List?)?.length ??
+                      (categoryBreakdownMap[categoryKey]?.length ?? 0)),
+        };
+      }).toList();
 
       setState(() {
-        _storeItems = data['store_items'] ?? [];
-        _categoryItems = data['category_items'] ?? [];
-        _totalStats = data['total_stats'];
+        _storeItems = normalizedStoreItems;
+        _categoryItems = normalizedCategoryItems;
+        _totalStats = summary;
         _isLoading = false;
       });
     } catch (e) {
@@ -125,14 +193,16 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
             children: [
               _buildStatItem(
                 'Total Items',
-                _totalStats['total_items']?.toString() ?? '0',
+                (_totalStats['total_items'] ?? _totalStats['total_products'] ?? 0)
+                    .toString(),
                 Icons.inventory,
               ),
-              _buildStatItem(
-                'Total Quantity',
-                _totalStats['total_quantity']?.toString() ?? '0',
-                Icons.shopping_bag,
-              ),
+                _buildStatItem(
+                  'Total Quantity',
+                  (_totalStats['total_quantity'] ?? _totalStats['total_stock'] ?? 0)
+                      .toString(),
+                  Icons.shopping_bag,
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -144,11 +214,11 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                 '\$${(_totalStats['total_inventory_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
                 Icons.monetization_on,
               ),
-              _buildStatItem(
-                'Average Price',
-                '\$${(_totalStats['average_price'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
-                Icons.price_check,
-              ),
+                _buildStatItem(
+                  'Average Price',
+                  '\$${(_asNum(_totalStats['average_price']) ?? ((_asDouble(_totalStats['total_inventory_value']) / (_asInt(_totalStats['total_products']) == 0 ? 1 : _asInt(_totalStats['total_products']))))).toStringAsFixed(2)}',
+                  Icons.price_check,
+                ),
             ],
           ),
         ],
@@ -265,7 +335,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                 ),
                 const Divider(height: 16),
                 const Text(
-                  'Products:',
+                  'Breakdown:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
@@ -368,7 +438,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
           ),
         ),
         subtitle: Text(
-          '${products.length} products | Qty: ${item['total_quantity'] ?? 0}',
+          '${item['total_products'] ?? products.length} products | Qty: ${item['total_quantity'] ?? 0}',
           style: TextStyle(color: Colors.grey[600], fontSize: 12),
         ),
         children: [
@@ -377,7 +447,10 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildInfoRow('Total Products', products.length.toString()),
+                _buildInfoRow(
+                  'Total Products',
+                  (item['total_products'] ?? products.length).toString(),
+                ),
                 _buildInfoRow(
                   'Total Quantity',
                   (item['total_quantity'] ?? 0).toString(),
@@ -388,7 +461,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                 ),
                 const Divider(height: 16),
                 const Text(
-                  'Products:',
+                  'Breakdown:',
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
@@ -463,5 +536,21 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
         ],
       ),
     );
+  }
+
+  num? _asNum(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value;
+    return num.tryParse(value.toString());
+  }
+
+  int _asInt(dynamic value) {
+    final n = _asNum(value);
+    return n?.toInt() ?? 0;
+  }
+
+  double _asDouble(dynamic value) {
+    final n = _asNum(value);
+    return n?.toDouble() ?? 0.0;
   }
 }

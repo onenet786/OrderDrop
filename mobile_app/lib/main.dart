@@ -20,6 +20,7 @@ import 'screens/manage_users_screen.dart';
 import 'screens/manage_riders_screen.dart';
 import 'screens/orders_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/store_balances_screen.dart';
 import 'screens/change_password_screen.dart';
 import 'screens/forgot_password_screen.dart';
 
@@ -85,6 +86,7 @@ class MyApp extends StatelessWidget {
           '/register': (context) => const RegisterScreen(),
           '/home': (context) => const HomeScreen(),
           '/admin': (context) => const AdminDashboardScreen(),
+          '/store-balances': (context) => const StoreBalancesScreen(),
           '/rider': (context) => const RiderDashboardScreen(),
           '/store_owner': (context) => const StoreOwnerDashboardScreen(),
           '/orders': (context) => const OrdersScreen(),
