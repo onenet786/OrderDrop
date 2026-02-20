@@ -17,6 +17,9 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
   List<dynamic> _products = [];
   List<dynamic> _filteredProducts = [];
   final TextEditingController _searchController = TextEditingController();
+  String _selectedStoreFilter = 'all';
+  bool _storeWiseView = true;
+  bool _onlyVariantProducts = false;
 
   @override
   void initState() {
@@ -46,9 +49,9 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
 
       setState(() {
         _products = products;
-        _filteredProducts = products;
         _isLoading = false;
       });
+      _filterProducts();
     } catch (e) {
       _logger.e('Error loading products: $e');
       if (mounted) {
@@ -69,21 +72,51 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
       final description = (product['description'] ?? '')
           .toString()
           .toLowerCase();
-      return name.contains(query) || description.contains(query);
+      final store = (product['store_name'] ?? '').toString().toLowerCase();
+      final variants = (product['size_variants'] as List<dynamic>? ?? []);
+      final hasVariants = variants.isNotEmpty;
+      final variantsText = variants
+          .map((v) => (v['size_label'] ?? v['unit_name'] ?? 'variant').toString())
+          .join(' ')
+          .toLowerCase();
+
+      final queryMatch = name.contains(query) ||
+          description.contains(query) ||
+          store.contains(query) ||
+          variantsText.contains(query);
+
+      final selectedStore = _selectedStoreFilter.toLowerCase();
+      final storeMatch = selectedStore == 'all' ||
+          store == selectedStore;
+      final variantMatch = !_onlyVariantProducts || hasVariants;
+
+      return queryMatch && storeMatch && variantMatch;
     }).toList();
 
     setState(() => _filteredProducts = filtered);
   }
 
+  List<String> _storeFilterOptions() {
+    final stores = _products
+        .map((p) => (p['store_name'] ?? 'Unknown Store').toString())
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return stores;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final isStoreOwner = auth.isStoreOwner;
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
-        title: const Text(
-          'Manage Products',
+        title: Text(
+          isStoreOwner ? 'My Products (Price Update)' : 'Manage Products',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
@@ -99,15 +132,115 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search products...',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: isStoreOwner
+                                ? 'Search by product, description, or variant'
+                                : 'Search by product, store, description, or variant',
+                            prefixIcon: const Icon(Icons.search),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isStoreOwner)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 11,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.indigo.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.indigo.withValues(alpha: 0.20),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Showing only your store products',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                            else
+                              DropdownButtonFormField<String>(
+                                initialValue: _selectedStoreFilter,
+                                decoration: InputDecoration(
+                                  labelText: 'Store',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                ),
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: 'all',
+                                    child: Text('All Stores'),
+                                  ),
+                                  ..._storeFilterOptions().map(
+                                    (store) => DropdownMenuItem(
+                                      value: store.toLowerCase(),
+                                      child: Text(store),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(() => _selectedStoreFilter = value);
+                                  _filterProducts();
+                                },
+                              ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('Store-wise'),
+                                  selected: _storeWiseView,
+                                  onSelected: (v) {
+                                    if (!v) return;
+                                    setState(() => _storeWiseView = true);
+                                  },
+                                ),
+                                ChoiceChip(
+                                  label: const Text('List'),
+                                  selected: !_storeWiseView,
+                                  onSelected: (v) {
+                                    if (!v) return;
+                                    setState(() => _storeWiseView = false);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: FilterChip(
+                            label: const Text('Only products with variants'),
+                            selected: _onlyVariantProducts,
+                            onSelected: (v) {
+                              setState(() => _onlyVariantProducts = v);
+                              _filterProducts();
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   Expanded(
@@ -118,14 +251,16 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                               style: TextStyle(color: Colors.grey[600]),
                             ),
                           )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _filteredProducts.length,
-                            itemBuilder: (context, index) {
-                              final product = _filteredProducts[index];
-                              return _buildProductCard(product);
-                            },
-                          ),
+                        : _storeWiseView
+                            ? _buildStoreWiseList()
+                            : ListView.builder(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: _filteredProducts.length,
+                                itemBuilder: (context, index) {
+                                  final product = _filteredProducts[index];
+                                  return _buildProductCard(product);
+                                },
+                              ),
                   ),
                 ],
               ),
@@ -133,7 +268,55 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
     );
   }
 
+  Widget _buildStoreWiseList() {
+    final grouped = <String, List<dynamic>>{};
+    for (final p in _filteredProducts) {
+      final store = (p['store_name'] ?? 'Unknown Store').toString();
+      grouped.putIfAbsent(store, () => []).add(p);
+    }
+    final stores = grouped.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: stores.length,
+      itemBuilder: (context, index) {
+        final store = stores[index];
+        final items = grouped[store] ?? [];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            title: Text(
+              store,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              '${items.length} products',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
+            children: [
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(10.0),
+                child: Column(
+                  children: items.map<Widget>((p) => _buildProductCard(p)).toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildProductCard(dynamic product) {
+    final variants = (product['size_variants'] as List<dynamic>? ?? []);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -178,7 +361,7 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '\$${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
+                        'PKR ${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -208,6 +391,42 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
                 _buildInfoColumn('Category', product['category_name'] ?? '-'),
               ],
             ),
+            if (variants.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Variants',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: variants.map<Widget>((v) {
+                  final label =
+                      (v['size_label'] ?? v['unit_name'] ?? 'Variant').toString();
+                  final price =
+                      (double.tryParse(v['price']?.toString() ?? '0') ?? 0.0)
+                          .toStringAsFixed(2);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$label - PKR $price',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
           ],
         ),
       ),

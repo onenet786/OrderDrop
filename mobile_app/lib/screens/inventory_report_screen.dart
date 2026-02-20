@@ -211,12 +211,12 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
             children: [
               _buildStatItem(
                 'Total Value',
-                '\$${(_totalStats['total_inventory_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                'PKR ${(_totalStats['total_inventory_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
                 Icons.monetization_on,
               ),
                 _buildStatItem(
                   'Average Price',
-                  '\$${(_asNum(_totalStats['average_price']) ?? ((_asDouble(_totalStats['total_inventory_value']) / (_asInt(_totalStats['total_products']) == 0 ? 1 : _asInt(_totalStats['total_products']))))).toStringAsFixed(2)}',
+                  'PKR ${(_asNum(_totalStats['average_price']) ?? ((_asDouble(_totalStats['total_inventory_value']) / (_asInt(_totalStats['total_products']) == 0 ? 1 : _asInt(_totalStats['total_products']))))).toStringAsFixed(2)}',
                   Icons.price_check,
                 ),
             ],
@@ -315,7 +315,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
           ),
         ),
         subtitle: Text(
-          '${storeItems.length} items | Value: \$${(item['total_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+          '${storeItems.length} items | Value: PKR ${(item['total_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
           style: TextStyle(color: Colors.grey[600], fontSize: 12),
         ),
         children: [
@@ -331,7 +331,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                 ),
                 _buildInfoRow(
                   'Total Value',
-                  '\$${(item['total_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                  'PKR ${(item['total_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
                 ),
                 const Divider(height: 16),
                 const Text(
@@ -358,7 +358,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '\$${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
+                          'PKR ${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -457,7 +457,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                 ),
                 _buildInfoRow(
                   'Total Value',
-                  '\$${(item['inventory_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                  'PKR ${(item['inventory_value'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
                 ),
                 const Divider(height: 16),
                 const Text(
@@ -502,7 +502,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                               style: const TextStyle(fontSize: 11),
                             ),
                             Text(
-                              '\$${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
+                              'PKR ${(double.tryParse(product['price']?.toString() ?? '0') ?? 0.0).toStringAsFixed(2)}',
                               style: const TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,

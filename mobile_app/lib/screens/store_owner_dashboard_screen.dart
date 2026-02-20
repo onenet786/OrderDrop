@@ -221,7 +221,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.inventory_2),
-            tooltip: 'Manage Products',
+            tooltip: 'My Products (Price Update)',
             onPressed: () => Navigator.of(context).pushNamed('/manage-products'),
           ),
           const NotificationBellWidget(),
@@ -246,6 +246,8 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                   child: Column(
                     children: [
                       _buildDashboardStats(),
+                      const SizedBox(height: 12),
+                      _buildQuickActions(),
                       const SizedBox(height: 16),
                       TabBar(
                         controller: _tabController,
@@ -400,6 +402,44 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
               fontSize: 16,
               fontWeight: FontWeight.bold,
               color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          InkWell(
+            onTap: () => Navigator.of(context).pushNamed('/manage-products'),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white70),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.inventory_2, color: Colors.indigo),
+                  SizedBox(width: 8),
+                  Text(
+                    'My Products (Price Update)',
+                    style: TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

@@ -274,7 +274,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.shopping_bag),
-            title: const Text('Manage Products'),
+            title: const Text('Products & Variants'),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/manage-products');
@@ -407,7 +407,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _buildQuickMenuItem(
           context: context,
           icon: Icons.shopping_bag,
-          label: 'Products',
+          label: 'Products & Variants',
           route: '/manage-products',
         ),
         _buildQuickMenuItem(
