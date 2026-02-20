@@ -23,6 +23,7 @@ import 'screens/splash_screen.dart';
 import 'screens/store_balances_screen.dart';
 import 'screens/change_password_screen.dart';
 import 'screens/forgot_password_screen.dart';
+import 'screens/ui_test_home_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -51,15 +52,21 @@ class MyApp extends StatelessWidget {
         title: 'ServeNow',
         debugShowCheckedModeBanner: false,
         builder: (context, child) {
-          return Stack(
-            children: [
-              if (child != null) child,
-              const Positioned(
-                right: 6,
-                bottom: 4,
-                child: _VersionBadge(),
-              ),
-            ],
+          return SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            bottom: true,
+            child: Stack(
+              children: [
+                if (child != null) child,
+                const Positioned(
+                  right: 6,
+                  bottom: 4,
+                  child: _VersionBadge(),
+                ),
+              ],
+            ),
           );
         },
         theme: ThemeData(
@@ -100,6 +107,7 @@ class MyApp extends StatelessWidget {
           '/manage-riders': (context) => const ManageRidersScreen(),
           '/change-password': (context) => const ChangePasswordScreen(),
           '/forgot-password': (context) => const ForgotPasswordScreen(),
+          '/ui-test-home': (context) => const UiTestHomeScreen(),
         },
       ),
     );

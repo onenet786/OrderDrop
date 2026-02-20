@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/notifier.dart';
+import '../services/notification_service.dart';
 import '../widgets/notification_bell_widget.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -17,6 +20,7 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Logger _logger = Logger();
   bool _isLoading = true;
+  Timer? _liveStatsTimer;
 
   int _todayTotal = 0;
   int _todayDelivered = 0;
@@ -36,10 +40,62 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<dynamic> _recentStoresList = [];
   String _selectedActivityType = 'orders';
 
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value.trim()) ?? 0;
+    return 0;
+  }
+
+  int _readFirstInt(Map<String, dynamic> src, List<String> keys) {
+    for (final key in keys) {
+      if (src.containsKey(key) && src[key] != null) {
+        return _toInt(src[key]);
+      }
+    }
+    return 0;
+  }
+
   @override
   void initState() {
     super.initState();
     _loadStats();
+    _setupLiveRefresh();
+  }
+
+  @override
+  void dispose() {
+    _liveStatsTimer?.cancel();
+    NotificationService.disconnect();
+    super.dispose();
+  }
+
+  void _setupLiveRefresh() {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    if (auth.user != null) {
+      NotificationService.initialize(
+        onNotification: (data) {
+          if (!mounted) return;
+          final type = (data['type'] ?? data['event'] ?? '')
+              .toString()
+              .toLowerCase();
+          // Refresh stats quickly for events that can affect dashboard counters.
+          if (type.contains('user') ||
+              type.contains('order') ||
+              type.contains('payment') ||
+              type.contains('new')) {
+            _loadVisitorStatsOnly();
+          }
+        },
+      );
+      NotificationService.connect(auth.user!.id, 'admin');
+    }
+
+    // Fallback polling so logins are reflected even without explicit socket events.
+    _liveStatsTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) return;
+      _loadVisitorStatsOnly();
+    });
   }
 
   Future<void> _loadStats() async {
@@ -84,6 +140,35 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }).length;
       }
 
+      final stats = (visitorStats['stats'] is Map<String, dynamic>)
+          ? visitorStats['stats'] as Map<String, dynamic>
+          : visitorStats;
+
+      int activeUsers = _readFirstInt(stats, const [
+        'active_users',
+        'activeUsers',
+        'currently_logged_in',
+        'currentlyLogin',
+        'online_users',
+        'onlineUsers',
+      ]);
+      if (activeUsers == 0) {
+        activeUsers =
+            _toInt(stats['active_customers']) +
+            _toInt(stats['active_admins']) +
+            _toInt(stats['active_riders']) +
+            _toInt(stats['active_store_owners']) +
+            _toInt(stats['active_storeOwners']) +
+            _toInt(stats['active_store_managers']);
+      }
+
+      final todayLogins = _readFirstInt(stats, const [
+        'today_logins',
+        'todayLogins',
+        'todays_logins',
+        'logins_today',
+      ]);
+
       setState(() {
         _todayTotal = todayOrders.length;
         _todayDelivered = countStatus(todayOrders, 'delivered');
@@ -95,8 +180,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _allPending = countPendingLike(orders);
         _allCancelled = countStatus(orders, 'cancelled');
 
-        _activeUsers = visitorStats['active_users'] ?? 0;
-        _todayLogins = visitorStats['today_logins'] ?? 0;
+        _activeUsers = activeUsers;
+        _todayLogins = todayLogins;
 
         _recentOrdersList = recentActivityData['recent_orders'] ?? [];
         _recentUsersList = recentActivityData['recent_users'] ?? [];
@@ -106,6 +191,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } catch (e) {
       _logger.e('Error loading stats: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadVisitorStatsOnly() async {
+    try {
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      if (token == null) return;
+      final visitorStats = await ApiService.getVisitorStats(token);
+      final stats = (visitorStats['stats'] is Map<String, dynamic>)
+          ? visitorStats['stats'] as Map<String, dynamic>
+          : visitorStats;
+      final activeUsers = _readFirstInt(stats, const [
+        'active_users',
+        'activeUsers',
+        'currently_logged_in',
+        'currentlyLogin',
+        'online_users',
+        'onlineUsers',
+      ]);
+      final todayLogins = _readFirstInt(stats, const [
+        'today_logins',
+        'todayLogins',
+        'todays_logins',
+        'logins_today',
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _activeUsers = activeUsers;
+        _todayLogins = todayLogins;
+      });
+    } catch (e) {
+      _logger.w('Live visitor stats refresh skipped: $e');
     }
   }
 
@@ -123,11 +240,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Update Store Status',
-            icon: const Icon(Icons.campaign, color: Colors.indigo),
-            onPressed: _openStoreStatusMessageDialog,
-          ),
           const NotificationBellWidget(),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
@@ -142,6 +254,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
       drawer: _buildDrawer(context, authProvider),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+          child: _buildQuickMenu(context),
+        ),
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -152,25 +271,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Dashboard Overview',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Quick Menu',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildQuickMenu(context),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 4),
                     const Text(
                       "Today's Orders",
                       style: TextStyle(
@@ -231,9 +332,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildDrawer(BuildContext context, AuthProvider authProvider) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     return Drawer(
       child: ListView(
-        padding: EdgeInsets.zero,
+        padding: EdgeInsets.only(bottom: bottomInset + 12),
         children: [
           UserAccountsDrawerHeader(
             decoration: const BoxDecoration(

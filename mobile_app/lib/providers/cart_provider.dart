@@ -1,9 +1,17 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product.dart';
 import '../models/cart_item.dart';
 
 class CartProvider with ChangeNotifier {
   final List<CartItem> _items = [];
+  static const String _cartStorageKey = 'cart_items_v1';
+
+  CartProvider() {
+    _loadCart();
+  }
 
   List<CartItem> get items => [..._items];
 
@@ -57,12 +65,14 @@ class CartProvider with ChangeNotifier {
       }
     }
     notifyListeners();
+    _persistCart();
     return warning;
   }
 
   void removeCartItem(CartItem item) {
     _items.remove(item);
     notifyListeners();
+    _persistCart();
   }
 
   String? updateCartItemQuantity(CartItem item, int quantity) {
@@ -82,6 +92,7 @@ class CartProvider with ChangeNotifier {
         }
       }
       notifyListeners();
+      _persistCart();
     }
     return warning;
   }
@@ -89,5 +100,59 @@ class CartProvider with ChangeNotifier {
   void clear() {
     _items.clear();
     notifyListeners();
+    _persistCart();
+  }
+
+  Future<void> _persistCart() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = _items
+          .map(
+            (item) => {
+              'product': item.product.toJson(),
+              'variant': item.variant?.toJson(),
+              'quantity': item.quantity,
+            },
+          )
+          .toList();
+      await prefs.setString(_cartStorageKey, jsonEncode(payload));
+    } catch (_) {}
+  }
+
+  Future<void> _loadCart() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cartStorageKey);
+      if (raw == null || raw.trim().isEmpty) return;
+
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+
+      final restored = <CartItem>[];
+      for (final entry in decoded) {
+        if (entry is! Map) continue;
+        final map = Map<String, dynamic>.from(entry);
+        final productJson = map['product'];
+        final variantJson = map['variant'];
+        final quantity = int.tryParse((map['quantity'] ?? 0).toString()) ?? 0;
+        if (productJson is! Map || quantity <= 0) continue;
+
+        final product = Product.fromJson(
+          Map<String, dynamic>.from(productJson),
+        );
+        final variant = variantJson is Map
+            ? ProductVariant.fromJson(
+                Map<String, dynamic>.from(variantJson),
+              )
+            : null;
+        restored.add(CartItem(product: product, variant: variant, quantity: quantity));
+      }
+
+      if (restored.isEmpty) return;
+      _items
+        ..clear()
+        ..addAll(restored);
+      notifyListeners();
+    } catch (_) {}
   }
 }

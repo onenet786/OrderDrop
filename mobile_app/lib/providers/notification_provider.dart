@@ -38,12 +38,16 @@ class Notification {
 
 class NotificationProvider with ChangeNotifier {
   socket_io.Socket? _socket;
+  bool _isSocketInitializing = false;
   final GlobalKey<NavigatorState> navigatorKey;
   AuthProvider? _authProvider;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
   final List<Notification> _notifications = [];
   static const int _maxNotifications = 20;
+  static const Duration _duplicateWindow = Duration(seconds: 4);
+  String? _lastNotificationKey;
+  DateTime? _lastNotificationAt;
 
   NotificationProvider(this.navigatorKey) {
     _initLocalNotifications();
@@ -66,13 +70,24 @@ class NotificationProvider with ChangeNotifier {
     String type = 'info',
     String icon = 'info',
   }) {
+    final key = '${title.trim()}|${message.trim()}|$type|$icon';
+    final now = DateTime.now();
+    if (_lastNotificationKey == key &&
+        _lastNotificationAt != null &&
+        now.difference(_lastNotificationAt!) <= _duplicateWindow) {
+      debugPrint('[NotificationProvider] Duplicate notification suppressed: $key');
+      return;
+    }
+    _lastNotificationKey = key;
+    _lastNotificationAt = now;
+
     final notification = Notification(
-      id: DateTime.now().millisecondsSinceEpoch,
+      id: now.millisecondsSinceEpoch,
       title: title,
       message: message,
       type: type,
       icon: icon,
-      timestamp: DateTime.now(),
+      timestamp: now,
       unread: true,
     );
 
@@ -107,8 +122,13 @@ class NotificationProvider with ChangeNotifier {
   void _updateSocketConnection() {
     // Connect if user is authenticated (Admin, Rider, or User)
     if (_authProvider != null && _authProvider!.isAuthenticated) {
-      if (_socket == null || !_socket!.connected) {
+      if (_socket == null) {
         _initSocket();
+      } else if (_socket!.connected) {
+        _identifyUser();
+      } else if (!_isSocketInitializing) {
+        debugPrint('[NotificationProvider] Socket exists but not connected, reconnecting...');
+        _socket!.connect();
       }
     } else {
       _disconnectSocket();
@@ -120,6 +140,7 @@ class NotificationProvider with ChangeNotifier {
       _socket!.disconnect();
       _socket = null;
     }
+    _isSocketInitializing = false;
   }
 
   void _identifyUser() {
@@ -149,7 +170,19 @@ class NotificationProvider with ChangeNotifier {
   }
 
   void _initSocket() {
-    if (_socket != null && _socket!.connected) return;
+    if (_socket != null) {
+      if (_socket!.connected) {
+        _identifyUser();
+        return;
+      }
+      if (_isSocketInitializing) return;
+      debugPrint('[NotificationProvider] Reusing existing socket, attempting connect...');
+      _isSocketInitializing = true;
+      _socket!.connect();
+      return;
+    }
+    if (_isSocketInitializing) return;
+    _isSocketInitializing = true;
 
     // Normalize base URL to origin for socket.io (strip any path like /api)
     String baseUrl = ApiService.baseUrl;
@@ -188,6 +221,7 @@ class NotificationProvider with ChangeNotifier {
     _socket!.connect();
 
     _socket!.onConnect((_) {
+      _isSocketInitializing = false;
       debugPrint('[NotificationProvider] Socket connected: ${_socket?.id}');
       _identifyUser();
     });
@@ -203,6 +237,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.onConnectError((data) {
+      _isSocketInitializing = false;
       debugPrint(
         '[NotificationProvider] Socket connection error to $baseUrl: $data',
       );
@@ -213,6 +248,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.onDisconnect((_) {
+      _isSocketInitializing = false;
       debugPrint('[NotificationProvider] Socket disconnected');
     });
 

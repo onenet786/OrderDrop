@@ -770,7 +770,9 @@ class ApiService {
     for (final s in ownerStores) {
       final sid = s['id'];
       if (sid == null) continue;
-      final uri = Uri.parse('$baseUrl/api/products?store=$sid&admin=1');
+      final uri = Uri.parse(
+        '$baseUrl/api/products?store=$sid&admin=1&include_variants=1',
+      );
       _logger.d('ApiService: GET $uri');
       final resp = await http.get(
         uri,
