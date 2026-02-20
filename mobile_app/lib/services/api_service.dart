@@ -192,16 +192,30 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  static Future<List<dynamic>> getStores({int? categoryId}) async {
-    String url = '$baseUrl/api/stores';
+  static Future<Map<String, dynamic>> getStores({
+    int? categoryId,
+    double? latitude,
+    double? longitude,
+    String? city,
+  }) async {
+    final query = <String, String>{};
     if (categoryId != null) {
-      url += '?category_id=$categoryId';
+      query['category_id'] = categoryId.toString();
     }
-    final uri = Uri.parse(url);
+    if (latitude != null && longitude != null) {
+      query['latitude'] = latitude.toString();
+      query['longitude'] = longitude.toString();
+    }
+    if (city != null && city.trim().isNotEmpty) {
+      query['city'] = city.trim();
+    }
+
+    final uri = Uri.parse('$baseUrl/api/stores').replace(
+      queryParameters: query.isEmpty ? null : query,
+    );
     _logger.d('ApiService: GET $uri');
     final response = await http.get(uri);
-    final data = _handleResponse(response);
-    return data['stores'] ?? [];
+    return _handleResponse(response);
   }
 
   static Future<List<dynamic>> getCategories() async {

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
@@ -20,7 +22,11 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _categories = [];
   bool _isLoading = true;
   String? _errorMessage;
+  String? _serviceLimitedMessage;
   final TextEditingController _searchController = TextEditingController();
+  double? _userLat;
+  double? _userLng;
+  String? _userCity;
 
   @override
   void initState() {
@@ -42,18 +48,32 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchData() async {
     try {
+      await _resolveLocationContext();
       final results = await Future.wait([
-        ApiService.getStores(),
+        ApiService.getStores(
+          latitude: _userLat,
+          longitude: _userLng,
+          city: _userCity,
+        ),
         ApiService.getCategories(),
       ]);
 
       if (mounted) {
+        final storesResp = results[0] as Map<String, dynamic>;
+        final stores = (storesResp['stores'] as List<dynamic>? ?? []);
+        final limited = storesResp['service_limited'] == true;
+        final limitedMessage = (storesResp['service_message'] ?? '').toString().trim();
         setState(() {
-          _allStores = results[0];
-          _filteredStores = results[0];
+          _allStores = stores;
+          _filteredStores = stores;
+          _serviceLimitedMessage = limited
+              ? (limitedMessage.isNotEmpty
+                  ? limitedMessage
+                  : 'You are not allowed to see Store when you are out of Delivery Area')
+              : null;
           _categories = [
             {'id': null, 'name': 'All'},
-            ...results[1],
+            ...(results[1] as List<dynamic>),
           ];
           _isLoading = false;
         });
@@ -74,11 +94,25 @@ class _HomeScreenState extends State<HomeScreen> {
       _searchController.clear();
     });
     try {
-      final stores = await ApiService.getStores(categoryId: categoryId);
+      await _resolveLocationContext();
+      final storesResp = await ApiService.getStores(
+        categoryId: categoryId,
+        latitude: _userLat,
+        longitude: _userLng,
+        city: _userCity,
+      );
+      final stores = (storesResp['stores'] as List<dynamic>? ?? []);
+      final limited = storesResp['service_limited'] == true;
+      final limitedMessage = (storesResp['service_message'] ?? '').toString().trim();
       if (mounted) {
         setState(() {
           _allStores = stores;
           _filteredStores = stores;
+          _serviceLimitedMessage = limited
+              ? (limitedMessage.isNotEmpty
+                  ? limitedMessage
+                  : 'You are not allowed to see Store when you are out of Delivery Area')
+              : null;
           _isLoading = false;
         });
       }
@@ -90,6 +124,40 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     }
+  }
+
+  Future<void> _resolveLocationContext() async {
+    try {
+      if (_userLat != null && _userLng != null) return;
+
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+      _userLat = position.latitude;
+      _userLng = position.longitude;
+
+      try {
+        final places = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+        if (places.isNotEmpty) {
+          _userCity = (places.first.locality ?? places.first.subAdministrativeArea ?? '')
+              .toString()
+              .trim();
+        }
+      } catch (_) {}
+    } catch (_) {}
   }
 
   void _filterStores(String query) {
@@ -330,10 +398,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 else if (_errorMessage != null)
                   Center(child: Text('Error: $_errorMessage'))
                 else if (_filteredStores.isEmpty)
-                  const Center(
+                  Center(
                     child: Padding(
-                      padding: EdgeInsets.all(40.0),
-                      child: Text('No stores found in this category'),
+                      padding: const EdgeInsets.all(40.0),
+                      child: Text(
+                        _serviceLimitedMessage ??
+                            'No stores found in this category',
+                      ),
                     ),
                   )
                 else

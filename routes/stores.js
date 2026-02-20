@@ -67,6 +67,35 @@ async function loadProductSizeVariants(db, productIds) {
     }
 }
 
+async function ensureServiceGeoLimitsTable(db) {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS service_geo_limits (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            is_active BOOLEAN DEFAULT TRUE,
+            city VARCHAR(120) NULL,
+            center_latitude DECIMAL(10, 8) NULL,
+            center_longitude DECIMAL(11, 8) NULL,
+            radius_km DECIMAL(10, 2) NULL,
+            require_location BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    `);
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+    const toRad = (d) => (d * Math.PI) / 180;
+    const R = 6371;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
 // Helper to calculate if store is open based on current time
 const calculateIsOpen = (opening_time, closing_time) => {
     if (!opening_time || !closing_time) return false;
@@ -96,7 +125,8 @@ const calculateIsOpen = (opening_time, closing_time) => {
 router.get('/', async (req, res) => {
     try {
         await ensureStoreStatusMessagesTable(req.db);
-        const { category, category_id, search, admin, lite } = req.query;
+        await ensureServiceGeoLimitsTable(req.db);
+        const { category, category_id, search, admin, lite, latitude, longitude, city } = req.query;
         const liteMode = String(lite || '').toLowerCase() === '1' || String(lite || '').toLowerCase() === 'true';
         const whereClauses = admin === '1' ? [] : ['s.is_active = true'];
         const params = [];
@@ -161,6 +191,81 @@ router.get('/', async (req, res) => {
         `,
             params
         );
+
+        // Apply DB-driven service-area limitation (customer app only, admin requests bypass).
+        if (String(admin || '') !== '1') {
+            const [geoRows] = await req.db.execute(
+                `SELECT *
+                 FROM service_geo_limits
+                 WHERE is_active = true
+                   AND (
+                     require_location = true
+                     OR (radius_km IS NOT NULL AND center_latitude IS NOT NULL AND center_longitude IS NOT NULL)
+                     OR (city IS NOT NULL AND TRIM(city) <> '')
+                   )
+                 ORDER BY
+                   (radius_km IS NULL OR center_latitude IS NULL OR center_longitude IS NULL) ASC,
+                   radius_km ASC,
+                   require_location DESC,
+                   id DESC
+                 LIMIT 1`
+            );
+            const geo = (geoRows && geoRows.length) ? geoRows[0] : null;
+
+            let locationAllowed = true;
+            let geoMessage = null;
+            const qLat = latitude !== undefined ? Number(latitude) : NaN;
+            const qLng = longitude !== undefined ? Number(longitude) : NaN;
+            const hasCoords = Number.isFinite(qLat) && Number.isFinite(qLng);
+            const qCity = String(city || '').trim().toLowerCase();
+
+            if (geo) {
+                const ruleCity = String(geo.city || '').trim().toLowerCase();
+                const ruleLat = Number(geo.center_latitude);
+                const ruleLng = Number(geo.center_longitude);
+                const ruleRadiusKm = Number(geo.radius_km);
+                const hasRadiusRule =
+                    Number.isFinite(ruleLat) &&
+                    Number.isFinite(ruleLng) &&
+                    Number.isFinite(ruleRadiusKm) &&
+                    ruleRadiusKm > 0;
+                const requireLocation = !!geo.require_location || hasRadiusRule;
+
+                if (requireLocation && !hasCoords) {
+                    locationAllowed = false;
+                    geoMessage = 'Location is required for this service area.';
+                }
+
+                // Strict radius enforcement when configured in DB (e.g. 1 km, 5 km, X km).
+                if (locationAllowed && hasRadiusRule && hasCoords) {
+                    const d = haversineKm(qLat, qLng, ruleLat, ruleLng);
+                    if (d > ruleRadiusKm) {
+                        locationAllowed = false;
+                        geoMessage = `Service is available within ${ruleRadiusKm} km only.`;
+                    }
+                }
+
+                // Optional city lock (only if DB city is set).
+                if (locationAllowed && ruleCity) {
+                    if (!qCity) {
+                        locationAllowed = false;
+                        geoMessage = `Service is currently available only in ${geo.city}.`;
+                    } else if (qCity !== ruleCity && !qCity.includes(ruleCity)) {
+                        locationAllowed = false;
+                        geoMessage = `Service is currently available only in ${geo.city}.`;
+                    }
+                }
+
+                if (!locationAllowed) {
+                    return res.json({
+                        success: true,
+                        stores: [],
+                        service_limited: true,
+                        service_message: geoMessage || 'Service is not available in your area.'
+                    });
+                }
+            }
+        }
 
         if (liteMode) {
             return res.json({
