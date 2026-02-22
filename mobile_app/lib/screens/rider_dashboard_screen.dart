@@ -29,9 +29,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   String _currentLocation = 'Getting location...';
   double _walletBalance = 0.0;
   Timer? _locationTrackingTimer;
+  Timer? _assignmentRefreshTimer;
   String _selectedStatsPeriod = 'daily';
   Map<String, dynamic>? _walletStats;
   bool _isLoadingStats = false;
+  bool _isNotificationRefreshRunning = false;
+  int _selectedTabIndex = 0;
 
   Future<void> _makeCall(String phoneNumber) async {
     final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
@@ -107,9 +110,21 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_syncTabIndex);
     _loadAllData();
     _startLocationTracking();
+    _startAssignmentAutoRefresh();
     _setupNotifications();
+  }
+
+  void _syncTabIndex() {
+    if (!mounted) return;
+    if (_tabController.indexIsChanging) return;
+    if (_selectedTabIndex != _tabController.index) {
+      setState(() {
+        _selectedTabIndex = _tabController.index;
+      });
+    }
   }
 
   void _setupNotifications() {
@@ -132,20 +147,39 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final nestedData = (notification['data'] is Map<String, dynamic>)
         ? notification['data'] as Map<String, dynamic>
         : null;
-    final type =
-        (notification['type'] ?? nestedData?['type'])?.toString().toLowerCase();
-    final status =
-        (notification['status'] ?? nestedData?['status'])?.toString().toLowerCase();
+    final type = (notification['type'] ??
+            notification['event'] ??
+            notification['action'] ??
+            nestedData?['type'] ??
+            nestedData?['event'] ??
+            nestedData?['action'])
+        ?.toString()
+        .toLowerCase();
+    final status = (notification['status'] ??
+            notification['order_status'] ??
+            nestedData?['status'] ??
+            nestedData?['order_status'])
+        ?.toString()
+        .toLowerCase();
     final message = (notification['message'] ??
                 nestedData?['message'] ??
                 notification['title'] ??
                 'New notification')
             .toString();
+    final messageLower = message.toLowerCase();
 
     final bool hasAssignmentPayload = notification['rider_id'] != null ||
         nestedData?['rider_id'] != null ||
         notification['order_number'] != null ||
-        nestedData?['order_number'] != null;
+        nestedData?['order_number'] != null ||
+        notification['order_id'] != null ||
+        nestedData?['order_id'] != null;
+    final bool looksLikeAssignmentByType =
+        (type != null && (type.contains('assign') || type.contains('new_order')));
+    final bool looksLikeAssignmentByMessage =
+        messageLower.contains('assigned') ||
+        messageLower.contains('new order') ||
+        messageLower.contains('order assigned');
 
     final bool shouldRefresh = type == 'assigned' ||
         type == 'rider_notification' ||
@@ -157,6 +191,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         status == 'out_for_delivery' ||
         status == 'delivered' ||
         status == 'cancelled' ||
+        looksLikeAssignmentByType ||
+        looksLikeAssignmentByMessage ||
         hasAssignmentPayload;
 
     if (shouldRefresh) {
@@ -174,17 +210,64 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
         );
       }
-      _loadAllData();
-      _tabController.animateTo(0); // Switch to Home tab
+      _refreshFromNotification();
+      _switchToTab(0);
     }
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_syncTabIndex);
     _tabController.dispose();
     _locationTrackingTimer?.cancel();
+    _assignmentRefreshTimer?.cancel();
     NotificationService.disconnect();
     super.dispose();
+  }
+
+  void _switchToTab(int index) {
+    if (!mounted) return;
+    if (index < 0 || index > 3) return;
+    setState(() {
+      _selectedTabIndex = index;
+    });
+    _tabController.animateTo(index);
+  }
+
+  void _startAssignmentAutoRefresh() {
+    _assignmentRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _refreshAssignedDeliveriesOnly();
+    });
+  }
+
+  Future<void> _refreshAssignedDeliveriesOnly() async {
+    try {
+      if (!mounted) return;
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      if (token == null) return;
+      await _loadDeliveries(token, 'assigned');
+    } catch (_) {}
+  }
+
+  Future<void> _refreshFromNotification() async {
+    if (_isNotificationRefreshRunning) return;
+    _isNotificationRefreshRunning = true;
+    try {
+      if (!mounted) return;
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      if (token == null) return;
+      // Immediate refresh + delayed refresh handles eventual DB write latency.
+      await _loadDeliveries(token, 'assigned');
+      await _loadDeliveries(token, 'completed');
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      await _loadDeliveries(token, 'assigned');
+      await _loadDeliveries(token, 'completed');
+    } catch (e) {
+      _logger.w('Notification refresh skipped: $e');
+    } finally {
+      _isNotificationRefreshRunning = false;
+    }
   }
 
   Future<void> _loadAllData() async {
@@ -226,6 +309,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   Future<void> _loadDeliveries(String token, String status) async {
     try {
       final deliveries = await ApiService.getRiderDeliveries(token, status);
+      if (!mounted) return;
       setState(() {
         if (status == 'assigned') {
           _assignedDeliveries = deliveries;
@@ -508,20 +592,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: _buildRiderDrawer(),
       appBar: AppBar(
         title: const Text('Rider Dashboard'),
         actions: [
           const NotificationBellWidget(),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadAllData),
-          IconButton(
-            icon: const Icon(Icons.key),
-            onPressed: () =>
-                Navigator.of(context).pushNamed('/change-password'),
-            tooltip: 'Change Password',
-          ),
-          IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
       ),
+      bottomNavigationBar: _buildBottomNavigationBar(),
       body: RefreshIndicator(
         onRefresh: _loadAllData,
         child: _isLoading
@@ -531,25 +609,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   // Rider Info Section
                   _buildRiderInfoCard(),
 
-                  // Tabs
-                  TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    labelColor: Colors.blue,
-                    unselectedLabelColor: Colors.grey,
-                    tabs: const [
-                      Tab(text: 'Home'),
-                      Tab(text: 'History'),
-                      Tab(text: 'Wallet'),
-                      Tab(text: 'Profile'),
-                    ],
-                  ),
-
                   // Tab Content
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
+                      physics: const NeverScrollableScrollPhysics(),
                       children: [
                         _buildDeliveriesList(_assignedDeliveries, true),
                         _buildDeliveriesList(_completedDeliveries, false),
@@ -656,6 +720,164 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRiderDrawer() {
+    final name = _riderProfile == null
+        ? 'Rider'
+        : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
+              .trim()
+              .isEmpty
+        ? (_riderProfile?['first_name'] ?? 'Rider')
+        : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
+              .trim();
+    final email = (_riderProfile?['email'] ?? '').toString();
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          UserAccountsDrawerHeader(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.blue.shade700, Colors.indigo.shade700],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            accountName: Text(name),
+            accountEmail: Text(email),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.white,
+              child: Text(
+                name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'R',
+                style: const TextStyle(
+                  color: Colors.indigo,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.home_outlined),
+            title: const Text('Home'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _switchToTab(0);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.history),
+            title: const Text('History'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _switchToTab(1);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('Wallet'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _switchToTab(2);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: const Text('Profile'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _switchToTab(3);
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.refresh),
+            title: const Text('Refresh'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _loadAllData();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.key),
+            title: const Text('Change Password'),
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).pushNamed('/change-password');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('Logout', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.of(context).pop();
+              _logout();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildBottomNavItem(0, Icons.home_filled, 'Home'),
+            _buildBottomNavItem(1, Icons.history, 'History'),
+            _buildBottomNavItem(2, Icons.account_balance_wallet, 'Wallet'),
+            _buildBottomNavItem(3, Icons.person, 'Profile'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavItem(int index, IconData icon, String label) {
+    final active = _selectedTabIndex == index;
+    return InkWell(
+      onTap: () => _switchToTab(index),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 22,
+              color: active ? const Color(0xFF1A56A5) : Colors.grey.shade600,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: active ? const Color(0xFF1A56A5) : Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -407,17 +407,104 @@ router.get(
       }
 
       const [storeSales] = await req.db.execute(`
-            SELECT 
+            SELECT
                 s.id as store_id,
                 s.name as store_name,
-                COUNT(DISTINCT o.id) as total_orders,
-                COALESCE(SUM(o.total_amount), 0) as total_sales,
-                COALESCE(AVG(o.total_amount), 0) as average_order_value,
-                COUNT(DISTINCT o.user_id) as unique_customers
+                COUNT(DISTINCT CASE WHEN o.status != 'cancelled' THEN oi.order_id END) as total_orders,
+                COALESCE(SUM(
+                    CASE
+                        WHEN o.status != 'cancelled' THEN oi.quantity * oi.price
+                        ELSE 0
+                    END
+                ), 0) as total_sales_gross,
+                COALESCE(SUM(
+                    CASE
+                        WHEN o.status != 'cancelled' THEN
+                            oi.quantity * (
+                                oi.price - (
+                                    CASE
+                                        WHEN oi.discount_type = 'percent'
+                                             AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.price * (oi.discount_value / 100)
+                                        WHEN oi.discount_type = 'amount'
+                                             AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.discount_value
+                                        ELSE 0
+                                    END
+                                )
+                            )
+                        ELSE 0
+                    END
+                ), 0) as total_sales_net,
+                COALESCE(SUM(
+                    CASE
+                        WHEN o.status != 'cancelled' THEN
+                            oi.quantity * (
+                                CASE
+                                    WHEN oi.discount_type = 'percent'
+                                         AND COALESCE(oi.discount_value, 0) > 0
+                                        THEN oi.price * (oi.discount_value / 100)
+                                    WHEN oi.discount_type = 'amount'
+                                         AND COALESCE(oi.discount_value, 0) > 0
+                                        THEN oi.discount_value
+                                    ELSE 0
+                                END
+                            )
+                        ELSE 0
+                    END
+                ), 0) as total_discount,
+                COALESCE(SUM(
+                    CASE
+                        WHEN o.status != 'cancelled' THEN
+                            oi.quantity * COALESCE(psp.cost_price, p.cost_price, 0)
+                        ELSE 0
+                    END
+                ), 0) as total_cost,
+                COALESCE(SUM(
+                    CASE
+                        WHEN o.status != 'cancelled' THEN
+                            oi.quantity * (
+                                (oi.price - (
+                                    CASE
+                                        WHEN oi.discount_type = 'percent'
+                                             AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.price * (oi.discount_value / 100)
+                                        WHEN oi.discount_type = 'amount'
+                                             AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.discount_value
+                                        ELSE 0
+                                    END
+                                )) - COALESCE(psp.cost_price, p.cost_price, 0)
+                            )
+                        ELSE 0
+                    END
+                ), 0) as estimated_profit,
+                COUNT(DISTINCT CASE WHEN o.status != 'cancelled' THEN o.user_id END) as unique_customers
             FROM stores s
-            LEFT JOIN orders o ON s.id = o.store_id AND o.status != 'cancelled'
+            LEFT JOIN (
+                SELECT
+                    oi.order_id,
+                    oi.product_id,
+                    oi.quantity,
+                    oi.price,
+                    oi.size_id,
+                    oi.unit_id,
+                    oi.discount_type,
+                    oi.discount_value,
+                    COALESCE(oi.store_id, p.store_id) as resolved_store_id
+                FROM order_items oi
+                LEFT JOIN products p ON p.id = oi.product_id
+            ) oi ON oi.resolved_store_id = s.id
+            LEFT JOIN orders o ON o.id = oi.order_id
+            LEFT JOIN products p ON p.id = oi.product_id
+            LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id
+                AND (
+                    (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id)
+                    OR
+                    (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                )
             GROUP BY s.id, s.name
-            ORDER BY total_sales DESC
+            ORDER BY total_sales_net DESC
         `);
 
       return res.json({
@@ -426,8 +513,15 @@ router.get(
           store_id: row.store_id,
           store_name: row.store_name,
           total_orders: Number(row.total_orders) || 0,
-          total_sales: parseFloat(row.total_sales) || 0,
-          average_order_value: parseFloat(row.average_order_value) || 0,
+          total_sales_gross: parseFloat(row.total_sales_gross) || 0,
+          total_sales_net: parseFloat(row.total_sales_net) || 0,
+          total_discount: parseFloat(row.total_discount) || 0,
+          total_cost: parseFloat(row.total_cost) || 0,
+          estimated_profit: parseFloat(row.estimated_profit) || 0,
+          average_order_value:
+            Number(row.total_orders) > 0
+              ? (parseFloat(row.total_sales_net) || 0) / Number(row.total_orders)
+              : 0,
           unique_customers: Number(row.unique_customers) || 0,
         })),
       });

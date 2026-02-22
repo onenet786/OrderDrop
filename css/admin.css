@@ -1009,6 +1009,15 @@ textarea:focus {
   overflow-y: auto;
 }
 
+/* Compact spacing for product form to reduce vertical gaps in Edit/Add Product modal */
+#addProductForm .form-group {
+  margin-bottom: 0.35rem;
+}
+
+#addProductForm .form-group label {
+  margin-bottom: 0.25rem;
+}
+
 .modal-footer {
   padding: 1.5rem 2rem;
   border-top: 1px solid var(--border-color);

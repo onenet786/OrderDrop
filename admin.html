@@ -2650,14 +2650,14 @@
 
     <!-- Add Product Modal -->
     <div id="addProductModal" class="modal">
-      <div class="modal-content" style="max-width: 95%; width: 1000px;">
-        <div class="modal-header" style="padding-bottom: 1rem; margin-bottom: 1rem;">
+      <div class="modal-content" style="max-width: 98%; width: 1140px; max-height: 92vh; display: flex; flex-direction: column;">
+        <div class="modal-header" style="padding-bottom: 0.6rem; margin-bottom: 0.6rem;">
           <h3>Add New Product</h3>
           <span class="close" data-modal="addProductModal">&times;</span>
         </div>
         <div class="modal-body" style="padding: 0;">
           <form id="addProductForm">
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.65rem;">
               <div class="form-group">
                 <label for="productName">Product Name:</label>
                 <input type="text" id="productName" name="name" required style="width: 100%;" />
@@ -2667,6 +2667,7 @@
                 <select id="productItem" name="item_id" style="width: 100%;">
                   <option value="">None</option>
                 </select>
+                <small id="productItemLoadingHint" style="display: none; color: #64748b; font-size: 0.75rem; margin-top: 0.25rem;">Loading items...</small>
               </div>
               <div class="form-group">
                 <label for="productStore">Store:</label>
@@ -2699,7 +2700,7 @@
               </div>
 
               <!-- Single Measure Section -->
-              <div id="productSingleMeasureSection" style="grid-column: span 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+              <div id="productSingleMeasureSection" style="grid-column: span 4; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.65rem;">
                 <div id="productSingleMeasureSelectorsRow" style="display: contents;">
                   <div class="form-group">
                     <label for="productUnit">Unit:</label>
@@ -2717,8 +2718,8 @@
               </div>
 
               <!-- Discount Row (Hidden by default, shown based on store terms) -->
-              <div id="productDiscountRow" style="grid-column: span 3; display: none; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+              <div id="productDiscountRow" style="grid-column: span 4; display: none; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 0.6rem; margin-bottom: 0.2rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem;">
                   <div class="form-group" style="margin-bottom: 0;">
                     <label for="productDiscountType">Discount Type:</label>
                     <select id="productDiscountType" name="discount_type" style="width: 100%;">
@@ -2732,10 +2733,17 @@
                   </div>
                 </div>
               </div>
+              <div id="productProfitRow" style="grid-column: span 4; display: none; background: #ecfdf5; border: 1px solid #bbf7d0; border-radius: 8px; padding: 0.6rem; margin-bottom: 0.2rem;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="productProfitValue">Profit Value (PKR):</label>
+                  <input type="number" id="productProfitValue" name="profit_value" step="0.01" min="0" style="width: 100%;" />
+                  <small style="color:#065f46; display:block; margin-top:4px;">Cost Price = Price - Profit Value</small>
+                </div>
+              </div>
 
               <!-- Multiple Variants Section -->
-              <div id="productSizePricesSection" style="grid-column: span 3; display: none; margin-top: 0.5rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <div id="productSizePricesSection" style="grid-column: span 4; display: none; margin-top: 0.2rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.6rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                   <h4 id="productVariantsSectionTitle" style="margin: 0; color: #1e293b; font-size: 1rem;">Unit prices:</h4>
                   <button type="button" id="addSizePriceBtn" class="btn btn-small btn-primary">
                     <i class="fas fa-plus"></i> Add Unit Price
@@ -2745,10 +2753,10 @@
                   <table style="width: 100%; border-collapse: collapse;">
                     <thead>
                       <tr style="border-bottom: 2px solid #f1f5f9;">
-                        <th id="productVariantsMeasureHeader" style="text-align: left; padding: 8px; color: #64748b; font-weight: 600;">Unit</th>
-                        <th style="text-align: left; padding: 8px; color: #64748b; font-weight: 600; width: 180px;">Price (PKR)</th>
-                        <th style="text-align: left; padding: 8px; color: #64748b; font-weight: 600; width: 180px;">Cost Price (PKR)</th>
-                        <th style="text-align: center; padding: 8px; color: #64748b; font-weight: 600; width: 100px;">Action</th>
+                        <th id="productVariantsMeasureHeader" style="text-align: left; padding: 6px; color: #64748b; font-weight: 600;">Unit</th>
+                        <th style="text-align: left; padding: 6px; color: #64748b; font-weight: 600; width: 150px;">Price (PKR)</th>
+                        <th style="text-align: left; padding: 6px; color: #64748b; font-weight: 600; width: 150px;">Cost Price (PKR)</th>
+                        <th style="text-align: center; padding: 6px; color: #64748b; font-weight: 600; width: 80px;">Action</th>
                       </tr>
                     </thead>
                     <tbody id="productSizePricesBody">
@@ -2775,22 +2783,20 @@
                 <input type="file" id="productImageFile" name="image_file" accept="image/*" style="width: 100%;" />
                 <img id="productImagePreview" src="" alt="Preview" style="max-height: 48px; border-radius: 6px; display: none; margin-top: 0.5rem;" />
               </div>
-            </div>
-            <div style="margin-top: 1rem;">
               <div class="form-group">
                 <label for="productDescription">Description:</label>
                 <textarea id="productDescription" name="description" rows="2" style="width: 100%;"></textarea>
               </div>
+              <div class="form-group" style="display: flex; align-items: flex-end; justify-content: flex-end; gap: 0.6rem;">
+                <button type="button" class="btn btn-secondary" data-modal="addProductModal" style="padding: 0.55rem 1rem;">
+                  <i class="fas fa-ban"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-primary" id="saveProductBtn" style="padding: 0.55rem 1rem;">
+                  <i class="fas fa-check"></i> Save Product
+                </button>
+              </div>
             </div>
           </form>
-        </div>
-        <div class="modal-footer" style="padding-top: 1rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
-          <button type="button" class="btn btn-secondary" data-modal="addProductModal" style="padding: 0.6rem 1.2rem;">
-            <i class="fas fa-ban"></i> Cancel
-          </button>
-          <button type="button" class="btn btn-primary" id="saveProductBtn" style="padding: 0.6rem 1.2rem;">
-            <i class="fas fa-check"></i> Save Product
-          </button>
         </div>
       </div>
     </div>

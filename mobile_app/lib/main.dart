@@ -24,6 +24,7 @@ import 'screens/store_balances_screen.dart';
 import 'screens/change_password_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/ui_test_home_screen.dart';
+import 'screens/customer_dashboard_test_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -91,7 +92,7 @@ class MyApp extends StatelessWidget {
         routes: {
           '/login': (context) => const LoginScreen(),
           '/register': (context) => const RegisterScreen(),
-          '/home': (context) => const HomeScreen(),
+          '/home': (context) => const CustomerDashboardTestScreen(),
           '/admin': (context) => const AdminDashboardScreen(),
           '/store-balances': (context) => const StoreBalancesScreen(),
           '/rider': (context) => const RiderDashboardScreen(),
@@ -108,6 +109,8 @@ class MyApp extends StatelessWidget {
           '/change-password': (context) => const ChangePasswordScreen(),
           '/forgot-password': (context) => const ForgotPasswordScreen(),
           '/ui-test-home': (context) => const UiTestHomeScreen(),
+          '/customer-test-dashboard': (context) =>
+              const CustomerDashboardTestScreen(),
         },
       ),
     );

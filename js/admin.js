@@ -17,6 +17,11 @@ const AppState = {
     units: [],
     sizes: [],
     productStoreTermsById: {},
+    productItemCatalog: {
+        loadedAt: 0,
+        products: [],
+        byId: {}
+    },
     editing: {
         productId: null,
         accountId: null,
@@ -44,6 +49,8 @@ const AppState = {
         wallets: { column: 'id', direction: 'asc' }
     }
 };
+
+const PRODUCT_ITEM_CATALOG_TTL_MS = 2 * 60 * 1000;
 
 const ADMIN_THEME_STORAGE_KEY = 'serveNowAdminTheme';
 const ADMIN_THEME_DEFAULT = 'default';
@@ -4367,6 +4374,13 @@ function setProductStoreTerms(stores) {
 
 function isDiscountPaymentTerm(term) {
     const t = String(term || '').toLowerCase().trim();
+    if (!t) return false;
+    // Accept canonical values and resilient text variants from DB/manual edits.
+    return t.includes('with discount') || t.includes('discount');
+}
+
+function isProfitPaymentTerm(term) {
+    const t = String(term || '').toLowerCase().trim();
     return t === 'cash only' || t === 'credit';
 }
 
@@ -4377,11 +4391,15 @@ function recalcProductCost() {
     const discountRow = document.getElementById('productDiscountRow');
     const discountTypeEl = document.getElementById('productDiscountType');
     const discountValueEl = document.getElementById('productDiscountValue');
+    const profitRow = document.getElementById('productProfitRow');
+    const profitValueEl = document.getElementById('productProfitValue');
     if (!priceEl || !costEl || !storeEl) return;
 
     const term = AppState.productStoreTermsById[String(storeEl.value || '')] || '';
     const hasDiscount = isDiscountPaymentTerm(term);
+    const hasProfit = isProfitPaymentTerm(term);
     if (discountRow) discountRow.style.display = hasDiscount ? '' : 'none';
+    if (profitRow) profitRow.style.display = hasProfit ? '' : 'none';
 
     const rawPrice = String(priceEl.value || '').trim();
     const price = rawPrice.length ? parseFloat(rawPrice) : NaN;
@@ -4398,9 +4416,19 @@ function recalcProductCost() {
             const disc = dtype === 'percent' ? (price * dval / 100) : dval;
             cost = price - disc;
         }
+        if (profitValueEl) profitValueEl.value = '';
+    } else if (hasProfit) {
+        const rawP = String(profitValueEl?.value || '').trim();
+        const pval = rawP.length ? parseFloat(rawP) : NaN;
+        if (Number.isFinite(pval) && pval > 0) {
+            cost = price - pval;
+        }
+        if (discountValueEl) discountValueEl.value = '';
+        if (discountTypeEl) discountTypeEl.value = 'amount';
     } else {
         if (discountValueEl) discountValueEl.value = '';
         if (discountTypeEl) discountTypeEl.value = 'amount';
+        if (profitValueEl) profitValueEl.value = '';
     }
 
     if (!Number.isFinite(cost) || cost < 0) cost = 0;
@@ -4413,8 +4441,10 @@ function computeCostForPrice(price) {
     const storeEl = document.getElementById('productStore');
     const discountTypeEl = document.getElementById('productDiscountType');
     const discountValueEl = document.getElementById('productDiscountValue');
+    const profitValueEl = document.getElementById('productProfitValue');
     const term = AppState.productStoreTermsById[String(storeEl?.value || '')] || '';
     const hasDiscount = isDiscountPaymentTerm(term);
+    const hasProfit = isProfitPaymentTerm(term);
 
     let cost = Number(price);
     if (!Number.isFinite(cost) || cost < 0) return null;
@@ -4425,6 +4455,12 @@ function computeCostForPrice(price) {
         if (Number.isFinite(dval) && dval > 0) {
             const disc = dtype === 'percent' ? (cost * dval / 100) : dval;
             cost = cost - disc;
+        }
+    } else if (hasProfit) {
+        const rawP = String(profitValueEl?.value || '').trim();
+        const pval = rawP.length ? parseFloat(rawP) : NaN;
+        if (Number.isFinite(pval) && pval > 0) {
+            cost = cost - pval;
         }
     }
     if (!Number.isFinite(cost) || cost < 0) cost = 0;
@@ -4455,7 +4491,7 @@ function bindProductPriceCalc() {
     const formEl = document.getElementById('addProductForm');
     if (!formEl || formEl.dataset.boundPriceCalc) return;
     formEl.dataset.boundPriceCalc = '1';
-    ['productStore', 'productPrice', 'productDiscountType', 'productDiscountValue'].forEach(id => {
+    ['productStore', 'productPrice', 'productDiscountType', 'productDiscountValue', 'productProfitValue'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('change', recalcProductCost);
@@ -4623,7 +4659,8 @@ function addProductSizePriceRow(prefill) {
 
     const measureSelect = document.createElement('select');
     measureSelect.setAttribute('data-role', 'variant-measure');
-    measureSelect.style.minWidth = '260px';
+    measureSelect.style.minWidth = '170px';
+    measureSelect.style.width = '100%';
     if (mode === 'size') {
         measureSelect.innerHTML = '<option value="">Select Size</option>' + (AppState.sizes || []).map(s => `<option value="${s.id}">${s.label}</option>`).join('');
         if (prefill && prefill.size_id) measureSelect.value = String(prefill.size_id);
@@ -4637,7 +4674,7 @@ function addProductSizePriceRow(prefill) {
     priceInput.min = '0';
     priceInput.step = '0.01';
     priceInput.setAttribute('data-role', 'size-price-price');
-    priceInput.style.width = '160px';
+    priceInput.style.width = '130px';
     priceInput.value = (prefill && prefill.price !== undefined && prefill.price !== null) ? String(prefill.price) : '';
 
     const costInput = document.createElement('input');
@@ -4646,13 +4683,16 @@ function addProductSizePriceRow(prefill) {
     costInput.step = '0.01';
     costInput.readOnly = true;
     costInput.setAttribute('data-role', 'variant-cost');
-    costInput.style.width = '160px';
+    costInput.style.width = '130px';
     costInput.value = (prefill && prefill.cost_price !== undefined && prefill.cost_price !== null) ? String(prefill.cost_price) : '';
 
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'btn-small btn-secondary';
-    removeBtn.textContent = 'Remove';
+    removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
+    removeBtn.title = 'Remove row';
+    removeBtn.style.padding = '0.2rem 0.45rem';
+    removeBtn.style.minWidth = 'auto';
     removeBtn.addEventListener('click', () => {
         tr.remove();
         syncProductPriceFromSizePrices();
@@ -4720,21 +4760,89 @@ function bindProductSizePricesUI() {
     }
 }
 
+function _renderProductItemOptions(itemSelect, products, selectedId = '') {
+    if (!itemSelect) return;
+    itemSelect.innerHTML = '<option value="">None</option>';
+    (products || []).forEach(p => {
+        const label = p.category_name ? `${p.name} - ${p.category_name}` : p.name;
+        itemSelect.innerHTML += `<option value="${p.id}">${label}</option>`;
+    });
+    if (selectedId !== undefined && selectedId !== null && String(selectedId).trim().length) {
+        itemSelect.value = String(selectedId);
+    }
+}
+
+async function ensureProductItemCatalog(itemSelect, selectedId = '') {
+    const loadingHint = document.getElementById('productItemLoadingHint');
+    const now = Date.now();
+    const cacheFresh = (now - Number(AppState.productItemCatalog.loadedAt || 0)) < PRODUCT_ITEM_CATALOG_TTL_MS
+        && Array.isArray(AppState.productItemCatalog.products)
+        && AppState.productItemCatalog.products.length > 0;
+
+    if (cacheFresh) {
+        if (loadingHint) loadingHint.style.display = 'none';
+        _renderProductItemOptions(itemSelect, AppState.productItemCatalog.products, selectedId);
+        return AppState.productItemCatalog.byId || {};
+    }
+
+    if (itemSelect) {
+        itemSelect.disabled = true;
+        itemSelect.innerHTML = '<option value="">Loading items...</option>';
+    }
+    if (loadingHint) {
+        loadingHint.textContent = 'Loading items...';
+        loadingHint.style.display = 'block';
+    }
+
+    try {
+        const response = await fetch(
+            `${API_BASE}/api/products?admin=1&include_variants=0&include_image_variants=0`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        );
+        const data = await response.json();
+        const products = (data && data.success && Array.isArray(data.products)) ? data.products : [];
+        const byId = {};
+        products.forEach(p => { byId[p.id] = p; });
+
+        AppState.productItemCatalog = {
+            loadedAt: Date.now(),
+            products,
+            byId
+        };
+
+        if (itemSelect) {
+            itemSelect.disabled = false;
+            _renderProductItemOptions(itemSelect, products, selectedId);
+        }
+        if (loadingHint) loadingHint.style.display = 'none';
+        return byId;
+    } catch (e) {
+        if (itemSelect) {
+            itemSelect.disabled = false;
+            itemSelect.innerHTML = '<option value="">None</option>';
+        }
+        if (loadingHint) {
+            loadingHint.textContent = 'Could not load items';
+            loadingHint.style.display = 'block';
+        }
+        throw e;
+    }
+}
+
 // Product Management Functions
 async function showAddProductModal() {
     // Load stores and categories for dropdowns
     try {
-        const [storesResponse, categoriesResponse, productsResponse, unitsResp, sizesResp] = await Promise.all([
+        const [storesResponse, categoriesResponse, unitsResp, sizesResp] = await Promise.all([
             fetch(`${API_BASE}/api/stores?lite=1`),
             fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' }),
-            fetch(`${API_BASE}/api/products?admin=1&include_variants=0&include_image_variants=0`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             fetch(`${API_BASE}/api/units?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' }),
             fetch(`${API_BASE}/api/sizes?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' })
         ]);
 
         const storesData = await storesResponse.json();
         const categoriesData = await categoriesResponse.json();
-        const productsData = await productsResponse.json();
+        const productsData = { success: false, products: [] };
 
         // Populate store dropdown
         const storeSelect = document.getElementById('productStore');
@@ -4800,7 +4908,25 @@ async function showAddProductModal() {
                 try { recalcProductCost(); } catch (e) {}
             };
 
-            itemSelect.addEventListener('change', (e) => applyItemSelection(e.target.value));
+            itemSelect.onfocus = async () => {
+                if (!itemSelect.options || itemSelect.options.length <= 1) {
+                    try { Object.assign(productsById, await ensureProductItemCatalog(itemSelect)); } catch (e) {}
+                }
+                itemSelect.onfocus = null;
+            };
+            itemSelect.onclick = async () => {
+                if (!itemSelect.options || itemSelect.options.length <= 1) {
+                    try { Object.assign(productsById, await ensureProductItemCatalog(itemSelect)); } catch (e) {}
+                }
+                itemSelect.onclick = null;
+            };
+            itemSelect.onchange = async (e) => {
+                const val = String(e.target.value || '');
+                if (val && !productsById[val]) {
+                    try { Object.assign(productsById, await ensureProductItemCatalog(itemSelect)); } catch (err) {}
+                }
+                applyItemSelection(val);
+            };
             applyItemSelection(itemSelect.value);
         }
 
@@ -4863,8 +4989,10 @@ async function showAddProductModal() {
             if (priceEl) priceEl.value = '';
             const discountTypeEl = document.getElementById('productDiscountType');
             const discountValueEl = document.getElementById('productDiscountValue');
+            const profitValueEl = document.getElementById('productProfitValue');
             if (discountTypeEl) discountTypeEl.value = 'amount';
             if (discountValueEl) discountValueEl.value = '';
+            if (profitValueEl) profitValueEl.value = '';
             recalcProductCost();
         } catch (e) {}
         showModal('addProductModal');
@@ -4961,10 +5089,19 @@ async function saveProduct() {
         else if (productData.size_id) productData.unit_id = null;
     }
     productData.cost_price = finalCostVal;
+    const storeTerm = AppState.productStoreTermsById[String(storeId)] || '';
+    const hasDiscountTerm = isDiscountPaymentTerm(storeTerm);
+    const hasProfitTerm = isProfitPaymentTerm(storeTerm);
     const discountType = String(formData.get('discount_type') || '').trim();
     const discountValueRaw = String(formData.get('discount_value') || '').trim();
-    if (discountType) productData.discount_type = discountType;
-    if (discountValueRaw.length) productData.discount_value = parseFloat(discountValueRaw);
+    const profitValueRaw = String(formData.get('profit_value') || '').trim();
+    if (hasDiscountTerm) {
+        if (discountType) productData.discount_type = discountType;
+        if (discountValueRaw.length) productData.discount_value = parseFloat(discountValueRaw);
+    }
+    if (hasProfitTerm && profitValueRaw.length) {
+        productData.profit_value = parseFloat(profitValueRaw);
+    }
 
     // If a file was selected, upload it first to server to get back a public URL and variants
     const fileInput = document.getElementById('productImageFile');
@@ -5057,16 +5194,15 @@ async function editProduct(productId) {
             return;
         }
         const p = data.product;
-        const [storesResponse, categoriesResponse, productsResponse, unitsResp, sizesResp] = await Promise.all([
+        const [storesResponse, categoriesResponse, unitsResp, sizesResp] = await Promise.all([
             fetch(`${API_BASE}/api/stores?lite=1`),
             fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' }),
-            fetch(`${API_BASE}/api/products?admin=1&include_variants=0&include_image_variants=0`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             fetch(`${API_BASE}/api/units?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' }),
             fetch(`${API_BASE}/api/sizes?ts=${Date.now()}`, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' })
         ]);
         const storesData = await storesResponse.json();
         const categoriesData = await categoriesResponse.json();
-        const productsData = await productsResponse.json();
+        const productsData = { success: false, products: [] };
         const unitsJson = await unitsResp.json();
         const sizesJson = await sizesResp.json();
         if (unitsJson && unitsJson.success && Array.isArray(unitsJson.units)) AppState.units = unitsJson.units;
@@ -5151,7 +5287,25 @@ async function editProduct(productId) {
                 try { recalcProductCost(); } catch (e) {}
             };
 
-            itemSelect.onchange = (e) => applyItemSelection(e.target.value);
+            itemSelect.onfocus = async () => {
+                if (!itemSelect.options || itemSelect.options.length <= 1) {
+                    try { Object.assign(productsById, await ensureProductItemCatalog(itemSelect)); } catch (e) {}
+                }
+                itemSelect.onfocus = null;
+            };
+            itemSelect.onclick = async () => {
+                if (!itemSelect.options || itemSelect.options.length <= 1) {
+                    try { Object.assign(productsById, await ensureProductItemCatalog(itemSelect)); } catch (e) {}
+                }
+                itemSelect.onclick = null;
+            };
+            itemSelect.onchange = async (e) => {
+                const val = String(e.target.value || '');
+                if (val && !productsById[val]) {
+                    try { Object.assign(productsById, await ensureProductItemCatalog(itemSelect)); } catch (err) {}
+                }
+                applyItemSelection(val);
+            };
             applyItemSelection(itemSelect.value);
         }
         form.querySelector('#productName').value = p.name || '';
@@ -5180,11 +5334,13 @@ async function editProduct(productId) {
             }
         } catch (e) {}
         try { syncProductMeasureModeFromValues(); } catch (e) {}
-        if (isDiscountPaymentTerm(AppState.productStoreTermsById[String(p.store_id || '')] || '')) {
+        const storeTerm = AppState.productStoreTermsById[String(p.store_id || '')] || '';
+        if (isDiscountPaymentTerm(storeTerm)) {
             const priceNum = parseFloat(String(p.price ?? '').trim());
             const costNum = parseFloat(String(p.cost_price ?? '').trim());
             const discountTypeEl = document.getElementById('productDiscountType');
             const discountValueEl = document.getElementById('productDiscountValue');
+            const profitValueEl = document.getElementById('productProfitValue');
             if (Number.isFinite(priceNum) && Number.isFinite(costNum) && priceNum > 0) {
                 const delta = priceNum - costNum;
                 if (delta > 0) {
@@ -5192,10 +5348,28 @@ async function editProduct(productId) {
                     if (discountValueEl) discountValueEl.value = (Math.round(delta * 100) / 100).toFixed(2);
                 }
             }
+            if (profitValueEl) profitValueEl.value = '';
+        } else if (isProfitPaymentTerm(storeTerm)) {
+            const priceNum = parseFloat(String(p.price ?? '').trim());
+            const costNum = parseFloat(String(p.cost_price ?? '').trim());
+            const discountTypeEl = document.getElementById('productDiscountType');
+            const discountValueEl = document.getElementById('productDiscountValue');
+            const profitValueEl = document.getElementById('productProfitValue');
+            if (discountTypeEl) discountTypeEl.value = 'amount';
+            if (discountValueEl) discountValueEl.value = '';
+            if (Number.isFinite(priceNum) && Number.isFinite(costNum)) {
+                const profit = Math.max(0, Math.round((priceNum - costNum) * 100) / 100);
+                if (profitValueEl) profitValueEl.value = profit > 0 ? profit.toFixed(2) : '';
+            } else if (profitValueEl) {
+                profitValueEl.value = '';
+            }
         }
         try { recalcProductCost(); } catch (e) {}
         if (itemSelect) {
             if (p.item_id) {
+                ensureProductItemCatalog(itemSelect, p.item_id)
+                    .then((byId) => Object.assign(productsById, byId || {}))
+                    .catch(() => {});
                 itemSelect.value = p.item_id;
                 const useItem = true;
                 const nameEl = document.getElementById('productName');

@@ -21,6 +21,11 @@ function isDiscountPaymentTerm(term) {
     return String(term || '').toLowerCase().includes('with discount');
 }
 
+function isProfitPaymentTerm(term) {
+    const t = String(term || '').toLowerCase().trim();
+    return t === 'cash only' || t === 'credit';
+}
+
 function computeCostFromPrice({ price, discountType, discountValue }) {
     const p = Number(price);
     if (!Number.isFinite(p) || p < 0) return null;
@@ -32,15 +37,22 @@ function computeCostFromPrice({ price, discountType, discountValue }) {
     return roundMoney(out < 0 ? 0 : out);
 }
 
-function deriveCostForPrice({ price, paymentTerm, discountType, discountValue }) {
+function deriveCostForPrice({ price, paymentTerm, discountType, discountValue, profitValue }) {
     const p = Number(price);
     if (!Number.isFinite(p) || p < 0) return null;
     const rounded = roundMoney(p);
     if (rounded === null) return null;
-    if (!isDiscountPaymentTerm(paymentTerm)) return rounded;
-    const dv = Number(discountValue);
-    if (!Number.isFinite(dv) || dv <= 0) return rounded;
-    return computeCostFromPrice({ price: rounded, discountType, discountValue: dv });
+    if (isDiscountPaymentTerm(paymentTerm)) {
+        const dv = Number(discountValue);
+        if (!Number.isFinite(dv) || dv <= 0) return rounded;
+        return computeCostFromPrice({ price: rounded, discountType, discountValue: dv });
+    }
+    if (isProfitPaymentTerm(paymentTerm)) {
+        const pv = Number(profitValue);
+        if (!Number.isFinite(pv) || pv <= 0) return rounded;
+        return roundMoney(Math.max(0, rounded - pv));
+    }
+    return rounded;
 }
 
 function normalizeNumber(val) {
@@ -684,6 +696,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
     body('cost_price').optional().isFloat({ min: 0 }).withMessage('Cost price must be a positive number'),
     body('discount_type').optional().isIn(['amount', 'percent']).withMessage('Invalid discount type'),
     body('discount_value').optional().isFloat({ min: 0 }).withMessage('Discount value must be a positive number'),
+    body('profit_value').optional().isFloat({ min: 0 }).withMessage('Profit value must be a positive number'),
     body('store_id').isInt().withMessage('Store ID must be a valid integer'),
     body('stock_quantity').optional().isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer')
 ], async (req, res) => {
@@ -708,6 +721,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
         const cost_price = req.body.cost_price;
         const discount_type = req.body.discount_type;
         const discount_value = req.body.discount_value;
+        const profit_value = req.body.profit_value;
         let image_url = req.body.image_url ?? null;
 
         // Check if store exists and user has permission
@@ -742,6 +756,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
         const paymentTerm = stores[0].payment_term;
         const normalizedCost = normalizeNumber(cost_price);
         const normalizedDiscount = normalizeNumber(discount_value);
+        const normalizedProfit = normalizeNumber(profit_value);
         let derivedCost = null;
         
         // --- LOGIC FIX START: Enforce Business Rule "Item Cost = Price - Discount" ---
@@ -762,6 +777,14 @@ router.post('/', authenticateToken, requireStaffAccess, [
                 derivedCost = roundMoney(normalizedCost.value);
             } else {
                 // Case 3: No discount, no cost. Default Cost = Price (0 Profit).
+                derivedCost = roundMoney(normalizedEffectivePrice.value);
+            }
+        } else if (isProfitPaymentTerm(paymentTerm)) {
+            if (normalizedProfit.present && normalizedProfit.ok) {
+                derivedCost = roundMoney(Math.max(0, normalizedEffectivePrice.value - normalizedProfit.value));
+            } else if (normalizedCost.present && normalizedCost.ok) {
+                derivedCost = roundMoney(normalizedCost.value);
+            } else {
                 derivedCost = roundMoney(normalizedEffectivePrice.value);
             }
         } else {
@@ -862,12 +885,13 @@ router.post('/', authenticateToken, requireStaffAccess, [
                 return res.status(500).json({ success: false, message: 'Failed to initialize size pricing table' });
             }
             const dv = (normalizedDiscount.present && normalizedDiscount.ok) ? normalizedDiscount.value : null;
+            const pv = (normalizedProfit.present && normalizedProfit.ok) ? normalizedProfit.value : null;
             const values = [];
             const placeholders = [];
             const variantsWithCost = [];
             for (let i = 0; i < requestedVariants.length; i++) {
                 const v = requestedVariants[i];
-                const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm, discountType: discount_type, discountValue: dv });
+                const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm, discountType: discount_type, discountValue: dv, profitValue: pv });
                 const variantCost = derivedVariantCost === null ? roundMoney(v.price) : derivedVariantCost;
                 variantsWithCost.push({ size_id: v.size_id ?? null, unit_id: v.unit_id ?? null, price: roundMoney(v.price), cost_price: variantCost });
                 placeholders.push('(?, ?, ?, ?, ?, ?)');
@@ -909,6 +933,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
     body('price').optional().isFloat({ min: 0 }).withMessage('Price must be a positive number'),
     body('discount_type').optional().isIn(['amount', 'percent']).withMessage('Invalid discount type'),
     body('discount_value').optional().isFloat({ min: 0 }).withMessage('Discount value must be a positive number'),
+    body('profit_value').optional().isFloat({ min: 0 }).withMessage('Profit value must be a positive number'),
     body('stock_quantity').optional().isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer')
 ], async (req, res) => {
     try {
@@ -957,6 +982,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
         let price = req.body.price;
         const discount_type = req.body.discount_type;
         const discount_value = req.body.discount_value;
+        const profit_value = req.body.profit_value;
         let image_url = req.body.image_url;
 
         const variantsProvided = (req.body && (req.body.size_variants !== undefined || req.body.variants !== undefined));
@@ -977,12 +1003,22 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 if (!ensured) return res.status(500).json({ success: false, message: 'Failed to initialize size pricing table' });
                 await req.db.execute('DELETE FROM product_size_prices WHERE product_id = ?', [id]);
                 const normDisc = normalizeNumber(discount_value);
-                const dv = (normDisc.present && normDisc.ok) ? normDisc.value : null;
+                const dv = (normDisc.present && normDisc.ok) ? normDisc.value : normalizeNumber(product.discount_value).value;
+                const normProfit = normalizeNumber(profit_value);
+                let pv = (normProfit.present && normProfit.ok) ? normProfit.value : null;
+                if (pv === null && isProfitPaymentTerm(product.payment_term)) {
+                    const existingPrice = Number(product.price);
+                    const existingCost = Number(product.cost_price);
+                    if (Number.isFinite(existingPrice) && Number.isFinite(existingCost)) {
+                        pv = Math.max(0, roundMoney(existingPrice - existingCost));
+                    }
+                }
+                const finalDiscountTypeForVariants = discount_type !== undefined ? discount_type : product.discount_type;
                 const values = [];
                 const placeholders = [];
                 for (let i = 0; i < requestedVariants.length; i++) {
                     const v = requestedVariants[i];
-                    const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm: product.payment_term, discountType: discount_type, discountValue: dv });
+                    const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm: product.payment_term, discountType: finalDiscountTypeForVariants, discountValue: dv, profitValue: pv });
                     const variantCost = derivedVariantCost === null ? roundMoney(v.price) : derivedVariantCost;
                     placeholders.push('(?, ?, ?, ?, ?, ?)');
                     values.push(id, v.size_id ?? null, v.unit_id ?? null, v.price, variantCost, i);
@@ -1008,7 +1044,9 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
         const normalizedCost = normalizeNumber(cost_price);
         const normalizedPrice = normalizeNumber(price);
         const normalizedDiscount = normalizeNumber(discount_value);
+        const normalizedProfit = normalizeNumber(profit_value);
         const hasDiscount = isDiscountPaymentTerm(product.payment_term);
+        const hasProfitTerm = isProfitPaymentTerm(product.payment_term);
         
         // --- LOGIC FIX START: Enforce "Cost = Price - Discount" on Update ---
         
@@ -1031,6 +1069,22 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 derivedCost = roundMoney(normalizedCost.value);
             } else {
                 // Priority 3: Default to Price (0 Profit)
+                derivedCost = roundMoney(finalPrice);
+            }
+        } else if (hasProfitTerm) {
+            let finalProfitValue = normalizedProfit.present && normalizedProfit.ok ? normalizedProfit.value : null;
+            if (finalProfitValue === null) {
+                const existingPrice = Number(product.price);
+                const existingCost = Number(product.cost_price);
+                if (Number.isFinite(existingPrice) && Number.isFinite(existingCost)) {
+                    finalProfitValue = Math.max(0, roundMoney(existingPrice - existingCost));
+                }
+            }
+            if (finalProfitValue !== null && Number.isFinite(finalProfitValue)) {
+                derivedCost = roundMoney(Math.max(0, finalPrice - finalProfitValue));
+            } else if (normalizedCost.present && normalizedCost.ok) {
+                derivedCost = roundMoney(normalizedCost.value);
+            } else if (normalizedPrice.present) {
                 derivedCost = roundMoney(finalPrice);
             }
         } else {

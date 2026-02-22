@@ -86,6 +86,10 @@ class _StoreBalancesScreenState extends State<StoreBalancesScreen> {
           'pending_orders': 0,
           'cancelled_orders': 0,
           'gross_sales': 0.0,
+          'net_sales': 0.0,
+          'total_discount': 0.0,
+          'total_cost': 0.0,
+          'estimated_profit': 0.0,
           'served_sales': 0.0,
           'pending_sales': 0.0,
           'wallet_balance': storeWalletBalances[sid] ?? 0.0,
@@ -107,6 +111,10 @@ class _StoreBalancesScreenState extends State<StoreBalancesScreen> {
             'pending_orders': 0,
             'cancelled_orders': 0,
             'gross_sales': 0.0,
+            'net_sales': 0.0,
+            'total_discount': 0.0,
+            'total_cost': 0.0,
+            'estimated_profit': 0.0,
             'served_sales': 0.0,
             'pending_sales': 0.0,
             'wallet_balance': storeWalletBalances[sid] ?? 0.0,
@@ -119,6 +127,7 @@ class _StoreBalancesScreenState extends State<StoreBalancesScreen> {
             double.tryParse(o['store_order_amount']?.toString() ?? '0') ?? 0;
         summary['total_orders'] = (summary['total_orders'] as int) + 1;
         summary['gross_sales'] = (summary['gross_sales'] as double) + amount;
+        summary['net_sales'] = (summary['net_sales'] as double) + amount;
 
         if (status == 'delivered') {
           summary['served_orders'] = (summary['served_orders'] as int) + 1;
@@ -145,12 +154,23 @@ class _StoreBalancesScreenState extends State<StoreBalancesScreen> {
         final sid = int.tryParse(ss['store_id']?.toString() ?? '');
         if (sid == null || !storeSummaryMap.containsKey(sid)) continue;
         final summary = storeSummaryMap[sid]!;
-        final totalSales =
-            double.tryParse(ss['total_sales']?.toString() ?? '0') ?? 0;
+        final totalGrossSales =
+            double.tryParse(ss['total_sales_gross']?.toString() ?? '0') ?? 0;
+        final totalNetSales =
+            double.tryParse(ss['total_sales_net']?.toString() ?? '0') ?? 0;
+        final totalDiscount =
+            double.tryParse(ss['total_discount']?.toString() ?? '0') ?? 0;
+        final totalCost =
+            double.tryParse(ss['total_cost']?.toString() ?? '0') ?? 0;
+        final estimatedProfit =
+            double.tryParse(ss['estimated_profit']?.toString() ?? '0') ?? 0;
         final avgOrder =
             double.tryParse(ss['average_order_value']?.toString() ?? '0') ?? 0;
-        summary['gross_sales'] =
-            totalSales > 0 ? totalSales : summary['gross_sales'];
+        summary['gross_sales'] = totalGrossSales;
+        summary['net_sales'] = totalNetSales;
+        summary['total_discount'] = totalDiscount;
+        summary['total_cost'] = totalCost;
+        summary['estimated_profit'] = estimatedProfit;
         summary['average_order_value'] = avgOrder;
         summary['unique_customers'] =
             int.tryParse(ss['unique_customers']?.toString() ?? '0') ?? 0;
@@ -276,12 +296,12 @@ class _StoreBalancesScreenState extends State<StoreBalancesScreen> {
 
   Map<String, dynamic> _summaryTotals(List<Map<String, dynamic>> rows) {
     int orders = 0;
-    double sales = 0;
+    double netSales = 0;
     for (final r in rows) {
       orders += r['total_orders'] as int? ?? 0;
-      sales += r['gross_sales'] as double? ?? 0;
+      netSales += r['net_sales'] as double? ?? 0;
     }
-    return {'orders': orders, 'sales': sales};
+    return {'orders': orders, 'net_sales': netSales};
   }
 
   Widget _buildFilterDropdown() {
@@ -371,6 +391,10 @@ class _StoreBalancesScreenState extends State<StoreBalancesScreen> {
     final cancelled = row['cancelled_orders'] as int? ?? 0;
     final wallet = row['wallet_balance'] as double? ?? 0;
     final gross = row['gross_sales'] as double? ?? 0;
+    final net = row['net_sales'] as double? ?? 0;
+    final discount = row['total_discount'] as double? ?? 0;
+    final cost = row['total_cost'] as double? ?? 0;
+    final profit = row['estimated_profit'] as double? ?? 0;
     final deliveredSales = row['served_sales'] as double? ?? 0;
     final pendingSales = row['pending_sales'] as double? ?? 0;
     final orders = (row['orders'] as List<Map<String, dynamic>>?) ?? [];
@@ -401,6 +425,18 @@ class _StoreBalancesScreenState extends State<StoreBalancesScreen> {
               _metricChip('Pending', '$pending', Colors.orange),
               _metricChip('Cancelled', '$cancelled', Colors.red),
               _metricChip('Gross', 'PKR ${gross.toStringAsFixed(0)}', Colors.blue),
+              _metricChip('Net', 'PKR ${net.toStringAsFixed(0)}', Colors.indigo),
+              _metricChip(
+                'Discount',
+                'PKR ${discount.toStringAsFixed(0)}',
+                Colors.purple,
+              ),
+              _metricChip('Cost', 'PKR ${cost.toStringAsFixed(0)}', Colors.brown),
+              _metricChip(
+                'Profit',
+                'PKR ${profit.toStringAsFixed(0)}',
+                profit >= 0 ? Colors.teal : Colors.red,
+              ),
               _metricChip(
                 'Delivered Sales',
                 'PKR ${deliveredSales.toStringAsFixed(0)}',
@@ -580,9 +616,9 @@ class _StoreBalancesScreenState extends State<StoreBalancesScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: _infoBadge(
-                                label: 'Sales',
+                                label: 'Net Sales',
                                 value:
-                                    'PKR ${(totals['sales'] as double).toStringAsFixed(0)}',
+                                    'PKR ${(totals['net_sales'] as double).toStringAsFixed(0)}',
                                 color: Colors.green,
                               ),
                             ),

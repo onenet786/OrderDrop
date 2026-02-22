@@ -378,6 +378,9 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
 
     final storeName = _stats['store_name'] ?? 'Loading...';
     final storeId = _stats['store_id']?.toString() ?? '-';
+    final ownerName = (_stats['owner_name'] ?? 'N/A').toString();
+    final ownerEmail = (_stats['owner_email'] ?? 'N/A').toString();
+    final ownerPhone = (_stats['owner_phone'] ?? 'N/A').toString();
     final totalOrders = _stats['total_orders']?.toString() ?? '0';
     final delivered = _stats['delivered']?.toString() ?? '0';
     final preparing = _stats['preparing']?.toString() ?? '0';
@@ -427,6 +430,32 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                         fontSize: 12,
                         color: Colors.grey,
                       ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Owner: $ownerName',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'Email: $ownerEmail',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'Phone: $ownerPhone',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

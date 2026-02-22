@@ -428,6 +428,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             },
           ),
           ListTile(
+            leading: const Icon(Icons.phone_android),
+            title: const Text('Customer Dashboard Test'),
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).pushNamed('/customer-test-dashboard');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.key),
             title: const Text('Change Password'),
             onTap: () {

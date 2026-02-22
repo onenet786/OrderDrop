@@ -1389,7 +1389,7 @@ router.get('/store-settlements/unsettled-items', async (req, res) => {
         const [items] = await req.db.execute(`
             SELECT 
                 oi.id, oi.order_id, oi.product_id, oi.quantity, oi.price, 
-                oi.variant_label,
+                oi.variant_label, oi.discount_type, oi.discount_value,
                 o.order_number, o.created_at as order_date,
                 p.name as product_name,
                 s.commission_rate
@@ -1405,15 +1405,41 @@ router.get('/store-settlements/unsettled-items', async (req, res) => {
         `, [store_id]);
 
         // Calculate totals
-        let total_amount = 0;
-        // Default commission rate 10% if not set
-        let commission_rate = items.length > 0 ? parseFloat(items[0].commission_rate || 10) : 10;
+        let total_amount = 0; // Net item sales after item discounts
+        let gross_amount = 0;
+        let total_discount = 0;
+        let commission_amount = 0;
+        // Keep compatibility for UI field
+        const commission_rate = items.length > 0 ? parseFloat(items[0].commission_rate || 10) : 10;
         
         items.forEach(item => {
-            total_amount += parseFloat(item.price) * item.quantity;
+            const qty = Number(item.quantity || 0);
+            const unitPrice = Number(item.price || 0);
+            const lineGross = unitPrice * qty;
+            const itemRate = Number(item.commission_rate || 10);
+            let unitDiscount = 0;
+            if (item.discount_type === 'percent' && Number(item.discount_value || 0) > 0) {
+                unitDiscount = unitPrice * (Number(item.discount_value || 0) / 100);
+            } else if (item.discount_type === 'amount' && Number(item.discount_value || 0) > 0) {
+                unitDiscount = Number(item.discount_value || 0);
+            }
+            const lineDiscount = Math.max(0, unitDiscount * qty);
+            const lineNet = Math.max(0, lineGross - lineDiscount);
+            const lineCommission = lineNet * (itemRate / 100);
+            const linePayable = lineNet - lineCommission;
+
+            gross_amount += lineGross;
+            total_discount += lineDiscount;
+            total_amount += lineNet;
+            commission_amount += lineCommission;
+
+            item.line_gross = lineGross;
+            item.line_discount = lineDiscount;
+            item.line_net = lineNet;
+            item.line_commission = lineCommission;
+            item.line_payable = linePayable;
         });
 
-        const commission_amount = (total_amount * commission_rate) / 100;
         const net_amount = total_amount - commission_amount;
 
         res.json({
@@ -1421,6 +1447,8 @@ router.get('/store-settlements/unsettled-items', async (req, res) => {
             items,
             summary: {
                 total_orders_amount: total_amount,
+                total_gross_amount: gross_amount,
+                total_discount,
                 commission_rate,
                 commissions: commission_amount,
                 net_amount,
@@ -1515,7 +1543,7 @@ router.post('/store-settlements', [
         if (auto_calculate === true || auto_calculate === 'true' || auto_calculate === 'on') {
              const [items] = await conn.execute(`
                 SELECT 
-                    oi.id, oi.quantity, oi.price,
+                    oi.id, oi.quantity, oi.price, oi.discount_type, oi.discount_value,
                     s.commission_rate
                 FROM order_items oi
                 JOIN orders o ON oi.order_id = o.id
@@ -1536,16 +1564,30 @@ router.post('/store-settlements', [
                 });
             }
 
-            let calculated_total = 0;
-            let commission_rate = items.length > 0 ? parseFloat(items[0].commission_rate || 10) : 10;
+            let calculated_total = 0; // Net item sales after discount
+            let calculated_commissions = 0;
             
             items.forEach(item => {
-                calculated_total += parseFloat(item.price) * item.quantity;
+                const qty = Number(item.quantity || 0);
+                const unitPrice = Number(item.price || 0);
+                const itemRate = Number(item.commission_rate || 10);
+                const gross = unitPrice * qty;
+                let unitDiscount = 0;
+                if (item.discount_type === 'percent' && Number(item.discount_value || 0) > 0) {
+                    unitDiscount = unitPrice * (Number(item.discount_value || 0) / 100);
+                } else if (item.discount_type === 'amount' && Number(item.discount_value || 0) > 0) {
+                    unitDiscount = Number(item.discount_value || 0);
+                }
+                const lineDiscount = Math.max(0, unitDiscount * qty);
+                const lineNet = Math.max(0, gross - lineDiscount);
+                const lineCommission = lineNet * (itemRate / 100);
+                calculated_total += lineNet;
+                calculated_commissions += lineCommission;
                 settlement_items.push(item.id);
             });
 
             final_total = calculated_total;
-            final_commissions = (final_total * commission_rate) / 100;
+            final_commissions = calculated_commissions;
             final_deductions = parseFloat(deductions || 0);
             final_net = final_total - final_commissions - final_deductions;
         }

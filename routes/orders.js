@@ -1131,7 +1131,7 @@ router.get(
 
       // Find stores owned by this user
       const [myStores] = await req.db.execute(
-        "SELECT id, name FROM stores WHERE owner_id = ?",
+        "SELECT id, name, owner_id FROM stores WHERE owner_id = ?",
         [req.user.id],
       );
 
@@ -1188,40 +1188,77 @@ router.get(
           WHERE oi.store_id IN (${placeholders})
       `, [...storeIds]);
 
-      // 2. Total Revenue (Sum of items for this store in delivered orders)
-      // Apply commission rate (default 10% if not set)
-      // Formula: sum(price * quantity) * (1 - commission_rate/100)
+      // 2. Total Revenue (Net item sales for this store in delivered orders)
+      // Keep this aligned with admin store balance logic:
+      // net = sum(qty * (gross_price - item_discount))
       const [revenueRows] = await req.db.execute(`
           SELECT 
             COALESCE(
                 SUM(
-                    (oi.price * oi.quantity) * 
-                    (1 - COALESCE(s.commission_rate, 10.00) / 100)
+                    oi.quantity * (
+                      oi.price - (
+                        CASE
+                          WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                            THEN oi.price * (oi.discount_value / 100)
+                          WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                            THEN oi.discount_value
+                          ELSE 0
+                        END
+                      )
+                    )
                 ), 
             0) as revenue
           FROM order_items oi
           JOIN orders o ON oi.order_id = o.id
-          JOIN stores s ON oi.store_id = s.id
           WHERE oi.store_id IN (${placeholders}) AND o.status = 'delivered'
       `, [...storeIds]);
 
-      // 3. Wallet Balance (Received Balance)
+      // 3. Wallet Balance (use store wallet(s), not owner user wallet)
       const [walletRows] = await req.db.execute(
-          'SELECT balance FROM wallets WHERE user_id = ?', 
-          [req.user.id]
+          `SELECT COALESCE(SUM(balance), 0) as balance
+           FROM wallets
+           WHERE store_id IN (${placeholders})`,
+          [...storeIds]
       );
       const balance = walletRows.length > 0 ? walletRows[0].balance : 0;
 
       // 4. Get Store Name explicitly for dashboard display
       const [storeInfo] = await req.db.execute(
-          'SELECT name FROM stores WHERE id = ?', 
+          'SELECT name, owner_name FROM stores WHERE id = ?', 
           [myStores[0].id]
       );
       const storeName = storeInfo.length > 0 ? storeInfo[0].name : myStores[0].name;
+      const storeOwnerName = storeInfo.length > 0
+        ? (storeInfo[0].owner_name || '').toString().trim()
+        : '';
+
+      // 5. Owner info for dashboard header
+      const ownerId = myStores[0].owner_id || req.user.id;
+      const [ownerInfoRows] = await req.db.execute(
+          `SELECT first_name, last_name, email, phone
+           FROM users
+           WHERE id = ?
+           LIMIT 1`,
+          [ownerId]
+      );
+      const ownerInfo = ownerInfoRows.length > 0 ? ownerInfoRows[0] : {};
+      let ownerName = storeOwnerName;
+      if (!ownerName) {
+        ownerName = `${ownerInfo.first_name || ''} ${ownerInfo.last_name || ''}`.trim();
+      }
+      if (ownerName && String(ownerName).toLowerCase() === String(storeName).toLowerCase()) {
+        ownerName = '';
+      }
+      if (!ownerName) {
+        ownerName = 'N/A';
+      }
 
       const stats = {
           store_id: myStores[0].id,
           store_name: storeName, // Ensure this is populated correctly
+          owner_name: ownerName || 'N/A',
+          owner_email: ownerInfo.email || 'N/A',
+          owner_phone: ownerInfo.phone || 'N/A',
           total_orders: countRows[0].total_orders,
           delivered: countRows[0].delivered,
           preparing: countRows[0].preparing,
