@@ -545,11 +545,73 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
       int selectedStoreId = normalizedStores.first['id'] as int;
       bool isClosed = false;
+      bool websiteEnabled = false;
+      bool websiteBlockOrdering = false;
+      bool storeSaving = false;
+      bool websiteSaving = false;
       final messageCtrl = TextEditingController();
       final searchCtrl = TextEditingController();
+      final websiteTitleCtrl = TextEditingController();
+      final websiteMessageCtrl = TextEditingController();
+      final websiteStartCtrl = TextEditingController();
+      final websiteEndCtrl = TextEditingController();
       List<Map<String, dynamic>> visibleStores = List<Map<String, dynamic>>.from(
         normalizedStores,
       );
+
+      bool toBool(dynamic value) {
+        if (value is bool) return value;
+        if (value is num) return value != 0;
+        if (value is String) {
+          final normalized = value.trim().toLowerCase();
+          return normalized == 'true' || normalized == '1' || normalized == 'yes';
+        }
+        return false;
+      }
+
+      String toDateTimeLocalString(DateTime dateTime) {
+        final d = dateTime.toLocal();
+        final m = d.month.toString().padLeft(2, '0');
+        final day = d.day.toString().padLeft(2, '0');
+        final h = d.hour.toString().padLeft(2, '0');
+        final min = d.minute.toString().padLeft(2, '0');
+        return '${d.year}-$m-${day}T$h:$min';
+      }
+
+      String formatForDisplay(dynamic raw) {
+        final parsed = DateTime.tryParse((raw ?? '').toString());
+        if (parsed == null) return '';
+        return toDateTimeLocalString(parsed);
+      }
+
+      Future<void> pickDateTime(
+        TextEditingController ctrl,
+        void Function(VoidCallback) setDialogState,
+      ) async {
+        final now = DateTime.now();
+        final current = DateTime.tryParse(ctrl.text.trim())?.toLocal() ?? now;
+        final pickedDate = await showDatePicker(
+          context: context,
+          initialDate: current,
+          firstDate: DateTime(now.year - 1),
+          lastDate: DateTime(now.year + 5),
+        );
+        if (pickedDate == null) return;
+        if (!mounted) return;
+        final pickedTime = await showTimePicker(
+          context: context,
+          initialTime: TimeOfDay.fromDateTime(current),
+        );
+        if (pickedTime == null) return;
+        final merged = DateTime(
+          pickedDate.year,
+          pickedDate.month,
+          pickedDate.day,
+          pickedTime.hour,
+          pickedTime.minute,
+        );
+        setDialogState(() => ctrl.text = toDateTimeLocalString(merged));
+      }
 
       Future<void> loadStoreStatus(int storeId, void Function(VoidCallback) setDialogState) async {
         try {
@@ -578,19 +640,52 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         messageCtrl.text = (initial['status_message'] ?? '').toString();
       } catch (_) {}
 
+      try {
+        final data = await ApiService.getGlobalDeliveryStatus(token);
+        final status = (data['status'] is Map<String, dynamic>)
+            ? (data['status'] as Map<String, dynamic>)
+            : (data['global_status'] is Map<String, dynamic>)
+                ? (data['global_status'] as Map<String, dynamic>)
+                : data;
+        websiteEnabled = toBool(status['is_enabled']);
+        websiteBlockOrdering = toBool(status['block_ordering']);
+        websiteTitleCtrl.text = (status['title'] ?? '').toString();
+        websiteMessageCtrl.text = (status['status_message'] ?? '').toString();
+        websiteStartCtrl.text = formatForDisplay(status['start_at']);
+        websiteEndCtrl.text = formatForDisplay(status['end_at']);
+      } catch (_) {}
+
+      if (websiteStartCtrl.text.trim().isEmpty) {
+        websiteStartCtrl.text = toDateTimeLocalString(DateTime.now());
+      }
+      if (websiteEndCtrl.text.trim().isEmpty) {
+        websiteEndCtrl.text = toDateTimeLocalString(DateTime.now());
+      }
+
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (ctx) {
-          bool saving = false;
           return StatefulBuilder(
             builder: (dialogContext, setDialogState) {
               return AlertDialog(
-                title: const Text('Update Store Status'),
+                title: const Text('Store Status'),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Per-Store Status',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       TextField(
                         controller: searchCtrl,
                         decoration: const InputDecoration(
@@ -683,39 +778,205 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           border: OutlineInputBorder(),
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: storeSaving
+                              ? null
+                              : () async {
+                                  setDialogState(() => storeSaving = true);
+                                  try {
+                                    await ApiService.setStoreStatusMessage(
+                                      token,
+                                      storeId: selectedStoreId,
+                                      statusMessage: messageCtrl.text.trim(),
+                                      isClosed: isClosed,
+                                    );
+                                    if (!mounted) return;
+                                    Notifier.success(
+                                      context,
+                                      'Store message updated successfully',
+                                    );
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    Notifier.error(context, 'Failed to save store status: $e');
+                                  } finally {
+                                    if (ctx.mounted) {
+                                      setDialogState(() => storeSaving = false);
+                                    }
+                                  }
+                                },
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Save Store Status'),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Divider(height: 1),
+                      ),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Website-Wide Delivery Status',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Enable Website-Wide Message'),
+                        value: websiteEnabled,
+                        onChanged: (v) => setDialogState(() => websiteEnabled = v),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Block Add to Cart / Place Order'),
+                        subtitle: const Text(
+                          'If enabled, ordering is blocked during active time window.',
+                        ),
+                        value: websiteBlockOrdering,
+                        onChanged: (v) => setDialogState(() => websiteBlockOrdering = v),
+                      ),
+                      TextField(
+                        controller: websiteTitleCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Title',
+                          hintText: 'Delivery Unavailable',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: websiteMessageCtrl,
+                        maxLines: 4,
+                        maxLength: 500,
+                        decoration: const InputDecoration(
+                          labelText: 'Website Message',
+                          hintText: 'Delivery will be unavailable from ... to ...',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: websiteStartCtrl,
+                              readOnly: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Start At',
+                                hintText: 'YYYY-MM-DDTHH:mm',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Pick start time',
+                            onPressed: () => pickDateTime(websiteStartCtrl, setDialogState),
+                            icon: const Icon(Icons.schedule),
+                          ),
+                          IconButton(
+                            tooltip: 'Clear start time',
+                            onPressed: () => setDialogState(() => websiteStartCtrl.clear()),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: websiteEndCtrl,
+                              readOnly: true,
+                              decoration: const InputDecoration(
+                                labelText: 'End At',
+                                hintText: 'YYYY-MM-DDTHH:mm',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Pick end time',
+                            onPressed: () => pickDateTime(websiteEndCtrl, setDialogState),
+                            icon: const Icon(Icons.schedule),
+                          ),
+                          IconButton(
+                            tooltip: 'Clear end time',
+                            onPressed: () => setDialogState(() => websiteEndCtrl.clear()),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: websiteSaving
+                              ? null
+                              : () async {
+                                  setDialogState(() => websiteSaving = true);
+                                  try {
+                                    if (websiteStartCtrl.text.trim().isEmpty) {
+                                      websiteStartCtrl.text = toDateTimeLocalString(DateTime.now());
+                                    }
+                                    if (websiteEndCtrl.text.trim().isEmpty) {
+                                      websiteEndCtrl.text = toDateTimeLocalString(DateTime.now());
+                                    }
+                                    final startAt = websiteStartCtrl.text.trim();
+                                    final endAt = websiteEndCtrl.text.trim();
+                                    if (startAt.isNotEmpty && endAt.isNotEmpty) {
+                                      final start = DateTime.tryParse(startAt);
+                                      final end = DateTime.tryParse(endAt);
+                                      if (start == null || end == null || !end.isAfter(start)) {
+                                        Notifier.error(
+                                          context,
+                                          'End time must be greater than start time.',
+                                        );
+                                        return;
+                                      }
+                                    }
+
+                                    await ApiService.setGlobalDeliveryStatus(
+                                      token,
+                                      isEnabled: websiteEnabled,
+                                      blockOrdering: websiteBlockOrdering,
+                                      title: websiteTitleCtrl.text,
+                                      statusMessage: websiteMessageCtrl.text.trim(),
+                                      startAt: startAt,
+                                      endAt: endAt,
+                                    );
+                                    if (!mounted) return;
+                                    Notifier.success(
+                                      context,
+                                      'Website delivery status updated successfully',
+                                    );
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    Notifier.error(context, 'Failed to save website status: $e');
+                                  } finally {
+                                    if (ctx.mounted) {
+                                      setDialogState(() => websiteSaving = false);
+                                    }
+                                  }
+                                },
+                          icon: const Icon(Icons.save_outlined),
+                          label: const Text('Save Website Status'),
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 actions: [
                   TextButton(
-                    onPressed: saving ? null : () => Navigator.of(ctx).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  ElevatedButton(
-                    onPressed: saving
-                        ? null
-                        : () async {
-                            setDialogState(() => saving = true);
-                            try {
-                              await ApiService.setStoreStatusMessage(
-                                token,
-                                storeId: selectedStoreId,
-                                statusMessage: messageCtrl.text.trim(),
-                                isClosed: isClosed,
-                              );
-                              if (!mounted || !ctx.mounted) return;
-                              Navigator.of(ctx).pop();
-                              Notifier.success(
-                                context,
-                                'Store message updated successfully',
-                              );
-                            } catch (e) {
-                              if (!mounted) return;
-                              setDialogState(() => saving = false);
-                              Notifier.error(context, 'Failed to save: $e');
-                            }
-                          },
-                    child: const Text('Save'),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Close'),
                   ),
                 ],
               );
@@ -723,6 +984,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           );
         },
       );
+      messageCtrl.dispose();
+      searchCtrl.dispose();
+      websiteTitleCtrl.dispose();
+      websiteMessageCtrl.dispose();
+      websiteStartCtrl.dispose();
+      websiteEndCtrl.dispose();
     } catch (e) {
       if (!mounted) return;
       Notifier.error(context, 'Failed to open store message dialog: $e');

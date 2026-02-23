@@ -16,6 +16,7 @@ const AppState = {
     riders: [],
     units: [],
     sizes: [],
+    globalDeliveryStatus: null,
     productStoreTermsById: {},
     productItemCatalog: {
         loadedAt: 0,
@@ -49,6 +50,165 @@ const AppState = {
         wallets: { column: 'id', direction: 'asc' }
     }
 };
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function toDateTimeLocalValue(rawValue) {
+    if (!rawValue) return '';
+    const dt = new Date(rawValue);
+    if (Number.isNaN(dt.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
+function nowDateTimeLocalValue() {
+    return toDateTimeLocalValue(new Date());
+}
+
+function formatDeliveryWindowText(startRaw, endRaw) {
+    if (!startRaw || !endRaw) return '';
+    const start = new Date(startRaw);
+    const end = new Date(endRaw);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
+    return `${start.toLocaleString()} - ${end.toLocaleString()}`;
+}
+
+function buildDeliveryMessageWithWindow(message, startRaw, endRaw) {
+    const reason = (message || '').trim();
+    const when = formatDeliveryWindowText(startRaw, endRaw);
+    if (reason && when) return `${reason} (${when})`;
+    if (reason) return reason;
+    if (when) return `Delivery update: ${when}`;
+    return 'No message set.';
+}
+
+function renderGlobalDeliveryPreview() {
+    const preview = document.getElementById('globalDeliveryPreview');
+    const enabledEl = document.getElementById('globalDeliveryEnabled');
+    const titleEl = document.getElementById('globalDeliveryTitle');
+    const messageEl = document.getElementById('globalDeliveryMessage');
+    const startEl = document.getElementById('globalDeliveryStartAt');
+    const endEl = document.getElementById('globalDeliveryEndAt');
+    const blockOrderingEl = document.getElementById('globalDeliveryBlockOrdering');
+    const stateEl = document.getElementById('globalDeliveryCurrentState');
+    if (!preview || !enabledEl || !titleEl || !messageEl || !startEl || !endEl || !blockOrderingEl || !stateEl) return;
+
+    const enabled = !!enabledEl.checked;
+    const title = (titleEl.value || '').trim() || 'Delivery Update';
+    const message = buildDeliveryMessageWithWindow(messageEl.value, startEl.value, endEl.value);
+    const start = startEl.value ? new Date(startEl.value) : null;
+    const end = endEl.value ? new Date(endEl.value) : null;
+    const now = new Date();
+    const inWindow = enabled && start && end && now >= start && now <= end;
+    const blockOrdering = !!blockOrderingEl.checked;
+
+    stateEl.className = `global-delivery-state ${inWindow ? 'state-unavailable' : 'state-available'}`;
+    stateEl.textContent = inWindow ? 'Delivery Unavailable (Active)' : 'Delivery Available';
+
+    const whenText = start && end ? `${start.toLocaleString()} - ${end.toLocaleString()}` : 'No time window selected';
+    preview.innerHTML = `
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(message)}</p>
+        <p><small><strong>Window:</strong> ${escapeHtml(whenText)}</small></p>
+        <p><small><strong>Status:</strong> ${enabled ? 'Notice Enabled' : 'Notice Disabled'}</small></p>
+        <p><small><strong>Ordering:</strong> ${blockOrdering ? 'Blocked during active window' : 'Allowed'}</small></p>
+    `;
+}
+
+async function loadGlobalDeliveryStatus() {
+    const enabledEl = document.getElementById('globalDeliveryEnabled');
+    if (!enabledEl) return null;
+    try {
+        const response = await fetch(`${API_BASE}/api/stores/global-delivery-status`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!data.success || !data.global_delivery_status) {
+            return null;
+        }
+        const s = data.global_delivery_status;
+        AppState.globalDeliveryStatus = s;
+        document.getElementById('globalDeliveryEnabled').checked = !!s.is_enabled;
+        document.getElementById('globalDeliveryTitle').value = s.title || '';
+        document.getElementById('globalDeliveryMessage').value = s.status_message || '';
+        document.getElementById('globalDeliveryBlockOrdering').checked = !!s.block_ordering;
+        document.getElementById('globalDeliveryStartAt').value = toDateTimeLocalValue(s.start_at) || nowDateTimeLocalValue();
+        document.getElementById('globalDeliveryEndAt').value = toDateTimeLocalValue(s.end_at) || nowDateTimeLocalValue();
+        renderGlobalDeliveryPreview();
+        return s;
+    } catch (error) {
+        console.error('Error loading global delivery status:', error);
+        return null;
+    }
+}
+
+async function saveGlobalDeliveryStatus() {
+    const enabledEl = document.getElementById('globalDeliveryEnabled');
+    const titleEl = document.getElementById('globalDeliveryTitle');
+    const messageEl = document.getElementById('globalDeliveryMessage');
+    const startEl = document.getElementById('globalDeliveryStartAt');
+    const endEl = document.getElementById('globalDeliveryEndAt');
+    const saveBtn = document.getElementById('saveGlobalDeliveryStatusBtn');
+    if (!enabledEl || !titleEl || !messageEl || !startEl || !endEl) return;
+
+    if (!startEl.value) startEl.value = nowDateTimeLocalValue();
+    if (!endEl.value) endEl.value = nowDateTimeLocalValue();
+
+    const payload = {
+        is_enabled: !!enabledEl.checked,
+        block_ordering: !!document.getElementById('globalDeliveryBlockOrdering')?.checked,
+        title: titleEl.value.trim(),
+        status_message: messageEl.value.trim(),
+        start_at: startEl.value || null,
+        end_at: endEl.value || null
+    };
+
+    if (payload.is_enabled && (!payload.start_at || !payload.end_at)) {
+        showWarning('Missing Time Window', 'Please set both "from" and "to" time.');
+        return;
+    }
+
+    try {
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+        const response = await fetch(`${API_BASE}/api/stores/global-delivery-status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            showError('Save Failed', data.message || 'Failed to save global delivery status');
+            return;
+        }
+        showSuccess('Saved', 'Website live delivery widget updated successfully.');
+        await loadGlobalDeliveryStatus();
+        try {
+            localStorage.setItem('serveNowGlobalDeliveryStatusUpdatedAt', String(Date.now()));
+            window.dispatchEvent(new CustomEvent('globalDeliveryStatusSaved'));
+        } catch (_) {}
+    } catch (error) {
+        console.error('Error saving global delivery status:', error);
+        showError('Save Failed', 'Failed to save global delivery status');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-bullhorn"></i> Save Live Widget';
+        }
+    }
+}
 
 const PRODUCT_ITEM_CATALOG_TTL_MS = 2 * 60 * 1000;
 
@@ -472,6 +632,20 @@ function initializeAdmin() {
     document.getElementById('addAccountBtn').addEventListener('click', () => showAddAccountModal());
     document.getElementById('addStoreBtn').addEventListener('click', () => showAddStoreModal());
     document.getElementById('addProductBtn').addEventListener('click', () => showAddProductModal());
+    const saveGlobalDeliveryStatusBtn = document.getElementById('saveGlobalDeliveryStatusBtn');
+    if (saveGlobalDeliveryStatusBtn && !saveGlobalDeliveryStatusBtn.dataset.boundClick) {
+        saveGlobalDeliveryStatusBtn.addEventListener('click', saveGlobalDeliveryStatus);
+        saveGlobalDeliveryStatusBtn.dataset.boundClick = '1';
+    }
+    ['globalDeliveryEnabled', 'globalDeliveryBlockOrdering', 'globalDeliveryTitle', 'globalDeliveryMessage', 'globalDeliveryStartAt', 'globalDeliveryEndAt']
+        .forEach((id) => {
+            const el = document.getElementById(id);
+            if (el && !el.dataset.boundPreview) {
+                el.addEventListener('input', renderGlobalDeliveryPreview);
+                el.addEventListener('change', renderGlobalDeliveryPreview);
+                el.dataset.boundPreview = '1';
+            }
+        });
     document.getElementById('runDiagnosticsBtn')?.addEventListener('click', () => runAllDiagnostics());
     document.getElementById('runSingleDiagnosticBtn')?.addEventListener('click', () => runSingleDiagnostic());
     // Removed Export Base64 Images and Image Fit controls
@@ -1365,6 +1539,10 @@ function switchTab(tabName) {
     tabEl.classList.add('active');
     linkEl.classList.add('active');
 
+    // Ensure newly opened tabs start at top; otherwise short tabs can appear blank
+    const appContent = document.querySelector('.app-content');
+    if (appContent) appContent.scrollTop = 0;
+
     // Update URL hash without jumping
     if (window.location.hash !== '#' + tabName) {
         history.pushState(null, null, '#' + tabName);
@@ -1380,6 +1558,10 @@ function switchTab(tabName) {
             break;
         case 'stores':
             loadStores();
+            break;
+        case 'store-status':
+            loadGlobalDeliveryStatus();
+            renderGlobalDeliveryPreview();
             break;
         case 'products':
             loadProducts();
@@ -6476,6 +6658,7 @@ function loadStores() {
         displayStores(AppState.stores);
         initializeTableSorting('stores');
         attachStoreFilterListeners();
+        loadGlobalDeliveryStatus();
         return AppState.stores;
     })
     .catch(error => {
@@ -6489,18 +6672,21 @@ function attachStoreFilterListeners() {
     const statusFilter = document.getElementById('storeStatusFilter');
     const clearBtn = document.getElementById('storeClearFiltersBtn');
 
-    if (searchInput) {
+    if (searchInput && !searchInput.dataset.boundStoreFilter) {
         searchInput.addEventListener('input', filterStores);
+        searchInput.dataset.boundStoreFilter = '1';
     }
-    if (statusFilter) {
+    if (statusFilter && !statusFilter.dataset.boundStoreFilter) {
         statusFilter.addEventListener('change', filterStores);
+        statusFilter.dataset.boundStoreFilter = '1';
     }
-    if (clearBtn) {
+    if (clearBtn && !clearBtn.dataset.boundStoreFilter) {
         clearBtn.addEventListener('click', () => {
             if (searchInput) searchInput.value = '';
             if (statusFilter) statusFilter.value = '';
             filterStores();
         });
+        clearBtn.dataset.boundStoreFilter = '1';
     }
 }
 
@@ -7375,7 +7561,7 @@ async function applyRoleRestrictions() {
                 'menu_dashboard': 'dashboard',
                 'menu_orders': 'orders',
                 'menu_products': 'products',
-                'menu_stores': 'stores',
+                'menu_stores': ['stores', 'store-status'],
                 'menu_riders': 'riders',
                 'menu_users': 'accounts',
                 'menu_payments': ['payments', 'wallets'],

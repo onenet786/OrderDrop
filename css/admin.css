@@ -218,7 +218,7 @@ html, body {
 .app-content {
   flex: 1;
   min-width: 0;
-  padding: 2rem;
+  padding: 1rem 1.25rem 1rem 0.35rem;
   overflow-y: auto;
   overflow-x: hidden;
   background-color: var(--bg-body);
@@ -524,6 +524,7 @@ img, video, canvas, svg {
   width: 100%;
   max-width: none;
   overflow-x: hidden;
+  margin-left: 0;
 }
 
 /* Modal body should scroll, not the viewport */
@@ -880,6 +881,101 @@ textarea:focus {
   line-height: 1;
 }
 
+.global-delivery-admin-card {
+  margin: 1rem 0 1.25rem;
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid #fecaca;
+  background: linear-gradient(135deg, #fff7ed 0%, #fef2f2 55%, #fff 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.global-delivery-admin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.global-delivery-admin-head h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1.05rem;
+  color: #9a3412;
+}
+
+.global-delivery-admin-head p {
+  margin: 0;
+  color: #7c2d12;
+  font-size: 0.86rem;
+}
+
+.global-delivery-state {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.global-delivery-state.state-available {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.global-delivery-state.state-unavailable {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.global-delivery-admin-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.global-delivery-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: #7c2d12;
+}
+
+.global-delivery-time-row {
+  margin-top: 0;
+}
+
+.global-delivery-time-row .form-group {
+  flex: 1;
+}
+
+.global-delivery-preview {
+  margin-top: 0.25rem;
+  border-radius: 12px;
+  border: 1px dashed #fb923c;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 0.8rem;
+}
+
+.global-delivery-preview strong {
+  display: block;
+  color: #9a3412;
+  margin-bottom: 0.2rem;
+}
+
+.global-delivery-preview p {
+  margin: 0;
+  color: #7c2d12;
+  font-size: 0.85rem;
+}
+
+.global-delivery-admin-actions {
+  margin-top: 0.7rem;
+}
+
 /* Dedicated action style for Generate Financial Report preview modal buttons */
 .report-modal-action-btn {
   height: var(--btn-height);
@@ -1201,7 +1297,7 @@ textarea:focus {
     margin-top: var(--header-height);
     width: 100%;
     height: calc(100vh - var(--header-height));
-    padding: 1rem;
+    padding: 0.65rem;
     overflow-y: auto;
   }
 
@@ -1244,7 +1340,7 @@ textarea:focus {
 
 /* 1280px breakpoint: tighten paddings and enforce wrapping to avoid x-overflow */
 @media (max-width: 1280px) {
-  .app-content { padding: 1rem; }
+  .app-content { padding: 0.75rem 0.9rem 0.75rem 0.35rem; }
   .table-container { max-width: 100vw; margin-left: 0; margin-right: 0; }
   /* keep dashboard tiles at 4 per row; only adjust activity/reports */
   .recent-activity-section .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }

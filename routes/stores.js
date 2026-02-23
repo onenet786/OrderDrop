@@ -26,6 +26,76 @@ async function ensureStoreStatusMessagesTable(db) {
     `);
 }
 
+async function ensureGlobalDeliveryStatusTable(db) {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS global_delivery_status (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            is_enabled BOOLEAN DEFAULT FALSE,
+            block_ordering BOOLEAN DEFAULT FALSE,
+            title VARCHAR(120) NULL,
+            status_message TEXT NULL,
+            start_at DATETIME NULL,
+            end_at DATETIME NULL,
+            updated_by INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    `);
+    const [cols] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'global_delivery_status'
+           AND COLUMN_NAME = 'block_ordering'
+         LIMIT 1`
+    );
+    if (!cols || !cols.length) {
+        await db.execute(
+            `ALTER TABLE global_delivery_status
+             ADD COLUMN block_ordering BOOLEAN DEFAULT FALSE`
+        );
+    }
+}
+
+function normalizeDateTimeInput(raw) {
+    const value = (raw ?? '').toString().trim();
+    if (!value) return null;
+    const normalized = value.replace('T', ' ').replace(/\.\d+Z?$/, '');
+    const withSeconds = /^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(normalized)
+        ? `${normalized}:00`
+        : normalized;
+    return withSeconds;
+}
+
+function getGlobalDeliveryStatusPayload(row) {
+    const now = new Date();
+    const start = row?.start_at ? new Date(row.start_at) : null;
+    const end = row?.end_at ? new Date(row.end_at) : null;
+    const inWindow = !!(
+        row?.is_enabled &&
+        start &&
+        end &&
+        !Number.isNaN(start.getTime()) &&
+        !Number.isNaN(end.getTime()) &&
+        now >= start &&
+        now <= end
+    );
+
+    const blockOrderingActive = !!(inWindow && row?.block_ordering);
+    return {
+        is_enabled: !!row?.is_enabled,
+        block_ordering: !!row?.block_ordering,
+        title: row?.title || 'Delivery Update',
+        status_message: row?.status_message || '',
+        start_at: row?.start_at || null,
+        end_at: row?.end_at || null,
+        is_window_active: inWindow,
+        is_delivery_available: !inWindow,
+        block_ordering_active: blockOrderingActive,
+        updated_at: row?.updated_at || null
+    };
+}
+
 async function loadProductSizeVariants(db, productIds) {
     try {
         const ids = (Array.isArray(productIds) ? productIds : [])
@@ -495,6 +565,116 @@ router.put('/status-message', authenticateToken, requireStoreOwner, async (req, 
         return res.status(500).json({
             success: false,
             message: 'Failed to update store status message',
+            error: error.message
+        });
+    }
+});
+
+router.get('/global-delivery-status', async (req, res) => {
+    try {
+        await ensureGlobalDeliveryStatusTable(req.db);
+        const [rows] = await req.db.execute(
+            `SELECT id, is_enabled, block_ordering, title, status_message, start_at, end_at, updated_at
+             FROM global_delivery_status
+             ORDER BY id DESC
+             LIMIT 1`
+        );
+        let row = rows[0] || null;
+        if (row?.is_enabled && row?.end_at) {
+            const endAt = new Date(row.end_at);
+            if (!Number.isNaN(endAt.getTime()) && new Date() > endAt) {
+                await req.db.execute(
+                    `UPDATE global_delivery_status
+                     SET is_enabled = 0,
+                         block_ordering = 0,
+                         title = NULL,
+                         status_message = NULL,
+                         start_at = NULL,
+                         end_at = NULL,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = ?`,
+                    [row.id]
+                );
+                row = null;
+            }
+        }
+        const payload = getGlobalDeliveryStatusPayload(row);
+        return res.json({
+            success: true,
+            global_delivery_status: payload
+        });
+    } catch (error) {
+        console.error('Error fetching global delivery status:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch global delivery status',
+            error: error.message
+        });
+    }
+});
+
+router.put('/global-delivery-status', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await ensureGlobalDeliveryStatusTable(req.db);
+        const isEnabled = !!req.body.is_enabled;
+        const blockOrdering = !!req.body.block_ordering;
+        const title = (req.body.title ?? '').toString().trim();
+        const statusMessage = (req.body.status_message ?? '').toString().trim();
+        const startAt = normalizeDateTimeInput(req.body.start_at);
+        const endAt = normalizeDateTimeInput(req.body.end_at);
+
+        if (statusMessage.length > 500) {
+            return res.status(400).json({
+                success: false,
+                message: 'Status message must be 500 characters or less'
+            });
+        }
+
+        if (title.length > 120) {
+            return res.status(400).json({
+                success: false,
+                message: 'Title must be 120 characters or less'
+            });
+        }
+
+        if (isEnabled && (!startAt || !endAt)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Start and end time are required when delivery notice is enabled'
+            });
+        }
+
+        if (startAt && endAt && new Date(startAt) >= new Date(endAt)) {
+            return res.status(400).json({
+                success: false,
+                message: 'End time must be after start time'
+            });
+        }
+
+        await req.db.execute(
+            `INSERT INTO global_delivery_status (is_enabled, block_ordering, title, status_message, start_at, end_at, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [isEnabled ? 1 : 0, blockOrdering ? 1 : 0, title || null, statusMessage || null, startAt, endAt, req.user.id]
+        );
+
+        const [rows] = await req.db.execute(
+            `SELECT is_enabled, block_ordering, title, status_message, start_at, end_at, updated_at
+             FROM global_delivery_status
+             ORDER BY id DESC
+             LIMIT 1`
+        );
+        const payload = getGlobalDeliveryStatusPayload(rows[0] || null);
+
+        return res.json({
+            success: true,
+            message: 'Global delivery status updated successfully',
+            global_delivery_status: payload
+        });
+    } catch (error) {
+        console.error('Error updating global delivery status:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to update global delivery status',
             error: error.message
         });
     }

@@ -273,6 +273,57 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> getGlobalDeliveryStatus(
+    String token,
+  ) async {
+    final uri = Uri.parse('$baseUrl/api/stores/global-delivery-status');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final data = _handleResponse(response);
+    if (data['global_delivery_status'] is Map<String, dynamic>) {
+      return data['global_delivery_status'] as Map<String, dynamic>;
+    }
+    if (data['status'] is Map<String, dynamic>) {
+      return data['status'] as Map<String, dynamic>;
+    }
+    if (data['global_status'] is Map<String, dynamic>) {
+      return data['global_status'] as Map<String, dynamic>;
+    }
+    return data;
+  }
+
+  static Future<Map<String, dynamic>> setGlobalDeliveryStatus(
+    String token, {
+    required bool isEnabled,
+    required bool blockOrdering,
+    String? title,
+    required String statusMessage,
+    String? startAt,
+    String? endAt,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/stores/global-delivery-status');
+    _logger.d('ApiService: PUT $uri');
+    final response = await http.put(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'is_enabled': isEnabled,
+        'block_ordering': blockOrdering,
+        'title': title?.trim().isEmpty == true ? null : title?.trim(),
+        'status_message': statusMessage.trim(),
+        'start_at': startAt?.trim().isEmpty == true ? null : startAt?.trim(),
+        'end_at': endAt?.trim().isEmpty == true ? null : endAt?.trim(),
+      }),
+    );
+    return _handleResponse(response);
+  }
+
   static Future<List<dynamic>> getOrders(String token) async {
     final uri = Uri.parse('$baseUrl/api/orders');
     _logger.d('ApiService: GET $uri');

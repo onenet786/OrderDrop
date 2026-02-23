@@ -297,9 +297,59 @@ function calculateTotal() {
     return total + deliveryFee;
 }
 
+function setCheckoutBlockedState(blocked, message) {
+    const form = document.getElementById('checkoutForm');
+    if (!form) return;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    let banner = document.getElementById('checkoutDeliveryBlockMessage');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'checkoutDeliveryBlockMessage';
+        banner.style.cssText = 'display:none; margin: 0 0 1rem 0; padding: 0.75rem; border-radius: 8px; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-weight: 600;';
+        form.insertBefore(banner, form.firstChild);
+    }
+    if (blocked) {
+        banner.textContent = message || 'Delivery is temporarily unavailable in this period.';
+        banner.style.display = 'block';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Ordering Disabled for This Period';
+        }
+    } else {
+        banner.style.display = 'none';
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Place Order';
+        }
+    }
+}
+
+async function refreshCheckoutOrderingGuard() {
+    try {
+        if (typeof loadGlobalDeliveryWidget === 'function') {
+            await loadGlobalDeliveryWidget(true);
+        }
+        const guard = (typeof getOrderingGuardState === 'function')
+            ? getOrderingGuardState()
+            : { blocked: false, message: '' };
+        setCheckoutBlockedState(!!guard.blocked, guard.message);
+        return guard;
+    } catch (error) {
+        console.error('Failed to refresh ordering guard:', error);
+        setCheckoutBlockedState(false, '');
+        return { blocked: false, message: '' };
+    }
+}
+
 // Handle checkout form submission
 async function handleCheckoutSubmit(e) {
     e.preventDefault();
+
+    const guardState = await refreshCheckoutOrderingGuard();
+    if (guardState.blocked) {
+        showWarning('Delivery Unavailable', guardState.message);
+        return;
+    }
 
     if (cart.length === 0) {
         showWarning('Empty Cart', 'Your cart is empty. Please add items before checkout.');
@@ -467,6 +517,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (checkoutForm) {
         checkoutForm.addEventListener('submit', handleCheckoutSubmit);
     }
+
+    refreshCheckoutOrderingGuard();
+    window.addEventListener('globalDeliveryStatusUpdated', () => {
+        refreshCheckoutOrderingGuard();
+    });
+    setInterval(() => {
+        refreshCheckoutOrderingGuard();
+    }, 30000);
 
     // Note: Not redirecting if cart is empty for debugging
     // if (cart.length === 0) {

@@ -12,6 +12,83 @@ const { recordFinancialTransaction } = require("../utils/dbHelpers");
 
 const router = express.Router();
 
+async function ensureGlobalDeliveryStatusTable(db) {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS global_delivery_status (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      is_enabled BOOLEAN DEFAULT FALSE,
+      block_ordering BOOLEAN DEFAULT FALSE,
+      title VARCHAR(120) NULL,
+      status_message TEXT NULL,
+      start_at DATETIME NULL,
+      end_at DATETIME NULL,
+      updated_by INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  const [cols] = await db.execute(
+    `SELECT COLUMN_NAME
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'global_delivery_status'
+       AND COLUMN_NAME = 'block_ordering'
+     LIMIT 1`
+  );
+  if (!cols || !cols.length) {
+    await db.execute(
+      `ALTER TABLE global_delivery_status
+       ADD COLUMN block_ordering BOOLEAN DEFAULT FALSE`
+    );
+  }
+}
+
+async function getGlobalDeliveryBlockState(db) {
+  await ensureGlobalDeliveryStatusTable(db);
+  const [rows] = await db.execute(
+    `SELECT id, is_enabled, block_ordering, status_message, start_at, end_at
+     FROM global_delivery_status
+     ORDER BY id DESC
+     LIMIT 1`
+  );
+  const row = rows[0];
+  if (!row || !row.is_enabled) return { blocked: false, message: "" };
+  const start = row.start_at ? new Date(row.start_at) : null;
+  const end = row.end_at ? new Date(row.end_at) : null;
+  const now = new Date();
+  const inWindow =
+    start &&
+    end &&
+    !Number.isNaN(start.getTime()) &&
+    !Number.isNaN(end.getTime()) &&
+    now >= start &&
+    now <= end;
+
+  if (end && !Number.isNaN(end.getTime()) && now > end) {
+    await db.execute(
+      `UPDATE global_delivery_status
+       SET is_enabled = 0,
+           block_ordering = 0,
+           title = NULL,
+           status_message = NULL,
+           start_at = NULL,
+           end_at = NULL,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [row.id]
+    );
+    return { blocked: false, message: "" };
+  }
+
+  if (!inWindow || !row.block_ordering) return { blocked: false, message: "" };
+  return {
+    blocked: true,
+    message:
+      row.status_message ||
+      "Delivery is temporarily unavailable in this time window.",
+  };
+}
+
 async function hasColumn(db, table, column) {
   const [rows] = await db.execute(
     "SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
@@ -274,6 +351,14 @@ router.get("/test-notification", (req, res) => {
 // Create new order
 router.post("/", authenticateToken, async (req, res) => {
   try {
+    const globalBlock = await getGlobalDeliveryBlockState(req.db);
+    if (globalBlock.blocked) {
+      return res.status(403).json({
+        success: false,
+        message: globalBlock.message,
+      });
+    }
+
     const {
       items,
       delivery_address,

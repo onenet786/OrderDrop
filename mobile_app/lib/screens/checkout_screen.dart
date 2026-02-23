@@ -159,6 +159,45 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  bool _toBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      return v == 'true' || v == '1' || v == 'yes';
+    }
+    return false;
+  }
+
+  bool _isWindowActive(Map<String, dynamic> status) {
+    if (_toBool(status['is_window_active'])) return true;
+    final startRaw = (status['start_at'] ?? '').toString().trim();
+    final endRaw = (status['end_at'] ?? '').toString().trim();
+    if (startRaw.isEmpty || endRaw.isEmpty) return true;
+    final start = DateTime.tryParse(startRaw);
+    final end = DateTime.tryParse(endRaw);
+    if (start == null || end == null) return true;
+    final now = DateTime.now();
+    return now.isAfter(start) && now.isBefore(end);
+  }
+
+  bool _isGlobalOrderingBlocked(Map<String, dynamic> status) {
+    final enabled = _toBool(status['is_enabled']);
+    if (!enabled) return false;
+    if (_toBool(status['block_ordering_active'])) return true;
+    final blockOrdering = _toBool(status['block_ordering']);
+    return blockOrdering && _isWindowActive(status);
+  }
+
+  String _formatDeliveryWindow(dynamic startRaw, dynamic endRaw) {
+    final start = DateTime.tryParse((startRaw ?? '').toString());
+    final end = DateTime.tryParse((endRaw ?? '').toString());
+    if (start == null || end == null) return '';
+    final startLocal = start.toLocal();
+    final endLocal = end.toLocal();
+    return '${startLocal.toString().substring(0, 16)} - ${endLocal.toString().substring(0, 16)}';
+  }
+
   Future<void> _submitOrder() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -170,6 +209,42 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     setState(() {
       _isLoading = true;
     });
+
+    // Check if website-wide delivery status blocks ordering
+    try {
+      if (auth.token != null) {
+        final data = await ApiService.getGlobalDeliveryStatus(auth.token!);
+        final status = (data['status'] is Map<String, dynamic>)
+            ? (data['status'] as Map<String, dynamic>)
+            : (data['global_status'] is Map<String, dynamic>)
+                ? (data['global_status'] as Map<String, dynamic>)
+                : data;
+
+        if (_isGlobalOrderingBlocked(status)) {
+          final title = (status['title'] ?? '').toString().trim();
+          final message = (status['status_message'] ?? '').toString().trim();
+          final when = _formatDeliveryWindow(status['start_at'], status['end_at']);
+          final displayMessage = message.isNotEmpty
+              ? (when.isNotEmpty ? '$message ($when)' : message)
+              : (title.isNotEmpty
+                    ? (when.isNotEmpty ? '$title ($when)' : title)
+                    : 'Ordering is temporarily unavailable.');
+          if (!mounted) return;
+          setState(() {
+            _isLoading = false;
+          });
+          Notifier.error(
+            context,
+            displayMessage,
+            duration: const Duration(seconds: 4),
+            sanitize: false,
+          );
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking global delivery status: $e');
+    }
 
     // Check if stores are open
     try {

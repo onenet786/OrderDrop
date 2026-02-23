@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/product.dart';
 import '../services/api_service.dart';
+import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
 import '../models/cart_item.dart';
 import 'package:servenow/services/notifier.dart';
@@ -18,6 +21,9 @@ class StoreScreen extends StatefulWidget {
 class _StoreScreenState extends State<StoreScreen> {
   late Future<Map<String, dynamic>> _storeDetailsFuture;
   final Map<int, String> _selectedVariantKeyByProductId = {};
+  Map<String, dynamic>? _globalStatus;
+  Timer? _globalStatusRefreshTimer;
+  Timer? _globalStatusPollTimer;
 
   String _variantKey(ProductVariant v) {
     return '${v.sizeId ?? 'n'}:${v.unitId ?? 'n'}';
@@ -35,13 +41,117 @@ class _StoreScreenState extends State<StoreScreen> {
   void initState() {
     super.initState();
     _storeDetailsFuture = ApiService.getStoreDetails(widget.storeId);
+    _loadGlobalStatus();
+    _globalStatusPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _loadGlobalStatus();
+    });
   }
 
   Future<void> _refresh() async {
     setState(() {
       _storeDetailsFuture = ApiService.getStoreDetails(widget.storeId);
     });
+    await _loadGlobalStatus();
     await _storeDetailsFuture;
+  }
+
+  Future<void> _loadGlobalStatus() async {
+    try {
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      if (token == null) return;
+      final status = await ApiService.getGlobalDeliveryStatus(token);
+      if (!mounted) return;
+      setState(() => _globalStatus = status);
+      _scheduleGlobalStatusRefresh(status);
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _globalStatusRefreshTimer?.cancel();
+    _globalStatusPollTimer?.cancel();
+    super.dispose();
+  }
+
+  bool _toBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      return normalized == 'true' || normalized == '1' || normalized == 'yes';
+    }
+    return false;
+  }
+
+  DateTime? _parseDateTime(dynamic raw) {
+    final value = (raw ?? '').toString().trim();
+    if (value.isEmpty) return null;
+    return DateTime.tryParse(value)?.toLocal();
+  }
+
+  void _scheduleGlobalStatusRefresh(Map<String, dynamic>? status) {
+    _globalStatusRefreshTimer?.cancel();
+    if (status == null) return;
+
+    final now = DateTime.now();
+    final startAt = _parseDateTime(status['start_at']);
+    final endAt = _parseDateTime(status['end_at']);
+    final candidates = <DateTime>[
+      if (startAt != null && startAt.isAfter(now)) startAt,
+      if (endAt != null && endAt.isAfter(now)) endAt,
+    ];
+    if (candidates.isEmpty) return;
+
+    candidates.sort();
+    final nextTick = candidates.first;
+    final delay = nextTick.difference(now) + const Duration(seconds: 1);
+    _globalStatusRefreshTimer = Timer(delay, _loadGlobalStatus);
+  }
+
+  bool _isGlobalWindowActive(Map<String, dynamic> status) {
+    if (_toBool(status['is_window_active'])) return true;
+    final startRaw = (status['start_at'] ?? '').toString().trim();
+    final endRaw = (status['end_at'] ?? '').toString().trim();
+    if (startRaw.isEmpty || endRaw.isEmpty) return true;
+    final start = DateTime.tryParse(startRaw);
+    final end = DateTime.tryParse(endRaw);
+    if (start == null || end == null) return true;
+    final now = DateTime.now();
+    return now.isAfter(start) && now.isBefore(end);
+  }
+
+  bool _isGlobalStatusVisible(Map<String, dynamic>? status) {
+    if (status == null) return false;
+    if (!_toBool(status['is_enabled'])) return false;
+    return _isGlobalWindowActive(status);
+  }
+
+  bool _isGlobalOrderingBlocked(Map<String, dynamic>? status) {
+    if (!_isGlobalStatusVisible(status)) return false;
+    if (status == null) return false;
+    if (_toBool(status['block_ordering_active'])) return true;
+    return _toBool(status['block_ordering']) && _isGlobalWindowActive(status);
+  }
+
+  String _globalStatusMessage(Map<String, dynamic>? status) {
+    if (status == null) return 'Ordering is temporarily unavailable.';
+    final message = (status['status_message'] ?? '').toString().trim();
+    final when = _formatDeliveryWindow(status['start_at'], status['end_at']);
+    if (message.isNotEmpty && when.isNotEmpty) return '$message ($when)';
+    if (message.isNotEmpty) return message;
+    if (when.isNotEmpty) return 'Delivery update: $when';
+    final title = (status['title'] ?? '').toString().trim();
+    if (title.isNotEmpty) return title;
+    return 'Ordering is temporarily unavailable.';
+  }
+
+  String _formatDeliveryWindow(dynamic startRaw, dynamic endRaw) {
+    final start = DateTime.tryParse((startRaw ?? '').toString());
+    final end = DateTime.tryParse((endRaw ?? '').toString());
+    if (start == null || end == null) return '';
+    final startLocal = start.toLocal();
+    final endLocal = end.toLocal();
+    return '${startLocal.toString().substring(0, 16)} - ${endLocal.toString().substring(0, 16)}';
   }
 
   List<List<T>> _chunk<T>(List<T> list, int size) {
@@ -59,7 +169,18 @@ class _StoreScreenState extends State<StoreScreen> {
     Product product,
     ProductVariant? variant, {
     required bool isOpen,
+    required bool isGlobalBlocked,
   }) {
+    if (isGlobalBlocked) {
+      Notifier.error(
+        context,
+        _globalStatusMessage(_globalStatus),
+        duration: const Duration(seconds: 4),
+        sanitize: false,
+      );
+      return;
+    }
+
     if (!isOpen) {
       if (!mounted) return;
       Notifier.error(
@@ -183,6 +304,8 @@ class _StoreScreenState extends State<StoreScreen> {
           );
 
           final chunkedProducts = _chunk(products, crossAxisCount);
+          final isGlobalBlocked = _isGlobalOrderingBlocked(_globalStatus);
+          final showGlobalBanner = _isGlobalStatusVisible(_globalStatus);
 
           return RefreshIndicator(
             onRefresh: _refresh,
@@ -193,6 +316,48 @@ class _StoreScreenState extends State<StoreScreen> {
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
                       children: [
+                        if (showGlobalBanner)
+                          Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isGlobalBlocked
+                                  ? Colors.red.shade50
+                                  : Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isGlobalBlocked
+                                    ? Colors.red.shade200
+                                    : Colors.orange.shade200,
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  isGlobalBlocked
+                                      ? Icons.block
+                                      : Icons.info_outline,
+                                  color: isGlobalBlocked
+                                      ? Colors.red.shade700
+                                      : Colors.orange.shade800,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _globalStatusMessage(_globalStatus),
+                                    style: TextStyle(
+                                      color: isGlobalBlocked
+                                          ? Colors.red.shade800
+                                          : Colors.orange.shade900,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         Card(
                           elevation: 4,
                           shape: RoundedRectangleBorder(
@@ -383,6 +548,7 @@ class _StoreScreenState extends State<StoreScreen> {
                                     product,
                                     crossAxisCount,
                                     isOpen,
+                                    isGlobalBlocked,
                                   ),
                                 ),
                               );
@@ -423,6 +589,7 @@ class _StoreScreenState extends State<StoreScreen> {
     Product product,
     int crossAxisCount,
     bool isOpen,
+    bool isGlobalBlocked,
   ) {
     final variants = product.sizeVariants;
     final selectedVariant = variants.isNotEmpty
@@ -571,12 +738,15 @@ class _StoreScreenState extends State<StoreScreen> {
                         height: 32,
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () => _addToCart(
-                            context,
-                            product,
-                            selectedVariant,
-                            isOpen: isOpen,
-                          ),
+                          onPressed: (isGlobalBlocked || !product.isAvailable)
+                              ? null
+                              : () => _addToCart(
+                                    context,
+                                    product,
+                                    selectedVariant,
+                                    isOpen: isOpen,
+                                    isGlobalBlocked: isGlobalBlocked,
+                                  ),
                           style: ElevatedButton.styleFrom(
                             padding: EdgeInsets.zero,
                             backgroundColor: Colors.blueAccent,
@@ -586,7 +756,7 @@ class _StoreScreenState extends State<StoreScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          child: const Text('Add to Cart'),
+                          child: Text(isGlobalBlocked ? 'Unavailable' : 'Add to Cart'),
                         ),
                       ),
                     ],
@@ -739,10 +909,13 @@ class _StoreScreenState extends State<StoreScreen> {
                             product,
                             selectedVariant,
                             isOpen: isOpen,
+                            isGlobalBlocked: isGlobalBlocked,
                           )
                         : null,
                     child: Text(
-                      product.isAvailable ? 'ADD' : 'N/A',
+                      isGlobalBlocked
+                          ? 'BLOCKED'
+                          : (product.isAvailable ? 'ADD' : 'N/A'),
                       style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,

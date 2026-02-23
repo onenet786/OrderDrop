@@ -23,24 +23,28 @@ class CustomerDashboardTestScreen extends StatefulWidget {
 class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScreen> {
   List<dynamic> _allStores = [];
   List<dynamic> _filteredStores = [];
-  List<dynamic> _categories = [];
   bool _isLoading = true;
   String? _errorMessage;
   String? _serviceLimitedMessage;
+  Map<String, dynamic>? _globalStatus;
   final TextEditingController _searchController = TextEditingController();
   double? _userLat;
   double? _userLng;
   String? _userCity;
-  int? _selectedCategoryId;
   final PageController _bannerController = PageController();
   int _activeBanner = 0;
   Timer? _bannerTimer;
+  Timer? _globalStatusRefreshTimer;
+  Timer? _globalStatusPollTimer;
   int _bottomIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _fetchData();
+    _globalStatusPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _refreshGlobalStatusOnly();
+    });
     _searchController.addListener(_onSearchChanged);
     _startBannerAutoScroll();
   }
@@ -48,6 +52,8 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   @override
   void dispose() {
     _bannerTimer?.cancel();
+    _globalStatusRefreshTimer?.cancel();
+    _globalStatusPollTimer?.cancel();
     _bannerController.dispose();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
@@ -57,7 +63,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   void _startBannerAutoScroll() {
     _bannerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (!mounted) return;
-      final count = _promoStores.length;
+      final count = _liveWidgetItems.length;
       if (count <= 1 || !_bannerController.hasClients) return;
       final next = (_activeBanner + 1) % count;
       _bannerController.animateToPage(
@@ -68,11 +74,20 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     });
   }
 
-  List<dynamic> get _promoStores {
-    return _allStores.where((s) {
-      final image = (s['image_url'] ?? '').toString().trim();
-      return image.isNotEmpty;
-    }).take(5).toList();
+  List<Map<String, dynamic>> get _liveWidgetItems {
+    final includeStatusCard = _showGlobalStatusBanner();
+    final stores = _allStores
+        .where((s) => (s['image_url'] ?? '').toString().trim().isNotEmpty)
+        .take(includeStatusCard ? 4 : 5)
+        .toList();
+    final items = <Map<String, dynamic>>[];
+    if (includeStatusCard) {
+      items.add({'type': 'status'});
+    }
+    for (final store in stores) {
+      items.add({'type': 'store', 'data': store});
+    }
+    return items;
   }
 
   void _onSearchChanged() {
@@ -85,75 +100,41 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       _errorMessage = null;
     });
     try {
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
       await _resolveLocationContext();
-      final results = await Future.wait([
-        ApiService.getStores(
-          latitude: _userLat,
-          longitude: _userLng,
-          city: _userCity,
-        ),
-        ApiService.getCategories(),
-      ]);
+      Map<String, dynamic>? globalStatus;
+      if (token != null) {
+        try {
+          final global = await ApiService.getGlobalDeliveryStatus(token);
+          globalStatus = (global['status'] is Map<String, dynamic>)
+              ? (global['status'] as Map<String, dynamic>)
+              : (global['global_status'] is Map<String, dynamic>)
+                  ? (global['global_status'] as Map<String, dynamic>)
+                  : global;
+        } catch (_) {}
+      }
+      final storesResp = await ApiService.getStores(
+        latitude: _userLat,
+        longitude: _userLng,
+        city: _userCity,
+      );
 
       if (!mounted) return;
-      final storesResp = results[0] as Map<String, dynamic>;
       final stores = (storesResp['stores'] as List<dynamic>? ?? []);
       final limited = storesResp['service_limited'] == true;
       final limitedMessage = (storesResp['service_message'] ?? '').toString().trim();
       setState(() {
         _allStores = stores;
         _filteredStores = stores;
+        _globalStatus = globalStatus;
+        _scheduleGlobalStatusRefresh(globalStatus);
         _serviceLimitedMessage = limited
             ? (limitedMessage.isNotEmpty
                 ? limitedMessage
                 : 'You are not allowed to see Store when you are out of Delivery Area')
             : null;
-        _categories = [
-          {'id': null, 'name': 'All'},
-          ...(results[1] as List<dynamic>),
-        ];
-        _selectedCategoryId = null;
         _isLoading = false;
       });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = e.toString();
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _fetchStoresByCategory(int? categoryId) async {
-    setState(() {
-      _isLoading = true;
-      _selectedCategoryId = categoryId;
-      _searchController.clear();
-    });
-    try {
-      await _resolveLocationContext();
-      final storesResp = await ApiService.getStores(
-        categoryId: categoryId,
-        latitude: _userLat,
-        longitude: _userLng,
-        city: _userCity,
-      );
-      final stores = (storesResp['stores'] as List<dynamic>? ?? []);
-      final limited = storesResp['service_limited'] == true;
-      final limitedMessage = (storesResp['service_message'] ?? '').toString().trim();
-      if (mounted) {
-        setState(() {
-          _allStores = stores;
-          _filteredStores = stores;
-          _serviceLimitedMessage = limited
-              ? (limitedMessage.isNotEmpty
-                  ? limitedMessage
-                  : 'You are not allowed to see Store when you are out of Delivery Area')
-              : null;
-          _isLoading = false;
-        });
-      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -208,6 +189,135 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         return name.contains(q) || location.contains(q);
       }).toList();
     });
+  }
+
+  bool _toBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      return v == 'true' || v == '1' || v == 'yes';
+    }
+    return false;
+  }
+
+  DateTime? _parseDateTime(dynamic raw) {
+    final value = (raw ?? '').toString().trim();
+    if (value.isEmpty) return null;
+    return DateTime.tryParse(value)?.toLocal();
+  }
+
+  void _scheduleGlobalStatusRefresh(Map<String, dynamic>? status) {
+    _globalStatusRefreshTimer?.cancel();
+    if (status == null) return;
+
+    final now = DateTime.now();
+    final startAt = _parseDateTime(status['start_at']);
+    final endAt = _parseDateTime(status['end_at']);
+    final candidates = <DateTime>[
+      if (startAt != null && startAt.isAfter(now)) startAt,
+      if (endAt != null && endAt.isAfter(now)) endAt,
+    ];
+    if (candidates.isEmpty) return;
+
+    candidates.sort();
+    final nextTick = candidates.first;
+    final delay = nextTick.difference(now) + const Duration(seconds: 1);
+    _globalStatusRefreshTimer = Timer(delay, _refreshGlobalStatusOnly);
+  }
+
+  Future<void> _refreshGlobalStatusOnly() async {
+    try {
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      if (token == null) return;
+      final status = await ApiService.getGlobalDeliveryStatus(token);
+      if (!mounted) return;
+      setState(() {
+        _globalStatus = status;
+      });
+      _scheduleGlobalStatusRefresh(status);
+    } catch (_) {}
+  }
+
+  bool _isGlobalWindowActive(Map<String, dynamic> status) {
+    if (_toBool(status['is_window_active'])) return true;
+    final startRaw = (status['start_at'] ?? '').toString().trim();
+    final endRaw = (status['end_at'] ?? '').toString().trim();
+    if (startRaw.isEmpty || endRaw.isEmpty) return true;
+    final start = DateTime.tryParse(startRaw);
+    final end = DateTime.tryParse(endRaw);
+    if (start == null || end == null) return true;
+    final now = DateTime.now();
+    return now.isAfter(start) && now.isBefore(end);
+  }
+
+  bool _showGlobalStatusBanner() {
+    final status = _globalStatus;
+    if (status == null) return false;
+    if (!_toBool(status['is_enabled'])) return false;
+    return _isGlobalWindowActive(status);
+  }
+
+  bool _isGlobalOrderingBlocked() {
+    final status = _globalStatus;
+    if (status == null) return false;
+    if (!_showGlobalStatusBanner()) return false;
+    if (_toBool(status['block_ordering_active'])) return true;
+    return _toBool(status['block_ordering']) && _isGlobalWindowActive(status);
+  }
+
+  String _globalStatusMessage() {
+    final status = _globalStatus;
+    if (status == null) return '';
+    final message = (status['status_message'] ?? '').toString().trim();
+    final when = _formatDeliveryWindow(status['start_at'], status['end_at']);
+    if (message.isNotEmpty && when.isNotEmpty) return '$message ($when)';
+    if (message.isNotEmpty) return message;
+    if (when.isNotEmpty) return 'Delivery update: $when';
+    final title = (status['title'] ?? '').toString().trim();
+    return title;
+  }
+
+  String _formatDeliveryWindow(dynamic startRaw, dynamic endRaw) {
+    final start = DateTime.tryParse((startRaw ?? '').toString());
+    final end = DateTime.tryParse((endRaw ?? '').toString());
+    if (start == null || end == null) return '';
+    final startLocal = start.toLocal();
+    final endLocal = end.toLocal();
+    return '${startLocal.toString().substring(0, 16)} - ${endLocal.toString().substring(0, 16)}';
+  }
+
+  Widget _buildGlobalStatusBanner() {
+    final blocked = _isGlobalOrderingBlocked();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: blocked ? Colors.red.shade50 : Colors.orange.shade50,
+        border: Border.all(
+          color: blocked ? Colors.red.shade200 : Colors.orange.shade200,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            blocked ? Icons.block : Icons.info_outline,
+            color: blocked ? Colors.red.shade700 : Colors.orange.shade700,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _globalStatusMessage(),
+              style: TextStyle(
+                color: blocked ? Colors.red.shade800 : Colors.orange.shade900,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openQuickActions() {
@@ -281,7 +391,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 if (user != null) _buildHeroCard(user),
                 _buildBannerSection(),
                 _buildSearchField(),
-                _buildCategoryChips(),
+                if (_showGlobalStatusBanner()) _buildGlobalStatusBanner(),
                 if (_serviceLimitedMessage != null) _buildServiceLimitWarning(),
                 _buildStoreSection(crossAxisCount),
                 const SizedBox(height: 90),
@@ -366,12 +476,6 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             'Welcome',
             style: TextStyle(fontSize: 18, color: Colors.black87),
           ),
-          Text(
-            '${user.firstName} ${user.lastName}',
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
         ],
       ),
     );
@@ -445,8 +549,8 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   }
 
   Widget _buildBannerSection() {
-    final banners = _promoStores;
-    if (banners.isEmpty) return const SizedBox.shrink();
+    final items = _liveWidgetItems;
+    if (items.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -458,9 +562,65 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               onPageChanged: (index) {
                 setState(() => _activeBanner = index);
               },
-              itemCount: banners.length,
+              itemCount: items.length,
               itemBuilder: (context, index) {
-                final store = banners[index];
+                final item = items[index];
+                if (item['type'] == 'status') {
+                  final blocked = _isGlobalOrderingBlocked();
+                  return Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: blocked
+                            ? const [Color(0xFFB71C1C), Color(0xFFE53935)]
+                            : const [Color(0xFFEF6C00), Color(0xFFFFA726)],
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                blocked ? Icons.block : Icons.info_outline,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  blocked ? 'Live Delivery Pause' : 'Delivery Update',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Expanded(
+                            child: Text(
+                              _globalStatusMessage(),
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+                final store = item['data'];
                 return ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: Stack(
@@ -514,7 +674,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(banners.length, (i) {
+            children: List.generate(items.length, (i) {
               final active = i == _activeBanner;
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -549,37 +709,6 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         ),
-      ),
-    );
-  }
-
-  Widget _buildCategoryChips() {
-    if (_categories.isEmpty) return const SizedBox.shrink();
-    return SizedBox(
-      height: 44,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: _categories.length,
-        itemBuilder: (context, index) {
-          final c = _categories[index];
-          final id = c['id'];
-          final selected = _selectedCategoryId == id;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: ChoiceChip(
-              label: Text((c['name'] ?? 'Category').toString()),
-              selected: selected,
-              onSelected: (_) => _fetchStoresByCategory(id as int?),
-              selectedColor: const Color(0xFF1A56A5),
-              backgroundColor: Colors.white,
-              labelStyle: TextStyle(
-                color: selected ? Colors.white : Colors.black87,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          );
-        },
       ),
     );
   }

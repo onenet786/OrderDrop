@@ -86,10 +86,31 @@
                 </li>
               </ul>
             </li>
-            <li>
-              <a href="admin.html#stores" class="tab-link" data-tab="stores"
-                ><i class="fas fa-store"></i> Stores</a
-              >
+            <li class="dropdown">
+              <a
+                href="admin.html#stores"
+                class="dropdown-toggle"
+                role="button"
+                aria-haspopup="true"
+                aria-expanded="false"
+                ><i class="fas fa-store"></i> Stores
+                <i
+                  class="fas fa-chevron-down"
+                  style="margin-left: 0.25rem; font-size: 0.8rem"
+                ></i
+              ></a>
+              <ul class="dropdown-menu">
+                <li>
+                  <a href="admin.html#stores" class="tab-link" data-tab="stores"
+                    ><i class="fas fa-store"></i> Stores</a
+                  >
+                </li>
+                <li>
+                  <a href="admin.html#store-status" class="tab-link" data-tab="store-status"
+                    ><i class="fas fa-bullhorn"></i> Store Status</a
+                  >
+                </li>
+              </ul>
             </li>
             <li>
               <a href="admin.html#products" class="tab-link" data-tab="products"
@@ -1166,6 +1187,56 @@
               </tbody>
             </table>
           </div>
+        </div>
+
+        <div id="store-status" class="tab-content">
+          <h2>Store Status</h2>
+          <section class="global-delivery-admin-card">
+            <div class="global-delivery-admin-head">
+              <div>
+                <h3>Live Delivery Widget (Website-Wide)</h3>
+                <p>Show a global message when delivery is unavailable for a specific time window.</p>
+              </div>
+              <span id="globalDeliveryCurrentState" class="global-delivery-state state-available">Delivery Available</span>
+            </div>
+            <div class="global-delivery-admin-grid">
+              <label class="global-delivery-toggle">
+                <input type="checkbox" id="globalDeliveryEnabled" />
+                <span>Enable global delivery notice</span>
+              </label>
+              <label class="global-delivery-toggle">
+                <input type="checkbox" id="globalDeliveryBlockOrdering" />
+                <span>Disable add to cart and place order during this period</span>
+              </label>
+              <div class="form-group">
+                <label for="globalDeliveryTitle">Card Title</label>
+                <input type="text" id="globalDeliveryTitle" class="form-control" placeholder="Delivery Pause Notice" maxlength="120" />
+              </div>
+              <div class="form-group">
+                <label for="globalDeliveryMessage">Message</label>
+                <textarea id="globalDeliveryMessage" class="form-control" rows="3" maxlength="500" placeholder="Delivery will not be available in this period."></textarea>
+              </div>
+              <div class="form-row global-delivery-time-row">
+                <div class="form-group">
+                  <label for="globalDeliveryStartAt">From</label>
+                  <input type="datetime-local" id="globalDeliveryStartAt" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label for="globalDeliveryEndAt">To</label>
+                  <input type="datetime-local" id="globalDeliveryEndAt" class="form-control" />
+                </div>
+              </div>
+            </div>
+            <div class="global-delivery-preview" id="globalDeliveryPreview">
+              <strong>Live Widget Preview</strong>
+              <p>Configure title, message, and time window to preview here.</p>
+            </div>
+            <div class="global-delivery-admin-actions">
+              <button class="btn btn-primary" id="saveGlobalDeliveryStatusBtn">
+                <i class="fas fa-bullhorn"></i> Save Live Widget
+              </button>
+            </div>
+          </section>
         </div>
 
         <!-- Products Tab -->
@@ -2798,6 +2869,7 @@
             </div>
           </form>
         </div>
+
       </div>
     </div>
 
@@ -3234,7 +3306,7 @@
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
     <script src="js/financial.js?v=8" defer></script>
-    <script src="js/admin.js?v=19" defer></script>
+    <script src="js/admin.js?v=21" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");

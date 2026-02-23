@@ -140,6 +140,57 @@ function showInfo(title, message, duration = 2000) {
   showToast(title, message, "info", duration);
 }
 
+function escapeHtmlPublic(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+window.__globalDeliveryStatus = null;
+window.__globalDeliveryRefreshTimer = null;
+window.__globalDeliveryPollTimer = null;
+
+function buildDeliveryReasonWithWindow(status) {
+  if (!status) return "";
+  const reason = String(status.status_message || "").trim();
+  const when = formatDeliveryWindow(status.start_at, status.end_at);
+  if (reason && when) return `${reason} (${when})`;
+  if (reason) return reason;
+  if (when) return `Delivery update: ${when}`;
+  return "";
+}
+
+function getOrderingGuardState() {
+  const s = window.__globalDeliveryStatus || null;
+  const blocked = !!(s && s.is_window_active && s.block_ordering_active);
+  return {
+    blocked,
+    message:
+      buildDeliveryReasonWithWindow(s) ||
+      "Delivery is temporarily unavailable in this time window.",
+  };
+}
+
+window.getOrderingGuardState = getOrderingGuardState;
+
+function scheduleGlobalDeliveryAutoRefresh(status) {
+  if (window.__globalDeliveryRefreshTimer) {
+    clearTimeout(window.__globalDeliveryRefreshTimer);
+    window.__globalDeliveryRefreshTimer = null;
+  }
+  if (!status || !status.end_at) return;
+  const endMs = new Date(status.end_at).getTime();
+  if (!Number.isFinite(endMs)) return;
+  const nowMs = Date.now();
+  const delay = Math.max(1000, endMs - nowMs + 1000);
+  window.__globalDeliveryRefreshTimer = setTimeout(() => {
+    loadGlobalDeliveryWidget(true);
+  }, delay);
+}
+
 // Authentication state
 let currentUser = null;
 let authToken = localStorage.getItem("serveNowToken");
@@ -427,6 +478,25 @@ window.addEventListener("DOMContentLoaded", function () {
   } catch (e) {
     /* ignore */
   }
+  try {
+    loadGlobalDeliveryWidget();
+  } catch (e) {
+    /* ignore */
+  }
+  if (window.__globalDeliveryPollTimer) {
+    clearInterval(window.__globalDeliveryPollTimer);
+  }
+  window.__globalDeliveryPollTimer = setInterval(() => {
+    loadGlobalDeliveryWidget(true);
+  }, 5000);
+  window.addEventListener("storage", (event) => {
+    if (event && event.key === "serveNowGlobalDeliveryStatusUpdatedAt") {
+      loadGlobalDeliveryWidget(true);
+    }
+  });
+  window.addEventListener("globalDeliveryStatusSaved", () => {
+    loadGlobalDeliveryWidget(true);
+  });
   updateCartCount();
 });
 
@@ -468,6 +538,17 @@ async function addToCart(
   variantData,
   quantityToAdd = 1
 ) {
+  try {
+    await loadGlobalDeliveryWidget(true);
+    const guard = getOrderingGuardState();
+    if (guard.blocked) {
+      showWarning("Delivery Unavailable", guard.message);
+      return;
+    }
+  } catch (_) {
+    /* ignore */
+  }
+
   const qToAdd = parseFloat(quantityToAdd) || 1;
 
   // Mixed store check removed to allow multi-store orders
@@ -805,6 +886,112 @@ function formatStoreRatingValue(rating) {
   const n = parseFloat(rating);
   if (Number.isFinite(n)) return n.toFixed(1);
   return "N/A";
+}
+
+function formatDeliveryWindow(startAt, endAt) {
+  if (!startAt || !endAt) return "";
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
+  return `${start.toLocaleString()} - ${end.toLocaleString()}`;
+}
+
+function renderGlobalDeliveryWidget(status) {
+  const host = document.getElementById("globalDeliveryWidget");
+  if (!host) return;
+
+  window.__globalDeliveryStatus = status || null;
+  const isUnavailable = !!(status && status.is_window_active);
+  const hasNotice = !!(status && status.is_enabled && status.is_window_active && status.status_message);
+  if (!hasNotice) {
+    host.innerHTML = "";
+    host.style.display = "none";
+    scheduleGlobalDeliveryAutoRefresh(status);
+    try {
+      window.dispatchEvent(
+        new CustomEvent("globalDeliveryStatusUpdated", {
+          detail: window.__globalDeliveryStatus,
+        })
+      );
+    } catch (_) {}
+    return;
+  }
+
+  host.style.display = "block";
+  const title = status.title || "Delivery Update";
+  const message = buildDeliveryReasonWithWindow(status) || status.status_message || "";
+  const when = formatDeliveryWindow(status.start_at, status.end_at);
+  host.innerHTML = `
+    <article class="delivery-live-card ${isUnavailable ? "delivery-live-card--alert" : "delivery-live-card--info"}">
+      <div class="delivery-live-card__top">
+        <span class="delivery-live-card__chip">${isUnavailable ? "Live: Delivery Paused" : "Upcoming Delivery Update"}</span>
+        <span class="delivery-live-card__state">Unavailable Now</span>
+      </div>
+      <h3>${escapeHtmlPublic(title)}</h3>
+      <p>${escapeHtmlPublic(message)}</p>
+      ${when ? `<p class="delivery-live-card__window"><i class="fas fa-clock"></i> ${escapeHtmlPublic(when)}</p>` : ""}
+    </article>
+  `;
+  scheduleGlobalDeliveryAutoRefresh(status);
+  try {
+    window.dispatchEvent(
+      new CustomEvent("globalDeliveryStatusUpdated", {
+        detail: window.__globalDeliveryStatus,
+      })
+    );
+  } catch (_) {}
+}
+
+function ensureGlobalDeliveryWidgetHost() {
+  const existing = document.getElementById("globalDeliveryWidget");
+  if (existing) return existing;
+  const path = (window.location.pathname || "").toLowerCase();
+  if (path.includes("admin.html") || path.includes("rider.html")) return null;
+  const appContent = document.querySelector(".app-content");
+  if (!appContent) return null;
+  const section = document.createElement("section");
+  section.id = "globalDeliveryWidget";
+  section.className = "global-delivery-widget";
+  section.style.display = "none";
+  appContent.insertBefore(section, appContent.firstChild);
+  return section;
+}
+
+async function loadGlobalDeliveryWidget(forceRefresh = false) {
+  const host = ensureGlobalDeliveryWidgetHost();
+  if (!host) return;
+  if (!forceRefresh && window.__globalDeliveryStatus && window.__globalDeliveryStatus.is_enabled !== undefined) {
+    renderGlobalDeliveryWidget(window.__globalDeliveryStatus);
+    return;
+  }
+  try {
+    const response = await fetch(`${API_BASE}/api/stores/global-delivery-status`);
+    const data = await response.json();
+    if (!data.success || !data.global_delivery_status) {
+      window.__globalDeliveryStatus = null;
+      host.style.display = "none";
+      try {
+        window.dispatchEvent(
+          new CustomEvent("globalDeliveryStatusUpdated", {
+            detail: window.__globalDeliveryStatus,
+          })
+        );
+      } catch (_) {}
+      return;
+    }
+    renderGlobalDeliveryWidget(data.global_delivery_status);
+  } catch (error) {
+    console.error("Error loading global delivery widget:", error);
+    window.__globalDeliveryStatus = null;
+    host.style.display = "none";
+    try {
+      window.dispatchEvent(
+        new CustomEvent("globalDeliveryStatusUpdated", {
+          detail: window.__globalDeliveryStatus,
+        })
+      );
+    } catch (_) {}
+  }
 }
 
 function buildStoreCardHtml(store) {
