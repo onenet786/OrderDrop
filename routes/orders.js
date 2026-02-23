@@ -9,6 +9,7 @@ const {
 } = require("../middleware/auth");
 const { sendOrderThanksEmail } = require("../services/emailService");
 const { recordFinancialTransaction } = require("../utils/dbHelpers");
+const { sendPushToUser } = require("../services/pushNotifications");
 
 const router = express.Router();
 
@@ -788,6 +789,19 @@ router.post("/", authenticateToken, async (req, res) => {
                   message: `New order ${order_number} for ${store.name}`,
                   timestamp: new Date(),
                 });
+              await sendPushToUser(req.db, {
+                userId: store.owner_id,
+                userType: "store_owner",
+                title: "New Store Order",
+                message: `New order ${order_number} for ${store.name}`,
+                data: {
+                  type: "new_order",
+                  order_id: orderId,
+                  order_number: order_number,
+                  store_id: store.id,
+                },
+                collapseKey: "store_owner_new_order",
+              });
               logEvent(
                 `store_owner_notification emitted to user_${store.owner_id}`,
               );
@@ -1836,6 +1850,18 @@ router.put(
                       message: message,
                       order_id: id
                   });
+                  await sendPushToUser(req.db, {
+                    userId: order.user_id,
+                    userType: "customer",
+                    title: "Order Picked Up",
+                    message,
+                    data: {
+                      type: "order_update",
+                      order_id: id,
+                      status: "picked_up",
+                    },
+                    collapseKey: "order_status",
+                  });
               }
           } else if (status === 'ready_for_pickup') {
               // ALSO notify when "Ready for Pickup"
@@ -1851,6 +1877,18 @@ router.put(
                       title: 'Order Ready',
                       message: `Your items from ${store_name} are ready for pickup.`,
                       order_id: id
+                  });
+                  await sendPushToUser(req.db, {
+                    userId: order.user_id,
+                    userType: "customer",
+                    title: "Order Ready",
+                    message: `Your items from ${store_name} are ready for pickup.`,
+                    data: {
+                      type: "order_update",
+                      order_id: id,
+                      status: "ready_for_pickup",
+                    },
+                    collapseKey: "order_status",
                   });
               }
           } else if (status === 'preparing' || status === 'ready') {
@@ -2193,6 +2231,18 @@ router.put(
                   order_id: id,
                   rider_name: `${rider.first_name} ${rider.last_name}`
               });
+              await sendPushToUser(req.db, {
+                userId: owner.owner_id,
+                userType: "store_owner",
+                title: "Rider Assigned",
+                message,
+                data: {
+                  type: "rider_assigned",
+                  order_id: id,
+                  order_number: order.order_number,
+                },
+                collapseKey: "store_owner_rider_assigned",
+              });
 
               // Log notification
               const logMsg = `[${new Date().toISOString()}] Store notification sent to owner ${owner.owner_id} for store ${owner.store_name}\n`;
@@ -2216,6 +2266,18 @@ router.put(
             message: `New order assigned: ${order.order_number}`,
             timestamp: new Date(),
           });
+          await sendPushToUser(req.db, {
+            userId: rider_id,
+            userType: "rider",
+            title: "New Assignment",
+            message: `New order assigned: ${order.order_number}`,
+            data: {
+              type: "assigned",
+              order_id: id,
+              order_number: order.order_number,
+            },
+            collapseKey: "rider_assignment",
+          });
 
           console.log(
             `[Orders] Emitting user_notification to room: ${userRoomName}`,
@@ -2229,6 +2291,19 @@ router.put(
             status: "out_for_delivery",
             message: `Your order ${order.order_number} has been assigned to rider ${rider.first_name}.`,
             timestamp: new Date(),
+          });
+          await sendPushToUser(req.db, {
+            userId: order.user_id,
+            userType: "customer",
+            title: "Order Update",
+            message: `Your order ${order.order_number} has been assigned to rider ${rider.first_name}.`,
+            data: {
+              type: "order_update",
+              order_id: id,
+              order_number: order.order_number,
+              status: "out_for_delivery",
+            },
+            collapseKey: "order_status",
           });
           
           const fs = require("fs");
@@ -2509,6 +2584,19 @@ router.put("/:id(\\d+)/deliver", authenticateToken, async (req, res) => {
             message: `Order ${order.order_number} marked as delivered.`,
             timestamp: new Date(),
           });
+          await sendPushToUser(req.db, {
+            userId: order.rider_id,
+            userType: "rider",
+            title: "Order Delivered",
+            message: `Order ${order.order_number} marked as delivered.`,
+            data: {
+              type: "order_status_update",
+              order_id: id,
+              order_number: order.order_number,
+              status: "delivered",
+            },
+            collapseKey: "rider_order_status",
+          });
         }
 
         const [storeOwners] = await req.db.execute(
@@ -2528,6 +2616,19 @@ router.put("/:id(\\d+)/deliver", authenticateToken, async (req, res) => {
             message: `Order ${order.order_number} delivered.`,
             timestamp: new Date(),
           });
+          await sendPushToUser(req.db, {
+            userId: owner.owner_id,
+            userType: "store_owner",
+            title: "Store Order Delivered",
+            message: `Order ${order.order_number} delivered.`,
+            data: {
+              type: "order_status_update",
+              order_id: id,
+              order_number: order.order_number,
+              status: "delivered",
+            },
+            collapseKey: "store_owner_order_status",
+          });
         }
 
         // User notification
@@ -2543,6 +2644,19 @@ router.put("/:id(\\d+)/deliver", authenticateToken, async (req, res) => {
         req.io
           .to(`user_${order.user_id}`)
           .emit("user_notification", userNotifData);
+        await sendPushToUser(req.db, {
+          userId: order.user_id,
+          userType: "customer",
+          title: "Order Delivered",
+          message: `Your order ${order.order_number} has been delivered.`,
+          data: {
+            type: "order_update",
+            order_id: id,
+            order_number: order.order_number,
+            status: "delivered",
+          },
+          collapseKey: "order_status",
+        });
 
         // Admin notification
         const adminNotifData = {
@@ -2842,6 +2956,19 @@ router.put(
           req.io
             .to(`user_${order.user_id}`)
             .emit("user_notification", userPaymentNotif);
+          await sendPushToUser(req.db, {
+            userId: order.user_id,
+            userType: "customer",
+            title: "Payment Update",
+            message: `Payment received for order ${order.order_number}.`,
+            data: {
+              type: "payment_status_update",
+              order_id: id,
+              order_number: order.order_number,
+              payment_status: payment_status,
+            },
+            collapseKey: "payment_status",
+          });
 
           // Admin notification
           const adminPaymentNotif = {

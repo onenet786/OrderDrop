@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import 'auth_provider.dart';
 
@@ -42,6 +46,9 @@ class NotificationProvider with ChangeNotifier {
   final GlobalKey<NavigatorState> navigatorKey;
   AuthProvider? _authProvider;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
+  bool _isFirebaseMessagingReady = false;
+  String? _currentPushToken;
 
   final List<Notification> _notifications = [];
   static const int _maxNotifications = 20;
@@ -59,6 +66,12 @@ class NotificationProvider with ChangeNotifier {
     const settings = InitializationSettings(android: androidSettings, iOS: iosSettings);
     
     await _localNotifications.initialize(settings);
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+    await _initFirebaseMessaging();
   }
 
   List<Notification> get notifications => _notifications;
@@ -117,6 +130,88 @@ class NotificationProvider with ChangeNotifier {
   void update(AuthProvider auth) {
     _authProvider = auth;
     _updateSocketConnection();
+    _syncPushToken();
+  }
+
+  Future<void> _initFirebaseMessaging() async {
+    if (_isFirebaseMessagingReady) return;
+    try {
+      await Firebase.initializeApp();
+    } catch (_) {
+      // Firebase may already be initialized or pending native config.
+    }
+
+    try {
+      await _firebaseMessaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      _isFirebaseMessagingReady = true;
+
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        final n = message.notification;
+        if (n == null) return;
+        addNotification(
+          title: n.title ?? 'ServeNow Notification',
+          message: n.body ?? '',
+          type: 'info',
+          icon: 'notifications',
+        );
+      });
+
+      _firebaseMessaging.onTokenRefresh.listen((token) {
+        _currentPushToken = token;
+        _syncPushToken();
+      });
+    } catch (e) {
+      debugPrint('[NotificationProvider] Firebase messaging init failed: $e');
+    }
+  }
+
+  String _platformName() {
+    if (kIsWeb) return 'web';
+    if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
+    if (defaultTargetPlatform == TargetPlatform.android) return 'android';
+    return 'unknown';
+  }
+
+  Future<void> _syncPushToken() async {
+    try {
+      if (!_isFirebaseMessagingReady) {
+        await _initFirebaseMessaging();
+      }
+      if (_authProvider == null || !_authProvider!.isAuthenticated) return;
+      final authToken = _authProvider!.token;
+      if (authToken == null || authToken.trim().isEmpty) return;
+
+      final pushToken = _currentPushToken ?? await _firebaseMessaging.getToken();
+      if (pushToken == null || pushToken.trim().isEmpty) return;
+      _currentPushToken = pushToken;
+
+      final prefs = await SharedPreferences.getInstance();
+      final oldToken = prefs.getString('push_token');
+      if (oldToken != null &&
+          oldToken.isNotEmpty &&
+          oldToken != pushToken &&
+          authToken.isNotEmpty) {
+        try {
+          await ApiService.unregisterPushDeviceToken(
+            authToken,
+            deviceToken: oldToken,
+          );
+        } catch (_) {}
+      }
+
+      await ApiService.registerPushDeviceToken(
+        authToken,
+        deviceToken: pushToken,
+        platform: _platformName(),
+      );
+      await prefs.setString('push_token', pushToken);
+    } catch (e) {
+      debugPrint('[NotificationProvider] Push token sync failed: $e');
+    }
   }
 
   void _updateSocketConnection() {
@@ -492,10 +587,11 @@ class NotificationProvider with ChangeNotifier {
       priority: Priority.high,
       icon: '@mipmap/ic_launcher', // Ensure this icon exists
     );
-    const details = NotificationDetails(android: androidDetails);
+    const iosDetails = DarwinNotificationDetails();
+    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
     
     await _localNotifications.show(
-      DateTime.now().millisecond, 
+      DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
       title, 
       message, 
       details

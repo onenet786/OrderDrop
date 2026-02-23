@@ -25,9 +25,14 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _errorMessage;
   String? _serviceLimitedMessage;
   Map<String, dynamic>? _globalStatus;
+  Map<String, dynamic>? _livePromotions;
   Timer? _globalStatusRefreshTimer;
+  Timer? _livePromotionsRefreshTimer;
   Timer? _globalStatusPollTimer;
+  Timer? _promoCarouselTimer;
   final TextEditingController _searchController = TextEditingController();
+  final PageController _promoController = PageController();
+  int _activePromo = 0;
   double? _userLat;
   double? _userLng;
   String? _userCity;
@@ -39,15 +44,19 @@ class _HomeScreenState extends State<HomeScreen> {
     _globalStatusPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _refreshGlobalStatusOnly();
     });
+    _startPromoAutoScroll();
     _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
     _globalStatusRefreshTimer?.cancel();
+    _livePromotionsRefreshTimer?.cancel();
     _globalStatusPollTimer?.cancel();
+    _promoCarouselTimer?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _promoController.dispose();
     super.dispose();
   }
 
@@ -70,6 +79,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   : global;
         } catch (_) {}
       }
+      Map<String, dynamic>? livePromotions;
+      try {
+        final promotions = await ApiService.getLivePromotions(token);
+        livePromotions = (promotions['live_promotions'] is Map<String, dynamic>)
+            ? (promotions['live_promotions'] as Map<String, dynamic>)
+            : promotions;
+      } catch (_) {}
       final storesResp = await ApiService.getStores(
         latitude: _userLat,
         longitude: _userLng,
@@ -84,7 +100,9 @@ class _HomeScreenState extends State<HomeScreen> {
           _allStores = stores;
           _filteredStores = stores;
           _globalStatus = globalStatus;
+          _livePromotions = livePromotions;
           _scheduleGlobalStatusRefresh(globalStatus);
+          _scheduleLivePromotionsRefresh(livePromotions);
           _serviceLimitedMessage = limited
               ? (limitedMessage.isNotEmpty
                   ? limitedMessage
@@ -189,16 +207,40 @@ class _HomeScreenState extends State<HomeScreen> {
     _globalStatusRefreshTimer = Timer(delay, _refreshGlobalStatusOnly);
   }
 
+  void _scheduleLivePromotionsRefresh(Map<String, dynamic>? promotions) {
+    _livePromotionsRefreshTimer?.cancel();
+    if (promotions == null) return;
+
+    final now = DateTime.now();
+    final startAt = _parseDateTime(promotions['start_at']);
+    final endAt = _parseDateTime(promotions['end_at']);
+    final candidates = <DateTime>[
+      if (startAt != null && startAt.isAfter(now)) startAt,
+      if (endAt != null && endAt.isAfter(now)) endAt,
+    ];
+    if (candidates.isEmpty) return;
+
+    candidates.sort();
+    final nextTick = candidates.first;
+    final delay = nextTick.difference(now) + const Duration(seconds: 1);
+    _livePromotionsRefreshTimer = Timer(delay, _refreshGlobalStatusOnly);
+  }
+
   Future<void> _refreshGlobalStatusOnly() async {
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
-      if (token == null) return;
-      final status = await ApiService.getGlobalDeliveryStatus(token);
+      Map<String, dynamic>? status;
+      if (token != null) {
+        status = await ApiService.getGlobalDeliveryStatus(token);
+      }
+      final promotions = await ApiService.getLivePromotions(token);
       if (!mounted) return;
       setState(() {
         _globalStatus = status;
+        _livePromotions = promotions;
       });
       _scheduleGlobalStatusRefresh(status);
+      _scheduleLivePromotionsRefresh(promotions);
     } catch (_) {}
   }
 
@@ -248,6 +290,158 @@ class _HomeScreenState extends State<HomeScreen> {
     final startLocal = start.toLocal();
     final endLocal = end.toLocal();
     return '${startLocal.toString().substring(0, 16)} - ${endLocal.toString().substring(0, 16)}';
+  }
+
+  void _startPromoAutoScroll() {
+    _promoCarouselTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_promoController.hasClients) return;
+      final count = _promotionImages().length;
+      if (count <= 1) return;
+      final next = (_activePromo + 1) % count;
+      _promoController.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  bool _showLivePromotionsCard() {
+    final promo = _livePromotions;
+    if (promo == null) return false;
+    if (!_toBool(promo['is_enabled'])) return false;
+    if (!_toBool(promo['is_window_active']) && !_isGlobalWindowActive(promo)) {
+      return false;
+    }
+    return _promotionImages().isNotEmpty;
+  }
+
+  List<String> _promotionImages() {
+    final promo = _livePromotions;
+    if (promo == null) return const [];
+    final raw = promo['widget_images'];
+    if (raw is! List) return const [];
+    return raw
+        .map((e) => e?.toString().trim() ?? '')
+        .where((e) => e.isNotEmpty)
+        .take(5)
+        .toList();
+  }
+
+  String _livePromotionMessage() {
+    final promo = _livePromotions;
+    if (promo == null) return '';
+    final message = (promo['status_message'] ?? '').toString().trim();
+    final when = _formatDeliveryWindow(promo['start_at'], promo['end_at']);
+    if (message.isNotEmpty && when.isNotEmpty) return '$message ($when)';
+    if (message.isNotEmpty) return message;
+    if (when.isNotEmpty) return 'Promotion window: $when';
+    return '';
+  }
+
+  Widget _buildLivePromotionsSection() {
+    final images = _promotionImages();
+    final title = (_livePromotions?['title'] ?? 'Live Promotions')
+        .toString()
+        .trim();
+    final message = _livePromotionMessage();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0C4A6E), Color(0xFF0369A1)],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Live Promotions / Events',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title.isNotEmpty ? title : 'Live Promotions',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+          if (message.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 160,
+            child: PageView.builder(
+              controller: _promoController,
+              itemCount: images.length,
+              onPageChanged: (index) {
+                setState(() => _activePromo = index);
+              },
+              itemBuilder: (context, index) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    ApiService.getImageUrl(images[index]),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, error, stackTrace) => Container(
+                      color: const Color(0xFF164E63),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.image_not_supported_outlined,
+                        color: Colors.white,
+                        size: 34,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (images.length > 1) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(images.length, (i) {
+                final active = i == _activePromo;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: active ? 18 : 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: active ? Colors.white : Colors.white54,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                );
+              }),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildGlobalStatusBanner() {
@@ -444,6 +638,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 if (_showGlobalStatusBanner()) _buildGlobalStatusBanner(),
+                if (_showLivePromotionsCard()) _buildLivePromotionsSection(),
 
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),

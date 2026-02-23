@@ -5,6 +5,10 @@ const jwt = require("jsonwebtoken");
 const { body, validationResult } = require("express-validator");
 const { sendVerificationEmail, sendPasswordResetOTP } = require("../services/emailService");
 const { authenticateToken } = require("../middleware/auth");
+const {
+  upsertPushToken,
+  deactivatePushToken,
+} = require("../services/pushNotifications");
 
 const router = express.Router();
 
@@ -860,6 +864,88 @@ router.post(
       });
     }
   }
+);
+
+router.post(
+  "/push-token",
+  authenticateToken,
+  [
+    body("device_token")
+      .trim()
+      .isLength({ min: 20, max: 512 })
+      .withMessage("Valid device token is required"),
+    body("platform")
+      .optional()
+      .trim()
+      .isIn(["android", "ios", "web", "unknown"])
+      .withMessage("Invalid platform"),
+    body("device_id")
+      .optional()
+      .trim()
+      .isLength({ max: 128 })
+      .withMessage("device_id too long"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      await upsertPushToken(req.db, {
+        userId: req.user.id,
+        userType: req.user.user_type,
+        deviceToken: req.body.device_token,
+        platform: req.body.platform || "unknown",
+        deviceId: req.body.device_id || null,
+      });
+
+      return res.json({ success: true, message: "Push token registered" });
+    } catch (error) {
+      console.error("Push token register error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to register push token",
+        error: error.message,
+      });
+    }
+  },
+);
+
+router.delete(
+  "/push-token",
+  authenticateToken,
+  [body("device_token").trim().isLength({ min: 20, max: 512 })],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      await deactivatePushToken(req.db, {
+        userId: req.user.id,
+        userType: req.user.user_type,
+        deviceToken: req.body.device_token,
+      });
+      return res.json({ success: true, message: "Push token removed" });
+    } catch (error) {
+      console.error("Push token remove error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to remove push token",
+        error: error.message,
+      });
+    }
+  },
 );
 
 module.exports = router;

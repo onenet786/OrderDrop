@@ -192,6 +192,47 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> registerPushDeviceToken(
+    String token, {
+    required String deviceToken,
+    required String platform,
+    String? deviceId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/auth/push-token');
+    _logger.d('ApiService: POST $uri');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'device_token': deviceToken.trim(),
+        'platform': platform.trim(),
+        if (deviceId != null && deviceId.trim().isNotEmpty)
+          'device_id': deviceId.trim(),
+      }),
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> unregisterPushDeviceToken(
+    String token, {
+    required String deviceToken,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/auth/push-token');
+    _logger.d('ApiService: DELETE $uri');
+    final response = await http.delete(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'device_token': deviceToken.trim()}),
+    );
+    return _handleResponse(response);
+  }
+
   static Future<Map<String, dynamic>> getStores({
     int? categoryId,
     double? latitude,
@@ -291,6 +332,24 @@ class ApiService {
     }
     if (data['global_status'] is Map<String, dynamic>) {
       return data['global_status'] as Map<String, dynamic>;
+    }
+    return data;
+  }
+
+  static Future<Map<String, dynamic>> getLivePromotions([String? token]) async {
+    final uri = Uri.parse('$baseUrl/api/stores/live-promotions');
+    _logger.d('ApiService: GET $uri');
+    final headers = <String, String>{};
+    if (token != null && token.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    final response = await http.get(uri, headers: headers);
+    final data = _handleResponse(response);
+    if (data['live_promotions'] is Map<String, dynamic>) {
+      return data['live_promotions'] as Map<String, dynamic>;
+    }
+    if (data['promotion'] is Map<String, dynamic>) {
+      return data['promotion'] as Map<String, dynamic>;
     }
     return data;
   }

@@ -17,6 +17,7 @@ const AppState = {
     units: [],
     sizes: [],
     globalDeliveryStatus: null,
+    livePromotions: null,
     productStoreTermsById: {},
     productItemCatalog: {
         loadedAt: 0,
@@ -206,6 +207,226 @@ async function saveGlobalDeliveryStatus() {
         if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.innerHTML = '<i class="fas fa-bullhorn"></i> Save Live Widget';
+        }
+    }
+}
+
+function getLivePromoImagesFromForm() {
+    const images = [];
+    for (let i = 1; i <= 5; i++) {
+        const value = (document.getElementById(`livePromoImage${i}`)?.value || '').trim();
+        if (!value) continue;
+        images.push(value);
+    }
+    return images.slice(0, 5);
+}
+
+function renderLivePromotionPreview() {
+    const preview = document.getElementById('livePromoPreview');
+    const enabledEl = document.getElementById('livePromoEnabled');
+    const titleEl = document.getElementById('livePromoTitle');
+    const messageEl = document.getElementById('livePromoMessage');
+    const startEl = document.getElementById('livePromoStartAt');
+    const endEl = document.getElementById('livePromoEndAt');
+    const stateEl = document.getElementById('livePromoCurrentState');
+    if (!preview || !enabledEl || !titleEl || !messageEl || !startEl || !endEl || !stateEl) return;
+
+    const enabled = !!enabledEl.checked;
+    const title = (titleEl.value || '').trim() || 'Live Promotions';
+    const message = (messageEl.value || '').trim() || 'No event message set.';
+    const images = getLivePromoImagesFromForm();
+    const start = startEl.value ? new Date(startEl.value) : null;
+    const end = endEl.value ? new Date(endEl.value) : null;
+    const now = new Date();
+    const active = !!(enabled && start && end && now >= start && now <= end);
+    const whenText = start && end ? `${start.toLocaleString()} - ${end.toLocaleString()}` : 'No time window selected';
+
+    stateEl.className = `global-delivery-state ${active ? 'state-unavailable' : 'state-available'}`;
+    stateEl.textContent = active ? 'Active Now' : (enabled ? 'Scheduled' : 'Inactive');
+
+    const thumbs = images.length
+        ? `<div class="promo-preview-thumbs">${images.map((src, idx) => `<img src="${escapeHtml(src)}" alt="Widget ${idx + 1}" />`).join('')}</div>`
+        : '<p><small>No images selected.</small></p>';
+
+    preview.innerHTML = `
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(message)}</p>
+        <p><small><strong>Window:</strong> ${escapeHtml(whenText)}</small></p>
+        <p><small><strong>Images:</strong> ${images.length}/5</small></p>
+        ${thumbs}
+    `;
+}
+
+async function loadLivePromotions() {
+    const enabledEl = document.getElementById('livePromoEnabled');
+    if (!enabledEl) return null;
+    try {
+        const response = await fetch(`${API_BASE}/api/stores/live-promotions`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!data.success || !data.live_promotions) return null;
+        const p = data.live_promotions;
+        AppState.livePromotions = p;
+        document.getElementById('livePromoEnabled').checked = !!p.is_enabled;
+        document.getElementById('livePromoTitle').value = p.title || '';
+        document.getElementById('livePromoMessage').value = p.status_message || '';
+        document.getElementById('livePromoStartAt').value = toDateTimeLocalValue(p.start_at) || nowDateTimeLocalValue();
+        document.getElementById('livePromoEndAt').value = toDateTimeLocalValue(p.end_at) || nowDateTimeLocalValue();
+        const images = Array.isArray(p.widget_images) ? p.widget_images : [];
+        for (let i = 1; i <= 5; i++) {
+            const el = document.getElementById(`livePromoImage${i}`);
+            if (el) el.value = images[i - 1] || '';
+        }
+        renderLivePromotionPreview();
+        return p;
+    } catch (error) {
+        console.error('Error loading live promotions:', error);
+        return null;
+    }
+}
+
+async function uploadLivePromoImage(slotNo) {
+    const fileEl = document.getElementById(`livePromoImageFile${slotNo}`);
+    const urlEl = document.getElementById(`livePromoImage${slotNo}`);
+    const btn = document.getElementById(`uploadLivePromoImageBtn${slotNo}`);
+    if (!fileEl || !urlEl || !fileEl.files || !fileEl.files[0]) {
+        showWarning('Missing File', 'Please select an image first.');
+        return;
+    }
+    const fd = new FormData();
+    fd.append('image', fileEl.files[0]);
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+        }
+        const response = await fetch(`${API_BASE}/api/admin/upload-image`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${authToken}` },
+            body: fd
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success || !data.image_url) {
+            showError('Upload Failed', data.message || 'Failed to upload image');
+            return;
+        }
+        urlEl.value = data.image_url;
+        fileEl.value = '';
+        renderLivePromotionPreview();
+        showSuccess('Uploaded', `Widget ${slotNo} image uploaded`);
+    } catch (error) {
+        console.error('Error uploading live promo image:', error);
+        showError('Upload Failed', 'Failed to upload image');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+        }
+    }
+}
+
+async function saveLivePromotions() {
+    const enabledEl = document.getElementById('livePromoEnabled');
+    const titleEl = document.getElementById('livePromoTitle');
+    const messageEl = document.getElementById('livePromoMessage');
+    const startEl = document.getElementById('livePromoStartAt');
+    const endEl = document.getElementById('livePromoEndAt');
+    const saveBtn = document.getElementById('saveLivePromoStatusBtn');
+    if (!enabledEl || !titleEl || !messageEl || !startEl || !endEl) return;
+
+    if (!startEl.value) startEl.value = nowDateTimeLocalValue();
+    if (!endEl.value) endEl.value = nowDateTimeLocalValue();
+    const payload = {
+        is_enabled: !!enabledEl.checked,
+        title: titleEl.value.trim(),
+        status_message: messageEl.value.trim(),
+        start_at: startEl.value || null,
+        end_at: endEl.value || null,
+        widget_images: getLivePromoImagesFromForm()
+    };
+    if (payload.is_enabled && (!payload.start_at || !payload.end_at)) {
+        showWarning('Missing Time Window', 'Please set both "from" and "to" time.');
+        return;
+    }
+    if (payload.is_enabled && !payload.widget_images.length) {
+        showWarning('Missing Widgets', 'Please upload at least one live widget image.');
+        return;
+    }
+    try {
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+        const response = await fetch(`${API_BASE}/api/stores/live-promotions`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            showError('Save Failed', data.message || 'Failed to save promotions/events');
+            return;
+        }
+        showSuccess('Saved', 'Promotions / events live widgets updated.');
+        await loadLivePromotions();
+        try {
+            localStorage.setItem('serveNowLivePromotionsUpdatedAt', String(Date.now()));
+            window.dispatchEvent(new CustomEvent('livePromotionsSaved'));
+        } catch (_) {}
+    } catch (error) {
+        console.error('Error saving live promotions:', error);
+        showError('Save Failed', 'Failed to save promotions/events');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-images"></i> Save Promotions / Events';
+        }
+    }
+}
+
+function bindLivePromotionControls() {
+    const saveBtn = document.getElementById('saveLivePromoStatusBtn');
+    if (saveBtn && !saveBtn.dataset.boundClick) {
+        saveBtn.addEventListener('click', saveLivePromotions);
+        saveBtn.dataset.boundClick = '1';
+    }
+
+    ['livePromoEnabled', 'livePromoTitle', 'livePromoMessage', 'livePromoStartAt', 'livePromoEndAt']
+        .forEach((id) => {
+            const el = document.getElementById(id);
+            if (el && !el.dataset.boundPreview) {
+                el.addEventListener('input', renderLivePromotionPreview);
+                el.addEventListener('change', renderLivePromotionPreview);
+                el.dataset.boundPreview = '1';
+            }
+        });
+
+    for (let i = 1; i <= 5; i++) {
+        const uploadBtn = document.getElementById(`uploadLivePromoImageBtn${i}`);
+        if (uploadBtn && !uploadBtn.dataset.boundClick) {
+            uploadBtn.addEventListener('click', () => uploadLivePromoImage(i));
+            uploadBtn.dataset.boundClick = '1';
+        }
+        const clearBtn = document.getElementById(`clearLivePromoImageBtn${i}`);
+        if (clearBtn && !clearBtn.dataset.boundClick) {
+            clearBtn.addEventListener('click', () => {
+                const urlEl = document.getElementById(`livePromoImage${i}`);
+                const fileEl = document.getElementById(`livePromoImageFile${i}`);
+                if (urlEl) urlEl.value = '';
+                if (fileEl) fileEl.value = '';
+                renderLivePromotionPreview();
+            });
+            clearBtn.dataset.boundClick = '1';
+        }
+        const urlEl = document.getElementById(`livePromoImage${i}`);
+        if (urlEl && !urlEl.dataset.boundPreview) {
+            urlEl.addEventListener('input', renderLivePromotionPreview);
+            urlEl.addEventListener('change', renderLivePromotionPreview);
+            urlEl.dataset.boundPreview = '1';
         }
     }
 }
@@ -646,6 +867,7 @@ function initializeAdmin() {
                 el.dataset.boundPreview = '1';
             }
         });
+    bindLivePromotionControls();
     document.getElementById('runDiagnosticsBtn')?.addEventListener('click', () => runAllDiagnostics());
     document.getElementById('runSingleDiagnosticBtn')?.addEventListener('click', () => runSingleDiagnostic());
     // Removed Export Base64 Images and Image Fit controls
@@ -1562,6 +1784,8 @@ function switchTab(tabName) {
         case 'store-status':
             loadGlobalDeliveryStatus();
             renderGlobalDeliveryPreview();
+            loadLivePromotions();
+            renderLivePromotionPreview();
             break;
         case 'products':
             loadProducts();

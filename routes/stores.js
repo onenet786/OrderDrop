@@ -57,6 +57,23 @@ async function ensureGlobalDeliveryStatusTable(db) {
     }
 }
 
+async function ensureLivePromotionsTable(db) {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS live_promotions (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            is_enabled BOOLEAN DEFAULT FALSE,
+            title VARCHAR(120) NULL,
+            status_message TEXT NULL,
+            start_at DATETIME NULL,
+            end_at DATETIME NULL,
+            widget_images_json LONGTEXT NULL,
+            updated_by INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    `);
+}
+
 function normalizeDateTimeInput(raw) {
     const value = (raw ?? '').toString().trim();
     if (!value) return null;
@@ -92,6 +109,56 @@ function getGlobalDeliveryStatusPayload(row) {
         is_window_active: inWindow,
         is_delivery_available: !inWindow,
         block_ordering_active: blockOrderingActive,
+        updated_at: row?.updated_at || null
+    };
+}
+
+function normalizeWidgetImages(raw) {
+    const input = Array.isArray(raw) ? raw : [];
+    const out = [];
+    for (const item of input) {
+        const url = (item ?? '').toString().trim();
+        if (!url) continue;
+        if (url.length > 2048) continue;
+        out.push(url);
+        if (out.length >= 5) break;
+    }
+    return out;
+}
+
+function parseWidgetImages(rawJson) {
+    if (!rawJson) return [];
+    try {
+        const parsed = JSON.parse(rawJson);
+        return normalizeWidgetImages(parsed);
+    } catch (_) {
+        return [];
+    }
+}
+
+function getLivePromotionsPayload(row) {
+    const now = new Date();
+    const start = row?.start_at ? new Date(row.start_at) : null;
+    const end = row?.end_at ? new Date(row.end_at) : null;
+    const inWindow = !!(
+        row?.is_enabled &&
+        start &&
+        end &&
+        !Number.isNaN(start.getTime()) &&
+        !Number.isNaN(end.getTime()) &&
+        now >= start &&
+        now <= end
+    );
+    const images = parseWidgetImages(row?.widget_images_json);
+    return {
+        is_enabled: !!row?.is_enabled,
+        title: row?.title || 'Live Promotions',
+        status_message: row?.status_message || '',
+        start_at: row?.start_at || null,
+        end_at: row?.end_at || null,
+        widget_images: images,
+        is_window_active: inWindow,
+        is_visible: !!(inWindow && images.length),
         updated_at: row?.updated_at || null
     };
 }
@@ -675,6 +742,124 @@ router.put('/global-delivery-status', authenticateToken, requireAdmin, async (re
         return res.status(500).json({
             success: false,
             message: 'Failed to update global delivery status',
+            error: error.message
+        });
+    }
+});
+
+router.get('/live-promotions', async (req, res) => {
+    try {
+        await ensureLivePromotionsTable(req.db);
+        const [rows] = await req.db.execute(
+            `SELECT id, is_enabled, title, status_message, start_at, end_at, widget_images_json, updated_at
+             FROM live_promotions
+             ORDER BY id DESC
+             LIMIT 1`
+        );
+        let row = rows[0] || null;
+        if (row?.is_enabled && row?.end_at) {
+            const endAt = new Date(row.end_at);
+            if (!Number.isNaN(endAt.getTime()) && new Date() > endAt) {
+                await req.db.execute(
+                    `UPDATE live_promotions
+                     SET is_enabled = 0,
+                         title = NULL,
+                         status_message = NULL,
+                         start_at = NULL,
+                         end_at = NULL,
+                         widget_images_json = NULL,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = ?`,
+                    [row.id]
+                );
+                row = null;
+            }
+        }
+        return res.json({
+            success: true,
+            live_promotions: getLivePromotionsPayload(row)
+        });
+    } catch (error) {
+        console.error('Error fetching live promotions:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch live promotions',
+            error: error.message
+        });
+    }
+});
+
+router.put('/live-promotions', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await ensureLivePromotionsTable(req.db);
+        const isEnabled = !!req.body.is_enabled;
+        const title = (req.body.title ?? '').toString().trim();
+        const statusMessage = (req.body.status_message ?? '').toString().trim();
+        const startAt = normalizeDateTimeInput(req.body.start_at);
+        const endAt = normalizeDateTimeInput(req.body.end_at);
+        const widgetImages = normalizeWidgetImages(req.body.widget_images);
+
+        if (title.length > 120) {
+            return res.status(400).json({
+                success: false,
+                message: 'Title must be 120 characters or less'
+            });
+        }
+        if (statusMessage.length > 500) {
+            return res.status(400).json({
+                success: false,
+                message: 'Message must be 500 characters or less'
+            });
+        }
+        if (isEnabled && (!startAt || !endAt)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Start and end time are required when promotions are enabled'
+            });
+        }
+        if (startAt && endAt && new Date(startAt) >= new Date(endAt)) {
+            return res.status(400).json({
+                success: false,
+                message: 'End time must be after start time'
+            });
+        }
+        if (isEnabled && !widgetImages.length) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least one live widget image is required'
+            });
+        }
+
+        await req.db.execute(
+            `INSERT INTO live_promotions (is_enabled, title, status_message, start_at, end_at, widget_images_json, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+                isEnabled ? 1 : 0,
+                title || null,
+                statusMessage || null,
+                startAt,
+                endAt,
+                widgetImages.length ? JSON.stringify(widgetImages) : null,
+                req.user.id
+            ]
+        );
+
+        const [rows] = await req.db.execute(
+            `SELECT is_enabled, title, status_message, start_at, end_at, widget_images_json, updated_at
+             FROM live_promotions
+             ORDER BY id DESC
+             LIMIT 1`
+        );
+        return res.json({
+            success: true,
+            message: 'Live promotions updated successfully',
+            live_promotions: getLivePromotionsPayload(rows[0] || null)
+        });
+    } catch (error) {
+        console.error('Error updating live promotions:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to update live promotions',
             error: error.message
         });
     }

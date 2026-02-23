@@ -1237,6 +1237,83 @@
               </button>
             </div>
           </section>
+          <section class="global-delivery-admin-card promo-live-admin-card">
+            <div class="global-delivery-admin-head">
+              <div>
+                <h3>Promotions / Events Live Widgets</h3>
+                <p>Upload up to 5 cards, schedule a time window, publish immediately, and auto-close after expiry.</p>
+              </div>
+              <span id="livePromoCurrentState" class="global-delivery-state state-available">Inactive</span>
+            </div>
+            <div class="global-delivery-admin-grid">
+              <label class="global-delivery-toggle">
+                <input type="checkbox" id="livePromoEnabled" />
+                <span>Enable promotions/events widget</span>
+              </label>
+              <div class="form-group">
+                <label for="livePromoTitle">Title</label>
+                <input type="text" id="livePromoTitle" class="form-control" placeholder="Festival Deals / Event Offers" maxlength="120" />
+              </div>
+              <div class="form-group">
+                <label for="livePromoMessage">Message</label>
+                <textarea id="livePromoMessage" class="form-control" rows="3" maxlength="500" placeholder="Special offers available for this event window."></textarea>
+              </div>
+              <div class="form-row global-delivery-time-row">
+                <div class="form-group">
+                  <label for="livePromoStartAt">From</label>
+                  <input type="datetime-local" id="livePromoStartAt" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label for="livePromoEndAt">To</label>
+                  <input type="datetime-local" id="livePromoEndAt" class="form-control" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Live Widget Images (max 5)</label>
+                <div class="promo-widget-slots">
+                  <div class="promo-widget-slot">
+                    <input type="text" id="livePromoImage1" class="form-control" placeholder="Image URL 1" />
+                    <input type="file" id="livePromoImageFile1" accept="image/*" />
+                    <button class="btn btn-secondary" type="button" id="uploadLivePromoImageBtn1"><i class="fas fa-upload"></i> Upload</button>
+                    <button class="btn btn-danger" type="button" id="clearLivePromoImageBtn1"><i class="fas fa-times"></i> Clear</button>
+                  </div>
+                  <div class="promo-widget-slot">
+                    <input type="text" id="livePromoImage2" class="form-control" placeholder="Image URL 2" />
+                    <input type="file" id="livePromoImageFile2" accept="image/*" />
+                    <button class="btn btn-secondary" type="button" id="uploadLivePromoImageBtn2"><i class="fas fa-upload"></i> Upload</button>
+                    <button class="btn btn-danger" type="button" id="clearLivePromoImageBtn2"><i class="fas fa-times"></i> Clear</button>
+                  </div>
+                  <div class="promo-widget-slot">
+                    <input type="text" id="livePromoImage3" class="form-control" placeholder="Image URL 3" />
+                    <input type="file" id="livePromoImageFile3" accept="image/*" />
+                    <button class="btn btn-secondary" type="button" id="uploadLivePromoImageBtn3"><i class="fas fa-upload"></i> Upload</button>
+                    <button class="btn btn-danger" type="button" id="clearLivePromoImageBtn3"><i class="fas fa-times"></i> Clear</button>
+                  </div>
+                  <div class="promo-widget-slot">
+                    <input type="text" id="livePromoImage4" class="form-control" placeholder="Image URL 4" />
+                    <input type="file" id="livePromoImageFile4" accept="image/*" />
+                    <button class="btn btn-secondary" type="button" id="uploadLivePromoImageBtn4"><i class="fas fa-upload"></i> Upload</button>
+                    <button class="btn btn-danger" type="button" id="clearLivePromoImageBtn4"><i class="fas fa-times"></i> Clear</button>
+                  </div>
+                  <div class="promo-widget-slot">
+                    <input type="text" id="livePromoImage5" class="form-control" placeholder="Image URL 5" />
+                    <input type="file" id="livePromoImageFile5" accept="image/*" />
+                    <button class="btn btn-secondary" type="button" id="uploadLivePromoImageBtn5"><i class="fas fa-upload"></i> Upload</button>
+                    <button class="btn btn-danger" type="button" id="clearLivePromoImageBtn5"><i class="fas fa-times"></i> Clear</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="global-delivery-preview" id="livePromoPreview">
+              <strong>Promotions Preview</strong>
+              <p>Configure title, message, and upload up to 5 images.</p>
+            </div>
+            <div class="global-delivery-admin-actions">
+              <button class="btn btn-primary" id="saveLivePromoStatusBtn">
+                <i class="fas fa-images"></i> Save Promotions / Events
+              </button>
+            </div>
+          </section>
         </div>
 
         <!-- Products Tab -->

@@ -976,6 +976,46 @@ textarea:focus {
   margin-top: 0.7rem;
 }
 
+.promo-live-admin-card {
+  border-color: #bfdbfe;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 65%, #fff 100%);
+}
+
+.promo-widget-slots {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+}
+
+.promo-widget-slot {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 180px auto auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.promo-preview-thumbs {
+  margin-top: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.promo-preview-thumbs img {
+  width: 100%;
+  height: 58px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #bfdbfe;
+  background: #fff;
+}
+
+@media (max-width: 980px) {
+  .promo-widget-slot {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Dedicated action style for Generate Financial Report preview modal buttons */
 .report-modal-action-btn {
   height: var(--btn-height);

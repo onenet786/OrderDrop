@@ -150,6 +150,7 @@ function escapeHtmlPublic(value) {
 }
 
 window.__globalDeliveryStatus = null;
+window.__livePromotions = null;
 window.__globalDeliveryRefreshTimer = null;
 window.__globalDeliveryPollTimer = null;
 
@@ -490,11 +491,18 @@ window.addEventListener("DOMContentLoaded", function () {
     loadGlobalDeliveryWidget(true);
   }, 5000);
   window.addEventListener("storage", (event) => {
-    if (event && event.key === "serveNowGlobalDeliveryStatusUpdatedAt") {
+    if (
+      event &&
+      (event.key === "serveNowGlobalDeliveryStatusUpdatedAt" ||
+        event.key === "serveNowLivePromotionsUpdatedAt")
+    ) {
       loadGlobalDeliveryWidget(true);
     }
   });
   window.addEventListener("globalDeliveryStatusSaved", () => {
+    loadGlobalDeliveryWidget(true);
+  });
+  window.addEventListener("livePromotionsSaved", () => {
     loadGlobalDeliveryWidget(true);
   });
   updateCartCount();
@@ -896,14 +904,38 @@ function formatDeliveryWindow(startAt, endAt) {
   return `${start.toLocaleString()} - ${end.toLocaleString()}`;
 }
 
-function renderGlobalDeliveryWidget(status) {
+function buildPromotionReasonWithWindow(promo) {
+  if (!promo) return "";
+  const reason = String(promo.status_message || "").trim();
+  const when = formatDeliveryWindow(promo.start_at, promo.end_at);
+  if (reason && when) return `${reason} (${when})`;
+  if (reason) return reason;
+  if (when) return `Promotion window: ${when}`;
+  return "";
+}
+
+function renderGlobalDeliveryWidget(status, promotions) {
   const host = document.getElementById("globalDeliveryWidget");
   if (!host) return;
 
   window.__globalDeliveryStatus = status || null;
+  window.__livePromotions = promotions || null;
+
+  const hasPromo = !!(
+    promotions &&
+    promotions.is_enabled &&
+    promotions.is_window_active &&
+    Array.isArray(promotions.widget_images) &&
+    promotions.widget_images.length
+  );
   const isUnavailable = !!(status && status.is_window_active);
-  const hasNotice = !!(status && status.is_enabled && status.is_window_active && status.status_message);
-  if (!hasNotice) {
+  const hasNotice = !!(
+    status &&
+    status.is_enabled &&
+    status.is_window_active &&
+    status.status_message
+  );
+  if (!hasNotice && !hasPromo) {
     host.innerHTML = "";
     host.style.display = "none";
     scheduleGlobalDeliveryAutoRefresh(status);
@@ -918,11 +950,42 @@ function renderGlobalDeliveryWidget(status) {
   }
 
   host.style.display = "block";
-  const title = status.title || "Delivery Update";
-  const message = buildDeliveryReasonWithWindow(status) || status.status_message || "";
-  const when = formatDeliveryWindow(status.start_at, status.end_at);
+  const promoTitle = (promotions && promotions.title) || "Live Promotions";
+  const promoMessage = buildPromotionReasonWithWindow(promotions);
+  const promoImages = hasPromo ? promotions.widget_images.slice(0, 5) : [];
+  const title = status && status.title ? status.title : "Delivery Update";
+  const message =
+    buildDeliveryReasonWithWindow(status) ||
+    (status && status.status_message) ||
+    "";
+  const when = status ? formatDeliveryWindow(status.start_at, status.end_at) : "";
   host.innerHTML = `
-    <article class="delivery-live-card ${isUnavailable ? "delivery-live-card--alert" : "delivery-live-card--info"}">
+    ${
+      hasPromo
+        ? `<article class="delivery-live-card delivery-live-card--promo">
+      <div class="delivery-live-card__top">
+        <span class="delivery-live-card__chip">Live: Promotions / Events</span>
+        <span class="delivery-live-card__state">Active</span>
+      </div>
+      <h3>${escapeHtmlPublic(promoTitle)}</h3>
+      <p>${escapeHtmlPublic(promoMessage)}</p>
+      <div class="promo-widget-grid">
+        ${promoImages
+          .map(
+            (img, idx) =>
+              `<div class="promo-widget-item"><img src="${normalizePublicImageUrl(
+                img,
+                "/images/servenow.png"
+              )}" alt="Promo ${idx + 1}" loading="lazy" decoding="async"></div>`
+          )
+          .join("")}
+      </div>
+    </article>`
+        : ""
+    }
+    ${
+      hasNotice
+        ? `<article class="delivery-live-card ${isUnavailable ? "delivery-live-card--alert" : "delivery-live-card--info"}">
       <div class="delivery-live-card__top">
         <span class="delivery-live-card__chip">${isUnavailable ? "Live: Delivery Paused" : "Upcoming Delivery Update"}</span>
         <span class="delivery-live-card__state">Unavailable Now</span>
@@ -930,7 +993,9 @@ function renderGlobalDeliveryWidget(status) {
       <h3>${escapeHtmlPublic(title)}</h3>
       <p>${escapeHtmlPublic(message)}</p>
       ${when ? `<p class="delivery-live-card__window"><i class="fas fa-clock"></i> ${escapeHtmlPublic(when)}</p>` : ""}
-    </article>
+    </article>`
+        : ""
+    }
   `;
   scheduleGlobalDeliveryAutoRefresh(status);
   try {
@@ -960,15 +1025,34 @@ function ensureGlobalDeliveryWidgetHost() {
 async function loadGlobalDeliveryWidget(forceRefresh = false) {
   const host = ensureGlobalDeliveryWidgetHost();
   if (!host) return;
-  if (!forceRefresh && window.__globalDeliveryStatus && window.__globalDeliveryStatus.is_enabled !== undefined) {
-    renderGlobalDeliveryWidget(window.__globalDeliveryStatus);
+  if (
+    !forceRefresh &&
+    window.__globalDeliveryStatus &&
+    window.__globalDeliveryStatus.is_enabled !== undefined &&
+    window.__livePromotions &&
+    window.__livePromotions.is_enabled !== undefined
+  ) {
+    renderGlobalDeliveryWidget(window.__globalDeliveryStatus, window.__livePromotions);
     return;
   }
   try {
-    const response = await fetch(`${API_BASE}/api/stores/global-delivery-status`);
-    const data = await response.json();
-    if (!data.success || !data.global_delivery_status) {
+    const [deliveryResp, promoResp] = await Promise.all([
+      fetch(`${API_BASE}/api/stores/global-delivery-status`),
+      fetch(`${API_BASE}/api/stores/live-promotions`),
+    ]);
+    const data = await deliveryResp.json();
+    const promoData = await promoResp.json();
+    const nextDelivery =
+      data && data.success && data.global_delivery_status
+        ? data.global_delivery_status
+        : null;
+    const nextPromotions =
+      promoData && promoData.success && promoData.live_promotions
+        ? promoData.live_promotions
+        : null;
+    if (!nextDelivery && !nextPromotions) {
       window.__globalDeliveryStatus = null;
+      window.__livePromotions = null;
       host.style.display = "none";
       try {
         window.dispatchEvent(
@@ -979,10 +1063,11 @@ async function loadGlobalDeliveryWidget(forceRefresh = false) {
       } catch (_) {}
       return;
     }
-    renderGlobalDeliveryWidget(data.global_delivery_status);
+    renderGlobalDeliveryWidget(nextDelivery, nextPromotions);
   } catch (error) {
     console.error("Error loading global delivery widget:", error);
     window.__globalDeliveryStatus = null;
+    window.__livePromotions = null;
     host.style.display = "none";
     try {
       window.dispatchEvent(

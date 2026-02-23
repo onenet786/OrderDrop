@@ -189,11 +189,22 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    final oldToken = _token;
     _token = null;
     _user = null;
     final prefs = await SharedPreferences.getInstance();
+    final pushToken = prefs.getString('push_token');
+    if (oldToken != null && pushToken != null && pushToken.trim().isNotEmpty) {
+      try {
+        await ApiService.unregisterPushDeviceToken(
+          oldToken,
+          deviceToken: pushToken,
+        );
+      } catch (_) {}
+    }
     await prefs.remove('token');
     await prefs.remove('user');
+    await prefs.remove('push_token');
     notifyListeners();
   }
 

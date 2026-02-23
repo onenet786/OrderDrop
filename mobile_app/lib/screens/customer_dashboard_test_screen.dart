@@ -27,6 +27,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   String? _errorMessage;
   String? _serviceLimitedMessage;
   Map<String, dynamic>? _globalStatus;
+  Map<String, dynamic>? _livePromotions;
   final TextEditingController _searchController = TextEditingController();
   double? _userLat;
   double? _userLng;
@@ -35,6 +36,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   int _activeBanner = 0;
   Timer? _bannerTimer;
   Timer? _globalStatusRefreshTimer;
+  Timer? _livePromotionsRefreshTimer;
   Timer? _globalStatusPollTimer;
   int _bottomIndex = 0;
 
@@ -53,6 +55,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   void dispose() {
     _bannerTimer?.cancel();
     _globalStatusRefreshTimer?.cancel();
+    _livePromotionsRefreshTimer?.cancel();
     _globalStatusPollTimer?.cancel();
     _bannerController.dispose();
     _searchController.removeListener(_onSearchChanged);
@@ -75,12 +78,19 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   }
 
   List<Map<String, dynamic>> get _liveWidgetItems {
+    final includePromotionCard = _showLivePromotionsCard();
     final includeStatusCard = _showGlobalStatusBanner();
+    final storeSlots =
+        (5 - (includePromotionCard ? 1 : 0) - (includeStatusCard ? 1 : 0))
+            .clamp(0, 5);
     final stores = _allStores
         .where((s) => (s['image_url'] ?? '').toString().trim().isNotEmpty)
-        .take(includeStatusCard ? 4 : 5)
+        .take(storeSlots)
         .toList();
     final items = <Map<String, dynamic>>[];
+    if (includePromotionCard) {
+      items.add({'type': 'promotion'});
+    }
     if (includeStatusCard) {
       items.add({'type': 'status'});
     }
@@ -113,6 +123,13 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                   : global;
         } catch (_) {}
       }
+      Map<String, dynamic>? livePromotions;
+      try {
+        final promotions = await ApiService.getLivePromotions(token);
+        livePromotions = (promotions['live_promotions'] is Map<String, dynamic>)
+            ? (promotions['live_promotions'] as Map<String, dynamic>)
+            : promotions;
+      } catch (_) {}
       final storesResp = await ApiService.getStores(
         latitude: _userLat,
         longitude: _userLng,
@@ -127,7 +144,9 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         _allStores = stores;
         _filteredStores = stores;
         _globalStatus = globalStatus;
+        _livePromotions = livePromotions;
         _scheduleGlobalStatusRefresh(globalStatus);
+        _scheduleLivePromotionsRefresh(livePromotions);
         _serviceLimitedMessage = limited
             ? (limitedMessage.isNotEmpty
                 ? limitedMessage
@@ -226,16 +245,40 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     _globalStatusRefreshTimer = Timer(delay, _refreshGlobalStatusOnly);
   }
 
+  void _scheduleLivePromotionsRefresh(Map<String, dynamic>? promotions) {
+    _livePromotionsRefreshTimer?.cancel();
+    if (promotions == null) return;
+
+    final now = DateTime.now();
+    final startAt = _parseDateTime(promotions['start_at']);
+    final endAt = _parseDateTime(promotions['end_at']);
+    final candidates = <DateTime>[
+      if (startAt != null && startAt.isAfter(now)) startAt,
+      if (endAt != null && endAt.isAfter(now)) endAt,
+    ];
+    if (candidates.isEmpty) return;
+
+    candidates.sort();
+    final nextTick = candidates.first;
+    final delay = nextTick.difference(now) + const Duration(seconds: 1);
+    _livePromotionsRefreshTimer = Timer(delay, _refreshGlobalStatusOnly);
+  }
+
   Future<void> _refreshGlobalStatusOnly() async {
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
-      if (token == null) return;
-      final status = await ApiService.getGlobalDeliveryStatus(token);
+      Map<String, dynamic>? status;
+      if (token != null) {
+        status = await ApiService.getGlobalDeliveryStatus(token);
+      }
+      final promotions = await ApiService.getLivePromotions(token);
       if (!mounted) return;
       setState(() {
         _globalStatus = status;
+        _livePromotions = promotions;
       });
       _scheduleGlobalStatusRefresh(status);
+      _scheduleLivePromotionsRefresh(promotions);
     } catch (_) {}
   }
 
@@ -285,6 +328,39 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final startLocal = start.toLocal();
     final endLocal = end.toLocal();
     return '${startLocal.toString().substring(0, 16)} - ${endLocal.toString().substring(0, 16)}';
+  }
+
+  bool _showLivePromotionsCard() {
+    final promo = _livePromotions;
+    if (promo == null) return false;
+    if (!_toBool(promo['is_enabled'])) return false;
+    if (!_toBool(promo['is_window_active']) && !_isGlobalWindowActive(promo)) {
+      return false;
+    }
+    return _promotionImages().isNotEmpty;
+  }
+
+  List<String> _promotionImages() {
+    final promo = _livePromotions;
+    if (promo == null) return const [];
+    final raw = promo['widget_images'];
+    if (raw is! List) return const [];
+    return raw
+        .map((e) => e?.toString().trim() ?? '')
+        .where((e) => e.isNotEmpty)
+        .take(5)
+        .toList();
+  }
+
+  String _livePromotionMessage() {
+    final promo = _livePromotions;
+    if (promo == null) return '';
+    final reason = (promo['status_message'] ?? '').toString().trim();
+    final when = _formatDeliveryWindow(promo['start_at'], promo['end_at']);
+    if (reason.isNotEmpty && when.isNotEmpty) return '$reason ($when)';
+    if (reason.isNotEmpty) return reason;
+    if (when.isNotEmpty) return 'Promotion window: $when';
+    return '';
   }
 
   Widget _buildGlobalStatusBanner() {
@@ -565,6 +641,109 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final item = items[index];
+                if (item['type'] == 'promotion') {
+                  final promoImages = _promotionImages();
+                  final promoTitle = (_livePromotions?['title'] ?? 'Live Promotions')
+                      .toString()
+                      .trim();
+                  final promoMessage = _livePromotionMessage();
+                  final bg = promoImages.isNotEmpty
+                      ? ApiService.getImageUrl(promoImages.first)
+                      : '';
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (bg.isNotEmpty)
+                          Image.network(
+                            bg,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, error, stackTrace) => Container(
+                              color: const Color(0xFF6A1B9A),
+                            ),
+                          )
+                        else
+                          Container(color: const Color(0xFF6A1B9A)),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.74),
+                                Colors.black.withValues(alpha: 0.2),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: const Text(
+                                  'Live: Promotions / Events',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                promoTitle.isNotEmpty
+                                    ? promoTitle
+                                    : 'Live Promotions',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              if (promoMessage.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  promoMessage,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                              if (promoImages.length > 1) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${promoImages.length} live widgets',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
                 if (item['type'] == 'status') {
                   final blocked = _isGlobalOrderingBlocked();
                   return Container(
