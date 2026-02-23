@@ -56,3 +56,9 @@ mobile_app/pubspec.lock
 
 # Uploads (can be large)
 uploads/
+
+# Secrets / credentials
+secrets/
+
+# Local restore snapshots
+mobile_app/_restore_points/
