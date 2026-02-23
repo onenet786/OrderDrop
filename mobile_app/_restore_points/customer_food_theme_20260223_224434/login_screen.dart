@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/notifier.dart';
-import '../theme/customer_palette.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -48,6 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
@@ -62,8 +62,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    CustomerPalette.primary,
-                    CustomerPalette.primaryDark,
+                    theme.colorScheme.primary,
+                    theme.colorScheme.primaryContainer,
                   ],
                 ),
                 borderRadius: const BorderRadius.only(
@@ -73,17 +73,38 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Image.asset(
-                    'assets/icon/servenow_brand_logo.png',
-                    height: 150,
-                    fit: BoxFit.contain,
-                    errorBuilder: (ctx, err, stack) => const Text(
-                      'ServeNow',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Image.asset(
+                      'assets/icon/servenow.png',
+                      height: 80,
+                      width: 80,
+                      errorBuilder: (ctx, err, stack) => const Icon(
+                        Icons.shopping_cart,
+                        size: 60,
+                        color: Colors.blueAccent,
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'ServeNow',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 1.2,
                     ),
                   ),
                 ],
@@ -181,7 +202,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Text(
                           'Forgot Password?',
                           style: TextStyle(
-                            color: CustomerPalette.primaryDark,
+                            color: theme.colorScheme.primary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -199,7 +220,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           return ElevatedButton(
                             onPressed: isLoading ? null : _submit,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: CustomerPalette.primary,
+                              backgroundColor: theme.colorScheme.primary,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
@@ -239,7 +260,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Text(
                             'Register Here',
                             style: TextStyle(
-                              color: CustomerPalette.primaryDark,
+                              color: theme.colorScheme.primary,
                               fontWeight: FontWeight.bold,
                               decoration: TextDecoration.underline,
                             ),

@@ -9,7 +9,6 @@ import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
 import '../models/user.dart';
 import 'store_screen.dart';
-import '../theme/customer_palette.dart';
 import '../widgets/notification_bell_widget.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -354,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [CustomerPalette.primary, CustomerPalette.primaryDark],
+          colors: [Color(0xFF0C4A6E), Color(0xFF0369A1)],
         ),
       ),
       child: Column(
@@ -557,11 +556,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: CustomerPalette.primary,
+                        color: Colors.blueAccent,
                         borderRadius: BorderRadius.circular(15),
                         boxShadow: [
                           BoxShadow(
-                            color: CustomerPalette.primary.withValues(alpha: 0.3),
+                            color: Colors.blueAccent.withValues(alpha: 0.3),
                             blurRadius: 8,
                             offset: const Offset(0, 4),
                           ),
@@ -592,7 +591,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       : 'U',
                                   style: const TextStyle(
                                     fontSize: 18,
-                                    color: CustomerPalette.primary,
+                                    color: Colors.blueAccent,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),

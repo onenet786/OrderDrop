@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/cart_provider.dart';
-import '../theme/customer_palette.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -111,7 +110,7 @@ class _CartScreenState extends State<CartScreen> {
                                       item.product.storeName ?? 'Unknown Store',
                                       style: const TextStyle(
                                         fontSize: 12,
-                                        color: CustomerPalette.primaryDark,
+                                        color: Colors.blueAccent,
                                         fontWeight: FontWeight.w500,
                                       ),
                                       maxLines: 1,
@@ -229,7 +228,7 @@ class _CartScreenState extends State<CartScreen> {
                               style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: CustomerPalette.primaryDark,
+                                color: Colors.green,
                               ),
                             ),
                           ],
@@ -243,7 +242,7 @@ class _CartScreenState extends State<CartScreen> {
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: CustomerPalette.primary,
+                            backgroundColor: Colors.blueAccent,
                             foregroundColor: Colors.white,
                           ),
                           onPressed: () {
@@ -272,7 +271,7 @@ class _CartScreenState extends State<CartScreen> {
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: CustomerPalette.card,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -333,8 +332,7 @@ class _CartScreenState extends State<CartScreen> {
             Icon(
               icon,
               size: 22,
-              color:
-                  active ? CustomerPalette.primaryDark : Colors.grey.shade600,
+              color: active ? const Color(0xFF1A56A5) : Colors.grey.shade600,
             ),
             const SizedBox(height: 2),
             Text(
@@ -343,7 +341,7 @@ class _CartScreenState extends State<CartScreen> {
                 fontSize: 10,
                 fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                 color:
-                    active ? CustomerPalette.primaryDark : Colors.grey.shade700,
+                    active ? const Color(0xFF1A56A5) : Colors.grey.shade700,
               ),
             ),
           ],

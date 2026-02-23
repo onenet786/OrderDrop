@@ -9,7 +9,6 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
 import '../services/api_service.dart';
-import '../theme/customer_palette.dart';
 import '../widgets/notification_bell_widget.dart';
 import 'store_screen.dart';
 
@@ -454,7 +453,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final crossAxisCount = isLandscape ? 4 : 2;
 
     return Scaffold(
-      backgroundColor: CustomerPalette.background,
+      backgroundColor: const Color(0xFFF3F5F9),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _fetchData,
@@ -498,7 +497,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.language, color: CustomerPalette.primary),
+            icon: const Icon(Icons.language, color: Color(0xFF1A56A5)),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Language options coming soon')),
@@ -566,7 +565,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         gradient: const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [CustomerPalette.primary, CustomerPalette.primaryDark],
+          colors: [Color(0xFF1A56A5), Color(0xFF0F3770)],
         ),
         borderRadius: BorderRadius.circular(18),
       ),
@@ -603,7 +602,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                   icon: const Icon(Icons.shopping_bag, size: 16),
                   label: const Text('My Orders'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: CustomerPalette.accent,
+                    backgroundColor: const Color(0xFF25A8F3),
                     foregroundColor: Colors.white,
                     visualDensity: VisualDensity.compact,
                   ),
@@ -661,11 +660,11 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                             bg,
                             fit: BoxFit.cover,
                             errorBuilder: (_, error, stackTrace) => Container(
-                              color: CustomerPalette.primaryDark,
+                              color: const Color(0xFF6A1B9A),
                             ),
                           )
                         else
-                          Container(color: CustomerPalette.primaryDark),
+                          Container(color: const Color(0xFF6A1B9A)),
                         Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -810,7 +809,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                         ApiService.getImageUrl(store['image_url']),
                         fit: BoxFit.cover,
                         errorBuilder: (ctx, err, _) => Container(
-                          color: CustomerPalette.primaryDark,
+                          color: const Color(0xFF1A56A5),
                           child: const Icon(
                             Icons.store,
                             color: Colors.white,
@@ -862,8 +861,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 width: active ? 18 : 7,
                 height: 7,
                 decoration: BoxDecoration(
-                  color:
-                      active ? CustomerPalette.primaryDark : Colors.grey.shade400,
+                  color: active ? const Color(0xFF1A56A5) : Colors.grey.shade400,
                   borderRadius: BorderRadius.circular(10),
                 ),
               );
@@ -1165,8 +1163,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             Icon(
               icon,
               size: 22,
-              color:
-                  active ? CustomerPalette.primaryDark : Colors.grey.shade600,
+              color: active ? const Color(0xFF1A56A5) : Colors.grey.shade600,
             ),
             const SizedBox(height: 2),
             Text(
@@ -1174,8 +1171,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color:
-                    active ? CustomerPalette.primaryDark : Colors.grey.shade600,
+                color: active ? const Color(0xFF1A56A5) : Colors.grey.shade600,
               ),
             ),
           ],

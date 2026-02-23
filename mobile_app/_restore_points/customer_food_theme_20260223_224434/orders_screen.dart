@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
-import '../theme/customer_palette.dart';
 import '../widgets/notification_bell_widget.dart';
 
 class OrdersScreen extends StatefulWidget {
@@ -52,8 +51,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ..showSnackBar(
           SnackBar(
             content: Text(message),
-            backgroundColor:
-                type == 'payment_status_update' ? Colors.green : CustomerPalette.primaryDark,
+            backgroundColor: type == 'payment_status_update' ? Colors.green : Colors.blue,
             duration: const Duration(seconds: 4),
             behavior: SnackBarBehavior.floating,
             showCloseIcon: true,
@@ -163,7 +161,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }).length;
 
     return Scaffold(
-      backgroundColor: CustomerPalette.background,
+      backgroundColor: const Color(0xFFF3F5F9),
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -225,7 +223,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: CustomerPalette.card,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -286,8 +284,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             Icon(
               icon,
               size: 22,
-              color:
-                  active ? CustomerPalette.primaryDark : Colors.grey.shade600,
+              color: active ? const Color(0xFF1A56A5) : Colors.grey.shade600,
             ),
             const SizedBox(height: 2),
             Text(
@@ -296,7 +293,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 fontSize: 10,
                 fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                 color:
-                    active ? CustomerPalette.primaryDark : Colors.grey.shade700,
+                    active ? const Color(0xFF1A56A5) : Colors.grey.shade700,
               ),
             ),
           ],
@@ -343,7 +340,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [CustomerPalette.primary, CustomerPalette.primaryDark],
+          colors: [Color(0xFF1E56A6), Color(0xFF123D7B)],
         ),
         borderRadius: BorderRadius.circular(14),
       ),
@@ -433,7 +430,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       onSelected: (_) {
         setState(() => _statusFilter = id);
       },
-      selectedColor: CustomerPalette.primaryDark,
+      selectedColor: const Color(0xFF1E56A6),
       backgroundColor: Colors.white,
       labelStyle: TextStyle(
         color: selected ? Colors.white : Colors.black87,
@@ -624,9 +621,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF4EA),
+              color: const Color(0xFFF8FAFD),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFFFDFC9)),
+              border: Border.all(color: const Color(0xFFDCE5F2)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -670,7 +667,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           style: const TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
-                            color: CustomerPalette.primaryDark,
+                            color: Color(0xFF1E56A6),
                           ),
                         ),
                       ],
@@ -690,7 +687,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       _formatPkr(subtotal),
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: CustomerPalette.primaryDark,
+                        color: Color(0xFF1E56A6),
                       ),
                     ),
                   ],
@@ -725,7 +722,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             margin: const EdgeInsets.only(bottom: 6),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF4EA),
+              color: const Color(0xFFF8FAFD),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -742,7 +739,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   _formatPkr(qty * price),
                   style: const TextStyle(
                     fontSize: 12.5,
-                    color: CustomerPalette.primaryDark,
+                    color: Color(0xFF1E56A6),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -759,9 +756,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7EF),
+        color: const Color(0xFFF6F8FC),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFFFDFC9)),
+        border: Border.all(color: const Color(0xFFDCE5F2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -814,7 +811,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
-        color: highlight ? const Color(0xFFFFEEDD) : const Color(0xFFFFF7EF),
+        color: highlight ? const Color(0xFFEFF4FF) : const Color(0xFFF6F8FC),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -832,7 +829,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,
-              color: highlight ? CustomerPalette.primaryDark : Colors.black87,
+              color: highlight ? const Color(0xFF1E56A6) : Colors.black87,
             ),
           ),
         ],
@@ -886,7 +883,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         color = Colors.orange;
         break;
       case 'confirmed':
-        color = CustomerPalette.primaryDark;
+        color = Colors.blue;
         break;
       case 'preparing':
         color = Colors.deepPurple;

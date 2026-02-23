@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -27,6 +28,7 @@ import 'screens/change_password_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/ui_test_home_screen.dart';
 import 'screens/customer_dashboard_test_screen.dart';
+import 'theme/customer_palette.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -39,10 +41,12 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp();
-  } catch (_) {}
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  if (!kIsWeb) {
+    try {
+      await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    } catch (_) {}
+  }
   runApp(const MyApp());
 }
 
@@ -51,6 +55,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseScheme = ColorScheme.fromSeed(
+      seedColor: CustomerPalette.primary,
+      brightness: Brightness.light,
+    ).copyWith(
+      primary: CustomerPalette.primary,
+      secondary: CustomerPalette.accent,
+      surface: CustomerPalette.card,
+      onPrimary: Colors.white,
+      onSecondary: CustomerPalette.textDark,
+      onSurface: CustomerPalette.textDark,
+    );
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
@@ -85,14 +101,99 @@ class MyApp extends StatelessWidget {
           );
         },
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+          colorScheme: baseScheme,
           fontFamily: 'Roboto',
-          scaffoldBackgroundColor: Colors.grey[50],
+          scaffoldBackgroundColor: CustomerPalette.background,
           useMaterial3: true,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: CustomerPalette.primary,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            centerTitle: false,
+          ),
+          cardTheme: CardThemeData(
+            color: CustomerPalette.card,
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CustomerPalette.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              backgroundColor: CustomerPalette.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.orange.shade200),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.orange.shade200),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: CustomerPalette.primary,
+                width: 1.4,
+              ),
+            ),
+          ),
+          chipTheme: ChipThemeData(
+            backgroundColor: Colors.white,
+            selectedColor: CustomerPalette.primaryDark,
+            secondarySelectedColor: CustomerPalette.primaryDark,
+            side: BorderSide(color: Colors.orange.shade200),
+            labelStyle: const TextStyle(
+              color: CustomerPalette.textDark,
+              fontWeight: FontWeight.w600,
+            ),
+            secondaryLabelStyle: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          bottomNavigationBarTheme: BottomNavigationBarThemeData(
+            backgroundColor: Colors.white,
+            selectedItemColor: CustomerPalette.primaryDark,
+            unselectedItemColor: Colors.brown.shade300,
+            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
+            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+            type: BottomNavigationBarType.fixed,
+          ),
+          dialogTheme: DialogThemeData(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
           snackBarTheme: const SnackBarThemeData(
             behavior: SnackBarBehavior.floating,
             elevation: 2,
             showCloseIcon: true,
+            backgroundColor: CustomerPalette.primaryDark,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.all(Radius.circular(12)),
             ),

@@ -46,7 +46,7 @@ class NotificationProvider with ChangeNotifier {
   final GlobalKey<NavigatorState> navigatorKey;
   AuthProvider? _authProvider;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
-  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
+  FirebaseMessaging? _firebaseMessaging;
   bool _isFirebaseMessagingReady = false;
   String? _currentPushToken;
 
@@ -111,7 +111,7 @@ class NotificationProvider with ChangeNotifier {
     }
 
     notifyListeners();
-    _showNotification(title, message);
+    _showForegroundNotification(title, message);
   }
 
   void clearNotifications() {
@@ -135,14 +135,19 @@ class NotificationProvider with ChangeNotifier {
 
   Future<void> _initFirebaseMessaging() async {
     if (_isFirebaseMessagingReady) return;
+    if (kIsWeb) return;
     try {
-      await Firebase.initializeApp();
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp();
+      }
     } catch (_) {
       // Firebase may already be initialized or pending native config.
+      return;
     }
 
     try {
-      await _firebaseMessaging.requestPermission(
+      _firebaseMessaging = FirebaseMessaging.instance;
+      await _firebaseMessaging!.requestPermission(
         alert: true,
         badge: true,
         sound: true,
@@ -160,7 +165,7 @@ class NotificationProvider with ChangeNotifier {
         );
       });
 
-      _firebaseMessaging.onTokenRefresh.listen((token) {
+      _firebaseMessaging!.onTokenRefresh.listen((token) {
         _currentPushToken = token;
         _syncPushToken();
       });
@@ -181,11 +186,12 @@ class NotificationProvider with ChangeNotifier {
       if (!_isFirebaseMessagingReady) {
         await _initFirebaseMessaging();
       }
+      if (!_isFirebaseMessagingReady || _firebaseMessaging == null) return;
       if (_authProvider == null || !_authProvider!.isAuthenticated) return;
       final authToken = _authProvider!.token;
       if (authToken == null || authToken.trim().isEmpty) return;
 
-      final pushToken = _currentPushToken ?? await _firebaseMessaging.getToken();
+      final pushToken = _currentPushToken ?? await _firebaseMessaging!.getToken();
       if (pushToken == null || pushToken.trim().isEmpty) return;
       _currentPushToken = pushToken;
 
@@ -550,52 +556,30 @@ class NotificationProvider with ChangeNotifier {
     _socket!.onDisconnect((_) => debugPrint('Socket disconnected'));
   }
 
-  void _showNotification(String title, String message) async {
-    // 1. Show in-app SnackBar (only if app is in foreground - controlled by context)
-    final context = navigatorKey.currentContext;
-    if (context != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              Text(message, style: const TextStyle(color: Colors.white)),
-            ],
-          ),
-          backgroundColor: Colors.green.shade700,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
-          showCloseIcon: true,
-        ),
+  Future<void> _showForegroundNotification(String title, String message) async {
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        'servenow_channel',
+        'ServeNow Notifications',
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
       );
-    }
+      const iosDetails = DarwinNotificationDetails();
+      const details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
 
-    // 2. Show System Notification (Local Notification)
-    // This will appear in the system tray even if the app is in the background or closed (if service is running)
-    const androidDetails = AndroidNotificationDetails(
-      'servenow_channel', 
-      'ServeNow Notifications',
-      importance: Importance.max,
-      priority: Priority.high,
-      icon: '@mipmap/ic_launcher', // Ensure this icon exists
-    );
-    const iosDetails = DarwinNotificationDetails();
-    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
-    
-    await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
-      title, 
-      message, 
-      details
-    );
+      await _localNotifications.show(
+        DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
+        title,
+        message,
+        details,
+      );
+    } catch (e) {
+      debugPrint('[NotificationProvider] Foreground notification failed: $e');
+    }
   }
 
   @override
