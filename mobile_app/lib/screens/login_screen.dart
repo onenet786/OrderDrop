@@ -73,16 +73,19 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Image.asset(
-                    'assets/icon/servenow_brand_logo.png',
-                    height: 150,
-                    fit: BoxFit.contain,
-                    errorBuilder: (ctx, err, stack) => const Text(
-                      'ServeNow',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset(
+                      'assets/icon/servenow_brand_logo.png',
+                      height: 150,
+                      fit: BoxFit.contain,
+                      errorBuilder: (ctx, err, stack) => const Text(
+                        'ServeNow',
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -257,3 +260,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+

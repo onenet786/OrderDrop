@@ -203,7 +203,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
-            backgroundColor: Colors.blue,
+            backgroundColor: Color(0xFFE65100),
             duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
             showCloseIcon: true,
@@ -647,7 +647,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
-          colors: [Colors.blue.shade700, Colors.indigo.shade700],
+          colors: [Color(0xFFE65100), Color(0xFFBF360C)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -741,7 +741,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           UserAccountsDrawerHeader(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Colors.blue.shade700, Colors.indigo.shade700],
+                colors: [Color(0xFFE65100), Color(0xFFBF360C)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -865,7 +865,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             Icon(
               icon,
               size: 22,
-              color: active ? const Color(0xFF1A56A5) : Colors.grey.shade600,
+              color: active ? Color(0xFFE65100) : Colors.grey.shade600,
             ),
             const SizedBox(height: 2),
             Text(
@@ -873,7 +873,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: active ? const Color(0xFF1A56A5) : Colors.grey.shade600,
+                color: active ? Color(0xFFE65100) : Colors.grey.shade600,
               ),
             ),
           ],
@@ -956,12 +956,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Colors.blueAccent,
+                      color: Color(0xFFFF7043),
                     ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.info_outline, size: 20),
-                    color: Colors.blueAccent,
+                    color: Color(0xFFFF7043),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     onPressed: () => _showStoreInfo(storeName, storeDeliveries),
@@ -1052,9 +1052,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue.shade50.withValues(alpha: 0.5),
+                color: Color(0xFFFFF3E0).withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue.shade100),
+                border: Border.all(color: Color(0xFFFFE0B2)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1064,14 +1064,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     children: [
                       const Text(
                         'Grand Total',
-                        style: TextStyle(fontSize: 12, color: Colors.blueGrey),
+                        style: TextStyle(fontSize: 12, color: Colors.brown),
                       ),
                       Text(
                         'PKR ${delivery['total_amount']}',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.blue,
+                          color: Color(0xFFE65100),
                         ),
                       ),
                     ],
@@ -1081,7 +1081,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     icon: const Icon(Icons.receipt_long, size: 16),
                     label: const Text('Summary'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
+                      backgroundColor: Color(0xFFE65100),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -1105,7 +1105,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   children: [
                     _contactAction(
                       icon: Icons.phone,
-                      color: Colors.blue,
+                      color: Color(0xFFE65100),
                       label: 'Call',
                       onTap: () => _makeCall(customerPhone),
                     ),
@@ -1155,7 +1155,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                       child: ElevatedButton(
                         onPressed: () => _markPaymentReceived(delivery['id']),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
+                          backgroundColor: Color(0xFFE65100),
                           foregroundColor: Colors.white,
                         ),
                         child: const Text('Payment Recvd'),
@@ -1209,7 +1209,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       case 'cancelled':
         return Colors.red;
       case 'out_for_delivery':
-        return Colors.blue;
+        return Color(0xFFE65100);
       case 'preparing':
         return Colors.orange;
       case 'pending':
@@ -1280,7 +1280,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: Colors.blueAccent,
+                    color: Color(0xFFFF7043),
                   ),
                 ),
                 Text(
@@ -1421,7 +1421,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.receipt_long, color: Colors.blueGrey),
+                      const Icon(Icons.receipt_long, color: Colors.brown),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -1451,7 +1451,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: Colors.blueGrey,
+                      color: Colors.brown,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1471,7 +1471,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: Colors.blueGrey,
+                      color: Colors.brown,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1499,13 +1499,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).primaryColor.withAlpha((0.15 * 255).round()),
+                            color: Color(0xFFE65100).withAlpha((0.15 * 255).round()),
                             borderRadius: BorderRadius.circular(4),
                             border: Border(
                               left: BorderSide(
-                                color: Theme.of(context).primaryColor,
+                                color: Color(0xFFE65100),
                                 width: 3,
                               ),
                             ),
@@ -1515,7 +1513,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
-                              color: Theme.of(context).primaryColor,
+                              color: Color(0xFFE65100),
                             ),
                           ),
                         ),
@@ -1582,7 +1580,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: Colors.blueGrey,
+                      color: Colors.brown,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1676,7 +1674,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                                   style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.blue,
+                                    color: Color(0xFFE65100),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1829,12 +1827,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           const SizedBox(height: 24),
           _walletBalance == 0
               ? Card(
-                  color: Colors.blue.shade50,
+                  color: Color(0xFFFFF3E0),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        Icon(Icons.info, color: Colors.blue.shade600),
+                        Icon(Icons.info, color: Color(0xFFEF6C00)),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -1950,14 +1948,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: Colors.blue.shade100,
+            color: Color(0xFFFFE0B2),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Center(
             child: Text(
               number,
               style: TextStyle(
-                color: Colors.blue.shade600,
+                color: Color(0xFFEF6C00),
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -2040,8 +2038,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                 title: 'Delivery Fees',
                 value: 'PKR ${deliveryFees.toStringAsFixed(2)}',
                 icon: Icons.local_shipping,
-                backgroundColor: Colors.blue.shade50,
-                iconColor: Colors.blue,
+                backgroundColor: Color(0xFFFFF3E0),
+                iconColor: Color(0xFFE65100),
               ),
             ),
           ],
@@ -2240,7 +2238,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.location_on, color: Colors.blue, size: 20),
+                  const Icon(Icons.location_on, color: Color(0xFFE65100), size: 20),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
@@ -2274,3 +2272,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     );
   }
 }
+
+
+

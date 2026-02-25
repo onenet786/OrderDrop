@@ -67,9 +67,9 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/servenow_food_delivery.png"
+  image_path: "assets/icon/servenow_brand_logo_v2.png"
   adaptive_icon_background: "#FFF9F4"
-  adaptive_icon_foreground: "assets/icon/servenow_food_delivery.png"
+  adaptive_icon_foreground: "assets/icon/servenow_brand_logo_v2.png"
 
 # The following section is specific to Flutter packages.
 flutter:
@@ -86,6 +86,7 @@ flutter:
     - assets/icon/servenow_food_theme.png
     - assets/icon/servenow_food_delivery.png
     - assets/icon/servenow_brand_logo.png
+    - assets/icon/servenow_brand_logo_v2.png
     - assets/images/pizza.jpg
     - assets/images/login.png
   #   - images/a_dot_burr.jpeg
@@ -116,3 +117,4 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
