@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireStoreOwner } = require('../middleware/auth');
+const { sendPushToUser } = require('../services/pushNotifications');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -72,6 +73,63 @@ async function ensureLivePromotionsTable(db) {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
     `);
+}
+
+async function ensureStoreFinancialColumns(db) {
+    const [rows] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'payment_grace_days'
+         LIMIT 1`
+    );
+    if (!rows || !rows.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN payment_grace_days INT NULL`
+        );
+    }
+}
+
+function normalizeCustomerIds(input) {
+    const raw = Array.isArray(input)
+        ? input
+        : String(input || '')
+            .split(',')
+            .map((x) => x.trim());
+    const uniq = new Set();
+    for (const v of raw) {
+        const n = parseInt(String(v), 10);
+        if (Number.isInteger(n) && n > 0) uniq.add(n);
+    }
+    return Array.from(uniq);
+}
+
+async function getTargetCustomers(db, target, customIds) {
+    const normTarget = String(target || 'all').toLowerCase() === 'custom' ? 'custom' : 'all';
+    const ids = normalizeCustomerIds(customIds);
+    const params = [];
+    let where = `
+        WHERE (u.user_type IS NULL OR u.user_type = '' OR LOWER(u.user_type) IN ('customer', 'standard_user'))
+          AND (u.is_active IS NULL OR u.is_active = 1)
+    `;
+    if (normTarget === 'custom') {
+        if (!ids.length) return [];
+        where += ` AND u.id IN (${ids.map(() => '?').join(',')})`;
+        params.push(...ids);
+    }
+    const [rows] = await db.execute(
+        `SELECT u.id, COALESCE(NULLIF(LOWER(u.user_type), ''), 'standard_user') AS user_type
+         FROM users u
+         ${where}
+         ORDER BY u.id ASC`,
+        params
+    );
+    return rows.map((r) => ({
+        id: Number(r.id),
+        user_type: (r.user_type || 'standard_user').toString().toLowerCase()
+    }));
 }
 
 function normalizeDateTimeInput(raw) {
@@ -263,6 +321,7 @@ router.get('/', async (req, res) => {
     try {
         await ensureStoreStatusMessagesTable(req.db);
         await ensureServiceGeoLimitsTable(req.db);
+        await ensureStoreFinancialColumns(req.db);
         const { category, category_id, search, admin, lite, latitude, longitude, city } = req.query;
         const liteMode = String(lite || '').toLowerCase() === '1' || String(lite || '').toLowerCase() === 'true';
         const whereClauses = admin === '1' ? [] : ['s.is_active = true'];
@@ -313,6 +372,7 @@ router.get('/', async (req, res) => {
             liteMode
                 ? `
             SELECT s.id, s.name, s.payment_term, s.is_active, sm.is_closed, sm.status_message
+                 , s.payment_grace_days
             FROM stores s
             LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             ${whereClause}
@@ -411,6 +471,7 @@ router.get('/', async (req, res) => {
                     id: store.id,
                     name: store.name,
                     payment_term: store.payment_term || null,
+                    payment_grace_days: store.payment_grace_days === null || store.payment_grace_days === undefined ? null : Number(store.payment_grace_days),
                     is_active: !!store.is_active,
                     is_closed: !!store.is_closed,
                     status_message: store.status_message || ''
@@ -430,6 +491,7 @@ router.get('/', async (req, res) => {
                     opening_time: store.opening_time || null,
                     closing_time: store.closing_time || null,
                     payment_term: store.payment_term || null,
+                    payment_grace_days: store.payment_grace_days === null || store.payment_grace_days === undefined ? null : Number(store.payment_grace_days),
                     latitude: store.latitude,
                     longitude: store.longitude,
                     rating: store.rating,
@@ -680,6 +742,104 @@ router.get('/global-delivery-status', async (req, res) => {
     }
 });
 
+router.get('/notification-customers', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const [rows] = await req.db.execute(
+            `SELECT u.id, u.first_name, u.last_name, u.email, u.phone
+             FROM users u
+             WHERE (u.user_type IS NULL OR u.user_type = '' OR LOWER(u.user_type) IN ('customer', 'standard_user'))
+               AND (u.is_active IS NULL OR u.is_active = 1)
+             ORDER BY u.id DESC
+             LIMIT 500`
+        );
+        return res.json({
+            success: true,
+            customers: rows || []
+        });
+    } catch (error) {
+        console.error('Error fetching notification customers:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch customers',
+            error: error.message
+        });
+    }
+});
+
+router.post('/customer-push-notification', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const notificationTarget = (req.body.notification_target || 'all').toString().toLowerCase() === 'custom' ? 'custom' : 'all';
+        const customCustomerIds = normalizeCustomerIds(req.body.customer_ids);
+        const title = (req.body.title ?? '').toString().trim();
+        const message = (req.body.message ?? '').toString().trim();
+        const category = (req.body.category ?? 'general').toString().trim() || 'general';
+
+        if (!title || title.length > 120) {
+            return res.status(400).json({
+                success: false,
+                message: 'Title is required and must be 120 characters or less'
+            });
+        }
+        if (!message || message.length > 500) {
+            return res.status(400).json({
+                success: false,
+                message: 'Message is required and must be 500 characters or less'
+            });
+        }
+        if (notificationTarget === 'custom' && !customCustomerIds.length) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please select at least one customer for custom push notifications'
+            });
+        }
+
+        const recipients = await getTargetCustomers(req.db, notificationTarget, customCustomerIds);
+        let pushed = 0;
+        for (const recipient of recipients) {
+            await sendPushToUser(req.db, {
+                userId: recipient.id,
+                userType: recipient.user_type,
+                title,
+                message,
+                data: {
+                    type: 'customer_broadcast',
+                    category,
+                    notification_target: notificationTarget
+                },
+                collapseKey: `customer_broadcast_${category}`
+            });
+            try {
+                req.io?.to(`user_${recipient.id}`).emit('user_notification', {
+                    user_id: recipient.id,
+                    type: 'customer_broadcast',
+                    title,
+                    message,
+                    category
+                });
+            } catch (_) {}
+            pushed++;
+        }
+
+        return res.json({
+            success: true,
+            message: 'Customer push notification sent successfully',
+            push_notification: {
+                target: notificationTarget,
+                category,
+                recipient_count: recipients.length,
+                pushed_count: pushed
+            }
+        });
+    } catch (error) {
+        console.error('Error sending customer push notification:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to send customer push notification',
+            error: error.message
+        });
+    }
+});
+
 router.put('/global-delivery-status', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await ensureGlobalDeliveryStatusTable(req.db);
@@ -689,6 +849,11 @@ router.put('/global-delivery-status', authenticateToken, requireAdmin, async (re
         const statusMessage = (req.body.status_message ?? '').toString().trim();
         const startAt = normalizeDateTimeInput(req.body.start_at);
         const endAt = normalizeDateTimeInput(req.body.end_at);
+        const sendPush = !!req.body.send_push_notification;
+        const notificationTarget = (req.body.notification_target || 'all').toString().toLowerCase() === 'custom' ? 'custom' : 'all';
+        const customCustomerIds = normalizeCustomerIds(req.body.customer_ids);
+        const pushTitle = (req.body.push_title ?? '').toString().trim();
+        const pushMessageRaw = (req.body.push_message ?? '').toString().trim();
 
         if (statusMessage.length > 500) {
             return res.status(400).json({
@@ -731,11 +896,53 @@ router.put('/global-delivery-status', authenticateToken, requireAdmin, async (re
              LIMIT 1`
         );
         const payload = getGlobalDeliveryStatusPayload(rows[0] || null);
+        let pushed = 0;
+        if (sendPush) {
+            const recipients = await getTargetCustomers(req.db, notificationTarget, customCustomerIds);
+            const notifTitle = pushTitle || (title || 'Delivery Update');
+            const notifMessage = pushMessageRaw || (statusMessage || 'Please check latest delivery status.');
+            for (const recipient of recipients) {
+                await sendPushToUser(req.db, {
+                    userId: recipient.id,
+                    userType: recipient.user_type,
+                    title: notifTitle,
+                    message: notifMessage,
+                    data: {
+                        type: 'global_delivery_status',
+                        is_enabled: payload.is_enabled,
+                        block_ordering: payload.block_ordering,
+                        start_at: payload.start_at,
+                        end_at: payload.end_at
+                    },
+                    collapseKey: 'global_delivery_status'
+                });
+                try {
+                    req.io?.to(`user_${recipient.id}`).emit('user_notification', {
+                        user_id: recipient.id,
+                        type: 'global_delivery_status',
+                        title: notifTitle,
+                        message: notifMessage,
+                        data: {
+                            is_enabled: payload.is_enabled,
+                            block_ordering: payload.block_ordering,
+                            start_at: payload.start_at,
+                            end_at: payload.end_at
+                        }
+                    });
+                } catch (_) {}
+                pushed++;
+            }
+        }
 
         return res.json({
             success: true,
             message: 'Global delivery status updated successfully',
-            global_delivery_status: payload
+            global_delivery_status: payload,
+            push_notification: {
+                requested: sendPush,
+                target: notificationTarget,
+                pushed_count: pushed
+            }
         });
     } catch (error) {
         console.error('Error updating global delivery status:', error);
@@ -979,6 +1186,7 @@ router.post('/', authenticateToken, requireStoreOwner, [
     body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5')
 ], async (req, res) => {
     try {
+        await ensureStoreFinancialColumns(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -1001,9 +1209,13 @@ router.post('/', authenticateToken, requireStoreOwner, [
             address,
             opening_time, closing_time,
             payment_term,
+            payment_grace_days,
             image_url,
             rating
         } = req.body;
+        const parsedGraceDays = payment_grace_days === null || payment_grace_days === undefined || String(payment_grace_days).trim() === ''
+            ? null
+            : Math.max(0, parseInt(String(payment_grace_days), 10));
 
         if (rating !== undefined && req.user.user_type !== 'admin') {
             return res.status(403).json({
@@ -1029,6 +1241,7 @@ router.post('/', authenticateToken, requireStoreOwner, [
             'opening_time',
             'closing_time',
             'payment_term',
+            'payment_grace_days',
             'phone',
             'email',
             'address',
@@ -1046,6 +1259,7 @@ router.post('/', authenticateToken, requireStoreOwner, [
             opening_time || null,
             closing_time || null,
             payment_term || null,
+            Number.isInteger(parsedGraceDays) ? parsedGraceDays : null,
             phone || null,
             email || null,
             address || null,
@@ -1107,6 +1321,7 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
     body('status').optional()
 ], async (req, res) => {
     try {
+        await ensureStoreFinancialColumns(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -1156,6 +1371,7 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             opening_time,
             closing_time,
             payment_term,
+            payment_grace_days,
             image_url,
             rating,
             category_id,
@@ -1209,6 +1425,13 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
         if (opening_time !== undefined) { updateFields.push('opening_time = ?'); updateValues.push(opening_time); }
         if (closing_time !== undefined) { updateFields.push('closing_time = ?'); updateValues.push(closing_time); }
         if (payment_term !== undefined) { updateFields.push('payment_term = ?'); updateValues.push(payment_term); }
+        if (payment_grace_days !== undefined) {
+            const parsedGraceDays = payment_grace_days === null || String(payment_grace_days).trim() === ''
+                ? null
+                : Math.max(0, parseInt(String(payment_grace_days), 10));
+            updateFields.push('payment_grace_days = ?');
+            updateValues.push(Number.isInteger(parsedGraceDays) ? parsedGraceDays : null);
+        }
         if (phone !== undefined) { updateFields.push('phone = ?'); updateValues.push(phone); }
         if (email !== undefined) { updateFields.push('email = ?'); updateValues.push(email); }
         if (address !== undefined) { updateFields.push('address = ?'); updateValues.push(address); }

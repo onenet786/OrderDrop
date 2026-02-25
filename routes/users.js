@@ -67,12 +67,12 @@ router.post('/', authenticateToken, requireAdmin, [
     body('lastName').trim().isLength({ min: 1 }).withMessage('Last name is required'),
     body('email').isEmail().withMessage('Invalid email'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-    body('phone').optional().isMobilePhone().withMessage('Invalid phone'),
-    body('address').optional().trim(),
-    body('user_type').isIn(['customer', 'store_owner', 'admin', 'standard_user']).withMessage('Invalid user type'),
+    body('phone').optional({ checkFalsy: true }).trim().matches(/^[\d\s\-\+\(\)]{6,}$/).withMessage('Invalid phone'),
+    body('address').optional({ checkFalsy: true }).trim(),
+    body('user_type').isIn(['customer', 'store_owner', 'admin', 'standard_user', 'rider']).withMessage('Invalid user type'),
     body('is_verified').optional().isBoolean(),
     body('is_active').optional().isBoolean(),
-    body('store_id').optional().toInt()
+    body('store_id').optional({ checkFalsy: true }).isInt({ min: 1 }).toInt()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -129,13 +129,13 @@ router.put('/:id', authenticateToken, requireAdmin, [
     body('firstName').optional().trim().isLength({ min: 1 }),
     body('lastName').optional().trim().isLength({ min: 1 }),
     body('email').optional().isEmail().withMessage('Invalid email'),
-    body('phone').optional().isMobilePhone().withMessage('Invalid phone'),
-    body('address').optional().trim(),
-    body('password').optional().isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-    body('user_type').optional().isIn(['customer', 'store_owner', 'admin', 'standard_user']).withMessage('Invalid user type'),
+    body('phone').optional({ checkFalsy: true }).trim().matches(/^[\d\s\-\+\(\)]{6,}$/).withMessage('Invalid phone'),
+    body('address').optional({ checkFalsy: true }).trim(),
+    body('password').optional({ checkFalsy: true }).isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('user_type').optional().isIn(['customer', 'store_owner', 'admin', 'standard_user', 'rider']).withMessage('Invalid user type'),
     body('is_active').optional().isBoolean().withMessage('is_active must be a boolean'),
     body('is_verified').optional().isBoolean().withMessage('is_verified must be a boolean'),
-    body('store_id').optional().toInt()
+    body('store_id').optional({ checkFalsy: true }).isInt({ min: 1 }).toInt()
 ], async (req, res) => {
     try {
         const errors = validationResult(req);

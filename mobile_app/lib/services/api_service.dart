@@ -497,12 +497,49 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> getRiderFinancialHistory(
+    String token, {
+    String? from,
+    String? to,
+  }) async {
+    final query = <String, String>{};
+    if (from != null && from.trim().isNotEmpty) query['from'] = from.trim();
+    if (to != null && to.trim().isNotEmpty) query['to'] = to.trim();
+    final uri = Uri.parse('$baseUrl/api/orders/rider/financial-history').replace(
+      queryParameters: query.isEmpty ? null : query,
+    );
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
   // Store Owner APIs
   static Future<Map<String, dynamic>> getStoreOrders(
     String token, {
     String status = 'all',
   }) async {
     final uri = Uri.parse('$baseUrl/api/orders/store-dashboard?status=$status');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> getStoreOwnerFinancialHistory(
+    String token, {
+    String? from,
+    String? to,
+  }) async {
+    final query = <String, String>{};
+    if (from != null && from.trim().isNotEmpty) query['from'] = from.trim();
+    if (to != null && to.trim().isNotEmpty) query['to'] = to.trim();
+    final uri = Uri.parse('$baseUrl/api/orders/store-owner/financial-history')
+        .replace(queryParameters: query.isEmpty ? null : query);
     _logger.d('ApiService: GET $uri');
     final response = await http.get(
       uri,

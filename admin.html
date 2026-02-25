@@ -1170,7 +1170,7 @@
 
                   <th>Location</th>
 
-                  <th>Owner</th>
+                  <th>Store Name</th>
 
                   <th>Rating</th>
 
@@ -1216,6 +1216,31 @@
                 <label for="globalDeliveryMessage">Message</label>
                 <textarea id="globalDeliveryMessage" class="form-control" rows="3" maxlength="500" placeholder="Delivery will not be available in this period."></textarea>
               </div>
+              <div class="form-group">
+                <label for="globalDeliveryNotificationTarget">Push Target</label>
+                <select id="globalDeliveryNotificationTarget" class="form-control">
+                  <option value="all">All Customers</option>
+                  <option value="custom">Selected Customers</option>
+                </select>
+              </div>
+              <div class="form-group" id="globalDeliveryCustomerSelectWrap" style="display:none;">
+                <label for="globalDeliveryCustomerSelect">Select Customers (when custom)</label>
+                <select id="globalDeliveryCustomerSelect" class="form-control" multiple size="8"></select>
+                <small style="display:block;margin-top:6px;color:#64748b;">Tip: Hold Ctrl/Cmd to select multiple customers.</small>
+                <input type="hidden" id="globalDeliveryCustomerIds" />
+              </div>
+              <label class="global-delivery-toggle">
+                <input type="checkbox" id="globalDeliverySendPush" />
+                <span>Send push notification on save</span>
+              </label>
+              <div class="form-group">
+                <label for="globalDeliveryPushTitle">Push Title</label>
+                <input type="text" id="globalDeliveryPushTitle" class="form-control" placeholder="Delivery Update" maxlength="120" />
+              </div>
+              <div class="form-group">
+                <label for="globalDeliveryPushMessage">Push Message</label>
+                <textarea id="globalDeliveryPushMessage" class="form-control" rows="2" maxlength="500" placeholder="Delivery status has been updated."></textarea>
+              </div>
               <div class="form-row global-delivery-time-row">
                 <div class="form-group">
                   <label for="globalDeliveryStartAt">From</label>
@@ -1234,6 +1259,51 @@
             <div class="global-delivery-admin-actions">
               <button class="btn btn-primary" id="saveGlobalDeliveryStatusBtn">
                 <i class="fas fa-bullhorn"></i> Save Live Widget
+              </button>
+            </div>
+          </section>
+          <section class="global-delivery-admin-card">
+            <div class="global-delivery-admin-head">
+              <div>
+                <h3>Customer Push Broadcast</h3>
+                <p>Send standalone custom push notifications for new stores, products, events, or any update.</p>
+              </div>
+              <span class="global-delivery-state state-available">Standalone</span>
+            </div>
+            <div class="global-delivery-admin-grid">
+              <div class="form-group">
+                <label for="broadcastPushCategory">Category</label>
+                <select id="broadcastPushCategory" class="form-control">
+                  <option value="general">General Update</option>
+                  <option value="new_store">New Store</option>
+                  <option value="new_product">New Product</option>
+                  <option value="promotion">Promotion/Event</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="broadcastPushTarget">Push Target</label>
+                <select id="broadcastPushTarget" class="form-control">
+                  <option value="all">All Customers</option>
+                  <option value="custom">Selected Customers</option>
+                </select>
+              </div>
+              <div class="form-group" id="broadcastPushCustomerWrap" style="display:none;">
+                <label for="broadcastPushCustomerSelect">Select Customers (when custom)</label>
+                <select id="broadcastPushCustomerSelect" class="form-control" multiple size="8"></select>
+                <small style="display:block;margin-top:6px;color:#64748b;">Tip: Hold Ctrl/Cmd to select multiple customers.</small>
+              </div>
+              <div class="form-group">
+                <label for="broadcastPushTitle">Push Title</label>
+                <input type="text" id="broadcastPushTitle" class="form-control" placeholder="e.g. New store launched in your area" maxlength="120" />
+              </div>
+              <div class="form-group">
+                <label for="broadcastPushMessage">Push Message</label>
+                <textarea id="broadcastPushMessage" class="form-control" rows="3" maxlength="500" placeholder="Write your custom customer message..."></textarea>
+              </div>
+            </div>
+            <div class="global-delivery-admin-actions">
+              <button class="btn btn-primary" id="sendBroadcastPushBtn">
+                <i class="fas fa-paper-plane"></i> Send Push Notification
               </button>
             </div>
           </section>
@@ -2723,6 +2793,10 @@
                 </select>
               </div>
               <div class="form-group">
+                <label for="storeGraceDays">Grace Period (Days):</label>
+                <input type="number" id="storeGraceDays" name="payment_grace_days" min="0" step="1" placeholder="e.g., 10 or 15" style="width: 100%;" />
+              </div>
+              <div class="form-group">
                 <label for="storeCategory">Category:</label>
                 <select id="storeCategory" name="category_id" style="width: 100%;">
                   <!-- Categories will be loaded dynamically -->
@@ -2882,20 +2956,35 @@
                 </div>
               </div>
               <div id="productProfitRow" style="grid-column: span 4; display: none; background: #ecfdf5; border: 1px solid #bbf7d0; border-radius: 8px; padding: 0.6rem; margin-bottom: 0.2rem;">
-                <div class="form-group" style="margin-bottom: 0;">
-                  <label for="productProfitValue">Profit Value (PKR):</label>
-                  <input type="number" id="productProfitValue" name="profit_value" step="0.01" min="0" style="width: 100%;" />
-                  <small style="color:#065f46; display:block; margin-top:4px;">Cost Price = Price - Profit Value</small>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="productProfitType">Profit Type:</label>
+                    <select id="productProfitType" name="profit_type" style="width: 100%;">
+                      <option value="amount">PKR</option>
+                      <option value="percent">%</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="productProfitValue">Profit Value:</label>
+                    <input type="number" id="productProfitValue" name="profit_value" step="0.01" min="0" style="width: 100%;" />
+                  </div>
                 </div>
+                <small style="color:#065f46; display:block; margin-top:4px;">Cost Price = Price - Profit Value (PKR or %)</small>
               </div>
 
               <!-- Multiple Variants Section -->
               <div id="productSizePricesSection" style="grid-column: span 4; display: none; margin-top: 0.2rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.6rem;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                   <h4 id="productVariantsSectionTitle" style="margin: 0; color: #1e293b; font-size: 1rem;">Unit prices:</h4>
-                  <button type="button" id="addSizePriceBtn" class="btn btn-small btn-primary">
-                    <i class="fas fa-plus"></i> Add Unit Price
-                  </button>
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;">
+                      <input type="checkbox" id="productManualVariantCost" />
+                      <span>Manual Variant Costs</span>
+                    </label>
+                    <button type="button" id="addSizePriceBtn" class="btn btn-small btn-primary">
+                      <i class="fas fa-plus"></i> Add Unit Price
+                    </button>
+                  </div>
                 </div>
                 <div style="overflow-x: auto;">
                   <table style="width: 100%; border-collapse: collapse;">
@@ -2920,7 +3009,11 @@
               </div>
               <div class="form-group">
                 <label for="productCostPrice">Cost Price (PKR):</label>
-                <input type="number" id="productCostPrice" name="cost_price" step="0.01" min="0" readonly style="width: 100%; background-color: #f1f5f9;" />
+                <input type="number" id="productCostPrice" name="cost_price" step="0.01" min="0" style="width: 100%;" />
+                <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:#475569;">
+                  <input type="checkbox" id="productManualCost" name="manual_cost_override" />
+                  <span>Manual Cost Price (financial settlements will use this value)</span>
+                </label>
               </div>
               <div class="form-group">
                 <label for="productStock">Stock Quantity:</label>

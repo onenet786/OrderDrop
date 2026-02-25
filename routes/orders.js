@@ -206,6 +206,76 @@ async function ensureRiderLocationColumns(db) {
   }
 }
 
+function roundAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+async function ensureRiderStorePaymentsTable(db) {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS rider_store_payments (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      order_id INT NOT NULL,
+      store_id INT NOT NULL,
+      rider_id INT NOT NULL,
+      amount DECIMAL(12,2) NOT NULL,
+      source_status VARCHAR(40) NOT NULL DEFAULT 'picked_up',
+      created_by INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_rider_store_payment (order_id, store_id, source_status),
+      INDEX idx_rsp_rider (rider_id),
+      INDEX idx_rsp_store (store_id),
+      INDEX idx_rsp_order (order_id)
+    )
+  `);
+}
+
+async function ensureRiderCashMovementTypes(db) {
+  try {
+    await db.execute(
+      `ALTER TABLE rider_cash_movements
+       MODIFY COLUMN movement_type ENUM('cash_collection', 'cash_submission', 'advance', 'settlement', 'adjustment', 'store_payment', 'fuel_payment') NOT NULL`
+    );
+  } catch (_) {}
+}
+
+async function ensureStoreFinancialColumns(db) {
+  try {
+    const exists = await hasColumn(db, "stores", "payment_grace_days");
+    if (!exists) {
+      await db.execute(
+        "ALTER TABLE stores ADD COLUMN payment_grace_days INT NULL"
+      );
+    }
+  } catch (_) {}
+}
+
+async function getOrCreateRiderWallet(db, riderId) {
+  const [walletRows] = await db.execute(
+    "SELECT id, balance FROM wallets WHERE rider_id = ? LIMIT 1",
+    [riderId]
+  );
+  if (walletRows.length) {
+    return {
+      walletId: walletRows[0].id,
+      balance: Number(walletRows[0].balance || 0),
+    };
+  }
+  await db.execute(
+    "INSERT INTO wallets (rider_id, user_type, balance) VALUES (?, 'rider', 0)",
+    [riderId]
+  );
+  const [newRows] = await db.execute(
+    "SELECT id, balance FROM wallets WHERE rider_id = ? LIMIT 1",
+    [riderId]
+  );
+  return {
+    walletId: newRows[0].id,
+    balance: Number(newRows[0].balance || 0),
+  };
+}
+
 // Get user's orders
 router.get("/my-orders", authenticateToken, async (req, res) => {
   try {
@@ -1218,6 +1288,220 @@ router.get("/rider/wallet-stats", authenticateToken, async (req, res) => {
   }
 });
 
+// Rider financial history with date filter
+router.get("/rider/financial-history", authenticateToken, async (req, res) => {
+  try {
+    if (req.user.user_type !== "rider") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Rider only.",
+      });
+    }
+    await ensureRiderStorePaymentsTable(req.db);
+    const riderId = req.user.id;
+    const from = (req.query.from || req.query.date_from || "").toString().trim();
+    const to = (req.query.to || req.query.date_to || "").toString().trim();
+    const hasFrom = !!from;
+    const hasTo = !!to;
+
+    const movementDateFilter = [
+      hasFrom ? "rcm.movement_date >= ?" : null,
+      hasTo ? "rcm.movement_date <= ?" : null,
+    ].filter(Boolean).join(" AND ");
+    const movementParams = [riderId, ...(hasFrom ? [from] : []), ...(hasTo ? [to] : [])];
+
+    const [movements] = await req.db.execute(
+      `SELECT rcm.id, rcm.movement_number, rcm.movement_date, rcm.movement_type, rcm.amount, rcm.description, rcm.status, rcm.reference_type, rcm.reference_id
+       FROM rider_cash_movements rcm
+       WHERE rcm.rider_id = ?
+       ${movementDateFilter ? `AND ${movementDateFilter}` : ""}
+       ORDER BY rcm.movement_date DESC, rcm.id DESC`,
+      movementParams
+    );
+
+    const [walletRows] = await req.db.execute(
+      "SELECT id, balance FROM wallets WHERE rider_id = ? LIMIT 1",
+      [riderId]
+    );
+    const wallet = walletRows[0] || null;
+    const walletId = wallet ? wallet.id : null;
+
+    let walletTx = [];
+    if (walletId) {
+      const txFilter = [
+        hasFrom ? "DATE(wt.created_at) >= ?" : null,
+        hasTo ? "DATE(wt.created_at) <= ?" : null,
+      ].filter(Boolean).join(" AND ");
+      const txParams = [walletId, ...(hasFrom ? [from] : []), ...(hasTo ? [to] : [])];
+      const [txRows] = await req.db.execute(
+        `SELECT wt.id, wt.type, wt.amount, wt.description, wt.reference_type, wt.reference_id, wt.balance_after, wt.created_at
+         FROM wallet_transactions wt
+         WHERE wt.wallet_id = ?
+         ${txFilter ? `AND ${txFilter}` : ""}
+         ORDER BY wt.created_at DESC, wt.id DESC
+         LIMIT 500`,
+        txParams
+      );
+      walletTx = txRows || [];
+    }
+
+    const [fuelRows] = await req.db.execute(
+      `SELECT id, entry_date, fuel_cost, distance, notes
+       FROM riders_fuel_history
+       WHERE rider_id = ?
+       ${hasFrom ? "AND DATE(entry_date) >= ?" : ""}
+       ${hasTo ? "AND DATE(entry_date) <= ?" : ""}
+       ORDER BY entry_date DESC, id DESC`,
+      [riderId, ...(hasFrom ? [from] : []), ...(hasTo ? [to] : [])]
+    );
+
+    const summary = {
+      wallet_balance: roundAmount(wallet?.balance || 0),
+      cash_collection: roundAmount(
+        movements
+          .filter((m) => m.movement_type === "cash_collection")
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      office_advance: roundAmount(
+        movements
+          .filter((m) => m.movement_type === "advance")
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      store_payment: roundAmount(
+        movements
+          .filter((m) => m.movement_type === "store_payment")
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      fuel_payment: roundAmount(
+        fuelRows.reduce((s, r) => s + Number(r.fuel_cost || 0), 0)
+      ),
+      delivery_fee_earned: 0,
+    };
+
+    const [feeRows] = await req.db.execute(
+      `SELECT COALESCE(SUM(delivery_fee), 0) as delivery_fee_earned
+       FROM orders
+       WHERE rider_id = ?
+         AND status = 'delivered'
+         ${hasFrom ? "AND DATE(created_at) >= ?" : ""}
+         ${hasTo ? "AND DATE(created_at) <= ?" : ""}`,
+      [riderId, ...(hasFrom ? [from] : []), ...(hasTo ? [to] : [])]
+    );
+    summary.delivery_fee_earned = roundAmount(feeRows[0]?.delivery_fee_earned || 0);
+
+    return res.json({
+      success: true,
+      summary,
+      movements,
+      wallet_transactions: walletTx,
+      fuel_entries: fuelRows || [],
+      filters: { from: from || null, to: to || null },
+    });
+  } catch (error) {
+    console.error("Error fetching rider financial history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch rider financial history",
+      error: error.message,
+    });
+  }
+});
+
+// Store owner financial history with date filter
+router.get("/store-owner/financial-history", authenticateToken, requireStoreOwner, async (req, res) => {
+  try {
+    await ensureRiderStorePaymentsTable(req.db);
+    await ensureStoreFinancialColumns(req.db);
+    const ownerId = req.user.id;
+    const from = (req.query.from || req.query.date_from || "").toString().trim();
+    const to = (req.query.to || req.query.date_to || "").toString().trim();
+    const hasFrom = !!from;
+    const hasTo = !!to;
+
+    const [stores] = await req.db.execute(
+      "SELECT id, name, payment_term, payment_grace_days FROM stores WHERE owner_id = ?",
+      [ownerId]
+    );
+    if (!stores.length) {
+      return res.json({ success: true, summary: {}, entries: [], stores: [] });
+    }
+    const storeIds = stores.map((s) => s.id);
+    const placeholders = storeIds.map(() => "?").join(",");
+
+    const [entries] = await req.db.execute(
+      `SELECT
+          oi.store_id,
+          s.name as store_name,
+          s.payment_term,
+          s.payment_grace_days,
+          o.id as order_id,
+          o.order_number,
+          o.status as order_status,
+          o.payment_method,
+          o.payment_status,
+          DATE(o.created_at) as order_date,
+          COALESCE(SUM(oi.quantity * oi.price), 0) as gross_store_amount
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       JOIN stores s ON s.id = oi.store_id
+       WHERE oi.store_id IN (${placeholders})
+       ${hasFrom ? "AND DATE(o.created_at) >= ?" : ""}
+       ${hasTo ? "AND DATE(o.created_at) <= ?" : ""}
+       GROUP BY oi.store_id, s.name, s.payment_term, s.payment_grace_days, o.id, o.order_number, o.status, o.payment_method, o.payment_status, DATE(o.created_at)
+       ORDER BY o.created_at DESC`,
+      [...storeIds, ...(hasFrom ? [from] : []), ...(hasTo ? [to] : [])]
+    );
+
+    const [riderSettlements] = await req.db.execute(
+      `SELECT rsp.order_id, rsp.store_id, rsp.amount, rsp.created_at
+       FROM rider_store_payments rsp
+       WHERE rsp.store_id IN (${placeholders})
+       ${hasFrom ? "AND DATE(rsp.created_at) >= ?" : ""}
+       ${hasTo ? "AND DATE(rsp.created_at) <= ?" : ""}
+       ORDER BY rsp.created_at DESC`,
+      [...storeIds, ...(hasFrom ? [from] : []), ...(hasTo ? [to] : [])]
+    );
+
+    const settlementMap = new Map();
+    for (const row of riderSettlements || []) {
+      settlementMap.set(`${row.order_id}:${row.store_id}`, roundAmount(row.amount || 0));
+    }
+    const enriched = (entries || []).map((e) => {
+      const settled = settlementMap.get(`${e.order_id}:${e.store_id}`) || 0;
+      return {
+        ...e,
+        gross_store_amount: roundAmount(e.gross_store_amount || 0),
+        rider_store_payment: settled,
+      };
+    });
+
+    const summary = {
+      total_orders: enriched.length,
+      gross_store_amount: roundAmount(
+        enriched.reduce((s, e) => s + Number(e.gross_store_amount || 0), 0)
+      ),
+      rider_store_payment: roundAmount(
+        enriched.reduce((s, e) => s + Number(e.rider_store_payment || 0), 0)
+      ),
+    };
+
+    return res.json({
+      success: true,
+      summary,
+      entries: enriched,
+      stores,
+      filters: { from: from || null, to: to || null },
+    });
+  } catch (error) {
+    console.error("Error fetching store-owner financial history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch store-owner financial history",
+      error: error.message,
+    });
+  }
+});
+
 // Get store owner's dashboard orders
 router.get(
   "/store-dashboard",
@@ -1382,6 +1666,7 @@ router.get(
 router.get("/:id(\\d+)", authenticateToken, async (req, res) => {
   console.log(`[orders] Fetching order details for ID: ${req.params.id}`);
   try {
+    await ensureStoreFinancialColumns(req.db);
     const { id } = req.params;
     await ensureOrderItemsSchema(req.db);
 
@@ -1445,7 +1730,7 @@ router.get("/:id(\\d+)", authenticateToken, async (req, res) => {
     // Get order items with store info
     const [items] = await req.db.execute(
       `
-            SELECT oi.*, p.name as product_name, p.image_url, s.name as store_name
+            SELECT oi.*, p.name as product_name, p.image_url, s.name as store_name, s.payment_term, s.payment_grace_days
             FROM order_items oi
             JOIN products p ON oi.product_id = p.id
             LEFT JOIN stores s ON oi.store_id = s.id
@@ -1464,6 +1749,12 @@ router.get("/:id(\\d+)", authenticateToken, async (req, res) => {
         storeGroups[sId] = {
           store_id: item.store_id,
           store_name: item.store_name || "Unknown Store",
+          payment_term: item.payment_term || null,
+          payment_grace_days:
+            item.payment_grace_days === null ||
+            item.payment_grace_days === undefined
+              ? null
+              : Number(item.payment_grace_days),
           items: [],
         };
       }
@@ -1799,6 +2090,110 @@ router.put(
         newGlobalStatus,
         id,
       ]);
+
+      // Cash-only store settlement at pickup:
+      // When store confirms "picked_up", deduct payable store amount from assigned rider wallet once per store.
+      if (status === "picked_up" && order.rider_id) {
+        await ensureRiderStorePaymentsTable(req.db);
+        await ensureRiderCashMovementTypes(req.db);
+
+        const targetStoreRows = targetItemIds.length
+          ? await req.db.execute(
+              `SELECT DISTINCT oi.store_id, s.name as store_name, s.payment_term
+               FROM order_items oi
+               JOIN stores s ON s.id = oi.store_id
+               WHERE oi.id IN (${targetItemIds.map(() => "?").join(",")})`,
+              targetItemIds
+            )
+          : [[], []];
+        const storesToSettle = (targetStoreRows[0] || []).filter(
+          (r) =>
+            String(r.payment_term || "").toLowerCase().trim() === "cash only"
+        );
+
+        if (storesToSettle.length) {
+          const walletInfo = await getOrCreateRiderWallet(req.db, order.rider_id);
+          let runningBalance = Number(walletInfo.balance || 0);
+          for (const s of storesToSettle) {
+            const [existingPayment] = await req.db.execute(
+              `SELECT id FROM rider_store_payments
+               WHERE order_id = ? AND store_id = ? AND source_status = 'picked_up'
+               LIMIT 1`,
+              [id, s.store_id]
+            );
+            if (existingPayment.length) continue;
+
+            const [payableRows] = await req.db.execute(
+              `SELECT
+                 COALESCE(SUM(
+                   COALESCE(psp.cost_price, p.cost_price, oi.price) * oi.quantity
+                 ), 0) AS payable_to_store
+               FROM order_items oi
+               JOIN products p ON p.id = oi.product_id
+               LEFT JOIN product_size_prices psp
+                 ON psp.product_id = oi.product_id
+                AND (
+                  (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id AND psp.unit_id IS NULL)
+                  OR
+                  (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id AND psp.size_id IS NULL)
+                )
+               WHERE oi.order_id = ? AND oi.store_id = ?`,
+              [id, s.store_id]
+            );
+            const payable = roundAmount(payableRows[0]?.payable_to_store || 0);
+            if (payable <= 0) continue;
+
+            runningBalance = roundAmount(runningBalance - payable);
+            await req.db.execute(
+              "UPDATE wallets SET balance = ?, total_spent = total_spent + ? WHERE id = ?",
+              [runningBalance, payable, walletInfo.walletId]
+            );
+            await req.db.execute(
+              `INSERT INTO wallet_transactions
+               (wallet_id, type, amount, description, reference_type, reference_id, balance_after)
+               VALUES (?, 'debit', ?, ?, 'order', ?, ?)`,
+              [
+                walletInfo.walletId,
+                payable,
+                `Paid to cash-only store ${s.store_name || s.store_id} for order #${order.order_number}`,
+                id,
+                runningBalance,
+              ]
+            );
+            await req.db.execute(
+              `INSERT INTO rider_cash_movements
+               (movement_number, rider_id, movement_date, movement_type, amount, description, reference_type, reference_id, status, recorded_by)
+               VALUES (?, ?, CURDATE(), 'store_payment', ?, ?, 'order', ?, 'completed', ?)`,
+              [
+                `RCM-SP-${Date.now()}-${s.store_id}`,
+                order.rider_id,
+                payable,
+                `Store payment on pickup for ${s.store_name || "Store"} (Order #${order.order_number})`,
+                id,
+                req.user.id || null,
+              ]
+            );
+            await req.db.execute(
+              `INSERT INTO rider_store_payments (order_id, store_id, rider_id, amount, source_status, created_by)
+               VALUES (?, ?, ?, ?, 'picked_up', ?)`,
+              [id, s.store_id, order.rider_id, payable, req.user.id || null]
+            );
+            await recordFinancialTransaction(req.db, {
+              transaction_type: "adjustment",
+              category: "rider_store_payment",
+              description: `Rider paid cash-only store (${s.store_name || s.store_id}) for order #${order.order_number}`,
+              amount: payable,
+              payment_method: "cash",
+              related_entity_type: "rider",
+              related_entity_id: order.rider_id,
+              reference_type: "order",
+              reference_id: id,
+              created_by: req.user.id || null,
+              notes: "Auto deduction from rider wallet on pickup confirmation",
+            });
+          }
+        }
+      }
 
       // Emit order_status_update event - only to specific rooms to avoid duplicates
       try {
@@ -2745,7 +3140,7 @@ router.put(
 
       // Check if order exists and user has permission (rider or admin)
       const [orders] = await req.db.execute(
-        `SELECT o.id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.delivery_fee, o.payment_method, o.payment_status, o.status,
+        `SELECT o.id, o.store_id, o.rider_id, o.user_id, o.order_number, o.total_amount, o.delivery_fee, o.payment_method, o.payment_status, o.status,
                     u.email as user_email, u.first_name as user_first_name
              FROM orders o
              JOIN users u ON o.user_id = u.id

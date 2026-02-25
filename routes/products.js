@@ -21,9 +21,19 @@ function isDiscountPaymentTerm(term) {
     return String(term || '').toLowerCase().includes('with discount');
 }
 
+function roundToNearestTen(val) {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return null;
+    return Math.round(n / 10) * 10;
+}
+
 function isProfitPaymentTerm(term) {
     const t = String(term || '').toLowerCase().trim();
     return t === 'cash only' || t === 'credit';
+}
+
+function isCashOnlyPaymentTerm(term) {
+    return String(term || '').toLowerCase().trim() === 'cash only';
 }
 
 function computeCostFromPrice({ price, discountType, discountValue }) {
@@ -37,7 +47,7 @@ function computeCostFromPrice({ price, discountType, discountValue }) {
     return roundMoney(out < 0 ? 0 : out);
 }
 
-function deriveCostForPrice({ price, paymentTerm, discountType, discountValue, profitValue }) {
+function deriveCostForPrice({ price, paymentTerm, discountType, discountValue, profitValue, profitType }) {
     const p = Number(price);
     if (!Number.isFinite(p) || p < 0) return null;
     const rounded = roundMoney(p);
@@ -50,7 +60,14 @@ function deriveCostForPrice({ price, paymentTerm, discountType, discountValue, p
     if (isProfitPaymentTerm(paymentTerm)) {
         const pv = Number(profitValue);
         if (!Number.isFinite(pv) || pv <= 0) return rounded;
-        return roundMoney(Math.max(0, rounded - pv));
+        const pt = String(profitType || 'amount').toLowerCase();
+        const profitAmount = pt === 'percent' ? (rounded * pv / 100) : pv;
+        let cost = roundMoney(Math.max(0, rounded - profitAmount));
+        if (isCashOnlyPaymentTerm(paymentTerm) && pt === 'percent') {
+            // Cash-only with % profit must be rounded figures.
+            cost = Math.round(Number(cost || 0));
+        }
+        return cost;
     }
     return rounded;
 }
@@ -697,6 +714,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
     body('discount_type').optional().isIn(['amount', 'percent']).withMessage('Invalid discount type'),
     body('discount_value').optional().isFloat({ min: 0 }).withMessage('Discount value must be a positive number'),
     body('profit_value').optional().isFloat({ min: 0 }).withMessage('Profit value must be a positive number'),
+    body('profit_type').optional().isIn(['amount', 'percent']).withMessage('Invalid profit type'),
     body('store_id').isInt().withMessage('Store ID must be a valid integer'),
     body('stock_quantity').optional().isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer')
 ], async (req, res) => {
@@ -722,6 +740,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
         const discount_type = req.body.discount_type;
         const discount_value = req.body.discount_value;
         const profit_value = req.body.profit_value;
+        const profit_type = req.body.profit_type;
         let image_url = req.body.image_url ?? null;
 
         // Check if store exists and user has permission
@@ -757,14 +776,19 @@ router.post('/', authenticateToken, requireStaffAccess, [
         const normalizedCost = normalizeNumber(cost_price);
         const normalizedDiscount = normalizeNumber(discount_value);
         const normalizedProfit = normalizeNumber(profit_value);
+        const profitType = String(profit_type || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
         let derivedCost = null;
+        const manualCostOverride = normalizedCost.present && normalizedCost.ok;
         
         // --- LOGIC FIX START: Enforce Business Rule "Item Cost = Price - Discount" ---
         // If the store is "Credit with Discount", we MUST prioritize the discount-based cost calculation.
         // If the user did NOT provide a cost_price but provided a discount, use it.
         // If the user PROVIDED a cost_price but it conflicts with the discount logic, we should probably favor the calculated one or at least default to it if cost_price >= price (which is invalid for profit).
         
-        if (isDiscountPaymentTerm(paymentTerm)) {
+        if (normalizedCost.present && normalizedCost.ok) {
+            // Manual cost price override should take precedence.
+            derivedCost = roundMoney(normalizedCost.value);
+        } else if (isDiscountPaymentTerm(paymentTerm)) {
             if (normalizedDiscount.present && normalizedDiscount.ok && discount_type) {
                 // Case 1: Store has discount. Calculate Cost = Price - Discount.
                 derivedCost = computeCostFromPrice({ 
@@ -781,7 +805,10 @@ router.post('/', authenticateToken, requireStaffAccess, [
             }
         } else if (isProfitPaymentTerm(paymentTerm)) {
             if (normalizedProfit.present && normalizedProfit.ok) {
-                derivedCost = roundMoney(Math.max(0, normalizedEffectivePrice.value - normalizedProfit.value));
+                const profitAmount = profitType === 'percent'
+                    ? (normalizedEffectivePrice.value * normalizedProfit.value / 100)
+                    : normalizedProfit.value;
+                derivedCost = roundMoney(Math.max(0, normalizedEffectivePrice.value - profitAmount));
             } else if (normalizedCost.present && normalizedCost.ok) {
                 derivedCost = roundMoney(normalizedCost.value);
             } else {
@@ -797,6 +824,15 @@ router.post('/', authenticateToken, requireStaffAccess, [
         }
         // --- LOGIC FIX END ---
         
+        let finalPriceForInsert = roundMoney(normalizedEffectivePrice.value);
+        if (!manualCostOverride) {
+            const roundedAutoCost = roundToNearestTen(derivedCost);
+            if (roundedAutoCost !== null) derivedCost = roundedAutoCost;
+        }
+        if (isCashOnlyPaymentTerm(paymentTerm) && profitType === 'percent' && !manualCostOverride) {
+            const roundedAutoPrice = roundToNearestTen(finalPriceForInsert);
+            if (roundedAutoPrice !== null) finalPriceForInsert = roundedAutoPrice;
+        }
         if (derivedCost === null) return res.status(400).json({ success: false, message: 'Invalid price/cost input' });
 
         // Check if category exists (if provided)
@@ -844,7 +880,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
 
         const insertFields = ['name','description','cost_price','price','image_url','category_id','store_id','stock_quantity','discount_type','discount_value'];
         const insertPlaceholders = ['?','?','?','?','?','?','?','?','?','?'];
-        const insertValues = [name, description, derivedCost, roundMoney(normalizedEffectivePrice.value), image_url, category_id, store_id, stock_quantity, discount_type || null, discount_value || null];
+        const insertValues = [name, description, derivedCost, finalPriceForInsert, image_url, category_id, store_id, stock_quantity, discount_type || null, discount_value || null];
         if (!hasRequestedVariants) {
             if (unit_id) { insertFields.push('unit_id'); insertPlaceholders.push('?'); insertValues.push(unit_id); }
             if (size_id) { insertFields.push('size_id'); insertPlaceholders.push('?'); insertValues.push(size_id); }
@@ -891,11 +927,23 @@ router.post('/', authenticateToken, requireStaffAccess, [
             const variantsWithCost = [];
             for (let i = 0; i < requestedVariants.length; i++) {
                 const v = requestedVariants[i];
-                const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm, discountType: discount_type, discountValue: dv, profitValue: pv });
-                const variantCost = derivedVariantCost === null ? roundMoney(v.price) : derivedVariantCost;
-                variantsWithCost.push({ size_id: v.size_id ?? null, unit_id: v.unit_id ?? null, price: roundMoney(v.price), cost_price: variantCost });
+                const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm, discountType: discount_type, discountValue: dv, profitValue: pv, profitType });
+                let variantPrice = roundMoney(v.price);
+                const hasManualVariantCost = v.cost_price !== null && v.cost_price !== undefined && Number.isFinite(Number(v.cost_price));
+                let variantCost = hasManualVariantCost
+                    ? roundMoney(Number(v.cost_price))
+                    : (derivedVariantCost === null ? roundMoney(v.price) : derivedVariantCost);
+                if (!hasManualVariantCost) {
+                    const roundedAutoVariantCost = roundToNearestTen(variantCost);
+                    if (roundedAutoVariantCost !== null) variantCost = roundedAutoVariantCost;
+                }
+                if (isCashOnlyPaymentTerm(paymentTerm) && profitType === 'percent' && !hasManualVariantCost) {
+                    const roundedAutoVariantPrice = roundToNearestTen(variantPrice);
+                    if (roundedAutoVariantPrice !== null) variantPrice = roundedAutoVariantPrice;
+                }
+                variantsWithCost.push({ size_id: v.size_id ?? null, unit_id: v.unit_id ?? null, price: variantPrice, cost_price: variantCost });
                 placeholders.push('(?, ?, ?, ?, ?, ?)');
-                values.push(result.insertId, v.size_id ?? null, v.unit_id ?? null, v.price, variantCost, i);
+                values.push(result.insertId, v.size_id ?? null, v.unit_id ?? null, variantPrice, variantCost, i);
             }
             await req.db.execute(
                 `INSERT INTO product_size_prices (product_id, size_id, unit_id, price, cost_price, sort_order) VALUES ${placeholders.join(',')}`,
@@ -910,7 +958,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
             product: {
                 id: result.insertId,
                 name,
-                price: roundMoney(normalizedEffectivePrice.value),
+                price: finalPriceForInsert,
                 size_variants: hasRequestedVariants ? requestedVariants : [],
                 store_id
             }
@@ -934,6 +982,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
     body('discount_type').optional().isIn(['amount', 'percent']).withMessage('Invalid discount type'),
     body('discount_value').optional().isFloat({ min: 0 }).withMessage('Discount value must be a positive number'),
     body('profit_value').optional().isFloat({ min: 0 }).withMessage('Profit value must be a positive number'),
+    body('profit_type').optional().isIn(['amount', 'percent']).withMessage('Invalid profit type'),
     body('stock_quantity').optional().isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer')
 ], async (req, res) => {
     try {
@@ -983,7 +1032,9 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
         const discount_type = req.body.discount_type;
         const discount_value = req.body.discount_value;
         const profit_value = req.body.profit_value;
+        const profit_type = req.body.profit_type;
         let image_url = req.body.image_url;
+        const profitType = String(profit_type || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
 
         const variantsProvided = (req.body && (req.body.size_variants !== undefined || req.body.variants !== undefined));
         const requestedVariants = normalizeSizeVariantsInput(req.body.size_variants ?? req.body.variants);
@@ -1018,11 +1069,24 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 const placeholders = [];
                 for (let i = 0; i < requestedVariants.length; i++) {
                     const v = requestedVariants[i];
-                    const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm: product.payment_term, discountType: finalDiscountTypeForVariants, discountValue: dv, profitValue: pv });
-                    const variantCost = derivedVariantCost === null ? roundMoney(v.price) : derivedVariantCost;
+                    const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm: product.payment_term, discountType: finalDiscountTypeForVariants, discountValue: dv, profitValue: pv, profitType });
+                    let variantPrice = roundMoney(v.price);
+                    const hasManualVariantCost = v.cost_price !== null && v.cost_price !== undefined && Number.isFinite(Number(v.cost_price));
+                    let variantCost = hasManualVariantCost
+                        ? roundMoney(Number(v.cost_price))
+                        : (derivedVariantCost === null ? roundMoney(v.price) : derivedVariantCost);
+                    if (!hasManualVariantCost) {
+                        const roundedAutoVariantCost = roundToNearestTen(variantCost);
+                        if (roundedAutoVariantCost !== null) variantCost = roundedAutoVariantCost;
+                    }
+                    if (isCashOnlyPaymentTerm(product.payment_term) && profitType === 'percent' && !hasManualVariantCost) {
+                        const roundedAutoVariantPrice = roundToNearestTen(variantPrice);
+                        if (roundedAutoVariantPrice !== null) variantPrice = roundedAutoVariantPrice;
+                    }
                     placeholders.push('(?, ?, ?, ?, ?, ?)');
-                    values.push(id, v.size_id ?? null, v.unit_id ?? null, v.price, variantCost, i);
+                    values.push(id, v.size_id ?? null, v.unit_id ?? null, variantPrice, variantCost, i);
                     v.cost_price = variantCost;
+                    v.price = variantPrice;
                 }
                 await req.db.execute(
                     `INSERT INTO product_size_prices (product_id, size_id, unit_id, price, cost_price, sort_order) VALUES ${placeholders.join(',')}`,
@@ -1051,15 +1115,19 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
         // --- LOGIC FIX START: Enforce "Cost = Price - Discount" on Update ---
         
         let derivedCost = null;
+        const manualCostOverride = normalizedCost.present && normalizedCost.ok;
         let finalPrice = normalizedPrice.present && normalizedPrice.ok ? roundMoney(normalizedPrice.value) : product.price;
         let finalDiscountType = discount_type !== undefined ? discount_type : product.discount_type;
         let finalDiscountValue = normalizedDiscount.present && normalizedDiscount.ok ? normalizedDiscount.value : product.discount_value;
         
         // Always recalculate cost if Price, Discount, or Cost is touched, OR if store logic dictates it
-        if (hasDiscount) {
+        if (normalizedCost.present && normalizedCost.ok) {
+            // Manual cost price override should take precedence.
+            derivedCost = roundMoney(normalizedCost.value);
+        } else if (hasDiscount) {
             if (finalDiscountType && finalDiscountValue > 0) {
                  // Priority 1: Recalculate based on Price - Discount
-                 derivedCost = computeCostFromPrice({ 
+                derivedCost = computeCostFromPrice({ 
                     price: finalPrice, 
                     discountType: finalDiscountType, 
                     discountValue: finalDiscountValue 
@@ -1081,7 +1149,8 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 }
             }
             if (finalProfitValue !== null && Number.isFinite(finalProfitValue)) {
-                derivedCost = roundMoney(Math.max(0, finalPrice - finalProfitValue));
+                const profitAmount = profitType === 'percent' ? (finalPrice * finalProfitValue / 100) : finalProfitValue;
+                derivedCost = roundMoney(Math.max(0, finalPrice - profitAmount));
             } else if (normalizedCost.present && normalizedCost.ok) {
                 derivedCost = roundMoney(normalizedCost.value);
             } else if (normalizedPrice.present) {
@@ -1099,11 +1168,18 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
 
         if (normalizedPrice.present) {
             if (!normalizedPrice.ok) return res.status(400).json({ success: false, message: 'Invalid price' });
+            if (isCashOnlyPaymentTerm(product.payment_term) && profitType === 'percent') {
+                finalPrice = Math.round(Number(finalPrice || 0));
+            }
             updateFields.push('price = ?');
             updateValues.push(finalPrice);
         }
         
         if (derivedCost !== null) {
+            if (!manualCostOverride) {
+                const roundedAutoCost = roundToNearestTen(derivedCost);
+                if (roundedAutoCost !== null) derivedCost = roundedAutoCost;
+            }
             updateFields.push('cost_price = ?');
             updateValues.push(derivedCost);
         }

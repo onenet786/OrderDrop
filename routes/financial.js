@@ -22,6 +22,15 @@ function generateVoucherNumber(prefix, date = new Date()) {
     return `${prefix}-${dateStr}-${randomStr}`;
 }
 
+async function ensureRiderCashMovementTypes(db) {
+    try {
+        await db.execute(
+            `ALTER TABLE rider_cash_movements
+             MODIFY COLUMN movement_type ENUM('cash_collection', 'cash_submission', 'advance', 'settlement', 'adjustment', 'store_payment', 'fuel_payment') NOT NULL`
+        );
+    } catch (_) {}
+}
+
 router.use(authenticateToken);
 
 // Custom authorization for financial routes
@@ -1144,11 +1153,12 @@ async function recordRiderWalletTransaction(db, riderId, type, amount, descripti
 
 router.post('/rider-cash', [
     body('rider_id').isInt({ min: 1 }),
-    body('movement_type').isIn(['cash_collection', 'cash_submission', 'advance', 'settlement', 'adjustment']),
+    body('movement_type').isIn(['cash_collection', 'cash_submission', 'advance', 'settlement', 'adjustment', 'store_payment', 'fuel_payment']),
     body('amount').isFloat({ min: 0.01 }),
     body('description').optional().trim()
 ], async (req, res) => {
     try {
+        await ensureRiderCashMovementTypes(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -1216,6 +1226,7 @@ router.put('/rider-cash/:id', [
     body('status').optional().isIn(['pending', 'completed', 'approved', 'cancelled'])
 ], async (req, res) => {
     try {
+        await ensureRiderCashMovementTypes(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({

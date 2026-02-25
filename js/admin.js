@@ -18,6 +18,7 @@ const AppState = {
     sizes: [],
     globalDeliveryStatus: null,
     livePromotions: null,
+    notificationCustomers: [],
     productStoreTermsById: {},
     productItemCatalog: {
         loadedAt: 0,
@@ -90,6 +91,204 @@ function buildDeliveryMessageWithWindow(message, startRaw, endRaw) {
     return 'No message set.';
 }
 
+function parseCustomerIdsInput(rawValue) {
+    return String(rawValue || '')
+        .split(',')
+        .map(v => parseInt(String(v).trim(), 10))
+        .filter(n => Number.isInteger(n) && n > 0);
+}
+
+function getSelectedGlobalDeliveryCustomerIds() {
+    const sel = document.getElementById('globalDeliveryCustomerSelect');
+    if (!sel) return [];
+    return Array.from(sel.selectedOptions || [])
+        .map(opt => parseInt(String(opt.value || '').trim(), 10))
+        .filter(n => Number.isInteger(n) && n > 0);
+}
+
+async function loadGlobalDeliveryNotificationCustomers() {
+    const sel = document.getElementById('globalDeliveryCustomerSelect');
+    if (!sel) return;
+    if (AppState.notificationCustomers && AppState.notificationCustomers.length) {
+        return;
+    }
+    try {
+        sel.innerHTML = '<option value="">Loading customers...</option>';
+        const response = await fetch(`${API_BASE}/api/stores/notification-customers`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            sel.innerHTML = '<option value="">Failed to load customers</option>';
+            return;
+        }
+        const customers = Array.isArray(data.customers) ? data.customers : [];
+        AppState.notificationCustomers = customers;
+        sel.innerHTML = '';
+        customers.forEach((c) => {
+            const id = parseInt(String(c.id || '').trim(), 10);
+            if (!Number.isInteger(id) || id <= 0) return;
+            const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || `Customer ${id}`;
+            const email = String(c.email || '').trim();
+            const phone = String(c.phone || '').trim();
+            const extra = [email, phone].filter(Boolean).join(' | ');
+            const label = extra ? `${name} (#${id}) - ${extra}` : `${name} (#${id})`;
+            const opt = document.createElement('option');
+            opt.value = String(id);
+            opt.textContent = label;
+            sel.appendChild(opt);
+        });
+        if (!customers.length) {
+            sel.innerHTML = '<option value="">No active customers found</option>';
+        }
+    } catch (error) {
+        console.error('Error loading notification customers:', error);
+        sel.innerHTML = '<option value="">Failed to load customers</option>';
+    }
+}
+
+function populateCustomerSelect(selectId) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const customers = Array.isArray(AppState.notificationCustomers) ? AppState.notificationCustomers : [];
+    sel.innerHTML = '';
+    customers.forEach((c) => {
+        const id = parseInt(String(c.id || '').trim(), 10);
+        if (!Number.isInteger(id) || id <= 0) return;
+        const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || `Customer ${id}`;
+        const email = String(c.email || '').trim();
+        const phone = String(c.phone || '').trim();
+        const extra = [email, phone].filter(Boolean).join(' | ');
+        const label = extra ? `${name} (#${id}) - ${extra}` : `${name} (#${id})`;
+        const opt = document.createElement('option');
+        opt.value = String(id);
+        opt.textContent = label;
+        sel.appendChild(opt);
+    });
+    if (!customers.length) {
+        sel.innerHTML = '<option value="">No active customers found</option>';
+    }
+}
+
+function getSelectedCustomerIdsBySelectId(selectId) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return [];
+    return Array.from(sel.selectedOptions || [])
+        .map(opt => parseInt(String(opt.value || '').trim(), 10))
+        .filter(n => Number.isInteger(n) && n > 0);
+}
+
+async function loadNotificationCustomersIfNeeded() {
+    if (AppState.notificationCustomers && AppState.notificationCustomers.length) {
+        return;
+    }
+    const response = await fetch(`${API_BASE}/api/stores/notification-customers`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await response.json();
+    if (response.ok && data.success && Array.isArray(data.customers)) {
+        AppState.notificationCustomers = data.customers;
+    }
+}
+
+function updateGlobalDeliveryPushControls() {
+    const targetEl = document.getElementById('globalDeliveryNotificationTarget');
+    const customerWrap = document.getElementById('globalDeliveryCustomerSelectWrap');
+    const sendPushEl = document.getElementById('globalDeliverySendPush');
+    const pushTitleWrap = document.getElementById('globalDeliveryPushTitle')?.closest('.form-group');
+    const pushMessageWrap = document.getElementById('globalDeliveryPushMessage')?.closest('.form-group');
+    const customTarget = (targetEl?.value || 'all') === 'custom';
+    const sendPush = !!sendPushEl?.checked;
+    if (customerWrap) customerWrap.style.display = customTarget ? '' : 'none';
+    if (pushTitleWrap) pushTitleWrap.style.display = sendPush ? '' : 'none';
+    if (pushMessageWrap) pushMessageWrap.style.display = sendPush ? '' : 'none';
+    if (customTarget) {
+        loadGlobalDeliveryNotificationCustomers().then(() => {
+            populateCustomerSelect('globalDeliveryCustomerSelect');
+        });
+    }
+}
+
+function updateBroadcastPushControls() {
+    const targetEl = document.getElementById('broadcastPushTarget');
+    const customerWrap = document.getElementById('broadcastPushCustomerWrap');
+    const customTarget = (targetEl?.value || 'all') === 'custom';
+    if (customerWrap) customerWrap.style.display = customTarget ? '' : 'none';
+    if (customTarget) {
+        loadNotificationCustomersIfNeeded().then(() => {
+            populateCustomerSelect('broadcastPushCustomerSelect');
+        }).catch((e) => console.error('Error loading customers for broadcast push:', e));
+    }
+}
+
+async function sendBroadcastPushNotification() {
+    const sendBtn = document.getElementById('sendBroadcastPushBtn');
+    const title = (document.getElementById('broadcastPushTitle')?.value || '').trim();
+    const message = (document.getElementById('broadcastPushMessage')?.value || '').trim();
+    const category = (document.getElementById('broadcastPushCategory')?.value || 'general').trim() || 'general';
+    const target = (document.getElementById('broadcastPushTarget')?.value || 'all') === 'custom' ? 'custom' : 'all';
+    const customerIds = getSelectedCustomerIdsBySelectId('broadcastPushCustomerSelect');
+
+    if (!title.length) {
+        showWarning('Missing Title', 'Please enter push title.');
+        return;
+    }
+    if (!message.length) {
+        showWarning('Missing Message', 'Please enter push message.');
+        return;
+    }
+    if (target === 'custom' && !customerIds.length) {
+        showWarning('Missing Customers', 'Please select at least one customer.');
+        return;
+    }
+
+    const payload = {
+        title,
+        message,
+        category,
+        notification_target: target,
+        customer_ids: target === 'custom' ? customerIds : []
+    };
+
+    try {
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+        }
+        const response = await fetch(`${API_BASE}/api/stores/customer-push-notification`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            showError('Send Failed', data.message || 'Failed to send push notification');
+            return;
+        }
+        showSuccess('Sent', `Push notification sent to ${data.push_notification?.pushed_count || 0} customers.`);
+        const titleEl = document.getElementById('broadcastPushTitle');
+        const msgEl = document.getElementById('broadcastPushMessage');
+        const targetEl = document.getElementById('broadcastPushTarget');
+        const selEl = document.getElementById('broadcastPushCustomerSelect');
+        if (titleEl) titleEl.value = '';
+        if (msgEl) msgEl.value = '';
+        if (targetEl) targetEl.value = 'all';
+        if (selEl) Array.from(selEl.options || []).forEach((o) => { o.selected = false; });
+        updateBroadcastPushControls();
+    } catch (error) {
+        console.error('Error sending broadcast push notification:', error);
+        showError('Send Failed', 'Failed to send push notification');
+    } finally {
+        if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Push Notification';
+        }
+    }
+}
+
 function renderGlobalDeliveryPreview() {
     const preview = document.getElementById('globalDeliveryPreview');
     const enabledEl = document.getElementById('globalDeliveryEnabled');
@@ -142,6 +341,19 @@ async function loadGlobalDeliveryStatus() {
         document.getElementById('globalDeliveryBlockOrdering').checked = !!s.block_ordering;
         document.getElementById('globalDeliveryStartAt').value = toDateTimeLocalValue(s.start_at) || nowDateTimeLocalValue();
         document.getElementById('globalDeliveryEndAt').value = toDateTimeLocalValue(s.end_at) || nowDateTimeLocalValue();
+        const targetEl = document.getElementById('globalDeliveryNotificationTarget');
+        const customerIdsEl = document.getElementById('globalDeliveryCustomerIds');
+        const customerSelectEl = document.getElementById('globalDeliveryCustomerSelect');
+        const sendPushEl = document.getElementById('globalDeliverySendPush');
+        const pushTitleEl = document.getElementById('globalDeliveryPushTitle');
+        const pushMessageEl = document.getElementById('globalDeliveryPushMessage');
+        if (targetEl) targetEl.value = 'all';
+        if (customerIdsEl) customerIdsEl.value = '';
+        if (customerSelectEl) Array.from(customerSelectEl.options || []).forEach((o) => { o.selected = false; });
+        if (sendPushEl) sendPushEl.checked = false;
+        if (pushTitleEl) pushTitleEl.value = s.title || '';
+        if (pushMessageEl) pushMessageEl.value = s.status_message || '';
+        updateGlobalDeliveryPushControls();
         renderGlobalDeliveryPreview();
         return s;
     } catch (error) {
@@ -168,11 +380,24 @@ async function saveGlobalDeliveryStatus() {
         title: titleEl.value.trim(),
         status_message: messageEl.value.trim(),
         start_at: startEl.value || null,
-        end_at: endEl.value || null
+        end_at: endEl.value || null,
+        send_push_notification: !!document.getElementById('globalDeliverySendPush')?.checked,
+        notification_target: (document.getElementById('globalDeliveryNotificationTarget')?.value || 'all') === 'custom' ? 'custom' : 'all',
+        customer_ids: (() => {
+            const selected = getSelectedGlobalDeliveryCustomerIds();
+            if (selected.length) return selected;
+            return parseCustomerIdsInput(document.getElementById('globalDeliveryCustomerIds')?.value || '');
+        })(),
+        push_title: (document.getElementById('globalDeliveryPushTitle')?.value || '').trim(),
+        push_message: (document.getElementById('globalDeliveryPushMessage')?.value || '').trim()
     };
 
     if (payload.is_enabled && (!payload.start_at || !payload.end_at)) {
         showWarning('Missing Time Window', 'Please set both "from" and "to" time.');
+        return;
+    }
+    if (payload.send_push_notification && payload.notification_target === 'custom' && !payload.customer_ids.length) {
+        showWarning('Missing Customers', 'Select custom customer IDs or switch push target to all customers.');
         return;
     }
 
@@ -867,6 +1092,25 @@ function initializeAdmin() {
                 el.dataset.boundPreview = '1';
             }
         });
+    ['globalDeliveryNotificationTarget', 'globalDeliverySendPush'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.boundPushCtrl) {
+            el.addEventListener('change', updateGlobalDeliveryPushControls);
+            el.dataset.boundPushCtrl = '1';
+        }
+    });
+    const broadcastTargetEl = document.getElementById('broadcastPushTarget');
+    if (broadcastTargetEl && !broadcastTargetEl.dataset.boundBroadcastPushCtrl) {
+        broadcastTargetEl.addEventListener('change', updateBroadcastPushControls);
+        broadcastTargetEl.dataset.boundBroadcastPushCtrl = '1';
+    }
+    const sendBroadcastPushBtn = document.getElementById('sendBroadcastPushBtn');
+    if (sendBroadcastPushBtn && !sendBroadcastPushBtn.dataset.boundClick) {
+        sendBroadcastPushBtn.addEventListener('click', sendBroadcastPushNotification);
+        sendBroadcastPushBtn.dataset.boundClick = '1';
+    }
+    updateGlobalDeliveryPushControls();
+    updateBroadcastPushControls();
     bindLivePromotionControls();
     document.getElementById('runDiagnosticsBtn')?.addEventListener('click', () => runAllDiagnostics());
     document.getElementById('runSingleDiagnosticBtn')?.addEventListener('click', () => runSingleDiagnostic());
@@ -2546,14 +2790,14 @@ function showAddAccountModal() {
 
     // Populate store select if empty (preload it)
     if (storeSelect.options.length <= 1) {
-        populateStoreDropdown(storeSelect);
+        populateStoreDropdown(storeSelect, '');
     }
 
     // Attach listener for type change
     userTypeSelect.onchange = function() {
         if (this.value === 'store_owner') {
             storeGroup.style.display = 'block';
-            if (storeSelect.options.length <= 1) populateStoreDropdown(storeSelect);
+            if (storeSelect.options.length <= 1) populateStoreDropdown(storeSelect, storeSelect.value || '');
         } else {
             storeGroup.style.display = 'none';
         }
@@ -2593,19 +2837,13 @@ function editAccount(accountId) {
     const storeGroup = document.getElementById('editAccountStoreGroup');
     const storeSelect = document.getElementById('editAccountStore');
     
-    // Populate store select if empty
-    if (storeSelect.options.length <= 1) {
-        populateStoreDropdown(storeSelect);
-    }
+    const selectedStoreId = account.store_id ? String(account.store_id) : '';
+    populateStoreDropdown(storeSelect, selectedStoreId);
 
     if (account.user_type === 'store_owner') {
         storeGroup.style.display = 'block';
         // Set selected store if available
-        if (account.store_id) {
-            storeSelect.value = account.store_id;
-        } else {
-            storeSelect.value = "";
-        }
+        storeSelect.value = selectedStoreId || '';
     } else {
         storeGroup.style.display = 'none';
         storeSelect.value = "";
@@ -2615,7 +2853,7 @@ function editAccount(accountId) {
     document.getElementById('editAccountType').onchange = function() {
         if (this.value === 'store_owner') {
             storeGroup.style.display = 'block';
-            if (storeSelect.options.length <= 1) populateStoreDropdown(storeSelect);
+            populateStoreDropdown(storeSelect, storeSelect.value || selectedStoreId || '');
         } else {
             storeGroup.style.display = 'none';
         }
@@ -2625,31 +2863,32 @@ function editAccount(accountId) {
     showModal('editAccountModal');
 }
 
-function populateStoreDropdown(selectElement) {
-    if (AppState.stores && AppState.stores.length > 0) {
+function populateStoreDropdown(selectElement, selectedStoreId = '') {
+    const applyOptions = (stores) => {
         selectElement.innerHTML = '<option value="">Select Store...</option>';
-        AppState.stores.forEach(store => {
+        (stores || []).forEach(store => {
             const option = document.createElement('option');
             option.value = store.id;
             option.textContent = store.name;
             selectElement.appendChild(option);
         });
+        if (selectedStoreId !== undefined && selectedStoreId !== null && String(selectedStoreId).trim() !== '') {
+            selectElement.value = String(selectedStoreId);
+        }
+    };
+
+    if (AppState.stores && AppState.stores.length > 0) {
+        applyOptions(AppState.stores);
     } else {
         // Fallback fetch if AppState.stores not ready
-        fetch(`${API_BASE}/api/stores`, {
+        fetch(`${API_BASE}/api/stores?admin=1`, {
              headers: { 'Authorization': `Bearer ${authToken}` }
         })
         .then(res => res.json())
         .then(data => {
              if (data.success && data.stores) {
                  AppState.stores = data.stores;
-                 selectElement.innerHTML = '<option value="">Select Store...</option>';
-                 data.stores.forEach(store => {
-                    const option = document.createElement('option');
-                    option.value = store.id;
-                    option.textContent = store.name;
-                    selectElement.appendChild(option);
-                 });
+                 applyOptions(data.stores);
              }
         });
     }
@@ -2657,16 +2896,16 @@ function populateStoreDropdown(selectElement) {
 
 function saveAccount() {
     const accountId = document.getElementById('editAccountId').value;
-    const firstName = document.getElementById('editAccountFirstName').value;
-    const lastName = document.getElementById('editAccountLastName').value;
-    const email = document.getElementById('editAccountEmail').value;
-    const phone = document.getElementById('editAccountPhone').value;
+    const firstName = String(document.getElementById('editAccountFirstName').value || '').trim();
+    const lastName = String(document.getElementById('editAccountLastName').value || '').trim();
+    const email = String(document.getElementById('editAccountEmail').value || '').trim();
+    const phone = String(document.getElementById('editAccountPhone').value || '').trim();
     const userType = document.getElementById('editAccountType').value;
     const isActive = document.getElementById('editAccountStatus').value === '1';
     const isVerified = document.getElementById('editAccountVerified').value === '1';
-    const address = document.getElementById('editAccountAddress').value;
-    const password = document.getElementById('editAccountPassword').value;
-    const storeId = document.getElementById('editAccountStore').value;
+    const address = String(document.getElementById('editAccountAddress').value || '').trim();
+    const password = String(document.getElementById('editAccountPassword').value || '').trim();
+    const storeId = String(document.getElementById('editAccountStore').value || '').trim();
 
     if (!firstName || !lastName || !email || !userType) {
         showWarning('Validation Error', 'Please fill in all required fields');
@@ -2677,16 +2916,16 @@ function saveAccount() {
         firstName,
         lastName,
         email,
-        phone,
         user_type: userType,
         is_active: isActive,
-        is_verified: isVerified,
-        address
+        is_verified: isVerified
     };
 
-    if (userType === 'store_owner' && storeId) {
-        payload.store_id = storeId;
-    }
+    if (phone) payload.phone = phone;
+    if (address) payload.address = address;
+
+    if (userType === 'store_owner' && storeId) payload.store_id = Number(storeId);
+    if (userType !== 'store_owner' && accountId) payload.store_id = null;
 
     if (password) {
         payload.password = password;
@@ -2711,7 +2950,10 @@ function saveAccount() {
             const message = accountId ? 'Account updated successfully' : 'Account created successfully';
             showSuccess('Success', message);
         } else {
-            showError('Error', data.message || 'Failed to save account');
+            const errorText = Array.isArray(data.errors) && data.errors.length
+                ? data.errors.map(e => e.msg || e.message || JSON.stringify(e)).join(', ')
+                : (data.message || 'Failed to save account');
+            showError('Error', errorText);
         }
     })
     .catch(error => {
@@ -3474,11 +3716,16 @@ async function viewOrderDetails(orderId) {
         `;
 
         order.store_wise_items.forEach(store => {
+            const paymentTerm = store.payment_term ? escapeHtml(String(store.payment_term)) : 'N/A';
+            const graceDays = Number.isFinite(Number(store.payment_grace_days)) && Number(store.payment_grace_days) > 0
+                ? ` (${Number(store.payment_grace_days)} days grace)`
+                : '';
             html += `
                 <div class="store-order-block" style="margin-bottom: 20px; border: 1px solid #eee; padding: 15px; border-radius: 8px;">
                     <h5 style="margin-top: 0; color: #2563eb; border-bottom: 2px solid var(--border-color); padding-bottom: 5px;">
                                 <i class="fas fa-store"></i> ${store.store_name}
                             </h5>
+                    <p style="margin: 0 0 10px; color: #475569;"><strong>Payment Term:</strong> ${paymentTerm}${graceDays}</p>
                     <table class="items-details-table" style="width: 100%; border-collapse: collapse;">
                         <thead>
                             <tr style="text-align: left; border-bottom: 1px solid #eee;">
@@ -4617,6 +4864,12 @@ async function saveStore() {
         opening_time: formData.get('opening_time') || null,
         closing_time: formData.get('closing_time') || null,
         payment_term: formData.get('payment_term') || null,
+        payment_grace_days: (() => {
+            const raw = String(formData.get('payment_grace_days') || '').trim();
+            if (!raw.length) return null;
+            const n = parseInt(raw, 10);
+            return Number.isInteger(n) && n >= 0 ? n : null;
+        })(),
         address: formData.get('address'),
         status: formData.get('status') || 'active',
         category_id: formData.get('category_id') || null,
@@ -4733,6 +4986,7 @@ async function editStore(storeId) {
         if (s.opening_time) form.querySelector('#storeOpeningTime').value = s.opening_time;
         if (s.closing_time) form.querySelector('#storeClosingTime').value = s.closing_time;
         if (form.querySelector('#storePaymentTerm')) form.querySelector('#storePaymentTerm').value = s.payment_term || '';
+        if (form.querySelector('#storeGraceDays')) form.querySelector('#storeGraceDays').value = (s.payment_grace_days ?? '') === null ? '' : (s.payment_grace_days ?? '');
         form.querySelector('#storeDescription').value = s.description || '';
         form.querySelector('#storeAddress').value = s.address || '';
         const modal = document.getElementById('addStoreModal');
@@ -4790,6 +5044,35 @@ function isProfitPaymentTerm(term) {
     return t === 'cash only' || t === 'credit';
 }
 
+function isCashOnlyPaymentTerm(term) {
+    return String(term || '').toLowerCase().trim() === 'cash only';
+}
+
+function roundToNearest10(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n / 10) * 10;
+}
+
+function isManualCostMode() {
+    return !!document.getElementById('productManualCost')?.checked;
+}
+
+function isManualVariantCostMode() {
+    return !!document.getElementById('productManualVariantCost')?.checked;
+}
+
+function updateVariantCostInputsReadonly() {
+    const tbody = document.getElementById('productSizePricesBody');
+    if (!tbody) return;
+    const manual = isManualVariantCostMode();
+    const costInputs = Array.from(tbody.querySelectorAll('input[data-role="variant-cost"]'));
+    costInputs.forEach((input) => {
+        input.readOnly = !manual;
+        input.style.backgroundColor = manual ? '#ffffff' : '#f1f5f9';
+    });
+}
+
 function recalcProductCost() {
     const priceEl = document.getElementById('productPrice');
     const costEl = document.getElementById('productCostPrice');
@@ -4798,6 +5081,7 @@ function recalcProductCost() {
     const discountTypeEl = document.getElementById('productDiscountType');
     const discountValueEl = document.getElementById('productDiscountValue');
     const profitRow = document.getElementById('productProfitRow');
+    const profitTypeEl = document.getElementById('productProfitType');
     const profitValueEl = document.getElementById('productProfitValue');
     if (!priceEl || !costEl || !storeEl) return;
 
@@ -4813,6 +5097,14 @@ function recalcProductCost() {
         return;
     }
 
+    if (isManualCostMode()) {
+        if (costEl) {
+            costEl.readOnly = false;
+            costEl.style.backgroundColor = '#ffffff';
+        }
+        return;
+    }
+
     let cost = price;
     if (hasDiscount) {
         const dtype = String(discountTypeEl?.value || 'amount');
@@ -4824,10 +5116,12 @@ function recalcProductCost() {
         }
         if (profitValueEl) profitValueEl.value = '';
     } else if (hasProfit) {
+        const pType = String(profitTypeEl?.value || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
         const rawP = String(profitValueEl?.value || '').trim();
         const pval = rawP.length ? parseFloat(rawP) : NaN;
         if (Number.isFinite(pval) && pval > 0) {
-            cost = price - pval;
+            const profitAmount = pType === 'percent' ? (price * pval / 100) : pval;
+            cost = price - profitAmount;
         }
         if (discountValueEl) discountValueEl.value = '';
         if (discountTypeEl) discountTypeEl.value = 'amount';
@@ -4838,7 +5132,12 @@ function recalcProductCost() {
     }
 
     if (!Number.isFinite(cost) || cost < 0) cost = 0;
+    cost = roundToNearest10(cost);
+    if (isCashOnlyPaymentTerm(term) && String(profitTypeEl?.value || 'amount').toLowerCase() === 'percent') {
+        priceEl.value = String(roundToNearest10(price));
+    }
     costEl.readOnly = true;
+    costEl.style.backgroundColor = '#f1f5f9';
     costEl.value = (Math.round(cost * 100) / 100).toFixed(2);
     try { recalcVariantCosts(); } catch (e) {}
 }
@@ -4847,6 +5146,7 @@ function computeCostForPrice(price) {
     const storeEl = document.getElementById('productStore');
     const discountTypeEl = document.getElementById('productDiscountType');
     const discountValueEl = document.getElementById('productDiscountValue');
+    const profitTypeEl = document.getElementById('productProfitType');
     const profitValueEl = document.getElementById('productProfitValue');
     const term = AppState.productStoreTermsById[String(storeEl?.value || '')] || '';
     const hasDiscount = isDiscountPaymentTerm(term);
@@ -4863,17 +5163,21 @@ function computeCostForPrice(price) {
             cost = cost - disc;
         }
     } else if (hasProfit) {
+        const pType = String(profitTypeEl?.value || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
         const rawP = String(profitValueEl?.value || '').trim();
         const pval = rawP.length ? parseFloat(rawP) : NaN;
         if (Number.isFinite(pval) && pval > 0) {
-            cost = cost - pval;
+            const profitAmount = pType === 'percent' ? (cost * pval / 100) : pval;
+            cost = cost - profitAmount;
         }
     }
     if (!Number.isFinite(cost) || cost < 0) cost = 0;
+    cost = roundToNearest10(cost);
     return Math.round(cost * 100) / 100;
 }
 
 function recalcVariantCosts() {
+    if (isManualCostMode() || isManualVariantCostMode()) return;
     const cb = document.getElementById('productHasSizePrices');
     if (!cb || !cb.checked) return;
     const tbody = document.getElementById('productSizePricesBody');
@@ -4897,12 +5201,22 @@ function bindProductPriceCalc() {
     const formEl = document.getElementById('addProductForm');
     if (!formEl || formEl.dataset.boundPriceCalc) return;
     formEl.dataset.boundPriceCalc = '1';
-    ['productStore', 'productPrice', 'productDiscountType', 'productDiscountValue', 'productProfitValue'].forEach(id => {
+    ['productStore', 'productPrice', 'productDiscountType', 'productDiscountValue', 'productProfitType', 'productProfitValue', 'productManualCost', 'productManualVariantCost'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('change', recalcProductCost);
         el.addEventListener('input', recalcProductCost);
     });
+    const variantManualEl = document.getElementById('productManualVariantCost');
+    if (variantManualEl && !variantManualEl.dataset.boundVariantManual) {
+        variantManualEl.addEventListener('change', () => {
+            updateVariantCostInputsReadonly();
+            if (!isManualVariantCostMode()) {
+                try { recalcVariantCosts(); } catch (e) {}
+            }
+        });
+        variantManualEl.dataset.boundVariantManual = '1';
+    }
 }
 
 function getProductMeasureMode() {
@@ -5043,7 +5357,10 @@ function setProductSizePricesEnabled(enabled) {
     if (single) single.style.display = '';
     if (singleSelectors) singleSelectors.style.display = enabled ? 'none' : '';
     if (!enabled && tbody) tbody.innerHTML = '';
+    const manualVariantEl = document.getElementById('productManualVariantCost');
+    if (!enabled && manualVariantEl) manualVariantEl.checked = false;
     try { applyProductMeasureMode(getProductMeasureMode()); } catch (e) {}
+    updateVariantCostInputsReadonly();
     syncProductPriceFromSizePrices();
 }
 
@@ -5087,9 +5404,10 @@ function addProductSizePriceRow(prefill) {
     costInput.type = 'number';
     costInput.min = '0';
     costInput.step = '0.01';
-    costInput.readOnly = true;
+    costInput.readOnly = !isManualVariantCostMode();
     costInput.setAttribute('data-role', 'variant-cost');
     costInput.style.width = '130px';
+    costInput.style.backgroundColor = isManualVariantCostMode() ? '#ffffff' : '#f1f5f9';
     costInput.value = (prefill && prefill.cost_price !== undefined && prefill.cost_price !== null) ? String(prefill.cost_price) : '';
 
     const removeBtn = document.createElement('button');
@@ -5115,6 +5433,7 @@ function addProductSizePriceRow(prefill) {
     actions.appendChild(removeBtn);
     actionTd.appendChild(actions);
     tbody.appendChild(tr);
+    updateVariantCostInputsReadonly();
     syncProductPriceFromSizePrices();
 }
 
@@ -5395,11 +5714,18 @@ async function showAddProductModal() {
             if (priceEl) priceEl.value = '';
             const discountTypeEl = document.getElementById('productDiscountType');
             const discountValueEl = document.getElementById('productDiscountValue');
+            const profitTypeEl = document.getElementById('productProfitType');
             const profitValueEl = document.getElementById('productProfitValue');
+            const manualCostEl = document.getElementById('productManualCost');
+            const manualVariantCostEl = document.getElementById('productManualVariantCost');
             if (discountTypeEl) discountTypeEl.value = 'amount';
+            if (profitTypeEl) profitTypeEl.value = 'amount';
             if (discountValueEl) discountValueEl.value = '';
             if (profitValueEl) profitValueEl.value = '';
+            if (manualCostEl) manualCostEl.checked = false;
+            if (manualVariantCostEl) manualVariantCostEl.checked = false;
             recalcProductCost();
+            updateVariantCostInputsReadonly();
         } catch (e) {}
         showModal('addProductModal');
         const fileInput = document.getElementById('productImageFile');
@@ -5467,7 +5793,9 @@ async function saveProduct() {
         const priceEl = document.getElementById('productPrice');
         if (priceEl && useSizePrices) priceEl.value = String(effectivePriceVal);
     } catch (e) {}
-    try { recalcProductCost(); } catch (e) {}
+    if (!isManualCostMode()) {
+        try { recalcProductCost(); } catch (e) {}
+    }
     const finalCostVal = parseFloat(String(document.getElementById('productCostPrice')?.value || '').trim());
     if (!Number.isFinite(finalCostVal) || finalCostVal < 0) {
         showError('Invalid Input', 'Unable to calculate a valid cost price');
@@ -5495,6 +5823,7 @@ async function saveProduct() {
         else if (productData.size_id) productData.unit_id = null;
     }
     productData.cost_price = finalCostVal;
+    productData.manual_cost_override = isManualCostMode();
     const storeTerm = AppState.productStoreTermsById[String(storeId)] || '';
     const hasDiscountTerm = isDiscountPaymentTerm(storeTerm);
     const hasProfitTerm = isProfitPaymentTerm(storeTerm);
@@ -5506,7 +5835,12 @@ async function saveProduct() {
         if (discountValueRaw.length) productData.discount_value = parseFloat(discountValueRaw);
     }
     if (hasProfitTerm && profitValueRaw.length) {
+        productData.profit_type = String(formData.get('profit_type') || 'amount').trim().toLowerCase() === 'percent' ? 'percent' : 'amount';
         productData.profit_value = parseFloat(profitValueRaw);
+    }
+    if (isManualCostMode() && Number.isFinite(finalCostVal) && Number.isFinite(effectivePriceVal) && finalCostVal > effectivePriceVal) {
+        const proceed = confirm('Cost Price is greater than Sale Price. This can create negative margin in financial reports. Do you want to continue?');
+        if (!proceed) return;
     }
 
     // If a file was selected, upload it first to server to get back a public URL and variants
@@ -5716,6 +6050,8 @@ async function editProduct(productId) {
         }
         form.querySelector('#productName').value = p.name || '';
         if (form.querySelector('#productCostPrice')) form.querySelector('#productCostPrice').value = (p.cost_price !== undefined && p.cost_price !== null) ? p.cost_price : '';
+        const manualCostEl = document.getElementById('productManualCost');
+        if (manualCostEl) manualCostEl.checked = false;
         form.querySelector('#productPrice').value = p.price || '';
         form.querySelector('#productDescription').value = p.description || '';
         form.querySelector('#productStock').value = p.stock_quantity || 0;
@@ -5732,9 +6068,12 @@ async function editProduct(productId) {
             const shouldUseVariants = hasVariants && (!p.size_id || p.size_variants.length > 1);
             if (shouldUseVariants) {
                 setProductSizePricesEnabled(true);
+                const manualVariantCostEl = document.getElementById('productManualVariantCost');
+                if (manualVariantCostEl) manualVariantCostEl.checked = true;
                 const tbody = document.getElementById('productSizePricesBody');
                 if (tbody) tbody.innerHTML = '';
-                (p.size_variants || []).forEach(v => addProductSizePriceRow({ size_id: v.size_id, unit_id: v.unit_id, price: v.price }));
+                (p.size_variants || []).forEach(v => addProductSizePriceRow({ size_id: v.size_id, unit_id: v.unit_id, price: v.price, cost_price: v.cost_price }));
+                updateVariantCostInputsReadonly();
             } else {
                 setProductSizePricesEnabled(false);
             }
@@ -5760,15 +6099,28 @@ async function editProduct(productId) {
             const costNum = parseFloat(String(p.cost_price ?? '').trim());
             const discountTypeEl = document.getElementById('productDiscountType');
             const discountValueEl = document.getElementById('productDiscountValue');
+            const profitTypeEl = document.getElementById('productProfitType');
             const profitValueEl = document.getElementById('productProfitValue');
+            const selectedProfitType = (String(p.profit_type || '').toLowerCase() === 'percent') ? 'percent' : 'amount';
+            if (profitTypeEl) profitTypeEl.value = selectedProfitType;
             if (discountTypeEl) discountTypeEl.value = 'amount';
             if (discountValueEl) discountValueEl.value = '';
             if (Number.isFinite(priceNum) && Number.isFinite(costNum)) {
                 const profit = Math.max(0, Math.round((priceNum - costNum) * 100) / 100);
-                if (profitValueEl) profitValueEl.value = profit > 0 ? profit.toFixed(2) : '';
+                if (profitValueEl) {
+                    if (selectedProfitType === 'percent' && priceNum > 0) {
+                        const pct = Math.max(0, Math.round((profit / priceNum) * 10000) / 100);
+                        profitValueEl.value = pct > 0 ? pct.toFixed(2) : '';
+                    } else {
+                        profitValueEl.value = profit > 0 ? profit.toFixed(2) : '';
+                    }
+                }
             } else if (profitValueEl) {
                 profitValueEl.value = '';
             }
+        } else {
+            const profitTypeEl = document.getElementById('productProfitType');
+            if (profitTypeEl) profitTypeEl.value = 'amount';
         }
         try { recalcProductCost(); } catch (e) {}
         if (itemSelect) {

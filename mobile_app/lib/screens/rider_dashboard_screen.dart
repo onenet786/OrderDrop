@@ -394,6 +394,127 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     }
   }
 
+  String _dateOnly(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  String _fmtDateTime(dynamic raw) {
+    if (raw == null) return '-';
+    final dt = DateTime.tryParse(raw.toString());
+    if (dt == null) return raw.toString();
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm';
+  }
+
+  Future<void> _openRiderFinancialHistory() async {
+    final token = Provider.of<AuthProvider>(context, listen: false).token;
+    if (token == null) return;
+    final now = DateTime.now();
+    final initial = DateTimeRange(
+      start: now.subtract(const Duration(days: 6)),
+      end: now,
+    );
+    final selected = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year + 1),
+      initialDateRange: initial,
+      helpText: 'Rider Financial History',
+    );
+    if (selected == null || !mounted) return;
+
+    try {
+      final data = await ApiService.getRiderFinancialHistory(
+        token,
+        from: _dateOnly(selected.start),
+        to: _dateOnly(selected.end),
+      );
+      if (!mounted) return;
+      final summary = (data['summary'] as Map<String, dynamic>?) ?? {};
+      final movements = (data['movements'] as List?) ?? const [];
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (ctx) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                children: [
+                  const Text(
+                    'Financial History',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${_dateOnly(selected.start)} to ${_dateOnly(selected.end)}',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _summaryChip('Wallet', summary['wallet_balance']),
+                      _summaryChip('Cash', summary['cash_collection']),
+                      _summaryChip('Advance', summary['office_advance']),
+                      _summaryChip('Store Paid', summary['store_payment']),
+                      _summaryChip('Fuel', summary['fuel_payment']),
+                      _summaryChip('Delivery Fee', summary['delivery_fee_earned']),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: movements.isEmpty
+                        ? const Center(child: Text('No financial movements found'))
+                        : ListView.separated(
+                            itemCount: movements.length,
+                            separatorBuilder: (_, _) => const Divider(height: 1),
+                            itemBuilder: (_, i) {
+                              final m = (movements[i] as Map?)?.cast<String, dynamic>() ?? {};
+                              final amount = _parseDouble(m['amount']).toStringAsFixed(2);
+                              return ListTile(
+                                dense: true,
+                                title: Text((m['movement_type'] ?? '-').toString().replaceAll('_', ' ')),
+                                subtitle: Text(_fmtDateTime(m['movement_date'])),
+                                trailing: Text('PKR $amount'),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load financial history: $e')),
+      );
+    }
+  }
+
+  Widget _summaryChip(String label, dynamic amountRaw) {
+    final amount = _parseDouble(amountRaw).toStringAsFixed(2);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Color(0xFFFFF3E0),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text('$label: PKR $amount', style: const TextStyle(fontSize: 12)),
+    );
+  }
+
   Future<void> _refreshLocation() async {
     setState(() => _currentLocation = 'Updating...');
     await _getCurrentLocation();
@@ -782,6 +903,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             onTap: () {
               Navigator.of(context).pop();
               _switchToTab(2);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.query_stats),
+            title: const Text('Financial History'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _openRiderFinancialHistory();
             },
           ),
           ListTile(

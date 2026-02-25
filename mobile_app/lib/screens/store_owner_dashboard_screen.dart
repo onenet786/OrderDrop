@@ -201,6 +201,287 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     }
   }
 
+  String _dateOnly(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  String _fmtDateTime(dynamic raw) {
+    if (raw == null) return '-';
+    final dt = DateTime.tryParse(raw.toString());
+    if (dt == null) return raw.toString();
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm';
+  }
+
+  double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
+
+  Future<void> _openStoreFinancialHistory() async {
+    final token = Provider.of<AuthProvider>(context, listen: false).token;
+    if (token == null) return;
+    final now = DateTime.now();
+    final fromDate = await showDatePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: DateTime(now.year + 1),
+      initialDate: now.subtract(const Duration(days: 6)),
+      helpText: 'Select Start Date',
+    );
+    if (fromDate == null || !mounted) return;
+
+    final toDate = await showDatePicker(
+      context: context,
+      firstDate: fromDate,
+      lastDate: DateTime(now.year + 1),
+      initialDate: now.isAfter(fromDate) ? now : fromDate,
+      helpText: 'Select End Date',
+    );
+    if (toDate == null || !mounted) return;
+    try {
+      final data = await ApiService.getStoreOwnerFinancialHistory(
+        token,
+        from: _dateOnly(fromDate),
+        to: _dateOnly(toDate),
+      );
+      if (!mounted) return;
+      final summary = (data['summary'] as Map<String, dynamic>?) ?? {};
+      final entries = (data['entries'] as List?) ?? const [];
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) {
+          final fromText = _dateOnly(fromDate);
+          final toText = _dateOnly(toDate);
+
+          Color statusColor(String status) {
+            final s = status.toLowerCase();
+            if (s == 'delivered' || s == 'paid') return Colors.green;
+            if (s == 'cancelled') return Colors.red;
+            if (s == 'picked_up' || s == 'out_for_delivery') return Colors.blue;
+            if (s == 'ready' || s == 'preparing') return Colors.orange;
+            return Colors.grey;
+          }
+
+          Widget summaryTile({
+            required String label,
+            required dynamic value,
+            required IconData icon,
+            required Color color,
+          }) {
+            final amount = _toDouble(value).toStringAsFixed(2);
+            return Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color.withValues(alpha: 0.25)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(icon, color: color, size: 18),
+                    const SizedBox(height: 8),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'PKR $amount',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return SafeArea(
+            child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.9,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(100),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Store Financial History',
+                      style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF3E0),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.date_range, color: Color(0xFFE65100), size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '$fromText  to  $toText',
+                              style: const TextStyle(
+                                color: Color(0xFFE65100),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        summaryTile(
+                          label: 'Gross Amount',
+                          value: summary['gross_store_amount'],
+                          icon: Icons.payments_outlined,
+                          color: const Color(0xFF0F766E),
+                        ),
+                        const SizedBox(width: 10),
+                        summaryTile(
+                          label: 'Rider Paid',
+                          value: summary['rider_store_payment'],
+                          icon: Icons.local_shipping_outlined,
+                          color: const Color(0xFF1D4ED8),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: entries.isEmpty
+                          ? const Center(child: Text('No financial entries found'))
+                          : ListView.separated(
+                              itemCount: entries.length,
+                              separatorBuilder: (_, _) => const SizedBox(height: 8),
+                              itemBuilder: (_, i) {
+                                final e =
+                                    (entries[i] as Map?)?.cast<String, dynamic>() ?? {};
+                                final status = (e['order_status'] ?? '-').toString();
+                                final statusClr = statusColor(status);
+                                return Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey.shade200),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              '${e['store_name'] ?? 'Store'} | Order #${e['order_number'] ?? '-'}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: statusClr.withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              status.toUpperCase(),
+                                              style: TextStyle(
+                                                color: statusClr,
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        _fmtDateTime(e['order_date']),
+                                        style: const TextStyle(
+                                            color: Colors.black54, fontSize: 12),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              'Gross: PKR ${_toDouble(e['gross_store_amount']).toStringAsFixed(2)}',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFF0F766E),
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            'Rider: PKR ${_toDouble(e['rider_store_payment']).toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF1D4ED8),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load financial history: $e')),
+      );
+    }
+  }
   Future<void> _openStoreStatusMessageDialog() async {
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
@@ -324,52 +605,143 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
         title: const Text('Store Dashboard'),
         actions: [
           const NotificationBellWidget(),
+          IconButton(
+            icon: const Icon(Icons.query_stats),
+            tooltip: 'Financial History',
+            onPressed: _openStoreFinancialHistory,
+          ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
       ),
+      bottomNavigationBar: _buildBottomNavigationBar(),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Dashboard Stats Header
-                Container(
-                  color: primaryColor,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Column(
-                    children: [
-                      _buildDashboardStats(),
-                      const SizedBox(height: 12),
-                      _buildQuickActions(),
-                      const SizedBox(height: 16),
-                      TabBar(
-                        controller: _tabController,
-                        labelColor: Colors.white,
-                        unselectedLabelColor: Colors.white70,
-                        indicatorColor: Colors.white,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        indicatorWeight: 3,
-                        tabs: const [
-                          Tab(text: 'New Orders'),
-                          Tab(text: 'Active'),
-                          Tab(text: 'History'),
-                        ],
-                      ),
-                    ],
+          : RefreshIndicator(
+              onRefresh: _loadOrders,
+              child: Column(
+                children: [
+                  // Dashboard Stats Header
+                  Container(
+                    color: primaryColor,
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      children: [
+                        _buildDashboardStats(),
+                        const SizedBox(height: 10),
+                        TabBar(
+                          controller: _tabController,
+                          labelColor: Colors.white,
+                          unselectedLabelColor: Colors.white70,
+                          indicatorColor: Colors.white,
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          indicatorWeight: 3,
+                          tabs: const [
+                            Tab(text: 'New Orders'),
+                            Tab(text: 'Active'),
+                            Tab(text: 'History'),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                // Order Lists
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildOrderList(_pendingOrders, showActions: true),
-                      _buildOrderList(_activeOrders, showActions: true),
-                      _buildOrderList(_historyOrders, showActions: false),
-                    ],
+                  // Order Lists
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildOrderList(_pendingOrders, showActions: true),
+                        _buildOrderList(_activeOrders, showActions: true),
+                        _buildOrderList(_historyOrders, showActions: false),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+    );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildBottomActionItem(
+              icon: Icons.inventory_2_outlined,
+              label: 'Products',
+              onTap: () => Navigator.of(context).pushNamed('/manage-products'),
+            ),
+            _buildBottomActionItem(
+              icon: Icons.campaign_outlined,
+              label: 'Status',
+              onTap: _openStoreStatusMessageDialog,
+            ),
+            _buildBottomActionItem(
+              icon: Icons.account_balance_wallet_outlined,
+              label: 'Financial',
+              onTap: _openStoreFinancialHistory,
+            ),
+            _buildBottomActionItem(
+              icon: Icons.refresh,
+              label: 'Refresh',
+              onTap: _loadOrders,
+            ),
+            _buildBottomActionItem(
+              icon: Icons.key_outlined,
+              label: 'Password',
+              onTap: () => Navigator.of(context).pushNamed('/change-password'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomActionItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 21,
+              color: const Color(0xFFE65100),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFE65100),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -435,7 +807,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                     Text(
                       'Owner: $ownerName',
                       style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 13,
                         color: Colors.black87,
                         fontWeight: FontWeight.w600,
                       ),
@@ -444,7 +816,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                     Text(
                       'Email: $ownerEmail',
                       style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 13,
                         color: Colors.black54,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -452,7 +824,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                     Text(
                       'Phone: $ownerPhone',
                       style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 13,
                         color: Colors.black54,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -526,76 +898,6 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white70),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _buildQuickBarItem(
-              icon: Icons.inventory_2,
-              label: 'Products',
-              onTap: () => Navigator.of(context).pushNamed('/manage-products'),
-            ),
-            const SizedBox(width: 12),
-            _buildQuickBarItem(
-              icon: Icons.campaign,
-              label: 'Status',
-              onTap: _openStoreStatusMessageDialog,
-            ),
-            const SizedBox(width: 12),
-            _buildQuickBarItem(
-              icon: Icons.refresh,
-              label: 'Refresh',
-              onTap: _loadOrders,
-            ),
-            const SizedBox(width: 12),
-            _buildQuickBarItem(
-              icon: Icons.key,
-              label: 'Password',
-              onTap: () => Navigator.of(context).pushNamed('/change-password'),
-            ),
-            const SizedBox(width: 6),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickBarItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        width: 58,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.indigo, size: 20),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -786,3 +1088,4 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     }
   }
 }
+
