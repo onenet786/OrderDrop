@@ -1263,8 +1263,17 @@ function initializeAdmin() {
     if (createBackupBtn) createBackupBtn.addEventListener('click', createBackup);
     const refreshBackupsBtn = document.getElementById('refreshBackupsBtn');
     if (refreshBackupsBtn) refreshBackupsBtn.addEventListener('click', loadBackups);
+    const saveDeliveryFeeSettingsBtn = document.getElementById('saveDeliveryFeeSettingsBtn');
+    if (saveDeliveryFeeSettingsBtn) saveDeliveryFeeSettingsBtn.addEventListener('click', saveDeliveryFeeSettings);
+    const reloadDeliveryFeeSettingsBtn = document.getElementById('reloadDeliveryFeeSettingsBtn');
+    if (reloadDeliveryFeeSettingsBtn) reloadDeliveryFeeSettingsBtn.addEventListener('click', loadDeliveryFeeSettings);
+    const settingsSaveDeliveryFeeSettingsBtn = document.getElementById('settingsSaveDeliveryFeeSettingsBtn');
+    if (settingsSaveDeliveryFeeSettingsBtn) settingsSaveDeliveryFeeSettingsBtn.addEventListener('click', saveDeliveryFeeSettingsFromSettingsTab);
+    const settingsReloadDeliveryFeeSettingsBtn = document.getElementById('settingsReloadDeliveryFeeSettingsBtn');
+    if (settingsReloadDeliveryFeeSettingsBtn) settingsReloadDeliveryFeeSettingsBtn.addEventListener('click', loadDeliveryFeeSettings);
     // Populate danger-zone clear table options with all tables from DB
     if (typeof loadClearableTables === 'function') loadClearableTables();
+    if (typeof loadDeliveryFeeSettings === 'function') loadDeliveryFeeSettings();
     const restoreBackupBtn = document.getElementById('restoreBackupBtn');
     function updateRestoreButtonState() {
         const sel = document.querySelector('input[name="selBackup"]:checked');
@@ -2106,10 +2115,14 @@ function switchTab(tabName) {
             if (typeof populateReportFilters === 'function') populateReportFilters();
             if (typeof loadStoreReports === 'function') loadStoreReports();
             break;
+        case 'settings':
+            if (typeof loadDeliveryFeeSettings === 'function') loadDeliveryFeeSettings();
+            break;
         case 'db-backup':
             // Load list of available backups when backup tab is opened
             loadBackups();
             if (typeof loadClearableTables === 'function') loadClearableTables();
+            if (typeof loadDeliveryFeeSettings === 'function') loadDeliveryFeeSettings();
             break;
         case 'financial-dashboard':
             if (typeof loadFinancialDashboard === 'function') loadFinancialDashboard();
@@ -3715,6 +3728,8 @@ async function viewOrderDetails(orderId) {
             <h4>Items Store-wise</h4>
         `;
 
+        let computedItemsSubtotal = 0;
+
         order.store_wise_items.forEach(store => {
             const paymentTerm = store.payment_term ? escapeHtml(String(store.payment_term)) : 'N/A';
             const graceDays = Number.isFinite(Number(store.payment_grace_days)) && Number(store.payment_grace_days) > 0
@@ -3742,6 +3757,7 @@ async function viewOrderDetails(orderId) {
             store.items.forEach(item => {
                 const price = parseFloat(item.price) || 0;
                 const subtotal = price * item.quantity;
+                computedItemsSubtotal += subtotal;
                 html += `
                     <tr style="border-bottom: 1px solid #f9f9f9;">
                         <td style="padding: 8px;">${item.product_name}</td>
@@ -3760,11 +3776,15 @@ async function viewOrderDetails(orderId) {
             `;
         });
 
+        const deliveryFeeValue = parseFloat(order.delivery_fee) || 0;
+        const totalAmountValue = parseFloat(order.total_amount) || 0;
+        const displayItemsSubtotal = Number(computedItemsSubtotal || 0);
+
         html += `
             <div class="order-summary-section" style="text-align: right; margin-top: 20px; padding: 15px; background: #f8fafc; border-radius: 8px;">
-                <p><strong>Items Subtotal:</strong> PKR ${(parseFloat(order.total_amount) - parseFloat(order.delivery_fee)).toFixed(2)}</p>
-                <p><strong>Delivery Fee:</strong> PKR ${parseFloat(order.delivery_fee).toFixed(2)}</p>
-                <h3 style="margin: 10px 0 0 0; color: #1e293b;">Total Amount: PKR ${parseFloat(order.total_amount).toFixed(2)}</h3>
+                <p><strong>Items Subtotal:</strong> PKR ${displayItemsSubtotal.toFixed(2)}</p>
+                <p><strong>Delivery Fee:</strong> PKR ${deliveryFeeValue.toFixed(2)}</p>
+                <h3 style="margin: 10px 0 0 0; color: #1e293b;">Total Amount: PKR ${totalAmountValue.toFixed(2)}</h3>
             </div>
         `;
 
@@ -3791,8 +3811,83 @@ async function viewOrderDetails(orderId) {
 
 function calculateDeliveryCharges(uniqueStoreCount) {
     if (uniqueStoreCount <= 0) return 0;
-    // Base 70 for first store, +30 for each additional store
-    return 70 + (uniqueStoreCount - 1) * 30;
+    const base = Number(window._deliveryFeeBase ?? 70);
+    const extra = Number(window._deliveryFeeAdditional ?? 30);
+    return base + (uniqueStoreCount - 1) * extra;
+}
+
+function _setDeliveryFeeInputs(baseValue, additionalValue) {
+    const baseInputIds = ['deliveryBaseFeeInput', 'settingsDeliveryBaseFeeInput'];
+    const additionalInputIds = ['deliveryAdditionalFeeInput', 'settingsDeliveryAdditionalFeeInput'];
+    baseInputIds.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.value = String(baseValue);
+    });
+    additionalInputIds.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.value = String(additionalValue);
+    });
+}
+
+async function loadDeliveryFeeSettings() {
+    try {
+        const response = await fetch(`${API_BASE}/api/admin/delivery-fee-settings`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!data.success) return;
+
+        const base = Number(data.base_fee);
+        const additional = Number(data.additional_per_store);
+        window._deliveryFeeBase = Number.isFinite(base) ? base : 70;
+        window._deliveryFeeAdditional = Number.isFinite(additional) ? additional : 30;
+        _setDeliveryFeeInputs(window._deliveryFeeBase, window._deliveryFeeAdditional);
+    } catch (error) {
+        console.error('loadDeliveryFeeSettings error:', error);
+    }
+}
+
+async function saveDeliveryFeeSettings(baseInputId = 'deliveryBaseFeeInput', additionalInputId = 'deliveryAdditionalFeeInput') {
+    const baseInput = document.getElementById(baseInputId);
+    const addInput = document.getElementById(additionalInputId);
+    const base_fee = Number.parseFloat(baseInput?.value || '');
+    const additional_per_store = Number.parseFloat(addInput?.value || '');
+
+    if (!Number.isFinite(base_fee) || base_fee < 0) {
+        showError('Validation', 'Base fee must be a valid non-negative number.');
+        return;
+    }
+    if (!Number.isFinite(additional_per_store) || additional_per_store < 0) {
+        showError('Validation', 'Additional per-store fee must be a valid non-negative number.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/admin/delivery-fee-settings`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ base_fee, additional_per_store })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            showError('Delivery Charges', data.message || 'Failed to save delivery charges.');
+            return;
+        }
+        window._deliveryFeeBase = Number(data.base_fee);
+        window._deliveryFeeAdditional = Number(data.additional_per_store);
+        _setDeliveryFeeInputs(window._deliveryFeeBase, window._deliveryFeeAdditional);
+        showSuccess('Delivery Charges', 'Delivery charge settings updated successfully.');
+    } catch (error) {
+        console.error('saveDeliveryFeeSettings error:', error);
+        showError('Delivery Charges', 'Failed to update delivery charge settings.');
+    }
+}
+
+async function saveDeliveryFeeSettingsFromSettingsTab() {
+    return saveDeliveryFeeSettings('settingsDeliveryBaseFeeInput', 'settingsDeliveryAdditionalFeeInput');
 }
 
 function updateOrderSummary(items, deliveryFee) {

@@ -1,6 +1,51 @@
 // API Base URL - dynamically determine based on current location
 const API_BASE = window.location.protocol + "//" + window.location.host;
 
+// Enforce session-only auth persistence (no browser relaunch auto-login).
+(() => {
+  const AUTH_KEYS = new Set(["serveNowToken", "serveNowUser"]);
+  let localGet;
+  let localSet;
+  let localRemove;
+
+  try {
+    localGet = localStorage.getItem.bind(localStorage);
+    localSet = localStorage.setItem.bind(localStorage);
+    localRemove = localStorage.removeItem.bind(localStorage);
+
+    // Migrate legacy persisted auth to session storage once, then clear local copy.
+    AUTH_KEYS.forEach((key) => {
+      const legacyVal = localGet(key);
+      if (legacyVal !== null && sessionStorage.getItem(key) === null) {
+        sessionStorage.setItem(key, legacyVal);
+      }
+      localRemove(key);
+    });
+
+    // Redirect auth key operations through sessionStorage.
+    localStorage.getItem = function (key) {
+      if (AUTH_KEYS.has(String(key))) return sessionStorage.getItem(String(key));
+      return localGet(key);
+    };
+    localStorage.setItem = function (key, value) {
+      if (AUTH_KEYS.has(String(key))) {
+        sessionStorage.setItem(String(key), String(value));
+        return;
+      }
+      return localSet(key, value);
+    };
+    localStorage.removeItem = function (key) {
+      if (AUTH_KEYS.has(String(key))) {
+        sessionStorage.removeItem(String(key));
+        return;
+      }
+      return localRemove(key);
+    };
+  } catch (_) {
+    // Storage may be restricted; leave default behavior.
+  }
+})();
+
 // Global fetch wrapper: automatically attach Authorization header when a token exists
 (() => {
   const nativeFetch = window.fetch.bind(window);

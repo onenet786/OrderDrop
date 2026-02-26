@@ -43,6 +43,62 @@ const CORE_KEEP_TABLES = new Set([
   "user_permissions",
 ]);
 
+const DEFAULT_BASE_DELIVERY_FEE = 70;
+const DEFAULT_ADDITIONAL_STORE_FEE = 30;
+
+async function ensureSystemSettingsTable(db) {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      setting_key VARCHAR(120) PRIMARY KEY,
+      setting_value VARCHAR(255) NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+async function getDeliveryFeeSettings(db) {
+  await ensureSystemSettingsTable(db);
+  const [rows] = await db.execute(
+    `SELECT setting_key, setting_value
+     FROM system_settings
+     WHERE setting_key IN ('delivery_fee_base', 'delivery_fee_additional_per_store')`
+  );
+  const map = new Map(rows.map((r) => [r.setting_key, r.setting_value]));
+
+  const parsedBase = Number.parseFloat(map.get("delivery_fee_base"));
+  const parsedAdditional = Number.parseFloat(
+    map.get("delivery_fee_additional_per_store")
+  );
+
+  const base_fee =
+    Number.isFinite(parsedBase) && parsedBase >= 0
+      ? parsedBase
+      : DEFAULT_BASE_DELIVERY_FEE;
+  const additional_per_store =
+    Number.isFinite(parsedAdditional) && parsedAdditional >= 0
+      ? parsedAdditional
+      : DEFAULT_ADDITIONAL_STORE_FEE;
+
+  if (!map.has("delivery_fee_base")) {
+    await db.execute(
+      `INSERT INTO system_settings (setting_key, setting_value)
+       VALUES ('delivery_fee_base', ?)
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+      [String(base_fee)]
+    );
+  }
+  if (!map.has("delivery_fee_additional_per_store")) {
+    await db.execute(
+      `INSERT INTO system_settings (setting_key, setting_value)
+       VALUES ('delivery_fee_additional_per_store', ?)
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+      [String(additional_per_store)]
+    );
+  }
+
+  return { base_fee, additional_per_store };
+}
+
 function isUserStoreRelatedTable(tableName) {
   const t = String(tableName || "").toLowerCase();
   if (!t) return false;
@@ -132,6 +188,78 @@ router.post(
       if (err && err.message) payload.error = err.message;
       if (err && err.sqlMessage) payload.sqlMessage = err.sqlMessage;
       return res.status(500).json(payload);
+    }
+  }
+);
+
+router.get(
+  "/delivery-fee-settings",
+  authenticateToken,
+  requirePermission("menu_settings_general"),
+  async (req, res) => {
+    try {
+      const settings = await getDeliveryFeeSettings(req.db);
+      return res.json({ success: true, ...settings });
+    } catch (error) {
+      console.error("delivery-fee-settings get error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to load delivery fee settings",
+        error: error.message,
+      });
+    }
+  }
+);
+
+router.put(
+  "/delivery-fee-settings",
+  authenticateToken,
+  requirePermission("menu_settings_general"),
+  async (req, res) => {
+    try {
+      const baseFee = Number.parseFloat(req.body?.base_fee);
+      const additionalFee = Number.parseFloat(req.body?.additional_per_store);
+
+      if (!Number.isFinite(baseFee) || baseFee < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid base delivery fee",
+        });
+      }
+      if (!Number.isFinite(additionalFee) || additionalFee < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid additional per store fee",
+        });
+      }
+
+      await ensureSystemSettingsTable(req.db);
+      await req.db.execute(
+        `INSERT INTO system_settings (setting_key, setting_value)
+         VALUES ('delivery_fee_base', ?)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+        [String(baseFee)]
+      );
+      await req.db.execute(
+        `INSERT INTO system_settings (setting_key, setting_value)
+         VALUES ('delivery_fee_additional_per_store', ?)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+        [String(additionalFee)]
+      );
+
+      return res.json({
+        success: true,
+        message: "Delivery fee settings updated",
+        base_fee: baseFee,
+        additional_per_store: additionalFee,
+      });
+    } catch (error) {
+      console.error("delivery-fee-settings update error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update delivery fee settings",
+        error: error.message,
+      });
     }
   }
 );
@@ -313,7 +441,16 @@ router.get(
           return res.status(403).json({ success: false, message: 'Permission denied: report_inventory required' });
       }
 
-      const [storeInventory] = await req.db.execute(`
+      const parsedStoreId = Number.parseInt(String(req.query.store_id || ""), 10);
+      const hasStoreFilter = Number.isInteger(parsedStoreId) && parsedStoreId > 0;
+
+      const [storeLookup] = await req.db.execute(`
+            SELECT id, name, is_active
+            FROM stores
+            ORDER BY name
+        `);
+
+      const storeInventorySql = `
             SELECT 
                 s.id as store_id,
                 s.name as store_name,
@@ -323,11 +460,16 @@ router.get(
                 SUM(p.stock_quantity * p.price) as total_inventory_value
             FROM stores s
             LEFT JOIN products p ON s.id = p.store_id
+            ${hasStoreFilter ? "WHERE s.id = ?" : ""}
             GROUP BY s.id, s.name, s.is_active
             ORDER BY s.name
-        `);
+        `;
+      const [storeInventory] = await req.db.execute(
+        storeInventorySql,
+        hasStoreFilter ? [parsedStoreId] : []
+      );
 
-      const [categoryInventory] = await req.db.execute(`
+      const categorySql = `
             SELECT 
                 c.id as category_id,
                 c.name as category_name,
@@ -336,11 +478,16 @@ router.get(
                 SUM(p.stock_quantity * p.price) as total_inventory_value
             FROM categories c
             LEFT JOIN products p ON c.id = p.category_id
+              ${hasStoreFilter ? "AND p.store_id = ?" : ""}
             GROUP BY c.id, c.name
             ORDER BY c.name
-        `);
+        `;
+      const [categoryInventory] = await req.db.execute(
+        categorySql,
+        hasStoreFilter ? [parsedStoreId] : []
+      );
 
-      const [storeCategoryBreakdown] = await req.db.execute(`
+      const breakdownSql = `
             SELECT 
                 s.id as store_id,
                 s.name as store_name,
@@ -352,22 +499,68 @@ router.get(
             FROM stores s
             LEFT JOIN products p ON s.id = p.store_id
             LEFT JOIN categories c ON p.category_id = c.id
+            ${hasStoreFilter ? "WHERE s.id = ?" : ""}
             GROUP BY s.id, s.name, c.id, c.name
             ORDER BY s.name, c.name
-        `);
+        `;
+      const [storeCategoryBreakdown] = await req.db.execute(
+        breakdownSql,
+        hasStoreFilter ? [parsedStoreId] : []
+      );
 
-      const [totalStats] = await req.db.execute(`
+      const statsSql = `
             SELECT 
-                (SELECT COUNT(*) FROM stores) as total_stores,
-                (SELECT COUNT(*) FROM categories) as total_categories,
+                ${
+                  hasStoreFilter
+                    ? "(SELECT COUNT(*) FROM stores WHERE id = ?) as total_stores,"
+                    : "(SELECT COUNT(*) FROM stores) as total_stores,"
+                }
+                ${
+                  hasStoreFilter
+                    ? "(SELECT COUNT(DISTINCT category_id) FROM products WHERE store_id = ?) as total_categories,"
+                    : "(SELECT COUNT(*) FROM categories) as total_categories,"
+                }
                 COUNT(p.id) as total_products,
                 SUM(p.stock_quantity) as total_stock,
                 SUM(p.stock_quantity * p.price) as total_inventory_value
             FROM products p
-        `);
+            ${hasStoreFilter ? "WHERE p.store_id = ?" : ""}
+        `;
+      const [totalStats] = await req.db.execute(
+        statsSql,
+        hasStoreFilter ? [parsedStoreId, parsedStoreId, parsedStoreId] : []
+      );
+
+      const productSql = `
+            SELECT
+                p.id as product_id,
+                p.name as product_name,
+                s.id as store_id,
+                s.name as store_name,
+                c.name as category_name,
+                p.stock_quantity,
+                p.cost_price,
+                p.price as sale_price,
+                p.is_available
+            FROM products p
+            LEFT JOIN stores s ON s.id = p.store_id
+            LEFT JOIN categories c ON c.id = p.category_id
+            ${hasStoreFilter ? "WHERE p.store_id = ?" : ""}
+            ORDER BY s.name, c.name, p.name
+        `;
+      const [products] = await req.db.execute(
+        productSql,
+        hasStoreFilter ? [parsedStoreId] : []
+      );
 
       return res.json({
         success: true,
+        selected_store_id: hasStoreFilter ? parsedStoreId : null,
+        stores: storeLookup.map((r) => ({
+          id: Number(r.id),
+          name: r.name,
+          is_active: !!r.is_active,
+        })),
         store_wise: storeInventory.map((row) => ({
           store_id: row.store_id,
           store_name: row.store_name,
@@ -392,6 +585,27 @@ router.get(
           stock_quantity: Number(row.stock_quantity) || 0,
           inventory_value: parseFloat(row.inventory_value) || 0,
         })),
+        products: products.map((row) => {
+          const stock = Number(row.stock_quantity) || 0;
+          const salePrice = parseFloat(row.sale_price) || 0;
+          const parsedCost = parseFloat(row.cost_price);
+          const costPrice = Number.isFinite(parsedCost) ? parsedCost : null;
+          return {
+            product_id: Number(row.product_id),
+            product_name: row.product_name,
+            store_id: Number(row.store_id),
+            store_name: row.store_name,
+            category_name: row.category_name || "Uncategorized",
+            stock_quantity: stock,
+            cost_price: costPrice,
+            sale_price: salePrice,
+            inventory_sale_value: stock * salePrice,
+            inventory_cost_value: costPrice === null ? null : stock * costPrice,
+            potential_profit:
+              costPrice === null ? null : stock * (salePrice - costPrice),
+            is_available: !!row.is_available,
+          };
+        }),
         summary: {
           total_stores: Number(totalStats[0].total_stores) || 0,
           total_categories: Number(totalStats[0].total_categories) || 0,

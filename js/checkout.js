@@ -65,15 +65,26 @@ function updateCartCount() {
 }
 
 // Calculate delivery fee based on number of unique stores
+window._deliveryFeeBase = Number(window._deliveryFeeBase ?? 70);
+window._deliveryFeeAdditional = Number(window._deliveryFeeAdditional ?? 30);
+
 function calculateDeliveryFee(storeCount) {
-    if (storeCount === 1) {
-        return 70;
-    } else if (storeCount === 2) {
-        return 100;
-    } else if (storeCount >= 3) {
-        return 130 + (storeCount - 3) * 30;
-    } else {
-        return 70;
+    if (storeCount <= 0) return 0;
+    return window._deliveryFeeBase + (storeCount - 1) * window._deliveryFeeAdditional;
+}
+
+async function loadDeliveryFeeConfig() {
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/delivery-fee-config`);
+        const data = await response.json();
+        if (data.success) {
+            const base = Number(data.base_fee);
+            const add = Number(data.additional_per_store);
+            if (Number.isFinite(base) && base >= 0) window._deliveryFeeBase = base;
+            if (Number.isFinite(add) && add >= 0) window._deliveryFeeAdditional = add;
+        }
+    } catch (error) {
+        console.warn('Could not load delivery fee config, using defaults.', error);
     }
 }
 
@@ -503,7 +514,7 @@ async function prefillUserInfo() {
 // Initialize checkout page
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Cart length:', cart.length);
-    displayCheckoutItems();
+    loadDeliveryFeeConfig().finally(() => displayCheckoutItems());
     prefillUserInfo();
 
     // Payment method change handler

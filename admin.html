@@ -338,6 +338,11 @@
             </li>
 
             <li>
+              <a href="admin.html#settings" class="tab-link" data-tab="settings"
+                ><i class="fas fa-sliders-h"></i> Settings</a
+              >
+            </li>
+            <li>
               <a
                 href="admin.html#db-backup"
                 class="tab-link"
@@ -1009,6 +1014,31 @@
           </div>
         </div>
 
+        <div id="settings" class="tab-content">
+          <h2>General Settings</h2>
+          <p>Configure platform-level operational settings.</p>
+          <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+            <h3 style="color: #0f766e;"><i class="fas fa-motorcycle"></i> Delivery Charges</h3>
+            <p>Formula: <strong>Total = Base Fee + (Additional Fee x extra stores)</strong>.</p>
+            <div class="filter-controls">
+                <div class="filter-group">
+                    <label for="settingsDeliveryBaseFeeInput">Base Fee (1 store, PKR)</label>
+                    <input type="number" id="settingsDeliveryBaseFeeInput" class="form-control" min="0" step="1" placeholder="70">
+                </div>
+                <div class="filter-group">
+                    <label for="settingsDeliveryAdditionalFeeInput">Additional Fee Per Extra Store (PKR)</label>
+                    <input type="number" id="settingsDeliveryAdditionalFeeInput" class="form-control" min="0" step="1" placeholder="30">
+                </div>
+                <button class="btn btn-primary" id="settingsSaveDeliveryFeeSettingsBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                    <i class="fas fa-save"></i> Save Charges
+                </button>
+                <button class="btn btn-secondary" id="settingsReloadDeliveryFeeSettingsBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                    <i class="fas fa-sync"></i> Reload
+                </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Database Backup Tab -->
 
         <div id="db-backup" class="tab-content">
@@ -1053,6 +1083,27 @@
               id="backupStatus"
               style="font-size: 0.95rem; color: #666; margin-left: 0.5rem; align-self: center;"
             ></span>
+          </div>
+
+          <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd;">
+            <h3 style="color: #0f766e;"><i class="fas fa-motorcycle"></i> Delivery Charges Settings</h3>
+            <p>Set configurable delivery charges formula: <strong>Total = Base Fee + (Additional Fee x extra stores)</strong>.</p>
+            <div class="filter-controls">
+                <div class="filter-group">
+                    <label for="deliveryBaseFeeInput">Base Fee (1 store, PKR)</label>
+                    <input type="number" id="deliveryBaseFeeInput" class="form-control" min="0" step="1" placeholder="70">
+                </div>
+                <div class="filter-group">
+                    <label for="deliveryAdditionalFeeInput">Additional Fee Per Extra Store (PKR)</label>
+                    <input type="number" id="deliveryAdditionalFeeInput" class="form-control" min="0" step="1" placeholder="30">
+                </div>
+                <button class="btn btn-primary" id="saveDeliveryFeeSettingsBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                    <i class="fas fa-save"></i> Save Charges
+                </button>
+                <button class="btn btn-secondary" id="reloadDeliveryFeeSettingsBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                    <i class="fas fa-sync"></i> Reload
+                </button>
+            </div>
           </div>
 
           <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd;">
@@ -1907,8 +1958,24 @@
                   <option value="category">Category-wise Inventory</option>
                   <option value="breakdown">Store-wise Category Breakdown</option>
                   <option value="sales">Store Sale-wise</option>
+                  <option value="product-detail">Product Cost/Sale Detail</option>
                 </select>
             </div>
+            <div class="filter-group">
+                <label for="inventoryStoreFilter">Store</label>
+                <select id="inventoryStoreFilter" class="form-control">
+                  <option value="">All Stores</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" id="inventoryApplyFilterBtn" style="align-self:flex-end; margin-bottom:2px;">
+              <i class="fas fa-filter"></i> Apply
+            </button>
+            <button class="btn btn-secondary" id="inventoryClearFilterBtn" style="align-self:flex-end; margin-bottom:2px;">
+              <i class="fas fa-undo"></i> Clear
+            </button>
+            <button class="btn btn-danger" id="inventoryExportPdfBtn" style="align-self:flex-end; margin-bottom:2px;">
+              <i class="fas fa-file-pdf"></i> Export PDF
+            </button>
           </div>
 
           <!-- Store-wise Inventory -->
@@ -1988,6 +2055,32 @@
                 </thead>
                 <tbody id="storeSalesBody">
                   <!-- Store sales data will be loaded here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Product Cost/Sale Detail -->
+          <div id="productDetailReportSection" style="display: none">
+            <h3 style="margin-bottom: 1rem">Product Cost/Sale Detail</h3>
+            <div class="table-container">
+              <table id="productDetailInventoryTable">
+                <thead>
+                  <tr>
+                    <th>Store</th>
+                    <th>Category</th>
+                    <th>Product</th>
+                    <th>Stock</th>
+                    <th>Cost Price</th>
+                    <th>Sale Price</th>
+                    <th>Stock Cost Value</th>
+                    <th>Stock Sale Value</th>
+                    <th>Potential Profit</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="productDetailInventoryBody">
+                  <!-- Product detail data will be loaded here -->
                 </tbody>
               </table>
             </div>

@@ -22,6 +22,19 @@ class _CartScreenState extends State<CartScreen> {
   Widget build(BuildContext context) {
     return Consumer<CartProvider>(
       builder: (context, cart, child) {
+        final uniqueStoreCount = cart.items
+            .map(
+              (item) =>
+                  item.product.storeId?.toString() ??
+                  'name:${item.product.storeName ?? item.product.id}',
+            )
+            .toSet()
+            .length;
+        final totalProductsCount = cart.items.fold<int>(
+          0,
+          (sum, item) => sum + item.quantity,
+        );
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('Your Cart'),
@@ -213,24 +226,48 @@ class _CartScreenState extends State<CartScreen> {
                     Card(
                       margin: const EdgeInsets.all(15),
                       child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
                           children: [
-                            const Text(
-                              'Total',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Total',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'PKR ${cart.totalAmount.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: CustomerPalette.primaryDark,
+                                  ),
+                                ),
+                              ],
                             ),
-                            Text(
-                              'PKR ${cart.totalAmount.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: CustomerPalette.primaryDark,
-                              ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSummaryMetaTile(
+                                    label: 'Total Stores',
+                                    value: '$uniqueStoreCount',
+                                    icon: Icons.storefront,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildSummaryMetaTile(
+                                    label: 'Total Products',
+                                    value: '$totalProductsCount',
+                                    icon: Icons.shopping_bag_outlined,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -262,6 +299,49 @@ class _CartScreenState extends State<CartScreen> {
           bottomNavigationBar: _buildBottomBar(),
         );
       },
+    );
+  }
+
+  Widget _buildSummaryMetaTile({
+    required String label,
+    required String value,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: CustomerPalette.accent.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: CustomerPalette.primaryDark),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: CustomerPalette.primaryDark,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

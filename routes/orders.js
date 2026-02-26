@@ -13,6 +13,75 @@ const { sendPushToUser } = require("../services/pushNotifications");
 
 const router = express.Router();
 
+const DEFAULT_BASE_DELIVERY_FEE = 70;
+const DEFAULT_ADDITIONAL_STORE_FEE = 30;
+
+async function ensureSystemSettingsTable(db) {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      setting_key VARCHAR(120) PRIMARY KEY,
+      setting_value VARCHAR(255) NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+async function getDeliveryFeeConfig(db) {
+  await ensureSystemSettingsTable(db);
+  const [rows] = await db.execute(
+    `SELECT setting_key, setting_value
+     FROM system_settings
+     WHERE setting_key IN ('delivery_fee_base', 'delivery_fee_additional_per_store')`
+  );
+
+  const map = new Map(rows.map((r) => [r.setting_key, r.setting_value]));
+  const parsedBase = Number.parseFloat(map.get("delivery_fee_base"));
+  const parsedAdditional = Number.parseFloat(
+    map.get("delivery_fee_additional_per_store")
+  );
+
+  const base_fee = Number.isFinite(parsedBase) && parsedBase >= 0
+    ? parsedBase
+    : DEFAULT_BASE_DELIVERY_FEE;
+  const additional_per_store = Number.isFinite(parsedAdditional) &&
+      parsedAdditional >= 0
+    ? parsedAdditional
+    : DEFAULT_ADDITIONAL_STORE_FEE;
+
+  if (!map.has("delivery_fee_base")) {
+    await db.execute(
+      `INSERT INTO system_settings (setting_key, setting_value)
+       VALUES ('delivery_fee_base', ?)
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+      [String(base_fee)]
+    );
+  }
+  if (!map.has("delivery_fee_additional_per_store")) {
+    await db.execute(
+      `INSERT INTO system_settings (setting_key, setting_value)
+       VALUES ('delivery_fee_additional_per_store', ?)
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+      [String(additional_per_store)]
+    );
+  }
+
+  return { base_fee, additional_per_store };
+}
+
+function calculateDeliveryFeeByStoreCount(storeCount, feeConfig) {
+  const cfg = feeConfig || {
+    base_fee: DEFAULT_BASE_DELIVERY_FEE,
+    additional_per_store: DEFAULT_ADDITIONAL_STORE_FEE,
+  };
+  if (!storeCount || storeCount <= 0) return 0;
+  if (storeCount === 1) return Number(cfg.base_fee) || DEFAULT_BASE_DELIVERY_FEE;
+  return (
+    (Number(cfg.base_fee) || DEFAULT_BASE_DELIVERY_FEE) +
+    (storeCount - 1) *
+      (Number(cfg.additional_per_store) || DEFAULT_ADDITIONAL_STORE_FEE)
+  );
+}
+
 async function ensureGlobalDeliveryStatusTable(db) {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS global_delivery_status (
@@ -43,6 +112,20 @@ async function ensureGlobalDeliveryStatusTable(db) {
     );
   }
 }
+
+router.get("/delivery-fee-config", async (req, res) => {
+  try {
+    const cfg = await getDeliveryFeeConfig(req.db);
+    return res.json({ success: true, ...cfg });
+  } catch (error) {
+    console.error("Error loading delivery fee config:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load delivery fee config",
+      error: error.message,
+    });
+  }
+});
 
 async function getGlobalDeliveryBlockState(db) {
   await ensureGlobalDeliveryStatusTable(db);
@@ -595,27 +678,6 @@ router.post("/", authenticateToken, async (req, res) => {
         }
       }
 
-      // Calculate discounted price for subtotal calculation
-      let finalUnitPrice = unitPrice;
-      const discountType = product.discount_type;
-      const discountValue = product.discount_value
-        ? Number(product.discount_value)
-        : 0;
-
-      if (discountType && Number.isFinite(discountValue) && discountValue > 0) {
-        if (discountType === "percent") {
-          finalUnitPrice = unitPrice * (1 - discountValue / 100);
-        } else if (discountType === "amount") {
-          finalUnitPrice = unitPrice - discountValue;
-        }
-
-        // Ensure price doesn't go below 0
-        if (finalUnitPrice < 0) finalUnitPrice = 0;
-
-        // Round to 2 decimal places
-        finalUnitPrice = Math.round(finalUnitPrice * 100) / 100;
-      }
-
       preparedItems.push({
         productId,
         quantity,
@@ -627,8 +689,8 @@ router.post("/", authenticateToken, async (req, res) => {
         discount_type: product.discount_type,
         discount_value: product.discount_value,
       });
-      // Use finalUnitPrice (discounted) for the total calculation
-      itemsSubtotal += finalUnitPrice * quantity;
+      // Keep order total consistent with stored order_items price.
+      itemsSubtotal += unitPrice * quantity;
     }
 
     // Enforce store open/closed hours before proceeding
@@ -696,20 +758,15 @@ router.post("/", authenticateToken, async (req, res) => {
       }
     }
 
-    // Calculate delivery fee based on number of unique stores
+    // Calculate delivery fee based on number of unique stores and admin-configured settings
     const storeCount = storeIds.size;
-    let delivery_fee = 0;
-    if (storeCount === 1) {
-      delivery_fee = 70;
-    } else if (storeCount === 2) {
-      delivery_fee = 100;
-    } else if (storeCount >= 3) {
-      delivery_fee = 130 + (storeCount - 3) * 30;
-    } else {
-      delivery_fee = 70; // Fallback
-    }
+    const deliveryFeeConfig = await getDeliveryFeeConfig(req.db);
+    const delivery_fee = calculateDeliveryFeeByStoreCount(
+      storeCount,
+      deliveryFeeConfig
+    );
 
-    const grandTotal = itemsSubtotal + delivery_fee;
+    const grandTotal = roundAmount(itemsSubtotal + delivery_fee);
 
     // Check Wallet
     let wallet = null;
@@ -2789,16 +2846,11 @@ router.put(
         );
         const storeCount = storeIds.size;
 
-        // Calculate delivery fee based on number of unique stores
-        if (storeCount === 1) {
-          delivery_fee = 70;
-        } else if (storeCount === 2) {
-          delivery_fee = 100;
-        } else if (storeCount >= 3) {
-          delivery_fee = 130 + (storeCount - 3) * 30;
-        } else {
-          delivery_fee = 70;
-        }
+        const deliveryFeeConfig = await getDeliveryFeeConfig(req.db);
+        delivery_fee = calculateDeliveryFeeByStoreCount(
+          storeCount,
+          deliveryFeeConfig
+        );
       }
 
       // Recalculate total from items subtotal

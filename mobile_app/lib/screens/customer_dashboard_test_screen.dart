@@ -1136,6 +1136,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               index: 3,
               icon: Icons.shopping_cart,
               label: 'Cart',
+              badgeCount: context.watch<CartProvider>().itemCount,
               onTap: () {
                 setState(() => _bottomIndex = 3);
                 Navigator.of(context).pushNamed('/cart');
@@ -1151,6 +1152,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     required int index,
     required IconData icon,
     required String label,
+    int badgeCount = 0,
     required VoidCallback onTap,
   }) {
     final active = _bottomIndex == index;
@@ -1162,11 +1164,42 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 22,
-              color:
-                  active ? CustomerPalette.primaryDark : Colors.grey.shade600,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  icon,
+                  size: 22,
+                  color: active
+                      ? CustomerPalette.primaryDark
+                      : Colors.grey.shade600,
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    right: -9,
+                    top: -7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: CustomerPalette.primaryDark,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 16),
+                      child: Text(
+                        badgeCount > 99 ? '99+' : '$badgeCount',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 2),
             Text(
