@@ -75,6 +75,25 @@ async function ensureLivePromotionsTable(db) {
     `);
 }
 
+async function ensureCustomerFlashMessagesTable(db) {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS customer_flash_messages (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            is_enabled BOOLEAN DEFAULT FALSE,
+            title VARCHAR(120) NULL,
+            status_message TEXT NULL,
+            image_url VARCHAR(2048) NULL,
+            start_at DATETIME NULL,
+            end_at DATETIME NULL,
+            notification_target VARCHAR(16) DEFAULT 'all',
+            customer_ids_json LONGTEXT NULL,
+            updated_by INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    `);
+}
+
 async function ensureStoreFinancialColumns(db) {
     const [rows] = await db.execute(
         `SELECT COLUMN_NAME
@@ -90,6 +109,67 @@ async function ensureStoreFinancialColumns(db) {
              ADD COLUMN payment_grace_days INT NULL`
         );
     }
+    const [startCols] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'payment_grace_start_date'
+         LIMIT 1`
+    );
+    if (!startCols || !startCols.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN payment_grace_start_date DATE NULL`
+        );
+    }
+    const [muteCols] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'grace_alert_muted_until'
+         LIMIT 1`
+    );
+    if (!muteCols || !muteCols.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN grace_alert_muted_until DATETIME NULL`
+        );
+    }
+}
+
+function normalizeDateOnlyInput(raw) {
+    const value = String(raw || '').trim();
+    if (!value) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    return value;
+}
+
+function isGraceApplicablePaymentTerm(term) {
+    const t = String(term || '').toLowerCase().trim();
+    if (!t) return false;
+    return t !== 'cash only' && t !== 'credit';
+}
+
+function calculateGraceDueDate(startDate, graceDays) {
+    const start = normalizeDateOnlyInput(startDate);
+    const days = Number.parseInt(String(graceDays ?? ''), 10);
+    if (!start || !Number.isInteger(days) || days < 0) return null;
+    const due = new Date(`${start}T00:00:00`);
+    due.setDate(due.getDate() + days);
+    return due.toISOString().slice(0, 10);
+}
+
+async function tableExists(db, tableName) {
+    const [rows] = await db.execute(
+        `SELECT COUNT(*) AS cnt
+         FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = ?`,
+        [tableName]
+    );
+    return Number(rows?.[0]?.cnt || 0) > 0;
 }
 
 function normalizeCustomerIds(input) {
@@ -217,6 +297,51 @@ function getLivePromotionsPayload(row) {
         widget_images: images,
         is_window_active: inWindow,
         is_visible: !!(inWindow && images.length),
+        updated_at: row?.updated_at || null
+    };
+}
+
+function parseCustomerIdsJson(rawJson) {
+    if (!rawJson) return [];
+    try {
+        const parsed = JSON.parse(rawJson);
+        return normalizeCustomerIds(parsed);
+    } catch (_) {
+        return [];
+    }
+}
+
+function getCustomerFlashPayload(row, userId = null) {
+    const now = new Date();
+    const start = row?.start_at ? new Date(row.start_at) : null;
+    const end = row?.end_at ? new Date(row.end_at) : null;
+    const inWindow = !!(
+        row?.is_enabled &&
+        start &&
+        end &&
+        !Number.isNaN(start.getTime()) &&
+        !Number.isNaN(end.getTime()) &&
+        now >= start &&
+        now <= end
+    );
+    const target = String(row?.notification_target || 'all').toLowerCase() === 'custom' ? 'custom' : 'all';
+    const customerIds = parseCustomerIdsJson(row?.customer_ids_json);
+    const numericUserId = Number(userId);
+    const targetMatched = target === 'all'
+        ? true
+        : (Number.isInteger(numericUserId) && numericUserId > 0 && customerIds.includes(numericUserId));
+    return {
+        is_enabled: !!row?.is_enabled,
+        title: row?.title || 'Flash Message',
+        status_message: row?.status_message || '',
+        image_url: row?.image_url || '',
+        start_at: row?.start_at || null,
+        end_at: row?.end_at || null,
+        notification_target: target,
+        customer_ids: customerIds,
+        is_window_active: inWindow,
+        is_target_matched: targetMatched,
+        is_visible: !!(inWindow && targetMatched),
         updated_at: row?.updated_at || null
     };
 }
@@ -372,7 +497,7 @@ router.get('/', async (req, res) => {
             liteMode
                 ? `
             SELECT s.id, s.name, s.payment_term, s.is_active, sm.is_closed, sm.status_message
-                 , s.payment_grace_days
+                 , s.payment_grace_days, s.payment_grace_start_date, s.grace_alert_muted_until
             FROM stores s
             LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             ${whereClause}
@@ -472,6 +597,9 @@ router.get('/', async (req, res) => {
                     name: store.name,
                     payment_term: store.payment_term || null,
                     payment_grace_days: store.payment_grace_days === null || store.payment_grace_days === undefined ? null : Number(store.payment_grace_days),
+                    payment_grace_start_date: store.payment_grace_start_date || null,
+                    payment_grace_due_date: calculateGraceDueDate(store.payment_grace_start_date, store.payment_grace_days),
+                    grace_alert_muted_until: store.grace_alert_muted_until || null,
                     is_active: !!store.is_active,
                     is_closed: !!store.is_closed,
                     status_message: store.status_message || ''
@@ -492,6 +620,9 @@ router.get('/', async (req, res) => {
                     closing_time: store.closing_time || null,
                     payment_term: store.payment_term || null,
                     payment_grace_days: store.payment_grace_days === null || store.payment_grace_days === undefined ? null : Number(store.payment_grace_days),
+                    payment_grace_start_date: store.payment_grace_start_date || null,
+                    payment_grace_due_date: calculateGraceDueDate(store.payment_grace_start_date, store.payment_grace_days),
+                    grace_alert_muted_until: store.grace_alert_muted_until || null,
                     latitude: store.latitude,
                     longitude: store.longitude,
                     rating: store.rating,
@@ -1072,9 +1203,332 @@ router.put('/live-promotions', authenticateToken, requireAdmin, async (req, res)
     }
 });
 
+router.get('/customer-flash-message', authenticateToken, async (req, res) => {
+    try {
+        await ensureCustomerFlashMessagesTable(req.db);
+        const [rows] = await req.db.execute(
+            `SELECT id, is_enabled, title, status_message, image_url, start_at, end_at, notification_target, customer_ids_json, updated_at
+             FROM customer_flash_messages
+             ORDER BY id DESC
+             LIMIT 1`
+        );
+        let row = rows[0] || null;
+        if (row?.is_enabled && row?.end_at) {
+            const endAt = new Date(row.end_at);
+            if (!Number.isNaN(endAt.getTime()) && new Date() > endAt) {
+                await req.db.execute(
+                    `UPDATE customer_flash_messages
+                     SET is_enabled = 0,
+                         title = NULL,
+                         status_message = NULL,
+                         image_url = NULL,
+                         start_at = NULL,
+                         end_at = NULL,
+                         notification_target = 'all',
+                         customer_ids_json = NULL,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = ?`,
+                    [row.id]
+                );
+                row = null;
+            }
+        }
+        return res.json({
+            success: true,
+            customer_flash_message: getCustomerFlashPayload(row, req.user?.id)
+        });
+    } catch (error) {
+        console.error('Error fetching customer flash message:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch customer flash message',
+            error: error.message
+        });
+    }
+});
+
+router.put('/customer-flash-message', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await ensureCustomerFlashMessagesTable(req.db);
+        const isEnabled = !!req.body.is_enabled;
+        const title = (req.body.title ?? '').toString().trim();
+        const statusMessage = (req.body.status_message ?? '').toString().trim();
+        const imageUrl = (req.body.image_url ?? '').toString().trim();
+        const startAt = normalizeDateTimeInput(req.body.start_at);
+        const endAt = normalizeDateTimeInput(req.body.end_at);
+        const notificationTarget = (req.body.notification_target || 'all').toString().toLowerCase() === 'custom' ? 'custom' : 'all';
+        const customCustomerIds = normalizeCustomerIds(req.body.customer_ids);
+        const sendPush = !!req.body.send_push_notification;
+        const pushTitle = (req.body.push_title ?? '').toString().trim();
+        const pushMessageRaw = (req.body.push_message ?? '').toString().trim();
+
+        if (title.length > 120) {
+            return res.status(400).json({
+                success: false,
+                message: 'Title must be 120 characters or less'
+            });
+        }
+        if (statusMessage.length > 500) {
+            return res.status(400).json({
+                success: false,
+                message: 'Message must be 500 characters or less'
+            });
+        }
+        if (imageUrl.length > 2048) {
+            return res.status(400).json({
+                success: false,
+                message: 'Image URL is too long'
+            });
+        }
+        if (isEnabled && (!startAt || !endAt)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Start and end time are required when flash message is enabled'
+            });
+        }
+        if (startAt && endAt && new Date(startAt) >= new Date(endAt)) {
+            return res.status(400).json({
+                success: false,
+                message: 'End time must be after start time'
+            });
+        }
+        if (notificationTarget === 'custom' && !customCustomerIds.length) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please select at least one customer for custom target'
+            });
+        }
+
+        await req.db.execute(
+            `INSERT INTO customer_flash_messages (is_enabled, title, status_message, image_url, start_at, end_at, notification_target, customer_ids_json, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                isEnabled ? 1 : 0,
+                title || null,
+                statusMessage || null,
+                imageUrl || null,
+                startAt,
+                endAt,
+                notificationTarget,
+                customCustomerIds.length ? JSON.stringify(customCustomerIds) : null,
+                req.user.id
+            ]
+        );
+
+        const [rows] = await req.db.execute(
+            `SELECT is_enabled, title, status_message, image_url, start_at, end_at, notification_target, customer_ids_json, updated_at
+             FROM customer_flash_messages
+             ORDER BY id DESC
+             LIMIT 1`
+        );
+        const payload = getCustomerFlashPayload(rows[0] || null, null);
+
+        let pushed = 0;
+        if (sendPush) {
+            const recipients = await getTargetCustomers(req.db, notificationTarget, customCustomerIds);
+            const notifTitle = pushTitle || (title || 'ServeNow Update');
+            const notifMessage = pushMessageRaw || (statusMessage || 'Please check latest customer updates.');
+            for (const recipient of recipients) {
+                await sendPushToUser(req.db, {
+                    userId: recipient.id,
+                    userType: recipient.user_type,
+                    title: notifTitle,
+                    message: notifMessage,
+                    data: {
+                        type: 'customer_flash_message',
+                        start_at: payload.start_at,
+                        end_at: payload.end_at
+                    },
+                    collapseKey: 'customer_flash_message'
+                });
+                try {
+                    req.io?.to(`user_${recipient.id}`).emit('user_notification', {
+                        user_id: recipient.id,
+                        type: 'customer_flash_message',
+                        title: notifTitle,
+                        message: notifMessage,
+                        data: {
+                            start_at: payload.start_at,
+                            end_at: payload.end_at
+                        }
+                    });
+                } catch (_) {}
+                pushed++;
+            }
+        }
+
+        return res.json({
+            success: true,
+            message: 'Customer flash message updated successfully',
+            customer_flash_message: payload,
+            push_notification: {
+                requested: sendPush,
+                target: notificationTarget,
+                pushed_count: pushed
+            }
+        });
+    } catch (error) {
+        console.error('Error updating customer flash message:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to update customer flash message',
+            error: error.message
+        });
+    }
+});
+
+router.get('/grace-alerts', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await ensureStoreFinancialColumns(req.db);
+        const channel = String(req.query.channel || 'web').toLowerCase() === 'mobile' ? 'mobile' : 'web';
+        const maxDaysLeft = channel === 'mobile' ? 1 : 2;
+        const nowIso = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+        const [rows] = await req.db.execute(
+            `SELECT
+                s.id,
+                s.name,
+                s.payment_term,
+                s.payment_grace_days,
+                s.payment_grace_start_date,
+                s.grace_alert_muted_until,
+                DATE_ADD(s.payment_grace_start_date, INTERVAL s.payment_grace_days DAY) as due_date,
+                DATEDIFF(DATE_ADD(s.payment_grace_start_date, INTERVAL s.payment_grace_days DAY), CURDATE()) as days_left
+             FROM stores s
+             WHERE s.is_active = 1
+               AND s.payment_grace_days IS NOT NULL
+               AND s.payment_grace_days > 0
+               AND s.payment_grace_start_date IS NOT NULL
+               AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'credit')
+               AND (s.grace_alert_muted_until IS NULL OR s.grace_alert_muted_until <= ?)
+               AND DATEDIFF(DATE_ADD(s.payment_grace_start_date, INTERVAL s.payment_grace_days DAY), CURDATE()) <= ?
+             ORDER BY days_left ASC, s.id ASC`,
+            [nowIso, maxDaysLeft]
+        );
+
+        const hasStoreSettlements = await tableExists(req.db, 'store_settlements');
+        const alerts = [];
+        for (const row of rows || []) {
+            const [grossRows] = await req.db.execute(
+                `SELECT COALESCE(SUM(oi.quantity * oi.price), 0) as gross_amount
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 WHERE oi.store_id = ?
+                   AND o.status = 'delivered'
+                   AND DATE(o.created_at) >= ?`,
+                [row.id, row.payment_grace_start_date]
+            );
+            const grossAmount = Number(grossRows?.[0]?.gross_amount || 0);
+
+            let paidAmount = 0;
+            if (hasStoreSettlements) {
+                const [paidRows] = await req.db.execute(
+                    `SELECT COALESCE(SUM(ss.net_amount), 0) as paid_amount
+                     FROM store_settlements ss
+                     WHERE ss.store_id = ?
+                       AND ss.status = 'paid'
+                       AND DATE(ss.settlement_date) >= ?`,
+                    [row.id, row.payment_grace_start_date]
+                );
+                paidAmount = Number(paidRows?.[0]?.paid_amount || 0);
+            }
+            const pendingAmount = Math.max(0, Math.round((grossAmount - paidAmount) * 100) / 100);
+            if (pendingAmount <= 0) continue;
+
+            const daysLeft = Number(row.days_left);
+            const dueDate = row.due_date ? String(row.due_date).slice(0, 10) : null;
+            const severity =
+                daysLeft < 0 ? 'overdue' :
+                daysLeft === 0 ? 'due_today' :
+                daysLeft === 1 ? 'due_1_day' :
+                daysLeft === 2 ? 'due_2_days' : 'upcoming';
+            alerts.push({
+                store_id: Number(row.id),
+                store_name: row.name,
+                payment_term: row.payment_term || null,
+                grace_days: Number(row.payment_grace_days || 0),
+                grace_start_date: row.payment_grace_start_date || null,
+                due_date: dueDate,
+                days_left: Number.isFinite(daysLeft) ? daysLeft : null,
+                severity,
+                pending_amount: pendingAmount,
+                muted_until: row.grace_alert_muted_until || null,
+            });
+        }
+
+        return res.json({
+            success: true,
+            channel,
+            alerts,
+            count: alerts.length,
+            generated_at: new Date().toISOString(),
+        });
+    } catch (error) {
+        console.error('Error fetching store grace alerts:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch store grace alerts',
+            error: error.message,
+        });
+    }
+});
+
+router.post('/:id/grace-alert-mute', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await ensureStoreFinancialColumns(req.db);
+        const storeId = parseInt(String(req.params.id || ''), 10);
+        if (!Number.isInteger(storeId) || storeId <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid store id',
+            });
+        }
+        const rawHours = parseInt(String(req.body?.hours || '24'), 10);
+        const wantsUnmute = req.body?.unmute === true || (Number.isInteger(rawHours) && rawHours <= 0);
+        const muteHours = Number.isInteger(rawHours)
+            ? Math.min(24 * 30, Math.max(1, rawHours))
+            : 24;
+        const mutedUntil = wantsUnmute
+            ? null
+            : new Date(Date.now() + muteHours * 60 * 60 * 1000)
+                .toISOString()
+                .slice(0, 19)
+                .replace('T', ' ');
+
+        const [result] = await req.db.execute(
+            `UPDATE stores
+             SET grace_alert_muted_until = ?
+             WHERE id = ?`,
+            [mutedUntil, storeId]
+        );
+        if (!result || result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Store not found',
+            });
+        }
+        return res.json({
+            success: true,
+            message: wantsUnmute
+                ? 'Grace alert re-enabled successfully'
+                : `Grace alert muted for ${muteHours} hours`,
+            muted_until: mutedUntil,
+            muted: !wantsUnmute
+        });
+    } catch (error) {
+        console.error('Error muting store grace alert:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to mute store grace alert',
+            error: error.message,
+        });
+    }
+});
+
 router.get('/:id', async (req, res) => {
     try {
         await ensureStoreStatusMessagesTable(req.db);
+        await ensureStoreFinancialColumns(req.db);
         const { id } = req.params;
 
         const [stores] = await req.db.execute(`
@@ -1119,6 +1573,10 @@ router.get('/:id', async (req, res) => {
                 opening_time: store.opening_time || null,
                 closing_time: store.closing_time || null,
                 payment_term: store.payment_term || null,
+                payment_grace_days: store.payment_grace_days === null || store.payment_grace_days === undefined ? null : Number(store.payment_grace_days),
+                payment_grace_start_date: store.payment_grace_start_date || null,
+                payment_grace_due_date: calculateGraceDueDate(store.payment_grace_start_date, store.payment_grace_days),
+                grace_alert_muted_until: store.grace_alert_muted_until || null,
                 latitude: store.latitude,
                 longitude: store.longitude,
                 rating: store.rating,
@@ -1210,12 +1668,16 @@ router.post('/', authenticateToken, requireStoreOwner, [
             opening_time, closing_time,
             payment_term,
             payment_grace_days,
+            payment_grace_start_date,
             image_url,
             rating
         } = req.body;
-        const parsedGraceDays = payment_grace_days === null || payment_grace_days === undefined || String(payment_grace_days).trim() === ''
+        const parsedGraceDaysRaw = payment_grace_days === null || payment_grace_days === undefined || String(payment_grace_days).trim() === ''
             ? null
             : Math.max(0, parseInt(String(payment_grace_days), 10));
+        const graceApplicable = isGraceApplicablePaymentTerm(payment_term);
+        const parsedGraceDays = graceApplicable ? parsedGraceDaysRaw : null;
+        const parsedGraceStartDate = graceApplicable ? normalizeDateOnlyInput(payment_grace_start_date) : null;
 
         if (rating !== undefined && req.user.user_type !== 'admin') {
             return res.status(403).json({
@@ -1242,6 +1704,7 @@ router.post('/', authenticateToken, requireStoreOwner, [
             'closing_time',
             'payment_term',
             'payment_grace_days',
+            'payment_grace_start_date',
             'phone',
             'email',
             'address',
@@ -1260,6 +1723,7 @@ router.post('/', authenticateToken, requireStoreOwner, [
             closing_time || null,
             payment_term || null,
             Number.isInteger(parsedGraceDays) ? parsedGraceDays : null,
+            parsedGraceStartDate,
             phone || null,
             email || null,
             address || null,
@@ -1289,7 +1753,11 @@ router.post('/', authenticateToken, requireStoreOwner, [
                 location,
                 owner_id: ownerId,
                 owner_name: owner_name || null,
-                image_url: image_url || null
+                image_url: image_url || null,
+                payment_term: payment_term || null,
+                payment_grace_days: Number.isInteger(parsedGraceDays) ? parsedGraceDays : null,
+                payment_grace_start_date: parsedGraceStartDate,
+                payment_grace_due_date: calculateGraceDueDate(parsedGraceStartDate, parsedGraceDays)
             }
         });
 
@@ -1372,6 +1840,7 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             closing_time,
             payment_term,
             payment_grace_days,
+            payment_grace_start_date,
             image_url,
             rating,
             category_id,
@@ -1424,13 +1893,37 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
         if (delivery_time !== undefined) { updateFields.push('delivery_time = ?'); updateValues.push(delivery_time); }
         if (opening_time !== undefined) { updateFields.push('opening_time = ?'); updateValues.push(opening_time); }
         if (closing_time !== undefined) { updateFields.push('closing_time = ?'); updateValues.push(closing_time); }
-        if (payment_term !== undefined) { updateFields.push('payment_term = ?'); updateValues.push(payment_term); }
+        const nextPaymentTerm = payment_term !== undefined ? payment_term : store.payment_term;
+        const graceApplicable = isGraceApplicablePaymentTerm(nextPaymentTerm);
+        if (payment_term !== undefined) {
+            updateFields.push('payment_term = ?');
+            updateValues.push(payment_term);
+            updateFields.push('grace_alert_muted_until = ?');
+            updateValues.push(null);
+        }
         if (payment_grace_days !== undefined) {
-            const parsedGraceDays = payment_grace_days === null || String(payment_grace_days).trim() === ''
+            const parsedGraceDaysRaw = payment_grace_days === null || String(payment_grace_days).trim() === ''
                 ? null
                 : Math.max(0, parseInt(String(payment_grace_days), 10));
+            const parsedGraceDays = graceApplicable ? parsedGraceDaysRaw : null;
             updateFields.push('payment_grace_days = ?');
             updateValues.push(Number.isInteger(parsedGraceDays) ? parsedGraceDays : null);
+            updateFields.push('grace_alert_muted_until = ?');
+            updateValues.push(null);
+        } else if (!graceApplicable) {
+            updateFields.push('payment_grace_days = ?');
+            updateValues.push(null);
+            updateFields.push('payment_grace_start_date = ?');
+            updateValues.push(null);
+            updateFields.push('grace_alert_muted_until = ?');
+            updateValues.push(null);
+        }
+        if (payment_grace_start_date !== undefined) {
+            const parsedStart = graceApplicable ? normalizeDateOnlyInput(payment_grace_start_date) : null;
+            updateFields.push('payment_grace_start_date = ?');
+            updateValues.push(parsedStart);
+            updateFields.push('grace_alert_muted_until = ?');
+            updateValues.push(null);
         }
         if (phone !== undefined) { updateFields.push('phone = ?'); updateValues.push(phone); }
         if (email !== undefined) { updateFields.push('email = ?'); updateValues.push(email); }

@@ -18,6 +18,7 @@ const AppState = {
     sizes: [],
     globalDeliveryStatus: null,
     livePromotions: null,
+    customerFlashMessage: null,
     notificationCustomers: [],
     productStoreTermsById: {},
     productItemCatalog: {
@@ -176,6 +177,18 @@ function getSelectedCustomerIdsBySelectId(selectId) {
     return Array.from(sel.selectedOptions || [])
         .map(opt => parseInt(String(opt.value || '').trim(), 10))
         .filter(n => Number.isInteger(n) && n > 0);
+}
+
+function setSelectedCustomerIdsBySelectId(selectId, ids) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const wanted = new Set((Array.isArray(ids) ? ids : [])
+        .map((v) => parseInt(String(v), 10))
+        .filter((v) => Number.isInteger(v) && v > 0)
+        .map(String));
+    Array.from(sel.options || []).forEach((opt) => {
+        opt.selected = wanted.has(String(opt.value || '').trim());
+    });
 }
 
 async function loadNotificationCustomersIfNeeded() {
@@ -656,6 +669,240 @@ function bindLivePromotionControls() {
     }
 }
 
+function updateCustomerFlashControls() {
+    const targetEl = document.getElementById('customerFlashTarget');
+    const customerWrap = document.getElementById('customerFlashCustomerWrap');
+    const sendPushEl = document.getElementById('customerFlashSendPush');
+    const pushTitleWrap = document.getElementById('customerFlashPushTitle')?.closest('.form-group');
+    const pushMessageWrap = document.getElementById('customerFlashPushMessage')?.closest('.form-group');
+    const customTarget = (targetEl?.value || 'all') === 'custom';
+    const sendPush = !!sendPushEl?.checked;
+    if (customerWrap) customerWrap.style.display = customTarget ? '' : 'none';
+    if (pushTitleWrap) pushTitleWrap.style.display = sendPush ? '' : 'none';
+    if (pushMessageWrap) pushMessageWrap.style.display = sendPush ? '' : 'none';
+    if (customTarget) {
+        loadNotificationCustomersIfNeeded().then(() => {
+            populateCustomerSelect('customerFlashCustomerSelect');
+            const ids = Array.isArray(AppState.customerFlashMessage?.customer_ids)
+                ? AppState.customerFlashMessage.customer_ids
+                : [];
+            setSelectedCustomerIdsBySelectId('customerFlashCustomerSelect', ids);
+        }).catch((e) => console.error('Error loading customer flash recipients:', e));
+    }
+}
+
+function renderCustomerFlashPreview() {
+    const preview = document.getElementById('customerFlashPreview');
+    const enabledEl = document.getElementById('customerFlashEnabled');
+    const titleEl = document.getElementById('customerFlashTitle');
+    const messageEl = document.getElementById('customerFlashMessage');
+    const imageEl = document.getElementById('customerFlashImage');
+    const startEl = document.getElementById('customerFlashStartAt');
+    const endEl = document.getElementById('customerFlashEndAt');
+    const targetEl = document.getElementById('customerFlashTarget');
+    const stateEl = document.getElementById('customerFlashCurrentState');
+    if (!preview || !enabledEl || !titleEl || !messageEl || !startEl || !endEl || !targetEl || !stateEl || !imageEl) return;
+
+    const enabled = !!enabledEl.checked;
+    const title = (titleEl.value || '').trim() || 'Flash Message';
+    const message = (messageEl.value || '').trim() || 'No message set.';
+    const imageUrl = (imageEl.value || '').trim();
+    const target = (targetEl.value || 'all') === 'custom' ? 'Selected Customers' : 'All Customers';
+    const start = startEl.value ? new Date(startEl.value) : null;
+    const end = endEl.value ? new Date(endEl.value) : null;
+    const now = new Date();
+    const active = !!(enabled && start && end && now >= start && now <= end);
+    const whenText = start && end ? `${start.toLocaleString()} - ${end.toLocaleString()}` : 'No time window selected';
+
+    stateEl.className = `global-delivery-state ${active ? 'state-unavailable' : 'state-available'}`;
+    stateEl.textContent = active ? 'Active Now' : (enabled ? 'Scheduled' : 'Inactive');
+    preview.innerHTML = `
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(message)}</p>
+        <p><small><strong>Target:</strong> ${escapeHtml(target)}</small></p>
+        <p><small><strong>Window:</strong> ${escapeHtml(whenText)}</small></p>
+        ${imageUrl ? `<p><small><strong>Image:</strong> ${escapeHtml(imageUrl)}</small></p>` : '<p><small><strong>Image:</strong> Not set</small></p>'}
+    `;
+}
+
+async function loadCustomerFlashMessage() {
+    const enabledEl = document.getElementById('customerFlashEnabled');
+    if (!enabledEl) return null;
+    try {
+        const response = await fetch(`${API_BASE}/api/stores/customer-flash-message`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!data.success || !data.customer_flash_message) return null;
+        const s = data.customer_flash_message;
+        AppState.customerFlashMessage = s;
+        document.getElementById('customerFlashEnabled').checked = !!s.is_enabled;
+        document.getElementById('customerFlashTitle').value = s.title || '';
+        document.getElementById('customerFlashMessage').value = s.status_message || '';
+        document.getElementById('customerFlashImage').value = s.image_url || '';
+        document.getElementById('customerFlashStartAt').value = toDateTimeLocalValue(s.start_at) || nowDateTimeLocalValue();
+        document.getElementById('customerFlashEndAt').value = toDateTimeLocalValue(s.end_at) || nowDateTimeLocalValue();
+        document.getElementById('customerFlashTarget').value = s.notification_target === 'custom' ? 'custom' : 'all';
+        document.getElementById('customerFlashSendPush').checked = false;
+        document.getElementById('customerFlashPushTitle').value = s.title || '';
+        document.getElementById('customerFlashPushMessage').value = s.status_message || '';
+        updateCustomerFlashControls();
+        setSelectedCustomerIdsBySelectId('customerFlashCustomerSelect', s.customer_ids || []);
+        renderCustomerFlashPreview();
+        return s;
+    } catch (error) {
+        console.error('Error loading customer flash message:', error);
+        return null;
+    }
+}
+
+async function uploadCustomerFlashImage() {
+    const fileEl = document.getElementById('customerFlashImageFile');
+    const urlEl = document.getElementById('customerFlashImage');
+    const btn = document.getElementById('uploadCustomerFlashImageBtn');
+    if (!fileEl || !urlEl || !fileEl.files || !fileEl.files[0]) {
+        showWarning('Missing File', 'Please select an image first.');
+        return;
+    }
+    const fd = new FormData();
+    fd.append('image', fileEl.files[0]);
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+        }
+        const response = await fetch(`${API_BASE}/api/admin/upload-image`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${authToken}` },
+            body: fd
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success || !data.image_url) {
+            showError('Upload Failed', data.message || 'Failed to upload image');
+            return;
+        }
+        urlEl.value = data.image_url;
+        fileEl.value = '';
+        renderCustomerFlashPreview();
+        showSuccess('Uploaded', 'Flash image uploaded');
+    } catch (error) {
+        console.error('Error uploading customer flash image:', error);
+        showError('Upload Failed', 'Failed to upload image');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-upload"></i> Upload';
+        }
+    }
+}
+
+async function saveCustomerFlashMessage() {
+    const enabledEl = document.getElementById('customerFlashEnabled');
+    const titleEl = document.getElementById('customerFlashTitle');
+    const messageEl = document.getElementById('customerFlashMessage');
+    const imageEl = document.getElementById('customerFlashImage');
+    const startEl = document.getElementById('customerFlashStartAt');
+    const endEl = document.getElementById('customerFlashEndAt');
+    const targetEl = document.getElementById('customerFlashTarget');
+    const saveBtn = document.getElementById('saveCustomerFlashBtn');
+    if (!enabledEl || !titleEl || !messageEl || !imageEl || !startEl || !endEl || !targetEl) return;
+
+    if (!startEl.value) startEl.value = nowDateTimeLocalValue();
+    if (!endEl.value) endEl.value = nowDateTimeLocalValue();
+
+    const payload = {
+        is_enabled: !!enabledEl.checked,
+        title: titleEl.value.trim(),
+        status_message: messageEl.value.trim(),
+        image_url: imageEl.value.trim(),
+        start_at: startEl.value || null,
+        end_at: endEl.value || null,
+        notification_target: (targetEl.value || 'all') === 'custom' ? 'custom' : 'all',
+        customer_ids: getSelectedCustomerIdsBySelectId('customerFlashCustomerSelect'),
+        send_push_notification: !!document.getElementById('customerFlashSendPush')?.checked,
+        push_title: (document.getElementById('customerFlashPushTitle')?.value || '').trim(),
+        push_message: (document.getElementById('customerFlashPushMessage')?.value || '').trim()
+    };
+    if (payload.is_enabled && (!payload.start_at || !payload.end_at)) {
+        showWarning('Missing Time Window', 'Please set both "from" and "to" time.');
+        return;
+    }
+    if (payload.notification_target === 'custom' && !payload.customer_ids.length) {
+        showWarning('Missing Customers', 'Please select at least one customer for custom target.');
+        return;
+    }
+
+    try {
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+        const response = await fetch(`${API_BASE}/api/stores/customer-flash-message`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            showError('Save Failed', data.message || 'Failed to save customer flash message');
+            return;
+        }
+        showSuccess('Saved', 'Customer flash launch message updated.');
+        await loadCustomerFlashMessage();
+    } catch (error) {
+        console.error('Error saving customer flash message:', error);
+        showError('Save Failed', 'Failed to save customer flash message');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-bolt"></i> Save Launch Flash Message';
+        }
+    }
+}
+
+function bindCustomerFlashControls() {
+    const saveBtn = document.getElementById('saveCustomerFlashBtn');
+    if (saveBtn && !saveBtn.dataset.boundClick) {
+        saveBtn.addEventListener('click', saveCustomerFlashMessage);
+        saveBtn.dataset.boundClick = '1';
+    }
+    ['customerFlashEnabled', 'customerFlashTitle', 'customerFlashMessage', 'customerFlashImage', 'customerFlashStartAt', 'customerFlashEndAt']
+        .forEach((id) => {
+            const el = document.getElementById(id);
+            if (el && !el.dataset.boundPreview) {
+                el.addEventListener('input', renderCustomerFlashPreview);
+                el.addEventListener('change', renderCustomerFlashPreview);
+                el.dataset.boundPreview = '1';
+            }
+        });
+    ['customerFlashTarget', 'customerFlashSendPush'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.boundCtrl) {
+            el.addEventListener('change', updateCustomerFlashControls);
+            el.dataset.boundCtrl = '1';
+        }
+    });
+    const uploadBtn = document.getElementById('uploadCustomerFlashImageBtn');
+    if (uploadBtn && !uploadBtn.dataset.boundClick) {
+        uploadBtn.addEventListener('click', uploadCustomerFlashImage);
+        uploadBtn.dataset.boundClick = '1';
+    }
+    const clearBtn = document.getElementById('clearCustomerFlashImageBtn');
+    if (clearBtn && !clearBtn.dataset.boundClick) {
+        clearBtn.addEventListener('click', () => {
+            const imageEl = document.getElementById('customerFlashImage');
+            const fileEl = document.getElementById('customerFlashImageFile');
+            if (imageEl) imageEl.value = '';
+            if (fileEl) fileEl.value = '';
+            renderCustomerFlashPreview();
+        });
+        clearBtn.dataset.boundClick = '1';
+    }
+}
+
 const PRODUCT_ITEM_CATALOG_TTL_MS = 2 * 60 * 1000;
 
 const ADMIN_THEME_STORAGE_KEY = 'serveNowAdminTheme';
@@ -1112,6 +1359,8 @@ function initializeAdmin() {
     updateGlobalDeliveryPushControls();
     updateBroadcastPushControls();
     bindLivePromotionControls();
+    bindCustomerFlashControls();
+    updateCustomerFlashControls();
     document.getElementById('runDiagnosticsBtn')?.addEventListener('click', () => runAllDiagnostics());
     document.getElementById('runSingleDiagnosticBtn')?.addEventListener('click', () => runSingleDiagnostic());
     // Removed Export Base64 Images and Image Fit controls
@@ -1209,6 +1458,11 @@ function initializeAdmin() {
     // Add event listeners for save buttons
     document.getElementById('saveAccountBtn').addEventListener('click', saveAccount);
     document.getElementById('saveStoreBtn').addEventListener('click', saveStore);
+    const storeUnmuteGraceBtn = document.getElementById('storeUnmuteGraceBtn');
+    if (storeUnmuteGraceBtn && !storeUnmuteGraceBtn.dataset.boundClick) {
+        storeUnmuteGraceBtn.addEventListener('click', handleStoreUnmuteGraceAlert);
+        storeUnmuteGraceBtn.dataset.boundClick = '1';
+    }
     document.getElementById('saveProductBtn').addEventListener('click', saveProduct);
     const saveSizeBtn = document.getElementById('saveSizeBtn');
     if (saveSizeBtn) saveSizeBtn.addEventListener('click', saveSize);
@@ -1220,6 +1474,23 @@ function initializeAdmin() {
     document.getElementById('saveCategoryBtn').addEventListener('click', saveCategory);
     document.getElementById('saveRiderBtn').addEventListener('click', saveRider);
     document.getElementById('saveOrderBtn').addEventListener('click', saveOrder);
+    const storePaymentTermEl = document.getElementById('storePaymentTerm');
+    const storeGraceDaysEl = document.getElementById('storeGraceDays');
+    const storeGraceStartDateEl = document.getElementById('storeGraceStartDate');
+    if (storePaymentTermEl && !storePaymentTermEl.dataset.boundGraceControls) {
+        storePaymentTermEl.addEventListener('change', updateStoreGraceControls);
+        storePaymentTermEl.dataset.boundGraceControls = '1';
+    }
+    if (storeGraceDaysEl && !storeGraceDaysEl.dataset.boundGracePreview) {
+        storeGraceDaysEl.addEventListener('input', updateStoreGraceDuePreview);
+        storeGraceDaysEl.dataset.boundGracePreview = '1';
+    }
+    if (storeGraceStartDateEl && !storeGraceStartDateEl.dataset.boundGracePreview) {
+        storeGraceStartDateEl.addEventListener('change', updateStoreGraceDuePreview);
+        storeGraceStartDateEl.dataset.boundGracePreview = '1';
+    }
+    updateStoreGraceControls();
+    startStoreGraceAlertsPolling();
 
     // Store priority button
     const savePriorityBtn = document.getElementById('savePriorityBtn');
@@ -1263,6 +1534,8 @@ function initializeAdmin() {
     if (createBackupBtn) createBackupBtn.addEventListener('click', createBackup);
     const refreshBackupsBtn = document.getElementById('refreshBackupsBtn');
     if (refreshBackupsBtn) refreshBackupsBtn.addEventListener('click', loadBackups);
+    const testTrayNotificationBtn = document.getElementById('testTrayNotificationBtn');
+    if (testTrayNotificationBtn) testTrayNotificationBtn.addEventListener('click', sendTestTrayNotification);
     const saveDeliveryFeeSettingsBtn = document.getElementById('saveDeliveryFeeSettingsBtn');
     if (saveDeliveryFeeSettingsBtn) saveDeliveryFeeSettingsBtn.addEventListener('click', saveDeliveryFeeSettings);
     const reloadDeliveryFeeSettingsBtn = document.getElementById('reloadDeliveryFeeSettingsBtn');
@@ -2039,6 +2312,8 @@ function switchTab(tabName) {
             renderGlobalDeliveryPreview();
             loadLivePromotions();
             renderLivePromotionPreview();
+            loadCustomerFlashMessage();
+            renderCustomerFlashPreview();
             break;
         case 'products':
             loadProducts();
@@ -2907,6 +3182,25 @@ function populateStoreDropdown(selectElement, selectedStoreId = '') {
     }
 }
 
+async function sendTestTrayNotification() {
+    try {
+        if (!window._adminDiag || typeof window._adminDiag.testTrayNotification !== 'function') {
+            showError('Tray Test', 'Notification diagnostics is not initialized yet.');
+            return;
+        }
+        const result = await window._adminDiag.testTrayNotification();
+        if (result && result.ok) {
+            showSuccess('Tray Test Sent', 'Check your PC system tray / notification center now.');
+            return;
+        }
+        const reason = result?.reason || result?.error || 'Tray notification was not sent.';
+        showWarning('Tray Test Failed', String(reason));
+    } catch (err) {
+        console.error('sendTestTrayNotification error:', err);
+        showError('Tray Test Error', err?.message || String(err));
+    }
+}
+
 function saveAccount() {
     const accountId = document.getElementById('editAccountId').value;
     const firstName = String(document.getElementById('editAccountFirstName').value || '').trim();
@@ -3396,11 +3690,40 @@ function displayOrders(orders = AppState.orders) {
 
     if (!orders || !Array.isArray(orders)) return;
 
+    const formatOrderDuration = (startRaw, endRaw) => {
+        const start = new Date(startRaw);
+        const end = new Date(endRaw);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '-';
+        const diffMs = end.getTime() - start.getTime();
+        if (diffMs < 0) return '-';
+        const totalMinutes = Math.floor(diffMs / 60000);
+        const days = Math.floor(totalMinutes / (24 * 60));
+        const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+        const mins = totalMinutes % 60;
+        const parts = [];
+        if (days > 0) parts.push(`${days}d`);
+        if (hours > 0 || days > 0) parts.push(`${hours}h`);
+        parts.push(`${mins}m`);
+        return parts.join(' ');
+    };
+
     orders.forEach(order => {
         const riderName = order.rider_first_name
             ? `${order.rider_first_name} ${order.rider_last_name || ''}`.trim()
             : 'Not Assigned';
         const row = document.createElement('tr');
+
+        const isDelivered = String(order.status || '').toLowerCase() === 'delivered';
+        const deliveredAt = order.delivered_at || order.completed_at || order.updated_at;
+        const timeTaken = isDelivered
+            ? formatOrderDuration(order.created_at, deliveredAt || order.created_at)
+            : 'In Progress';
+        const orderNumberHtml = `
+            <div style="display:flex; flex-direction:column; gap:2px;">
+                <span style="font-weight:700;">${order.order_number}</span>
+                <span style="font-size:11px; color:#64748b;">Time Taken: ${timeTaken}</span>
+            </div>
+        `;
         
         // Multi-store status tooltip
         let statusHtml = `<span class="status-${order.status}">${order.status.charAt(0).toUpperCase() + order.status.slice(1)}</span>`;
@@ -3454,7 +3777,7 @@ function displayOrders(orders = AppState.orders) {
         }
 
         row.innerHTML = `
-            <td>${order.order_number}</td>
+            <td>${orderNumberHtml}</td>
             <td>${order.first_name} ${order.last_name}</td>
             <td>${order.store_name || 'Multiple Stores'}</td>
             <td>PKR ${parseFloat(order.total_amount).toFixed(2)}</td>
@@ -4914,8 +5237,19 @@ async function showAddStoreModal() {
         if (titleEl) titleEl.textContent = 'Add New Store';
         const saveBtn = modal.querySelector('#saveStoreBtn');
         if (saveBtn) saveBtn.textContent = 'Save Store';
+        const unmuteBtn = modal.querySelector('#storeUnmuteGraceBtn');
+        if (unmuteBtn) unmuteBtn.style.display = 'none';
     }
     showModal('addStoreModal');
+    try {
+        const form = document.getElementById('addStoreForm');
+        if (form) {
+            if (form.querySelector('#storeGraceDays')) form.querySelector('#storeGraceDays').value = '';
+            if (form.querySelector('#storeGraceStartDate')) form.querySelector('#storeGraceStartDate').value = '';
+            if (form.querySelector('#storePaymentTerm')) form.querySelector('#storePaymentTerm').value = '';
+        }
+        updateStoreGraceControls();
+    } catch (e) {}
 
     const fileInput = document.getElementById('storeImageFile');
     const preview = document.getElementById('storeImagePreview');
@@ -4947,6 +5281,8 @@ async function saveStore() {
 
     const formEl = document.getElementById('addStoreForm');
     const formData = new FormData(formEl);
+    const paymentTermRaw = formData.get('payment_term') || null;
+    const graceApplicable = isGraceApplicableStoreTerm(paymentTermRaw);
     const storeData = {
         name: formData.get('name'),
         description: formData.get('description'),
@@ -4958,12 +5294,18 @@ async function saveStore() {
         delivery_time: formData.get('delivery_time'),
         opening_time: formData.get('opening_time') || null,
         closing_time: formData.get('closing_time') || null,
-        payment_term: formData.get('payment_term') || null,
+        payment_term: paymentTermRaw,
         payment_grace_days: (() => {
+            if (!graceApplicable) return null;
             const raw = String(formData.get('payment_grace_days') || '').trim();
             if (!raw.length) return null;
             const n = parseInt(raw, 10);
             return Number.isInteger(n) && n >= 0 ? n : null;
+        })(),
+        payment_grace_start_date: (() => {
+            if (!graceApplicable) return null;
+            const raw = String(formData.get('payment_grace_start_date') || '').trim();
+            return raw.length ? raw : null;
         })(),
         address: formData.get('address'),
         status: formData.get('status') || 'active',
@@ -5057,7 +5399,13 @@ async function editStore(storeId) {
         const data = await resp.json();
         if (!data || !data.success || !data.store) { showError('Error', 'Failed to load store'); return; }
         const s = data.store;
-        await populateStoreCategorySelect(s.category_id || null);
+        const selectedCategoryId = (() => {
+            const raw = s.category_id ?? s.categoryId ?? s.category?.id ?? null;
+            if (raw === null || raw === undefined) return null;
+            const n = parseInt(String(raw).trim(), 10);
+            return Number.isInteger(n) && n > 0 ? n : null;
+        })();
+        await populateStoreCategorySelect(selectedCategoryId);
         const form = document.getElementById('addStoreForm');
         form.querySelector('#storeName').value = s.name || '';
         form.querySelector('#storeOwner').value = s.owner_name || '';
@@ -5081,15 +5429,22 @@ async function editStore(storeId) {
         if (s.opening_time) form.querySelector('#storeOpeningTime').value = s.opening_time;
         if (s.closing_time) form.querySelector('#storeClosingTime').value = s.closing_time;
         if (form.querySelector('#storePaymentTerm')) form.querySelector('#storePaymentTerm').value = s.payment_term || '';
-        if (form.querySelector('#storeGraceDays')) form.querySelector('#storeGraceDays').value = (s.payment_grace_days ?? '') === null ? '' : (s.payment_grace_days ?? '');
+        if (form.querySelector('#storeGraceDays')) form.querySelector('#storeGraceDays').value = (s.payment_grace_days ?? '').toString();
+        if (form.querySelector('#storeGraceStartDate')) form.querySelector('#storeGraceStartDate').value = normalizeDateInputValue(s.payment_grace_start_date);
+        if (form.querySelector('#storeCategory') && selectedCategoryId !== null) {
+            form.querySelector('#storeCategory').value = String(selectedCategoryId);
+        }
         form.querySelector('#storeDescription').value = s.description || '';
         form.querySelector('#storeAddress').value = s.address || '';
+        updateStoreGraceControls();
         const modal = document.getElementById('addStoreModal');
         if (modal) {
             const titleEl = modal.querySelector('.modal-header h3');
             if (titleEl) titleEl.textContent = 'Edit Store';
             const saveBtn = modal.querySelector('#saveStoreBtn');
             if (saveBtn) saveBtn.textContent = 'Update Store';
+            const unmuteBtn = modal.querySelector('#storeUnmuteGraceBtn');
+            if (unmuteBtn) unmuteBtn.style.display = '';
         }
         showModal('addStoreModal');
     } catch (e) {
@@ -5103,15 +5458,23 @@ async function populateStoreCategorySelect(selectedId = null) {
     if (!categorySelect) return;
     categorySelect.innerHTML = '<option value="">Select Category (Optional)</option>';
     try {
-        const resp = await fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' });
+        const normalizedSelectedId = (() => {
+            if (selectedId === null || selectedId === undefined || String(selectedId).trim() === '') return null;
+            const n = parseInt(String(selectedId).trim(), 10);
+            return Number.isInteger(n) && n > 0 ? n : null;
+        })();
+        const resp = await fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` },
+            cache: 'no-store'
+        });
         const data = await resp.json();
         if (data && data.success && Array.isArray(data.categories)) {
             data.categories.forEach(category => {
                 categorySelect.innerHTML += `<option value="${category.id}">${category.name}</option>`;
             });
         }
-        if (selectedId) {
-            categorySelect.value = String(selectedId);
+        if (normalizedSelectedId !== null) {
+            categorySelect.value = String(normalizedSelectedId);
         }
     } catch (err) {
         console.error('Error loading categories:', err);
@@ -5141,6 +5504,269 @@ function isProfitPaymentTerm(term) {
 
 function isCashOnlyPaymentTerm(term) {
     return String(term || '').toLowerCase().trim() === 'cash only';
+}
+
+function isGraceApplicableStoreTerm(term) {
+    const t = String(term || '').toLowerCase().trim();
+    return !!t && t !== 'cash only' && t !== 'credit';
+}
+
+function updateStoreGraceControls() {
+    const termEl = document.getElementById('storePaymentTerm');
+    const graceDaysGroup = document.getElementById('storeGraceDaysGroup');
+    const graceStartGroup = document.getElementById('storeGraceStartDateGroup');
+    const graceDaysEl = document.getElementById('storeGraceDays');
+    const graceStartEl = document.getElementById('storeGraceStartDate');
+    if (!termEl || !graceDaysGroup || !graceStartGroup) return;
+
+    const enabled = isGraceApplicableStoreTerm(termEl.value);
+    graceDaysGroup.style.display = enabled ? '' : 'none';
+    graceStartGroup.style.display = enabled ? '' : 'none';
+    if (!enabled) {
+        if (graceDaysEl) graceDaysEl.value = '';
+        if (graceStartEl) graceStartEl.value = '';
+    }
+    updateStoreGraceDuePreview();
+}
+
+function updateStoreGraceDuePreview() {
+    const startEl = document.getElementById('storeGraceStartDate');
+    const daysEl = document.getElementById('storeGraceDays');
+    const previewEl = document.getElementById('storeGraceDueDatePreview');
+    if (!previewEl) return;
+    const start = String(startEl?.value || '').trim();
+    const days = parseInt(String(daysEl?.value || '').trim(), 10);
+    if (!start || !Number.isInteger(days) || days < 0) {
+        previewEl.textContent = 'Due Date: -';
+        return;
+    }
+    const dt = new Date(`${start}T00:00:00`);
+    if (Number.isNaN(dt.getTime())) {
+        previewEl.textContent = 'Due Date: -';
+        return;
+    }
+    dt.setDate(dt.getDate() + days);
+    previewEl.textContent = `Due Date: ${dt.toLocaleDateString()}`;
+}
+
+function normalizeDateInputValue(rawValue) {
+    const value = String(rawValue || '').trim();
+    if (!value) return '';
+    const direct = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (direct && direct[1]) return direct[1];
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return '';
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+let _storeGraceAlertTimer = null;
+let _storeGraceAlertBusy = false;
+let _storeGracePermissionRequested = false;
+let _storeGraceSwRegistration = null;
+
+async function ensureAdminNotificationSw() {
+    if (!('serviceWorker' in navigator)) return null;
+    if (_storeGraceSwRegistration) return _storeGraceSwRegistration;
+    try {
+        _storeGraceSwRegistration = await navigator.serviceWorker.register('/admin-sw.js');
+        return _storeGraceSwRegistration;
+    } catch (e) {
+        console.warn('Admin notification service worker registration failed:', e);
+        return null;
+    }
+}
+
+async function showStoreGraceSystemNotification(title, body, storeId, onClick) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+    let sent = false;
+    try {
+        const reg = await ensureAdminNotificationSw();
+        if (reg && typeof reg.showNotification === 'function') {
+            await reg.showNotification(title, {
+                body,
+                requireInteraction: true,
+                tag: `store-due-${storeId}`,
+                renotify: true,
+                data: { store_id: storeId }
+            });
+            sent = true;
+        }
+    } catch (e) {
+        console.warn('Service worker notification failed, fallback to Notification API:', e);
+    }
+    try {
+        const notif = new Notification(title, {
+            body,
+            requireInteraction: true,
+            tag: `store-due-${storeId}`,
+            renotify: true
+        });
+        if (typeof onClick === 'function') notif.onclick = onClick;
+        sent = true;
+    } catch (e) {
+        console.warn('Notification API failed:', e);
+    }
+    return sent;
+}
+
+window._adminDiag = window._adminDiag || {};
+window._adminDiag.getNotificationDebug = function () {
+    return {
+        secureContext: !!window.isSecureContext,
+        hasNotificationApi: 'Notification' in window,
+        permission: ('Notification' in window) ? Notification.permission : 'unsupported',
+        hasServiceWorker: 'serviceWorker' in navigator,
+        origin: window.location.origin
+    };
+};
+window._adminDiag.testTrayNotification = async function () {
+    try {
+        if (!('Notification' in window)) return { ok: false, reason: 'Notification API unsupported' };
+        if (Notification.permission === 'default') {
+            try { await Notification.requestPermission(); } catch (_) {}
+        }
+        if (Notification.permission !== 'granted') {
+            return { ok: false, reason: `Permission is ${Notification.permission}` };
+        }
+        const ok = await showStoreGraceSystemNotification(
+            'ServeNow Tray Test',
+            'If you see this in system tray, browser notifications are working.',
+            0,
+            () => { try { window.focus(); } catch (_) {} }
+        );
+        return { ok, ...window._adminDiag.getNotificationDebug() };
+    } catch (e) {
+        return { ok: false, error: String(e) };
+    }
+};
+
+async function muteStoreGraceAlert(storeId, hours = 24) {
+    const sid = parseInt(String(storeId || ''), 10);
+    if (!Number.isInteger(sid) || sid <= 0) return;
+    await fetch(`${API_BASE}/api/stores/${sid}/grace-alert-mute`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ hours })
+    });
+}
+
+async function unmuteStoreGraceAlert(storeId) {
+    const sid = parseInt(String(storeId || ''), 10);
+    if (!Number.isInteger(sid) || sid <= 0) return;
+    await fetch(`${API_BASE}/api/stores/${sid}/grace-alert-mute`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ hours: 0, unmute: true })
+    });
+}
+
+async function handleStoreUnmuteGraceAlert() {
+    const sid = parseInt(String(AppState.editing.storeId || ''), 10);
+    if (!Number.isInteger(sid) || sid <= 0) {
+        showWarning('No Store Selected', 'Open a store in Edit mode to re-enable alerts.');
+        return;
+    }
+    try {
+        await unmuteStoreGraceAlert(sid);
+        showSuccess('Alerts Re-enabled', 'Due alerts are active again for this store.');
+    } catch (e) {
+        console.error('Failed to re-enable store grace alerts', e);
+        showError('Failed', 'Could not re-enable due alerts.');
+    }
+}
+
+async function checkStoreGraceAlerts() {
+    if (_storeGraceAlertBusy || !authToken) return;
+    _storeGraceAlertBusy = true;
+    try {
+        const resp = await fetch(`${API_BASE}/api/stores/grace-alerts?channel=web`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success || !Array.isArray(data.alerts) || !data.alerts.length) return;
+        const top = data.alerts[0];
+        const storeName = top.store_name || `Store #${top.store_id}`;
+        const dueDate = top.due_date || '-';
+        const pending = Number(top.pending_amount || 0).toFixed(2);
+        const daysLeft = Number(top.days_left);
+        const lead =
+            Number.isFinite(daysLeft) && daysLeft < 0
+                ? `Overdue by ${Math.abs(daysLeft)} day(s)`
+                : (Number.isFinite(daysLeft) ? `Due in ${daysLeft} day(s)` : 'Payment due');
+        const body = `${storeName}\n${lead}\nDue Date: ${dueDate}\nPending: PKR ${pending}`;
+        let shownBySystemTray = false;
+        try {
+            if ('Notification' in window) {
+                if (Notification.permission === 'default' && !_storeGracePermissionRequested) {
+                    _storeGracePermissionRequested = true;
+                    try { await Notification.requestPermission(); } catch (_) {}
+                }
+                if (Notification.permission === 'granted') {
+                    shownBySystemTray = await showStoreGraceSystemNotification(
+                        'Store Due Alert',
+                        body,
+                        top.store_id,
+                        async () => {
+                        try { window.focus(); } catch (_) {}
+                        const doMute = window.confirm(
+                            `[Store Due Alert]\n${storeName}\n${lead}\nDue Date: ${dueDate}\nPending: PKR ${pending}\n\nMute this alert for 24 hours?`
+                        );
+                        if (doMute) {
+                            await muteStoreGraceAlert(top.store_id, 24);
+                            const undo = window.confirm(
+                                `${storeName} alert muted for 24 hours.\n\nClick OK to undo and re-enable notification now.`
+                            );
+                            if (undo) {
+                                await unmuteStoreGraceAlert(top.store_id);
+                                showInfo('Alert Re-enabled', `${storeName} due alert is active again.`);
+                            } else {
+                                showInfo('Alert Muted', `${storeName} due alert muted for 24 hours.`);
+                            }
+                        }
+                        }
+                    );
+                }
+            }
+        } catch (_) {}
+        if (shownBySystemTray) {
+            // Keep an in-app visible trace as well, so behavior looks consistent
+            // whether browser tray is enabled or blocked by OS/browser policy.
+            showInfo('Store Due Alert', `${storeName}: ${lead} (Due ${dueDate})`);
+        } else {
+            showWarning('Store Due Alert', `${storeName}: ${lead} (Due ${dueDate})`);
+        }
+    } catch (e) {
+        console.warn('Store grace alert check failed', e);
+    } finally {
+        _storeGraceAlertBusy = false;
+    }
+}
+
+function startStoreGraceAlertsPolling() {
+    if (_storeGraceAlertTimer) {
+        clearInterval(_storeGraceAlertTimer);
+        _storeGraceAlertTimer = null;
+    }
+    try {
+        if ('Notification' in window && Notification.permission === 'default' && !_storeGracePermissionRequested) {
+            _storeGracePermissionRequested = true;
+            Notification.requestPermission().catch(() => {});
+        }
+        if ('Notification' in window && Notification.permission === 'granted') {
+            ensureAdminNotificationSw().catch(() => {});
+        }
+    } catch (_) {}
+    checkStoreGraceAlerts();
+    _storeGraceAlertTimer = setInterval(checkStoreGraceAlerts, 60000);
 }
 
 function roundToNearest10(value) {
@@ -6022,7 +6648,7 @@ async function editProduct(productId) {
     }
     AppState.editing.productId = id;
     try {
-        const resp = await fetch(`${API_BASE}/api/products/${id}?admin=1`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+        const resp = await fetch(`${API_BASE}/api/products/${id}?admin=1&include_variants=1&include_image_variants=1`, { headers: { 'Authorization': `Bearer ${authToken}` } });
         const data = await resp.json();
         if (!data.success || !data.product) {
             showError('Error', 'Failed to load product for editing');
@@ -6160,8 +6786,25 @@ async function editProduct(productId) {
         if (p.size_id && sizeSelect) sizeSelect.value = p.size_id;
         try {
             const hasVariants = Array.isArray(p.size_variants) && p.size_variants.length > 0;
-            const shouldUseVariants = hasVariants && (!p.size_id || p.size_variants.length > 1);
+            const shouldUseVariants = hasVariants;
             if (shouldUseVariants) {
+                const hasSizeBasedVariants = (p.size_variants || []).some(v => {
+                    const sid = parseInt(String(v && v.size_id !== undefined ? v.size_id : ''), 10);
+                    return Number.isInteger(sid) && sid > 0;
+                });
+                const hasUnitBasedVariants = (p.size_variants || []).some(v => {
+                    const uid = parseInt(String(v && v.unit_id !== undefined ? v.unit_id : ''), 10);
+                    return Number.isInteger(uid) && uid > 0;
+                });
+
+                if (hasSizeBasedVariants && !hasUnitBasedVariants) {
+                    applyProductMeasureMode('size');
+                } else if (hasUnitBasedVariants && !hasSizeBasedVariants) {
+                    applyProductMeasureMode('unit');
+                } else if (hasSizeBasedVariants) {
+                    applyProductMeasureMode('size');
+                }
+
                 setProductSizePricesEnabled(true);
                 const manualVariantCostEl = document.getElementById('productManualVariantCost');
                 if (manualVariantCostEl) manualVariantCostEl.checked = true;

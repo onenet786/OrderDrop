@@ -323,6 +323,33 @@ async function ensureRiderCashMovementTypes(db) {
   } catch (_) {}
 }
 
+async function ensureRiderDayClosingsTable(db) {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS rider_day_closings (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      rider_id INT NOT NULL,
+      closed_date DATE NOT NULL,
+      wallet_balance DECIMAL(12,2) NOT NULL DEFAULT 0,
+      cash_collection DECIMAL(12,2) NOT NULL DEFAULT 0,
+      office_advance DECIMAL(12,2) NOT NULL DEFAULT 0,
+      store_payment DECIMAL(12,2) NOT NULL DEFAULT 0,
+      fuel_payment DECIMAL(12,2) NOT NULL DEFAULT 0,
+      delivery_fee_earned DECIMAL(12,2) NOT NULL DEFAULT 0,
+      notes TEXT NULL,
+      closed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_rider_close_day (rider_id, closed_date),
+      INDEX idx_rider_close_day (rider_id, closed_date)
+    )
+  `);
+}
+
+function normalizeDateOnlyInput(value) {
+  const v = String(value || "").trim();
+  if (!v) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  return v;
+}
+
 async function ensureStoreFinancialColumns(db) {
   try {
     const exists = await hasColumn(db, "stores", "payment_grace_days");
@@ -1355,6 +1382,7 @@ router.get("/rider/financial-history", authenticateToken, async (req, res) => {
       });
     }
     await ensureRiderStorePaymentsTable(req.db);
+    await ensureRiderDayClosingsTable(req.db);
     const riderId = req.user.id;
     const from = (req.query.from || req.query.date_from || "").toString().trim();
     const to = (req.query.to || req.query.date_to || "").toString().trim();
@@ -1446,19 +1474,190 @@ router.get("/rider/financial-history", authenticateToken, async (req, res) => {
     );
     summary.delivery_fee_earned = roundAmount(feeRows[0]?.delivery_fee_earned || 0);
 
+    const summaryDate = normalizeDateOnlyInput(to) ||
+      normalizeDateOnlyInput(from) ||
+      new Date().toISOString().slice(0, 10);
+    const onSummaryDate = (raw) => {
+      if (!raw) return false;
+      const str = String(raw);
+      return str.length >= 10 && str.slice(0, 10) === summaryDate;
+    };
+    const dailySummary = {
+      date: summaryDate,
+      cash_collection: roundAmount(
+        movements
+          .filter((m) => m.movement_type === "cash_collection" && onSummaryDate(m.movement_date))
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      office_advance: roundAmount(
+        movements
+          .filter((m) => m.movement_type === "advance" && onSummaryDate(m.movement_date))
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      store_payment: roundAmount(
+        movements
+          .filter((m) => m.movement_type === "store_payment" && onSummaryDate(m.movement_date))
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      fuel_payment: roundAmount(
+        fuelRows
+          .filter((r) => onSummaryDate(r.entry_date))
+          .reduce((s, r) => s + Number(r.fuel_cost || 0), 0)
+      ),
+      delivery_fee_earned: 0,
+      wallet_balance: roundAmount(wallet?.balance || 0),
+    };
+    const [dailyFeeRows] = await req.db.execute(
+      `SELECT COALESCE(SUM(delivery_fee), 0) as delivery_fee_earned
+       FROM orders
+       WHERE rider_id = ?
+         AND status = 'delivered'
+         AND DATE(created_at) = ?`,
+      [riderId, summaryDate]
+    );
+    dailySummary.delivery_fee_earned = roundAmount(
+      dailyFeeRows[0]?.delivery_fee_earned || 0
+    );
+
+    const [closingRows] = await req.db.execute(
+      `SELECT id, rider_id, closed_date, wallet_balance, cash_collection, office_advance, store_payment, fuel_payment, delivery_fee_earned, notes, closed_at
+       FROM rider_day_closings
+       WHERE rider_id = ? AND closed_date = ?
+       LIMIT 1`,
+      [riderId, summaryDate]
+    );
+    const dayClosing = closingRows[0] || null;
+
     return res.json({
       success: true,
       summary,
+      daily_summary: dailySummary,
+      day_closing: dayClosing,
       movements,
       wallet_transactions: walletTx,
       fuel_entries: fuelRows || [],
-      filters: { from: from || null, to: to || null },
+      filters: { from: from || null, to: to || null, summary_date: summaryDate },
     });
   } catch (error) {
     console.error("Error fetching rider financial history:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch rider financial history",
+      error: error.message,
+    });
+  }
+});
+
+router.post("/rider/close-day", authenticateToken, async (req, res) => {
+  try {
+    if (req.user.user_type !== "rider") {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Rider only.",
+      });
+    }
+    await ensureRiderStorePaymentsTable(req.db);
+    await ensureRiderDayClosingsTable(req.db);
+
+    const riderId = req.user.id;
+    const closeDate = normalizeDateOnlyInput(req.body?.date) ||
+      new Date().toISOString().slice(0, 10);
+    const notes = String(req.body?.notes || "").trim() || null;
+
+    const [movementRows] = await req.db.execute(
+      `SELECT movement_type, amount
+       FROM rider_cash_movements
+       WHERE rider_id = ? AND DATE(movement_date) = ?`,
+      [riderId, closeDate]
+    );
+    const [fuelRows] = await req.db.execute(
+      `SELECT fuel_cost
+       FROM riders_fuel_history
+       WHERE rider_id = ? AND DATE(entry_date) = ?`,
+      [riderId, closeDate]
+    );
+    const [walletRows] = await req.db.execute(
+      `SELECT balance FROM wallets WHERE rider_id = ? LIMIT 1`,
+      [riderId]
+    );
+    const [feeRows] = await req.db.execute(
+      `SELECT COALESCE(SUM(delivery_fee), 0) as delivery_fee_earned
+       FROM orders
+       WHERE rider_id = ?
+         AND status = 'delivered'
+         AND DATE(created_at) = ?`,
+      [riderId, closeDate]
+    );
+
+    const summary = {
+      date: closeDate,
+      wallet_balance: roundAmount(walletRows[0]?.balance || 0),
+      cash_collection: roundAmount(
+        movementRows
+          .filter((m) => m.movement_type === "cash_collection")
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      office_advance: roundAmount(
+        movementRows
+          .filter((m) => m.movement_type === "advance")
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      store_payment: roundAmount(
+        movementRows
+          .filter((m) => m.movement_type === "store_payment")
+          .reduce((s, m) => s + Number(m.amount || 0), 0)
+      ),
+      fuel_payment: roundAmount(
+        fuelRows.reduce((s, r) => s + Number(r.fuel_cost || 0), 0)
+      ),
+      delivery_fee_earned: roundAmount(feeRows[0]?.delivery_fee_earned || 0),
+    };
+
+    await req.db.execute(
+      `INSERT INTO rider_day_closings (
+         rider_id, closed_date, wallet_balance, cash_collection, office_advance, store_payment, fuel_payment, delivery_fee_earned, notes
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         wallet_balance = VALUES(wallet_balance),
+         cash_collection = VALUES(cash_collection),
+         office_advance = VALUES(office_advance),
+         store_payment = VALUES(store_payment),
+         fuel_payment = VALUES(fuel_payment),
+         delivery_fee_earned = VALUES(delivery_fee_earned),
+         notes = VALUES(notes),
+         closed_at = CURRENT_TIMESTAMP`,
+      [
+        riderId,
+        closeDate,
+        summary.wallet_balance,
+        summary.cash_collection,
+        summary.office_advance,
+        summary.store_payment,
+        summary.fuel_payment,
+        summary.delivery_fee_earned,
+        notes,
+      ]
+    );
+
+    const [rows] = await req.db.execute(
+      `SELECT id, rider_id, closed_date, wallet_balance, cash_collection, office_advance, store_payment, fuel_payment, delivery_fee_earned, notes, closed_at
+       FROM rider_day_closings
+       WHERE rider_id = ? AND closed_date = ?
+       LIMIT 1`,
+      [riderId, closeDate]
+    );
+
+    return res.json({
+      success: true,
+      message: "Day closed successfully",
+      day_closing: rows[0] || null,
+      daily_summary: summary,
+    });
+  } catch (error) {
+    console.error("Error closing rider day:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to close rider day",
       error: error.message,
     });
   }

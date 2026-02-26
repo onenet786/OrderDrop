@@ -361,6 +361,7 @@ async function downloadImageToUploads(remoteUrl) {
 // Get all products with optional category filter
 router.get('/', optionalAuth, async (req, res) => {
     try {
+        await ensureProductSizePricesTable(req.db);
         const { category, store, admin } = req.query;
         const isAdminUser = req.user && req.user.user_type === 'admin';
         const isAdminDataRequest = String(admin || '').toLowerCase() === '1'
@@ -542,6 +543,7 @@ router.post('/upload-image', authenticateToken, requireStaffAccess, upload.singl
 // Get product by ID
 router.get('/:id', optionalAuth, async (req, res) => {
     try {
+        await ensureProductSizePricesTable(req.db);
         const { id } = req.params;
         const { admin } = req.query;
         const isAdminUser = req.user && req.user.user_type === 'admin';

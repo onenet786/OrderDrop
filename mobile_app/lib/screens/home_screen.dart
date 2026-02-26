@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
+import '../providers/notification_provider.dart' as app_notif;
 import '../models/user.dart';
 import 'store_screen.dart';
 import '../theme/customer_palette.dart';
@@ -27,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _serviceLimitedMessage;
   Map<String, dynamic>? _globalStatus;
   Map<String, dynamic>? _livePromotions;
+  Map<String, dynamic>? _customerFlashMessage;
   Timer? _globalStatusRefreshTimer;
   Timer? _livePromotionsRefreshTimer;
   Timer? _globalStatusPollTimer;
@@ -37,6 +39,8 @@ class _HomeScreenState extends State<HomeScreen> {
   double? _userLat;
   double? _userLng;
   String? _userCity;
+  bool _launchFlashShown = false;
+  String? _launchFlashSignature;
 
   @override
   void initState() {
@@ -87,6 +91,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ? (promotions['live_promotions'] as Map<String, dynamic>)
             : promotions;
       } catch (_) {}
+      Map<String, dynamic>? customerFlash;
+      if (token != null) {
+        try {
+          customerFlash = await ApiService.getCustomerFlashMessage(token);
+        } catch (_) {}
+      }
       final storesResp = await ApiService.getStores(
         latitude: _userLat,
         longitude: _userLng,
@@ -102,6 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _filteredStores = stores;
           _globalStatus = globalStatus;
           _livePromotions = livePromotions;
+          _customerFlashMessage = customerFlash;
           _scheduleGlobalStatusRefresh(globalStatus);
           _scheduleLivePromotionsRefresh(livePromotions);
           _serviceLimitedMessage = limited
@@ -111,6 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
               : null;
           _isLoading = false;
         });
+        _tryShowLaunchFlash();
       }
     } catch (e) {
       if (mounted) {
@@ -231,18 +243,230 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       Map<String, dynamic>? status;
+      Map<String, dynamic>? customerFlash;
       if (token != null) {
         status = await ApiService.getGlobalDeliveryStatus(token);
+        try {
+          customerFlash = await ApiService.getCustomerFlashMessage(token);
+        } catch (_) {}
       }
       final promotions = await ApiService.getLivePromotions(token);
       if (!mounted) return;
       setState(() {
         _globalStatus = status;
         _livePromotions = promotions;
+        _customerFlashMessage = customerFlash;
       });
       _scheduleGlobalStatusRefresh(status);
       _scheduleLivePromotionsRefresh(promotions);
+      _tryShowLaunchFlash();
     } catch (_) {}
+  }
+
+  Map<String, dynamic>? _promotionFlashData() {
+    final flash = _customerFlashMessage;
+    if (flash != null && _toBool(flash['is_enabled'])) {
+      final isVisible = _toBool(flash['is_visible']) ||
+          (_toBool(flash['is_window_active']) &&
+              (_toBool(flash['is_target_matched']) ||
+                  (flash['notification_target'] ?? 'all').toString() == 'all'));
+      if (isVisible) {
+        final title =
+            (flash['title'] ?? 'ServeNow Flash Message').toString().trim();
+        final message = (flash['status_message'] ?? '').toString().trim();
+        final imageUrl = ApiService.getImageUrl(
+          (flash['image_url'] ?? '').toString().trim(),
+        );
+        final signature =
+            '${flash['updated_at'] ?? ''}|$title|$message|$imageUrl|${flash['start_at'] ?? ''}|${flash['end_at'] ?? ''}';
+        return {
+          'title': title.isNotEmpty ? title : 'ServeNow Flash Message',
+          'message': message.isNotEmpty
+              ? message
+              : 'Check latest updates in ServeNow.',
+          'imageUrl': imageUrl,
+          'signature': signature,
+        };
+      }
+    }
+
+    final promo = _livePromotions;
+    if (promo == null) return null;
+    if (!_toBool(promo['is_enabled'])) return null;
+    if (!_toBool(promo['is_window_active']) && !_isGlobalWindowActive(promo)) {
+      return null;
+    }
+    final title = (promo['title'] ?? 'ServeNow Flash Message').toString().trim();
+    final message = _livePromotionMessage().trim();
+    final images = _promotionImages();
+    final imageUrl =
+        images.isNotEmpty ? ApiService.getImageUrl(images.first) : '';
+    final signature =
+        '${promo['id'] ?? ''}|${promo['updated_at'] ?? ''}|$title|$message|$imageUrl';
+
+    return {
+      'title': title.isNotEmpty ? title : 'ServeNow Flash Message',
+      'message': message.isNotEmpty
+          ? message
+          : 'Check latest promotions and events.',
+      'imageUrl': imageUrl,
+      'signature': signature,
+    };
+  }
+
+  void _tryShowLaunchFlash() {
+    if (!mounted || _launchFlashShown) return;
+    final flash = _promotionFlashData();
+    if (flash == null) return;
+    _launchFlashShown = true;
+
+    final signature = (flash['signature'] ?? '').toString();
+    if (signature.isNotEmpty && _launchFlashSignature != signature) {
+      _launchFlashSignature = signature;
+      try {
+        Provider.of<app_notif.NotificationProvider>(context, listen: false)
+            .addNotification(
+              title: (flash['title'] ?? 'ServeNow Flash Message').toString(),
+              message: (flash['message'] ?? '').toString(),
+              type: 'promotion',
+              icon: 'campaign',
+            );
+      } catch (_) {}
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showLaunchFlashDialog(flash);
+    });
+  }
+
+  void _showLaunchFlashDialog(Map<String, dynamic> flash) {
+    final title = (flash['title'] ?? 'ServeNow Flash Message').toString();
+    final message = (flash['message'] ?? '').toString();
+    final imageUrl = (flash['imageUrl'] ?? '').toString();
+
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Flash Message',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 18),
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 16,
+                    offset: Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.campaign, color: CustomerPalette.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 17,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      height: 190,
+                      width: double.infinity,
+                      child: imageUrl.isNotEmpty
+                          ? TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0.92, end: 1.0),
+                              duration: const Duration(milliseconds: 800),
+                              curve: Curves.easeOutBack,
+                              builder: (context, scale, child) => Transform.scale(
+                                scale: scale,
+                                child: child,
+                              ),
+                              child: Image.network(
+                                imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  color: const Color(0xFFFDEBD0),
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.image_not_supported_outlined,
+                                    size: 34,
+                                    color: Color(0xFFB35A00),
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Container(
+                              color: const Color(0xFFFDEBD0),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.celebration_outlined,
+                                size: 44,
+                                color: Color(0xFFB35A00),
+                              ),
+                            ),
+                    ),
+                  ),
+                  if (message.trim().isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      message,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: CustomerPalette.primary,
+                      ),
+                      child: const Text('OK'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOut);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.95, end: 1.0).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   bool _isGlobalWindowActive(Map<String, dynamic> status) {

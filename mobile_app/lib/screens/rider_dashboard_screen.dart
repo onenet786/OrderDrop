@@ -417,81 +417,396 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final token = Provider.of<AuthProvider>(context, listen: false).token;
     if (token == null) return;
     final now = DateTime.now();
-    final initial = DateTimeRange(
-      start: now.subtract(const Duration(days: 6)),
-      end: now,
-    );
-    final selected = await showDateRangePicker(
+    final fromDate = await showDatePicker(
       context: context,
       firstDate: DateTime(now.year - 2),
       lastDate: DateTime(now.year + 1),
-      initialDateRange: initial,
-      helpText: 'Rider Financial History',
+      initialDate: now.subtract(const Duration(days: 6)),
+      helpText: 'Select Start Date',
     );
-    if (selected == null || !mounted) return;
+    if (fromDate == null || !mounted) return;
+
+    final toDate = await showDatePicker(
+      context: context,
+      firstDate: fromDate,
+      lastDate: DateTime(now.year + 1),
+      initialDate: now.isAfter(fromDate) ? now : fromDate,
+      helpText: 'Select End Date',
+    );
+    if (toDate == null || !mounted) return;
 
     try {
       final data = await ApiService.getRiderFinancialHistory(
         token,
-        from: _dateOnly(selected.start),
-        to: _dateOnly(selected.end),
+        from: _dateOnly(fromDate),
+        to: _dateOnly(toDate),
       );
       if (!mounted) return;
       final summary = (data['summary'] as Map<String, dynamic>?) ?? {};
       final movements = (data['movements'] as List?) ?? const [];
+      final dailySummary =
+          (data['daily_summary'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+      Map<String, dynamic>? dayClosing =
+          (data['day_closing'] as Map<String, dynamic>?)
+              ?.cast<String, dynamic>();
+      final summaryDate =
+          (dailySummary['date'] ?? _dateOnly(toDate)).toString();
+
+      Color movementColor(String type) {
+        final t = type.toLowerCase();
+        if (t.contains('cash_collection')) return const Color(0xFF15803D);
+        if (t.contains('store_payment')) return const Color(0xFF1D4ED8);
+        if (t.contains('fuel')) return const Color(0xFFD97706);
+        if (t.contains('advance')) return const Color(0xFF7C3AED);
+        if (t.contains('settlement')) return const Color(0xFF0F766E);
+        return Colors.grey;
+      }
+
+      Widget summaryTile({
+        required String label,
+        required dynamic value,
+        required IconData icon,
+        required Color color,
+      }) {
+        final amount = _parseDouble(value).toStringAsFixed(2);
+        return Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withValues(alpha: 0.25)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, color: color, size: 18),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'PKR $amount',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
       showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
+        backgroundColor: Colors.transparent,
         builder: (ctx) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Column(
-                children: [
-                  const Text(
-                    'Financial History',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          bool isClosingDay = false;
+          return StatefulBuilder(
+            builder: (ctx, setModalState) {
+              final isDayClosed = dayClosing != null;
+              return SafeArea(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(ctx).size.height * 0.9,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_dateOnly(selected.start)} to ${_dateOnly(selected.end)}',
-                    style: const TextStyle(color: Colors.grey),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                   ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _summaryChip('Wallet', summary['wallet_balance']),
-                      _summaryChip('Cash', summary['cash_collection']),
-                      _summaryChip('Advance', summary['office_advance']),
-                      _summaryChip('Store Paid', summary['store_payment']),
-                      _summaryChip('Fuel', summary['fuel_payment']),
-                      _summaryChip('Delivery Fee', summary['delivery_fee_earned']),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: movements.isEmpty
-                        ? const Center(child: Text('No financial movements found'))
-                        : ListView.separated(
-                            itemCount: movements.length,
-                            separatorBuilder: (_, _) => const Divider(height: 1),
-                            itemBuilder: (_, i) {
-                              final m = (movements[i] as Map?)?.cast<String, dynamic>() ?? {};
-                              final amount = _parseDouble(m['amount']).toStringAsFixed(2);
-                              return ListTile(
-                                dense: true,
-                                title: Text((m['movement_type'] ?? '-').toString().replaceAll('_', ' ')),
-                                subtitle: Text(_fmtDateTime(m['movement_date'])),
-                                trailing: Text('PKR $amount'),
-                              );
-                            },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(100),
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Rider Financial History',
+                          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3E0),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.date_range, color: Color(0xFFE65100), size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${_dateOnly(fromDate)}  to  ${_dateOnly(toDate)}',
+                                  style: const TextStyle(
+                                    color: Color(0xFFE65100),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            summaryTile(
+                              label: 'Wallet',
+                              value: summary['wallet_balance'],
+                              icon: Icons.account_balance_wallet_outlined,
+                              color: const Color(0xFF0F766E),
+                            ),
+                            const SizedBox(width: 10),
+                            summaryTile(
+                              label: 'Cash Collection',
+                              value: summary['cash_collection'],
+                              icon: Icons.payments_outlined,
+                              color: const Color(0xFF15803D),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            summaryTile(
+                              label: 'Store Payment',
+                              value: summary['store_payment'],
+                              icon: Icons.storefront_outlined,
+                              color: const Color(0xFF1D4ED8),
+                            ),
+                            const SizedBox(width: 10),
+                            summaryTile(
+                              label: 'Fuel Payment',
+                              value: summary['fuel_payment'],
+                              icon: Icons.local_gas_station_outlined,
+                              color: const Color(0xFFD97706),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Daily Summary',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    summaryDate,
+                                    style: const TextStyle(
+                                      color: Colors.black54,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Cash PKR ${_parseDouble(dailySummary['cash_collection']).toStringAsFixed(2)}  |  Store Paid PKR ${_parseDouble(dailySummary['store_payment']).toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Fuel PKR ${_parseDouble(dailySummary['fuel_payment']).toStringAsFixed(2)}  |  Delivery Fee PKR ${_parseDouble(dailySummary['delivery_fee_earned']).toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                              const SizedBox(height: 10),
+                              if (isDayClosed)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    'Day closed at ${_fmtDateTime(dayClosing?['closed_at'])}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF166534),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                )
+                              else
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    onPressed: isClosingDay
+                                        ? null
+                                        : () async {
+                                            setModalState(() => isClosingDay = true);
+                                            try {
+                                              final closeData = await ApiService.closeRiderDay(
+                                                token,
+                                                date: summaryDate,
+                                              );
+                                              dayClosing = (closeData['day_closing'] as Map<String, dynamic>?)
+                                                  ?.cast<String, dynamic>();
+                                              if (mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text('Day closed successfully'),
+                                                  ),
+                                                );
+                                              }
+                                            } catch (e) {
+                                              if (mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text('Failed to close day: $e')),
+                                                );
+                                              }
+                                            } finally {
+                                              setModalState(() => isClosingDay = false);
+                                            }
+                                          },
+                                    icon: isClosingDay
+                                        ? const SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(strokeWidth: 2),
+                                          )
+                                        : const Icon(Icons.task_alt_outlined),
+                                    label: Text(
+                                      isClosingDay ? 'Closing...' : 'Close Day',
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFFE65100),
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: movements.isEmpty
+                              ? const Center(child: Text('No financial movements found'))
+                              : ListView.separated(
+                                  itemCount: movements.length,
+                                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                                  itemBuilder: (_, i) {
+                                    final m =
+                                        (movements[i] as Map?)?.cast<String, dynamic>() ?? {};
+                                    final type = (m['movement_type'] ?? '-').toString();
+                                    final clr = movementColor(type);
+                                    final amount = _parseDouble(m['amount']).toStringAsFixed(2);
+                                    final status = (m['status'] ?? '-').toString();
+                                    return Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade50,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: Colors.grey.shade200),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  type.replaceAll('_', ' ').toUpperCase(),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: clr.withValues(alpha: 0.12),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  'PKR $amount',
+                                                  style: TextStyle(
+                                                    color: clr,
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            _fmtDateTime(m['movement_date']),
+                                            style: const TextStyle(
+                                              color: Colors.black54,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          if ((m['description'] ?? '').toString().trim().isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              (m['description'] ?? '').toString(),
+                                              style: const TextStyle(
+                                                color: Colors.black87,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            'Status: ${status.toUpperCase()}',
+                                            style: const TextStyle(
+                                              color: Colors.black45,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           );
         },
       );
@@ -501,18 +816,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         SnackBar(content: Text('Failed to load financial history: $e')),
       );
     }
-  }
-
-  Widget _summaryChip(String label, dynamic amountRaw) {
-    final amount = _parseDouble(amountRaw).toStringAsFixed(2);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Color(0xFFFFF3E0),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text('$label: PKR $amount', style: const TextStyle(fontSize: 12)),
-    );
   }
 
   Future<void> _refreshLocation() async {

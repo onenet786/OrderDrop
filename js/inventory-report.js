@@ -11,6 +11,32 @@ function inventoryNumber(value) {
     return Number.isFinite(n) ? n.toLocaleString() : "0";
 }
 
+function inventoryMonetaryType(value) {
+    const t = String(value || "").trim().toLowerCase();
+    if (t === "manual") return "Manual";
+    if (t === "percent" || t === "%") return "Percent (%)";
+    if (t === "amount" || t === "fixed" || t === "fixed_amount" || t === "pkr") return "Fixed Amount (PKR)";
+    return "-";
+}
+
+function inventoryMonetaryValue(type, value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "-";
+    const t = String(type || "").trim().toLowerCase();
+    if (t === "manual") return inventoryMoney(n);
+    if (n <= 0) return "-";
+    if (t === "percent") return `${n.toFixed(2)}%`;
+    if (t === "amount" || t === "fixed" || t === "fixed_amount" || t === "pkr" || !t) return inventoryMoney(n);
+    return inventoryMoney(n);
+}
+
+function inventoryFinancialRule(mode) {
+    const m = String(mode || "").trim().toLowerCase();
+    if (m === "profit") return "Profit";
+    if (m === "discount") return "Discount";
+    return "-";
+}
+
 function getSelectedInventoryStoreId() {
     const el = document.getElementById("inventoryStoreFilter");
     if (!el || !el.value) return null;
@@ -175,12 +201,13 @@ function displayProductDetailInventory(products) {
             <td>${p.store_name}</td>
             <td>${p.category_name}</td>
             <td>${p.product_name}</td>
+            <td>${p.variant_label || "-"}</td>
             <td>${inventoryNumber(p.stock_quantity)}</td>
             <td>${inventoryMoney(p.cost_price)}</td>
             <td>${inventoryMoney(p.sale_price)}</td>
-            <td>${inventoryMoney(p.inventory_cost_value)}</td>
-            <td>${inventoryMoney(p.inventory_sale_value)}</td>
-            <td>${inventoryMoney(p.potential_profit)}</td>
+            <td>${inventoryFinancialRule(p.financial_mode)}</td>
+            <td>${inventoryMonetaryType(p.financial_type)}</td>
+            <td>${inventoryMonetaryValue(p.financial_type, p.financial_value)}</td>
             <td>${statusBadge}</td>
         `;
         tbody.appendChild(row);
@@ -304,17 +331,18 @@ function exportInventoryReportPdf() {
                 inventoryMoney(r.inventory_value),
             ]);
     } else if (activeType === "product-detail") {
-        tableHead = [["Store", "Category", "Product", "Stock", "Cost", "Sale", "Cost Value", "Sale Value", "Profit", "Status"]];
+        tableHead = [["Store", "Category", "Product", "Variant", "Stock", "Cost", "Sale", "Rule", "Type", "Value", "Status"]];
         tableBody = (currentInventoryData.products || []).map((r) => [
             r.store_name,
             r.category_name,
             r.product_name,
+            r.variant_label || "-",
             inventoryNumber(r.stock_quantity),
             inventoryMoney(r.cost_price),
             inventoryMoney(r.sale_price),
-            inventoryMoney(r.inventory_cost_value),
-            inventoryMoney(r.inventory_sale_value),
-            inventoryMoney(r.potential_profit),
+            inventoryFinancialRule(r.financial_mode),
+            inventoryMonetaryType(r.financial_type),
+            inventoryMonetaryValue(r.financial_type, r.financial_value),
             r.is_available ? "Active" : "Inactive",
         ]);
     } else if (activeType === "sales") {

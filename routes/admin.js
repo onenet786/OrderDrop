@@ -531,16 +531,35 @@ router.get(
         hasStoreFilter ? [parsedStoreId, parsedStoreId, parsedStoreId] : []
       );
 
+      const hasProductColumn = async (columnName) => {
+        const [rows] = await req.db.execute(
+          `SELECT COUNT(*) as cnt
+           FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE()
+             AND TABLE_NAME = 'products'
+             AND COLUMN_NAME = ?`,
+          [columnName]
+        );
+        return Number(rows?.[0]?.cnt || 0) > 0;
+      };
+      const hasProfitTypeColumn = await hasProductColumn("profit_type");
+      const hasProfitValueColumn = await hasProductColumn("profit_value");
+
       const productSql = `
             SELECT
                 p.id as product_id,
                 p.name as product_name,
                 s.id as store_id,
                 s.name as store_name,
+                s.payment_term,
                 c.name as category_name,
                 p.stock_quantity,
                 p.cost_price,
                 p.price as sale_price,
+                ${hasProfitTypeColumn ? "p.profit_type" : "NULL"} as profit_type,
+                ${hasProfitValueColumn ? "p.profit_value" : "NULL"} as profit_value,
+                p.discount_type,
+                p.discount_value,
                 p.is_available
             FROM products p
             LEFT JOIN stores s ON s.id = p.store_id
@@ -552,6 +571,73 @@ router.get(
         productSql,
         hasStoreFilter ? [parsedStoreId] : []
       );
+
+      let variantsByProductId = {};
+      try {
+        const productIds = (products || [])
+          .map((p) => Number(p.product_id))
+          .filter((id) => Number.isInteger(id) && id > 0);
+        if (productIds.length) {
+          const placeholders = productIds.map(() => "?").join(",");
+          const [variantRows] = await req.db.execute(
+            `
+              SELECT
+                psp.product_id,
+                psp.price as variant_sale_price,
+                psp.cost_price as variant_cost_price,
+                psp.sort_order,
+                sz.label as size_label,
+                u.name as unit_name,
+                u.abbreviation as unit_abbreviation
+              FROM product_size_prices psp
+              LEFT JOIN sizes sz ON sz.id = psp.size_id
+              LEFT JOIN units u ON u.id = psp.unit_id
+              WHERE psp.product_id IN (${placeholders})
+              ORDER BY psp.product_id ASC, psp.sort_order ASC, psp.id ASC
+            `,
+            productIds
+          );
+          variantsByProductId = (variantRows || []).reduce((acc, row) => {
+            const pid = Number(row.product_id);
+            if (!Number.isInteger(pid) || pid <= 0) return acc;
+            if (!acc[pid]) acc[pid] = [];
+            acc[pid].push(row);
+            return acc;
+          }, {});
+        }
+      } catch (variantErr) {
+        console.warn("Inventory variants lookup failed:", variantErr.message);
+      }
+
+      const isProfitPaymentTerm = (term) => {
+        const t = String(term || "").toLowerCase().trim();
+        return t === "cash only" || t === "credit";
+      };
+      const computeManualProfitValue = (salePrice, costPrice) => {
+        const sale = Number(salePrice);
+        const cost = Number(costPrice);
+        if (!Number.isFinite(sale) || !Number.isFinite(cost)) return null;
+        return Math.round((sale - cost) * 100) / 100;
+      };
+
+      const normalizeMonetaryType = (rawType, rawValue) => {
+        const t = String(rawType || "").trim().toLowerCase();
+        const parsed = Number(rawValue);
+        const hasValue = Number.isFinite(parsed) && parsed > 0;
+        if (t === "percent" || t === "%") return "percent";
+        if (t === "amount" || t === "fixed" || t === "fixed_amount" || t === "pkr") return "amount";
+        if (hasValue) return "amount";
+        return null;
+      };
+
+      const buildVariantLabel = (variantRow) => {
+        const sizeLabel = String(variantRow?.size_label || "").trim();
+        const unitLabel = String(
+          variantRow?.unit_abbreviation || variantRow?.unit_name || ""
+        ).trim();
+        const parts = [sizeLabel, unitLabel].filter(Boolean);
+        return parts.length ? parts.join(" / ") : "-";
+      };
 
       return res.json({
         success: true,
@@ -585,26 +671,78 @@ router.get(
           stock_quantity: Number(row.stock_quantity) || 0,
           inventory_value: parseFloat(row.inventory_value) || 0,
         })),
-        products: products.map((row) => {
+        products: products.flatMap((row) => {
           const stock = Number(row.stock_quantity) || 0;
-          const salePrice = parseFloat(row.sale_price) || 0;
-          const parsedCost = parseFloat(row.cost_price);
-          const costPrice = Number.isFinite(parsedCost) ? parsedCost : null;
-          return {
+          const baseSalePrice = parseFloat(row.sale_price) || 0;
+          const parsedBaseCost = parseFloat(row.cost_price);
+          const baseCostPrice = Number.isFinite(parsedBaseCost) ? parsedBaseCost : null;
+          const profitType = normalizeMonetaryType(row.profit_type, row.profit_value);
+          const discountType = normalizeMonetaryType(row.discount_type, row.discount_value);
+          const parsedProfitValue = parseFloat(row.profit_value);
+          const parsedDiscountValue = parseFloat(row.discount_value);
+          const profitValue = Number.isFinite(parsedProfitValue) ? parsedProfitValue : null;
+          const discountValue = Number.isFinite(parsedDiscountValue) ? parsedDiscountValue : null;
+          const financialMode = isProfitPaymentTerm(row.payment_term) ? "profit" : "discount";
+          const baseManualProfit = computeManualProfitValue(baseSalePrice, baseCostPrice);
+          const variants = variantsByProductId[Number(row.product_id)] || [];
+
+          const baseRecord = {
             product_id: Number(row.product_id),
             product_name: row.product_name,
             store_id: Number(row.store_id),
             store_name: row.store_name,
             category_name: row.category_name || "Uncategorized",
+            payment_term: row.payment_term || null,
             stock_quantity: stock,
-            cost_price: costPrice,
-            sale_price: salePrice,
-            inventory_sale_value: stock * salePrice,
-            inventory_cost_value: costPrice === null ? null : stock * costPrice,
+            cost_price: baseCostPrice,
+            sale_price: baseSalePrice,
+            variant_label: "-",
+            financial_mode: financialMode,
+            financial_type: financialMode === "profit" ? "manual" : discountType,
+            financial_value: financialMode === "profit" ? baseManualProfit : discountValue,
+            profit_type: profitType,
+            profit_value: profitValue,
+            discount_type: discountType,
+            discount_value: discountValue,
+            inventory_sale_value: stock * baseSalePrice,
+            inventory_cost_value: baseCostPrice === null ? null : stock * baseCostPrice,
             potential_profit:
-              costPrice === null ? null : stock * (salePrice - costPrice),
+              baseCostPrice === null ? null : stock * (baseSalePrice - baseCostPrice),
             is_available: !!row.is_available,
           };
+
+          if (!variants.length) return [baseRecord];
+
+          return variants.map((variantRow) => {
+            const parsedVariantSale = parseFloat(variantRow.variant_sale_price);
+            const parsedVariantCost = parseFloat(variantRow.variant_cost_price);
+            const variantSalePrice = Number.isFinite(parsedVariantSale)
+              ? parsedVariantSale
+              : baseSalePrice;
+            const variantCostPrice = Number.isFinite(parsedVariantCost)
+              ? parsedVariantCost
+              : baseCostPrice;
+            const variantManualProfit = computeManualProfitValue(
+              variantSalePrice,
+              variantCostPrice
+            );
+
+            return {
+              ...baseRecord,
+              variant_label: buildVariantLabel(variantRow),
+              cost_price: variantCostPrice,
+              sale_price: variantSalePrice,
+              financial_value:
+                financialMode === "profit"
+                  ? variantManualProfit
+                  : baseRecord.financial_value,
+              inventory_sale_value: stock * variantSalePrice,
+              inventory_cost_value:
+                variantCostPrice === null ? null : stock * variantCostPrice,
+              potential_profit:
+                variantCostPrice === null ? null : stock * (variantSalePrice - variantCostPrice),
+            };
+          });
         }),
         summary: {
           total_stores: Number(totalStats[0].total_stores) || 0,

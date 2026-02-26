@@ -1079,6 +1079,9 @@
             <button class="btn btn-secondary" id="refreshBackupsBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Refresh List
             </button>
+            <button class="btn btn-secondary" id="testTrayNotificationBtn" style="align-self: flex-end; margin-bottom: 2px;">
+              <i class="fas fa-bell"></i> Send Test Tray Notification
+            </button>
             <span
               id="backupStatus"
               style="font-size: 0.95rem; color: #666; margin-left: 0.5rem; align-self: center;"
@@ -1436,6 +1439,84 @@
             <div class="global-delivery-admin-actions">
               <button class="btn btn-primary" id="saveLivePromoStatusBtn">
                 <i class="fas fa-images"></i> Save Promotions / Events
+              </button>
+            </div>
+          </section>
+          <section class="global-delivery-admin-card">
+            <div class="global-delivery-admin-head">
+              <div>
+                <h3>Customer Flash Message (Launch Popup)</h3>
+                <p>Show animated image popup on customer app launch for birthdays, events, or custom announcements.</p>
+              </div>
+              <span id="customerFlashCurrentState" class="global-delivery-state state-available">Inactive</span>
+            </div>
+            <div class="global-delivery-admin-grid">
+              <label class="global-delivery-toggle">
+                <input type="checkbox" id="customerFlashEnabled" />
+                <span>Enable launch flash message</span>
+              </label>
+              <div class="form-group">
+                <label for="customerFlashTarget">Target</label>
+                <select id="customerFlashTarget" class="form-control">
+                  <option value="all">All Customers</option>
+                  <option value="custom">Selected Customers</option>
+                </select>
+              </div>
+              <div class="form-group" id="customerFlashCustomerWrap" style="display:none;">
+                <label for="customerFlashCustomerSelect">Select Customers (when custom)</label>
+                <select id="customerFlashCustomerSelect" class="form-control" multiple size="8"></select>
+                <small style="display:block;margin-top:6px;color:#64748b;">Tip: Hold Ctrl/Cmd to select multiple customers.</small>
+              </div>
+              <div class="form-group">
+                <label for="customerFlashTitle">Title</label>
+                <input type="text" id="customerFlashTitle" class="form-control" maxlength="120" placeholder="Happy Birthday / Event Update" />
+              </div>
+              <div class="form-group">
+                <label for="customerFlashMessage">Message</label>
+                <textarea id="customerFlashMessage" class="form-control" rows="3" maxlength="500" placeholder="Your custom customer launch message..."></textarea>
+              </div>
+              <div class="form-row global-delivery-time-row">
+                <div class="form-group">
+                  <label for="customerFlashStartAt">From</label>
+                  <input type="datetime-local" id="customerFlashStartAt" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label for="customerFlashEndAt">To</label>
+                  <input type="datetime-local" id="customerFlashEndAt" class="form-control" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="customerFlashImage">Popup Image URL</label>
+                <input type="text" id="customerFlashImage" class="form-control" placeholder="https://.../image.jpg" />
+              </div>
+              <div class="form-group">
+                <label for="customerFlashImageFile">Or Upload Image</label>
+                <input type="file" id="customerFlashImageFile" accept="image/*" />
+                <div style="margin-top:8px;display:flex;gap:8px;">
+                  <button class="btn btn-secondary" type="button" id="uploadCustomerFlashImageBtn"><i class="fas fa-upload"></i> Upload</button>
+                  <button class="btn btn-danger" type="button" id="clearCustomerFlashImageBtn"><i class="fas fa-times"></i> Clear</button>
+                </div>
+              </div>
+              <label class="global-delivery-toggle">
+                <input type="checkbox" id="customerFlashSendPush" />
+                <span>Send push notification immediately</span>
+              </label>
+              <div class="form-group">
+                <label for="customerFlashPushTitle">Push Title</label>
+                <input type="text" id="customerFlashPushTitle" class="form-control" maxlength="120" placeholder="ServeNow Update" />
+              </div>
+              <div class="form-group">
+                <label for="customerFlashPushMessage">Push Message</label>
+                <textarea id="customerFlashPushMessage" class="form-control" rows="2" maxlength="500" placeholder="Check new update in app."></textarea>
+              </div>
+            </div>
+            <div class="global-delivery-preview" id="customerFlashPreview">
+              <strong>Customer Launch Popup Preview</strong>
+              <p>Configure title, message, target, image and time window to preview here.</p>
+            </div>
+            <div class="global-delivery-admin-actions">
+              <button class="btn btn-primary" id="saveCustomerFlashBtn">
+                <i class="fas fa-bolt"></i> Save Launch Flash Message
               </button>
             </div>
           </section>
@@ -2070,12 +2151,13 @@
                     <th>Store</th>
                     <th>Category</th>
                     <th>Product</th>
+                    <th>Variant</th>
                     <th>Stock</th>
                     <th>Cost Price</th>
                     <th>Sale Price</th>
-                    <th>Stock Cost Value</th>
-                    <th>Stock Sale Value</th>
-                    <th>Potential Profit</th>
+                    <th>Financial Rule</th>
+                    <th>Type</th>
+                    <th>Value</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -2889,9 +2971,14 @@
                   <option value="Credit with Discount">Credit with Discount</option>
                 </select>
               </div>
-              <div class="form-group">
+              <div class="form-group" id="storeGraceDaysGroup">
                 <label for="storeGraceDays">Grace Period (Days):</label>
                 <input type="number" id="storeGraceDays" name="payment_grace_days" min="0" step="1" placeholder="e.g., 10 or 15" style="width: 100%;" />
+              </div>
+              <div class="form-group" id="storeGraceStartDateGroup">
+                <label for="storeGraceStartDate">Grace Start Date:</label>
+                <input type="date" id="storeGraceStartDate" name="payment_grace_start_date" style="width: 100%;" />
+                <small id="storeGraceDueDatePreview" style="display:block;margin-top:6px;color:#475569;">Due Date: -</small>
               </div>
               <div class="form-group">
                 <label for="storeCategory">Category:</label>
@@ -2918,6 +3005,9 @@
           </form>
         </div>
         <div class="modal-footer" style="padding-top: 1rem; margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" class="btn btn-secondary" id="storeUnmuteGraceBtn" style="padding: 0.6rem 1.2rem; display: none;">
+            <i class="fas fa-bell"></i> Re-enable Due Alerts
+          </button>
           <button type="button" class="btn btn-secondary" data-modal="addStoreModal" style="padding: 0.6rem 1.2rem;">
             <i class="fas fa-ban"></i> Cancel
           </button>

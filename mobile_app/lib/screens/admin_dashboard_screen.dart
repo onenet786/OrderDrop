@@ -5,6 +5,7 @@ import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
 import '../services/api_service.dart';
 import '../services/notifier.dart';
 import '../services/notification_service.dart';
@@ -21,6 +22,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Logger _logger = Logger();
   bool _isLoading = true;
   Timer? _liveStatsTimer;
+  Timer? _graceAlertTimer;
+  final Map<String, DateTime> _lastGraceAlertAt = {};
 
   int _todayTotal = 0;
   int _todayDelivered = 0;
@@ -66,6 +69,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void dispose() {
     _liveStatsTimer?.cancel();
+    _graceAlertTimer?.cancel();
     NotificationService.disconnect();
     super.dispose();
   }
@@ -96,6 +100,52 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (!mounted) return;
       _loadVisitorStatsOnly();
     });
+
+    _graceAlertTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) return;
+      _checkStoreGraceAlerts();
+    });
+    _checkStoreGraceAlerts();
+  }
+
+  Future<void> _checkStoreGraceAlerts() async {
+    if (!mounted) return;
+    try {
+      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      if (token == null || token.trim().isEmpty) return;
+      final data = await ApiService.getStoreGraceAlerts(token, channel: 'mobile');
+      final alerts = (data['alerts'] as List?) ?? const [];
+      if (alerts.isEmpty || !mounted) return;
+      final alert = (alerts.first as Map?)?.cast<String, dynamic>() ?? {};
+      final storeId = int.tryParse((alert['store_id'] ?? '').toString());
+      if (storeId == null || storeId <= 0) return;
+      final storeName = (alert['store_name'] ?? 'Store').toString();
+      final dueDate = (alert['due_date'] ?? '-').toString();
+      final pending = double.tryParse((alert['pending_amount'] ?? '0').toString()) ?? 0;
+      final daysLeft = int.tryParse((alert['days_left'] ?? '').toString());
+      final lead = (daysLeft != null && daysLeft < 0)
+          ? 'Overdue by ${daysLeft.abs()} day(s)'
+          : (daysLeft != null ? 'Due in $daysLeft day(s)' : 'Payment due');
+      final key = '$storeId|$dueDate|${pending.toStringAsFixed(2)}';
+      final now = DateTime.now();
+      final lastAt = _lastGraceAlertAt[key];
+      // Keep periodic reminders, but avoid a notification every minute.
+      if (lastAt != null && now.difference(lastAt) < const Duration(minutes: 30)) {
+        return;
+      }
+      _lastGraceAlertAt[key] = now;
+
+      final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
+      notificationProvider.addNotification(
+        title: 'Store Due Alert',
+        message: '$storeName: $lead | Due: $dueDate | Pending: PKR ${pending.toStringAsFixed(2)}',
+        type: 'warning',
+        icon: 'warning',
+        persistUntilDismissed: true,
+      );
+    } catch (e) {
+      _logger.w('Grace alert poll skipped: $e');
+    }
   }
 
   Future<void> _loadStats() async {

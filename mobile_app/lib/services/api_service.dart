@@ -354,6 +354,25 @@ class ApiService {
     return data;
   }
 
+  static Future<Map<String, dynamic>> getCustomerFlashMessage(
+    String token,
+  ) async {
+    final uri = Uri.parse('$baseUrl/api/stores/customer-flash-message');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final data = _handleResponse(response);
+    if (data['customer_flash_message'] is Map<String, dynamic>) {
+      return data['customer_flash_message'] as Map<String, dynamic>;
+    }
+    if (data['flash_message'] is Map<String, dynamic>) {
+      return data['flash_message'] as Map<String, dynamic>;
+    }
+    return data;
+  }
+
   static Future<Map<String, dynamic>> setGlobalDeliveryStatus(
     String token, {
     required bool isEnabled,
@@ -512,6 +531,27 @@ class ApiService {
     final response = await http.get(
       uri,
       headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> closeRiderDay(
+    String token, {
+    required String date,
+    String? notes,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/orders/rider/close-day');
+    _logger.d('ApiService: POST $uri');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'date': date,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      }),
     );
     return _handleResponse(response);
   }
@@ -1004,6 +1044,38 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({'latitude': latitude, 'longitude': longitude}),
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> getStoreGraceAlerts(
+    String token, {
+    String channel = 'mobile',
+  }) async {
+    final safeChannel = channel.toLowerCase() == 'web' ? 'web' : 'mobile';
+    final uri = Uri.parse('$baseUrl/api/stores/grace-alerts?channel=$safeChannel');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> muteStoreGraceAlert(
+    String token,
+    int storeId, {
+    int hours = 24,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/stores/$storeId/grace-alert-mute');
+    _logger.d('ApiService: POST $uri');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({'hours': hours}),
     );
     return _handleResponse(response);
   }

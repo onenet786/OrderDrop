@@ -82,6 +82,7 @@ class NotificationProvider with ChangeNotifier {
     required String message,
     String type = 'info',
     String icon = 'info',
+    bool persistUntilDismissed = false,
   }) {
     final key = '${title.trim()}|${message.trim()}|$type|$icon';
     final now = DateTime.now();
@@ -111,7 +112,11 @@ class NotificationProvider with ChangeNotifier {
     }
 
     notifyListeners();
-    _showForegroundNotification(title, message);
+    _showForegroundNotification(
+      title,
+      message,
+      persistUntilDismissed: persistUntilDismissed,
+    );
   }
 
   void clearNotifications() {
@@ -556,17 +561,23 @@ class NotificationProvider with ChangeNotifier {
     _socket!.onDisconnect((_) => debugPrint('Socket disconnected'));
   }
 
-  Future<void> _showForegroundNotification(String title, String message) async {
+  Future<void> _showForegroundNotification(
+    String title,
+    String message, {
+    bool persistUntilDismissed = false,
+  }) async {
     try {
-      const androidDetails = AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         'servenow_channel',
         'ServeNow Notifications',
         importance: Importance.max,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
+        autoCancel: !persistUntilDismissed,
+        ongoing: persistUntilDismissed,
       );
       const iosDetails = DarwinNotificationDetails();
-      const details = NotificationDetails(
+      final details = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
