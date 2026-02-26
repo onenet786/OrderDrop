@@ -22,21 +22,25 @@ class _NotificationBellWidgetState extends State<NotificationBellWidget> {
     }
 
     _overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        top: 60,
-        right: 16,
-        width: 360,
-        child: GestureDetector(
-          onTap: () {},
-          child: Material(
-            elevation: 8,
-            borderRadius: BorderRadius.circular(12),
-            child: _NotificationPanel(
-              onClose: _hideNotificationPanel,
+      builder: (context) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final panelWidth = (screenWidth - 16).clamp(280.0, 360.0);
+        return Positioned(
+          top: 60,
+          right: 8,
+          width: panelWidth,
+          child: GestureDetector(
+            onTap: () {},
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+              child: _NotificationPanel(
+                onClose: _hideNotificationPanel,
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
 
     Overlay.of(context).insert(_overlayEntry);
@@ -70,41 +74,43 @@ class _NotificationBellWidgetState extends State<NotificationBellWidget> {
             label: 'Notifications',
             button: true,
             enabled: true,
-            child: Stack(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications_outlined),
-                  onPressed: _showNotificationPanel,
-                  tooltip: 'Notifications',
-                ),
-                if (unreadCount > 0)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                      child: Center(
-                        child: Text(
-                          unreadCount > 99 ? '99+' : unreadCount.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+            child: Center(
+              child: Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined),
+                    onPressed: _showNotificationPanel,
+                    tooltip: 'Notifications',
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                        child: Center(
+                          child: Text(
+                            unreadCount > 99 ? '99+' : unreadCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -184,13 +190,16 @@ class _NotificationPanelState extends State<_NotificationPanel> {
                   ),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Notifications',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                    const SizedBox(width: 40),
+                    const Expanded(
+                      child: Text(
+                        'Notifications',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                     if (notifications.isNotEmpty)
@@ -207,6 +216,7 @@ class _NotificationPanelState extends State<_NotificationPanel> {
                         ),
                         padding: EdgeInsets.zero,
                       ),
+                    if (notifications.isEmpty) const SizedBox(width: 40),
                   ],
                 ),
               ),
