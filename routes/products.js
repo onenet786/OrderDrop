@@ -24,7 +24,7 @@ function isDiscountPaymentTerm(term) {
 function roundToNearestTen(val) {
     const n = Number(val);
     if (!Number.isFinite(n)) return null;
-    return Math.round(n / 10) * 10;
+    return Math.round(n / 5) * 5;
 }
 
 function isProfitPaymentTerm(term) {

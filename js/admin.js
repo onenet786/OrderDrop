@@ -5772,7 +5772,7 @@ function startStoreGraceAlertsPolling() {
 function roundToNearest10(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 0;
-    return Math.round(n / 10) * 10;
+    return Math.round(n / 5) * 5;
 }
 
 function isManualCostMode() {
