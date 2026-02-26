@@ -27,6 +27,22 @@ const PROTECTED_EXACT_TABLES = new Set([
   "wallets",
 ]);
 
+const CORE_KEEP_TABLES = new Set([
+  "banks",
+  "categories",
+  "items",
+  "orders",
+  "order_items",
+  "products",
+  "product_size_prices",
+  "riders",
+  "sizes",
+  "stores",
+  "units",
+  "users",
+  "user_permissions",
+]);
+
 function isUserStoreRelatedTable(tableName) {
   const t = String(tableName || "").toLowerCase();
   if (!t) return false;
@@ -1617,7 +1633,12 @@ router.post(
   requirePermission('menu_settings_database'),
   async (req, res) => {
     const { table } = req.body;
-    const specialModes = new Set(["all", "all_except_user_store", "all_tables"]);
+    const specialModes = new Set([
+      "all",
+      "all_except_user_store",
+      "all_except_core_keep",
+      "all_tables",
+    ]);
     if (!table || typeof table !== "string") {
       return res.status(400).json({ success: false, message: "Invalid table specified" });
     }
@@ -1660,6 +1681,9 @@ router.post(
           all_except_users_stores: "all_except_user_store",
           all_except_store_user: "all_except_user_store",
           except_user_store: "all_except_user_store",
+          all_except_core_tables: "all_except_core_keep",
+          all_except_keep_list: "all_except_core_keep",
+          clear_except_core: "all_except_core_keep",
           all_db: "all_tables",
           all_data: "all_tables",
         };
@@ -1720,6 +1744,31 @@ router.post(
               success: true,
               message: `Cleared ${clearTargets.length} tables. User/store related tables were preserved.`,
               cleared_tables: clearTargets,
+            });
+        } else if (selected === 'all_except_core_keep') {
+            const clearTargets = allTables.filter((t) => {
+              const lower = String(t).toLowerCase();
+              if (INTERNAL_SKIP_TABLES.has(t)) return false;
+              return !CORE_KEEP_TABLES.has(lower);
+            });
+
+            await connection.execute("SET FOREIGN_KEY_CHECKS = 0");
+            try {
+              for (const t of clearTargets) {
+                await connection.execute(`DELETE FROM ${mysqlLib.escapeId(t)}`);
+              }
+            } finally {
+              await connection.execute("SET FOREIGN_KEY_CHECKS = 1");
+            }
+
+            if (typeof connection.commit === "function") {
+              await connection.commit();
+            }
+            return res.json({
+              success: true,
+              message: `Cleared ${clearTargets.length} tables. Kept core tables: ${Array.from(CORE_KEEP_TABLES).join(", ")}.`,
+              cleared_tables: clearTargets,
+              kept_tables: Array.from(CORE_KEEP_TABLES),
             });
         } else if (selected === 'all_tables') {
             const clearTargets = allTables.filter((t) => !INTERNAL_SKIP_TABLES.has(t));
@@ -1803,6 +1852,59 @@ router.get(
       return res
         .status(500)
         .json({ success: false, message: "Failed to load table list", error: error.message });
+    }
+  }
+);
+
+router.post(
+  "/shrink-database",
+  authenticateToken,
+  requirePermission("menu_settings_database"),
+  async (req, res) => {
+    let connection;
+    try {
+      if (typeof req.db.getConnection === "function") {
+        connection = await req.db.getConnection();
+      } else {
+        connection = req.db;
+      }
+
+      const allTables = await getAllBaseTables(connection);
+      const optimizeTargets = allTables.filter((t) => !INTERNAL_SKIP_TABLES.has(t));
+
+      const results = [];
+      for (const t of optimizeTargets) {
+        try {
+          const [optRows] = await connection.query(
+            `OPTIMIZE TABLE ${mysqlLib.escapeId(t)}`
+          );
+          results.push({ table: t, success: true, result: optRows });
+        } catch (err) {
+          results.push({ table: t, success: false, error: err.message });
+        }
+      }
+
+      const failed = results.filter((r) => !r.success);
+      return res.json({
+        success: failed.length === 0,
+        message:
+          failed.length === 0
+            ? `Database optimized successfully for ${optimizeTargets.length} tables.`
+            : `Optimization completed with ${failed.length} table errors.`,
+        total_tables: optimizeTargets.length,
+        failed_tables: failed.map((f) => ({ table: f.table, error: f.error })),
+      });
+    } catch (error) {
+      console.error("shrink-database error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to shrink database",
+        error: error.message,
+      });
+    } finally {
+      if (connection && typeof connection.release === "function") {
+        connection.release();
+      }
     }
   }
 );

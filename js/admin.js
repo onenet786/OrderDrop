@@ -7989,6 +7989,8 @@ async function clearTransactionalData() {
     let confirmMsg = 'Are you sure you want to clear ALL transactional data? This includes orders, payments, and history. Wallets will be reset to 0.';
     if (table === 'all_except_user_store') {
         confirmMsg = 'Are you sure you want to clear ALL tables except user/store related tables? This action cannot be undone.';
+    } else if (table === 'all_except_core_keep') {
+        confirmMsg = 'Are you sure you want to clear ALL tables except core operational tables (banks, categories, items, orders, order_items, products, product_size_prices, riders, sizes, stores, units, users, user_permissions)?';
     } else if (table === 'all_tables') {
         confirmMsg = 'Are you sure you want to clear ALL tables in the database? This is extremely destructive and cannot be undone.';
     } else if (table !== 'all') {
@@ -8048,6 +8050,7 @@ async function loadClearableTables() {
     const staticOptions = [
         { value: 'all', label: 'ALL Transactional Data (Orders, Payments, History)' },
         { value: 'all_except_user_store', label: 'ALL Tables EXCEPT User/Store Related' },
+        { value: 'all_except_core_keep', label: 'Clear All EXCEPT Core Operational Tables' },
         { value: 'all_tables', label: 'ALL Tables (Dangerous)' }
     ];
 
@@ -8086,6 +8089,47 @@ async function loadClearableTables() {
         tableSelect.value = hasCurrent ? current : 'all';
     } catch (error) {
         console.error('Failed to load clearable tables:', error);
+    }
+}
+
+async function shrinkDatabase() {
+    const confirmMsg = 'Optimize and shrink database now? This may take some time and can temporarily slow queries.';
+    if (!confirm(confirmMsg)) return;
+
+    const verification = prompt('Type "SHRINK" to confirm database optimization:');
+    if (verification !== 'SHRINK') {
+        showInfo('Cancelled', 'Database shrink cancelled.');
+        return;
+    }
+
+    const btn = document.getElementById('shrinkDbBtn');
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Shrinking...';
+        }
+
+        const response = await fetch(`${API_BASE}/api/admin/shrink-database`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        const data = await response.json();
+        if (data.success) {
+            showSuccess('Database Shrink Complete', data.message || 'Database optimized successfully.');
+        } else {
+            showError('Database Shrink', data.message || 'Shrink completed with errors.');
+        }
+    } catch (error) {
+        console.error('shrinkDatabase error:', error);
+        showError('Database Shrink', 'Failed to shrink database');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-compress-alt"></i> Shrink Database';
+        }
     }
 }
 
