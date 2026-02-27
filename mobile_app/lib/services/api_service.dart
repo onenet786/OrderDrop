@@ -1048,6 +1048,38 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<List<dynamic>> getAvailableRiders(String token) async {
+    final uri = Uri.parse('$baseUrl/api/orders/available-riders');
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    final data = _handleResponse(response);
+    return data['riders'] ?? [];
+  }
+
+  static Future<Map<String, dynamic>> assignOrderRider(
+    String token,
+    int orderId,
+    int riderId, {
+    double? deliveryFee,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/orders/$orderId/assign-rider');
+    _logger.d('ApiService: PUT $uri');
+    final body = <String, dynamic>{'rider_id': riderId};
+    if (deliveryFee != null) body['delivery_fee'] = deliveryFee;
+    final response = await http.put(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _handleResponse(response);
+  }
+
   static Future<Map<String, dynamic>> getStoreGraceAlerts(
     String token, {
     String channel = 'mobile',

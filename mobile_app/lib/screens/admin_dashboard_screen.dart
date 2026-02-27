@@ -41,6 +41,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<dynamic> _recentOrdersList = [];
   List<dynamic> _recentUsersList = [];
   List<dynamic> _recentStoresList = [];
+  List<dynamic> _assignableOrdersList = [];
   String _selectedActivityType = 'orders';
 
   int _toInt(dynamic value) {
@@ -113,7 +114,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null || token.trim().isEmpty) return;
-      final data = await ApiService.getStoreGraceAlerts(token, channel: 'mobile');
+      final data = await ApiService.getStoreGraceAlerts(
+        token,
+        channel: 'mobile',
+      );
       final alerts = (data['alerts'] as List?) ?? const [];
       if (alerts.isEmpty || !mounted) return;
       final alert = (alerts.first as Map?)?.cast<String, dynamic>() ?? {};
@@ -121,7 +125,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (storeId == null || storeId <= 0) return;
       final storeName = (alert['store_name'] ?? 'Store').toString();
       final dueDate = (alert['due_date'] ?? '-').toString();
-      final pending = double.tryParse((alert['pending_amount'] ?? '0').toString()) ?? 0;
+      final pending =
+          double.tryParse((alert['pending_amount'] ?? '0').toString()) ?? 0;
       final daysLeft = int.tryParse((alert['days_left'] ?? '').toString());
       final lead = (daysLeft != null && daysLeft < 0)
           ? 'Overdue by ${daysLeft.abs()} day(s)'
@@ -130,15 +135,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final now = DateTime.now();
       final lastAt = _lastGraceAlertAt[key];
       // Keep periodic reminders, but avoid a notification every minute.
-      if (lastAt != null && now.difference(lastAt) < const Duration(minutes: 30)) {
+      if (lastAt != null &&
+          now.difference(lastAt) < const Duration(minutes: 30)) {
         return;
       }
       _lastGraceAlertAt[key] = now;
 
-      final notificationProvider = Provider.of<NotificationProvider>(context, listen: false);
+      final notificationProvider = Provider.of<NotificationProvider>(
+        context,
+        listen: false,
+      );
       notificationProvider.addNotification(
         title: 'Store Due Alert',
-        message: '$storeName: $lead | Due: $dueDate | Pending: PKR ${pending.toStringAsFixed(2)}',
+        message:
+            '$storeName: $lead | Due: $dueDate | Pending: PKR ${pending.toStringAsFixed(2)}',
         type: 'warning',
         icon: 'warning',
         persistUntilDismissed: true,
@@ -152,6 +162,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null) return;
+      final currentUserId = Provider.of<AuthProvider>(
+        context,
+        listen: false,
+      ).user?.id;
 
       final results = await Future.wait([
         ApiService.getOrders(token),
@@ -189,6 +203,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return s != 'delivered' && s != 'cancelled';
         }).length;
       }
+
+      final assignableOrders =
+          orders.where((o) {
+            final s = (o['status'] ?? '').toString().toLowerCase();
+            final customerId = int.tryParse(
+              (o['customer_id'] ?? '').toString(),
+            );
+            final isOwnOrder =
+                currentUserId != null && customerId == currentUserId;
+            return s != 'delivered' && s != 'cancelled' && !isOwnOrder;
+          }).toList()..sort((a, b) {
+            DateTime ad = DateTime.fromMillisecondsSinceEpoch(0);
+            DateTime bd = DateTime.fromMillisecondsSinceEpoch(0);
+            try {
+              ad = DateTime.parse((a['created_at'] ?? '').toString());
+            } catch (_) {}
+            try {
+              bd = DateTime.parse((b['created_at'] ?? '').toString());
+            } catch (_) {}
+            return bd.compareTo(ad);
+          });
 
       final stats = (visitorStats['stats'] is Map<String, dynamic>)
           ? visitorStats['stats'] as Map<String, dynamic>
@@ -236,6 +271,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _recentOrdersList = recentActivityData['recent_orders'] ?? [];
         _recentUsersList = recentActivityData['recent_users'] ?? [];
         _recentStoresList = recentActivityData['recent_stores'] ?? [];
+        _assignableOrdersList = assignableOrders;
         _isLoading = false;
       });
     } catch (e) {
@@ -285,6 +321,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.black87),
         title: const Text(
           'Admin Dashboard',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
@@ -296,7 +333,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: CircleAvatar(
               backgroundColor: Colors.indigo,
               child: Text(
-                authProvider.user?.firstName.substring(0, 1).toUpperCase() ?? 'A',
+                authProvider.user?.firstName.substring(0, 1).toUpperCase() ??
+                    'A',
                 style: const TextStyle(color: Colors.white),
               ),
             ),
@@ -402,7 +440,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             currentAccountPicture: CircleAvatar(
               backgroundColor: Colors.white,
               child: Text(
-                authProvider.user?.firstName.substring(0, 1).toUpperCase() ?? 'A',
+                authProvider.user?.firstName.substring(0, 1).toUpperCase() ??
+                    'A',
                 style: const TextStyle(fontSize: 24, color: Colors.indigo),
               ),
             ),
@@ -478,11 +517,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.phone_android),
-            title: const Text('Customer Dashboard Test'),
+            leading: const Icon(Icons.receipt_long),
+            title: const Text('Manage Orders'),
             onTap: () {
               Navigator.of(context).pop();
-              Navigator.of(context).pushNamed('/customer-test-dashboard');
+              _openManageOrdersForAssignment();
             },
           ),
           ListTile(
@@ -513,56 +552,61 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required int pending,
     required int cancelled,
   }) {
-    return Column(
-      children: [
-        Row(
+    final cards = [
+      (
+        title: 'Total',
+        value: total.toString(),
+        icon: Icons.shopping_cart,
+        gradient: [Colors.blue.shade400, Colors.blue.shade700],
+      ),
+      (
+        title: 'Delivered',
+        value: delivered.toString(),
+        icon: Icons.check_circle,
+        gradient: [Colors.green.shade400, Colors.green.shade700],
+      ),
+      (
+        title: 'Pending',
+        value: pending.toString(),
+        icon: Icons.pending_actions,
+        gradient: [Colors.orange.shade400, Colors.orange.shade700],
+      ),
+      (
+        title: 'Cancelled',
+        value: cancelled.toString(),
+        icon: Icons.cancel,
+        gradient: [Colors.red.shade400, Colors.red.shade700],
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 8.0;
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+        final cardWidth = (((width - (spacing * 3)) / 4).clamp(
+          62.0,
+          140.0,
+        )).toDouble();
+        return Row(
           children: [
-            Expanded(
-              child: _buildStatCard(
-                title: 'Total Orders',
-                value: total.toString(),
-                icon: Icons.shopping_cart,
-                color: Colors.blue,
-                gradient: [Colors.blue.shade400, Colors.blue.shade700],
+            for (var i = 0; i < cards.length; i++) ...[
+              SizedBox(
+                width: cardWidth,
+                child: _buildStatCard(
+                  title: cards[i].title,
+                  value: cards[i].value,
+                  icon: cards[i].icon,
+                  color: cards[i].gradient.first,
+                  gradient: cards[i].gradient,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _buildStatCard(
-                title: 'Delivered',
-                value: delivered.toString(),
-                icon: Icons.check_circle,
-                color: Colors.green,
-                gradient: [Colors.green.shade400, Colors.green.shade700],
-              ),
-            ),
+              if (i != cards.length - 1) const SizedBox(width: spacing),
+            ],
           ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _buildStatCard(
-                title: 'Pending Orders',
-                value: pending.toString(),
-                icon: Icons.pending_actions,
-                color: Colors.orange,
-                gradient: [Colors.orange.shade400, Colors.orange.shade700],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _buildStatCard(
-                title: 'Cancelled',
-                value: cancelled.toString(),
-                icon: Icons.cancel,
-                color: Colors.red,
-                gradient: [Colors.red.shade400, Colors.red.shade700],
-              ),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -582,10 +626,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       }
 
       final normalizedStores = stores
-          .map((s) => {
-                'id': int.tryParse((s['id'] ?? '').toString()),
-                'name': (s['name'] ?? 'Store').toString(),
-              })
+          .map(
+            (s) => {
+              'id': int.tryParse((s['id'] ?? '').toString()),
+              'name': (s['name'] ?? 'Store').toString(),
+            },
+          )
           .where((s) => s['id'] != null)
           .toList();
       if (normalizedStores.isEmpty) {
@@ -605,16 +651,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final websiteMessageCtrl = TextEditingController();
       final websiteStartCtrl = TextEditingController();
       final websiteEndCtrl = TextEditingController();
-      List<Map<String, dynamic>> visibleStores = List<Map<String, dynamic>>.from(
-        normalizedStores,
-      );
+      List<Map<String, dynamic>> visibleStores =
+          List<Map<String, dynamic>>.from(normalizedStores);
 
       bool toBool(dynamic value) {
         if (value is bool) return value;
         if (value is num) return value != 0;
         if (value is String) {
           final normalized = value.trim().toLowerCase();
-          return normalized == 'true' || normalized == '1' || normalized == 'yes';
+          return normalized == 'true' ||
+              normalized == '1' ||
+              normalized == 'yes';
         }
         return false;
       }
@@ -663,7 +710,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         setDialogState(() => ctrl.text = toDateTimeLocalString(merged));
       }
 
-      Future<void> loadStoreStatus(int storeId, void Function(VoidCallback) setDialogState) async {
+      Future<void> loadStoreStatus(
+        int storeId,
+        void Function(VoidCallback) setDialogState,
+      ) async {
         try {
           final status = await ApiService.getStoreStatusMessage(
             token,
@@ -695,8 +745,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         final status = (data['status'] is Map<String, dynamic>)
             ? (data['status'] as Map<String, dynamic>)
             : (data['global_status'] is Map<String, dynamic>)
-                ? (data['global_status'] as Map<String, dynamic>)
-                : data;
+            ? (data['global_status'] as Map<String, dynamic>)
+            : data;
         websiteEnabled = toBool(status['is_enabled']);
         websiteBlockOrdering = toBool(status['block_ordering']);
         websiteTitleCtrl.text = (status['title'] ?? '').toString();
@@ -756,8 +806,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   id.contains(q);
                             }).toList();
                             if (visibleStores.isNotEmpty &&
-                                !visibleStores.any((s) => s['id'] == selectedStoreId)) {
-                              selectedStoreId = visibleStores.first['id'] as int;
+                                !visibleStores.any(
+                                  (s) => s['id'] == selectedStoreId,
+                                )) {
+                              selectedStoreId =
+                                  visibleStores.first['id'] as int;
                             }
                           });
                         },
@@ -775,9 +828,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         DropdownButtonFormField<int>(
                           key: ValueKey('store-$selectedStoreId'),
                           isExpanded: true,
-                          initialValue: visibleStores.any(
-                            (s) => s['id'] == selectedStoreId,
-                          )
+                          initialValue:
+                              visibleStores.any(
+                                (s) => s['id'] == selectedStoreId,
+                              )
                               ? selectedStoreId
                               : (visibleStores.first['id'] as int),
                           decoration: const InputDecoration(
@@ -850,7 +904,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     );
                                   } catch (e) {
                                     if (!mounted) return;
-                                    Notifier.error(context, 'Failed to save store status: $e');
+                                    Notifier.error(
+                                      context,
+                                      'Failed to save store status: $e',
+                                    );
                                   } finally {
                                     if (ctx.mounted) {
                                       setDialogState(() => storeSaving = false);
@@ -880,7 +937,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Enable Website-Wide Message'),
                         value: websiteEnabled,
-                        onChanged: (v) => setDialogState(() => websiteEnabled = v),
+                        onChanged: (v) =>
+                            setDialogState(() => websiteEnabled = v),
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -889,7 +947,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           'If enabled, ordering is blocked during active time window.',
                         ),
                         value: websiteBlockOrdering,
-                        onChanged: (v) => setDialogState(() => websiteBlockOrdering = v),
+                        onChanged: (v) =>
+                            setDialogState(() => websiteBlockOrdering = v),
                       ),
                       TextField(
                         controller: websiteTitleCtrl,
@@ -906,7 +965,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         maxLength: 500,
                         decoration: const InputDecoration(
                           labelText: 'Website Message',
-                          hintText: 'Delivery will be unavailable from ... to ...',
+                          hintText:
+                              'Delivery will be unavailable from ... to ...',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -927,12 +987,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           const SizedBox(width: 8),
                           IconButton(
                             tooltip: 'Pick start time',
-                            onPressed: () => pickDateTime(websiteStartCtrl, setDialogState),
+                            onPressed: () =>
+                                pickDateTime(websiteStartCtrl, setDialogState),
                             icon: const Icon(Icons.schedule),
                           ),
                           IconButton(
                             tooltip: 'Clear start time',
-                            onPressed: () => setDialogState(() => websiteStartCtrl.clear()),
+                            onPressed: () =>
+                                setDialogState(() => websiteStartCtrl.clear()),
                             icon: const Icon(Icons.close),
                           ),
                         ],
@@ -954,12 +1016,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           const SizedBox(width: 8),
                           IconButton(
                             tooltip: 'Pick end time',
-                            onPressed: () => pickDateTime(websiteEndCtrl, setDialogState),
+                            onPressed: () =>
+                                pickDateTime(websiteEndCtrl, setDialogState),
                             icon: const Icon(Icons.schedule),
                           ),
                           IconButton(
                             tooltip: 'Clear end time',
-                            onPressed: () => setDialogState(() => websiteEndCtrl.clear()),
+                            onPressed: () =>
+                                setDialogState(() => websiteEndCtrl.clear()),
                             icon: const Icon(Icons.close),
                           ),
                         ],
@@ -974,17 +1038,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   setDialogState(() => websiteSaving = true);
                                   try {
                                     if (websiteStartCtrl.text.trim().isEmpty) {
-                                      websiteStartCtrl.text = toDateTimeLocalString(DateTime.now());
+                                      websiteStartCtrl.text =
+                                          toDateTimeLocalString(DateTime.now());
                                     }
                                     if (websiteEndCtrl.text.trim().isEmpty) {
-                                      websiteEndCtrl.text = toDateTimeLocalString(DateTime.now());
+                                      websiteEndCtrl.text =
+                                          toDateTimeLocalString(DateTime.now());
                                     }
-                                    final startAt = websiteStartCtrl.text.trim();
+                                    final startAt = websiteStartCtrl.text
+                                        .trim();
                                     final endAt = websiteEndCtrl.text.trim();
-                                    if (startAt.isNotEmpty && endAt.isNotEmpty) {
+                                    if (startAt.isNotEmpty &&
+                                        endAt.isNotEmpty) {
                                       final start = DateTime.tryParse(startAt);
                                       final end = DateTime.tryParse(endAt);
-                                      if (start == null || end == null || !end.isAfter(start)) {
+                                      if (start == null ||
+                                          end == null ||
+                                          !end.isAfter(start)) {
                                         Notifier.error(
                                           context,
                                           'End time must be greater than start time.',
@@ -998,7 +1068,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       isEnabled: websiteEnabled,
                                       blockOrdering: websiteBlockOrdering,
                                       title: websiteTitleCtrl.text,
-                                      statusMessage: websiteMessageCtrl.text.trim(),
+                                      statusMessage: websiteMessageCtrl.text
+                                          .trim(),
                                       startAt: startAt,
                                       endAt: endAt,
                                     );
@@ -1009,10 +1080,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     );
                                   } catch (e) {
                                     if (!mounted) return;
-                                    Notifier.error(context, 'Failed to save website status: $e');
+                                    Notifier.error(
+                                      context,
+                                      'Failed to save website status: $e',
+                                    );
                                   } finally {
                                     if (ctx.mounted) {
-                                      setDialogState(() => websiteSaving = false);
+                                      setDialogState(
+                                        () => websiteSaving = false,
+                                      );
                                     }
                                   }
                                 },
@@ -1075,16 +1151,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             const SizedBox(width: 10),
             _buildQuickMenuItem(
               context: context,
-              icon: Icons.people,
-              label: 'Users',
-              route: '/manage-users',
-            ),
-            const SizedBox(width: 10),
-            _buildQuickMenuItem(
-              context: context,
-              icon: Icons.delivery_dining,
-              label: 'Riders',
-              route: '/manage-riders',
+              icon: Icons.receipt_long,
+              label: 'Orders',
+              onTap: _openManageOrdersForAssignment,
             ),
             const SizedBox(width: 10),
             _buildQuickMenuItem(
@@ -1131,7 +1200,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 9.5),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 9.5,
+              ),
             ),
           ],
         ),
@@ -1173,6 +1245,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required List<Color> gradient,
   }) {
     return Container(
+      height: 59,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: gradient,
@@ -1188,41 +1261,40 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6.8),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
                   value,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
-                ),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                  ),
                   overflow: TextOverflow.ellipsis,
-                  maxLines: 2,
                 ),
-              ],
-            ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: Colors.white, size: 16),
+              ),
+            ],
           ),
-          Container(
-            padding: const EdgeInsets.all(5),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Colors.white, size: 16),
+          Text(
+            title,
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
           ),
         ],
       ),
@@ -1264,6 +1336,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildRecentActivityList() {
+    if (_selectedActivityType == 'orders') {
+      return _buildNewOrdersList();
+    }
+
     List<dynamic> list;
     switch (_selectedActivityType) {
       case 'users':
@@ -1272,7 +1348,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 'stores':
         list = _recentStoresList;
         break;
-      case 'orders':
       default:
         list = _recentOrdersList;
         break;
@@ -1322,6 +1397,67 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  Widget _buildNewOrdersList() {
+    if (_assignableOrdersList.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text('No new orders to assign'),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          ..._assignableOrdersList.map((raw) {
+            if (raw is! Map) return const SizedBox.shrink();
+            final order = raw.cast<String, dynamic>();
+            final id = int.tryParse((order['id'] ?? '').toString()) ?? 0;
+            final orderNo = (order['order_number'] ?? '#$id').toString();
+            final status = (order['status'] ?? 'pending').toString();
+            final riderId = int.tryParse((order['rider_id'] ?? '').toString());
+            final total =
+                double.tryParse((order['total_amount'] ?? '0').toString()) ?? 0;
+            final subtitle =
+                'PKR ${total.toStringAsFixed(0)} | ${riderId == null ? "Unassigned" : "Assigned"} | $status';
+
+            return Column(
+              children: [
+                InkWell(
+                  onTap: id > 0
+                      ? () => _openOrderAssignmentDialog({
+                          'type': 'order',
+                          'order_id': id,
+                        })
+                      : null,
+                  child: _buildActivityItem(
+                    title: 'Order $orderNo',
+                    subtitle: subtitle,
+                    icon: Icons.receipt_long,
+                    color: riderId == null ? Colors.orange : Colors.blue,
+                  ),
+                ),
+                if (raw != _assignableOrdersList.last) const Divider(height: 1),
+              ],
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActivityItem({
     required String title,
     required String subtitle,
@@ -1334,14 +1470,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         backgroundColor: color.withValues(alpha: 0.12),
         child: Icon(icon, color: color),
       ),
-      title: Text(
-        title,
-        style: const TextStyle(fontWeight: FontWeight.w600),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: Colors.grey[600]),
-      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600])),
       trailing: const Icon(Icons.chevron_right, color: Colors.grey),
     );
   }
@@ -1372,11 +1502,350 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  int? _extractOrderIdFromActivity(Map<String, dynamic> activity) {
+    final direct = int.tryParse((activity['order_id'] ?? '').toString());
+    if (direct != null && direct > 0) return direct;
+
+    final details = activity['details'];
+    if (details is Map<String, dynamic>) {
+      final rawOrderId = (details['Order ID'] ?? details['order_id'] ?? '')
+          .toString()
+          .trim();
+      final clean = rawOrderId.replaceAll(RegExp(r'[^0-9]'), '');
+      final parsed = int.tryParse(clean);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+
+    final title = (activity['title'] ?? '').toString();
+    final match = RegExp(r'#\s*(\d+)').firstMatch(title);
+    if (match != null) {
+      final parsed = int.tryParse(match.group(1) ?? '');
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return null;
+  }
+
+  Future<void> _openOrderAssignmentDialog(Map<String, dynamic> activity) async {
+    final token = Provider.of<AuthProvider>(context, listen: false).token;
+    if (token == null || token.trim().isEmpty) {
+      Notifier.error(context, 'Session expired. Please login again.');
+      return;
+    }
+
+    final orderId = _extractOrderIdFromActivity(activity);
+    if (orderId == null) {
+      Notifier.error(context, 'Order ID not found in activity.');
+      return;
+    }
+
+    try {
+      final results = await Future.wait<List<dynamic>>([
+        ApiService.getOrders(token),
+        ApiService.getAvailableRiders(token),
+      ]);
+      final orders = results[0];
+      final riders = results[1];
+      Map<String, dynamic>? order;
+      for (final raw in orders) {
+        if (raw is! Map) continue;
+        final map = raw.cast<String, dynamic>();
+        if (int.tryParse((map['id'] ?? '').toString()) == orderId) {
+          order = map;
+          break;
+        }
+      }
+      if (!mounted) return;
+      if (order == null) {
+        Notifier.error(context, 'Order #$orderId not found.');
+        return;
+      }
+
+      final orderNumber = (order['order_number'] ?? orderId).toString();
+      final totalAmount =
+          double.tryParse((order['total_amount'] ?? '0').toString()) ?? 0;
+      final currentStatus = (order['status'] ?? 'pending').toString();
+      final initialRiderId = int.tryParse((order['rider_id'] ?? '').toString());
+
+      String selectedStatus = currentStatus;
+      int? selectedRiderId = initialRiderId;
+      bool isSaving = false;
+      const statusOptions = <String>[
+        'pending',
+        'confirmed',
+        'preparing',
+        'ready',
+        'ready_for_pickup',
+        'out_for_delivery',
+        'delivered',
+        'cancelled',
+      ];
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (ctx, setModalState) {
+              return AlertDialog(
+                title: Text('Order #$orderNumber Assignment'),
+                content: SizedBox(
+                  width: 420,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Total: PKR ${totalAmount.toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int?>(
+                          key: ValueKey<int?>(selectedRiderId),
+                          initialValue: selectedRiderId,
+                          decoration: const InputDecoration(
+                            labelText: 'Assign Rider',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text('Unassigned'),
+                            ),
+                            ...riders.map((r) {
+                              final id = int.tryParse(
+                                (r['id'] ?? '').toString(),
+                              );
+                              if (id == null) {
+                                return const DropdownMenuItem<int?>(
+                                  value: null,
+                                  child: Text('Invalid Rider'),
+                                );
+                              }
+                              final name =
+                                  '${r['first_name'] ?? ''} ${r['last_name'] ?? ''}'
+                                      .trim();
+                              return DropdownMenuItem<int?>(
+                                value: id,
+                                child: Text(name.isEmpty ? 'Rider #$id' : name),
+                              );
+                            }),
+                          ],
+                          onChanged: isSaving
+                              ? null
+                              : (v) => setModalState(() => selectedRiderId = v),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          key: ValueKey<String>(selectedStatus),
+                          initialValue: selectedStatus,
+                          decoration: const InputDecoration(
+                            labelText: 'Order Status',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: statusOptions
+                              .map(
+                                (s) => DropdownMenuItem<String>(
+                                  value: s,
+                                  child: Text(s),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: isSaving
+                              ? null
+                              : (v) {
+                                  if (v != null) {
+                                    setModalState(() => selectedStatus = v);
+                                  }
+                                },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: isSaving ? null : () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            setModalState(() => isSaving = true);
+                            try {
+                              bool changed = false;
+                              if (selectedRiderId != null &&
+                                  selectedRiderId != initialRiderId) {
+                                await ApiService.assignOrderRider(
+                                  token,
+                                  orderId,
+                                  selectedRiderId!,
+                                );
+                                changed = true;
+                              }
+                              if (selectedStatus != currentStatus) {
+                                await ApiService.updateOrderStatus(
+                                  token,
+                                  orderId,
+                                  selectedStatus,
+                                );
+                                changed = true;
+                              }
+                              if (ctx.mounted) Navigator.of(ctx).pop();
+                              if (!mounted) return;
+                              if (changed) {
+                                Notifier.success(
+                                  context,
+                                  'Order #$orderNumber updated successfully.',
+                                );
+                                _loadStats();
+                              } else {
+                                Notifier.info(context, 'No changes applied.');
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                Notifier.error(
+                                  context,
+                                  'Failed to update order: $e',
+                                );
+                              }
+                            } finally {
+                              if (ctx.mounted) {
+                                setModalState(() => isSaving = false);
+                              }
+                            }
+                          },
+                    child: isSaving
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Save'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Notifier.error(context, 'Failed to load assignment data: $e');
+    }
+  }
+
+  Future<void> _openManageOrdersForAssignment() async {
+    await _loadStats();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return SafeArea(
+          child: Container(
+            height: MediaQuery.of(ctx).size.height * 0.86,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 10, 8),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Manage Orders (Assign Riders)',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: _assignableOrdersList.isEmpty
+                      ? const Center(
+                          child: Text('No new orders pending assignment'),
+                        )
+                      : ListView.separated(
+                          itemCount: _assignableOrdersList.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final raw = _assignableOrdersList[index];
+                            if (raw is! Map) return const SizedBox.shrink();
+                            final order = raw.cast<String, dynamic>();
+                            final id =
+                                int.tryParse((order['id'] ?? '').toString()) ??
+                                0;
+                            final orderNo = (order['order_number'] ?? '#$id')
+                                .toString();
+                            final status = (order['status'] ?? 'pending')
+                                .toString();
+                            final total =
+                                double.tryParse(
+                                  (order['total_amount'] ?? '0').toString(),
+                                ) ??
+                                0;
+                            return ListTile(
+                              leading: const CircleAvatar(
+                                backgroundColor: Color(0x1AF57C00),
+                                child: Icon(
+                                  Icons.receipt_long,
+                                  color: Colors.orange,
+                                ),
+                              ),
+                              title: Text(
+                                'Order $orderNo',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'PKR ${total.toStringAsFixed(0)} | $status',
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: id <= 0
+                                  ? null
+                                  : () {
+                                      Navigator.of(ctx).pop();
+                                      _openOrderAssignmentDialog({
+                                        'type': 'order',
+                                        'order_id': id,
+                                      });
+                                    },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showActivityDetails(Map<String, dynamic> activity) {
+    final type = (activity['type'] ?? '').toString().toLowerCase();
+    if (type == 'order') {
+      _openOrderAssignmentDialog(activity);
+      return;
+    }
     String detailsStr = '';
     if (activity['details'] != null) {
-      detailsStr = (activity['details'] as Map<String, dynamic>)
-          .entries
+      detailsStr = (activity['details'] as Map<String, dynamic>).entries
           .map((e) => '${e.key}: ${e.value ?? "N/A"}')
           .join('\n');
     }
