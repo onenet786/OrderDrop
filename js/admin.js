@@ -808,21 +808,43 @@ async function saveCustomerFlashMessage() {
     if (!enabledEl || !titleEl || !messageEl || !imageEl || !startEl || !endEl || !targetEl) return;
 
     if (!startEl.value) startEl.value = nowDateTimeLocalValue();
-    if (!endEl.value) endEl.value = nowDateTimeLocalValue();
+    if (!endEl.value) {
+        const sdt = new Date(startEl.value || nowDateTimeLocalValue());
+        if (!Number.isNaN(sdt.getTime())) {
+            sdt.setHours(sdt.getHours() + 1);
+            endEl.value = toDateTimeLocalValue(sdt);
+        } else {
+            endEl.value = nowDateTimeLocalValue();
+        }
+    }
 
     const payload = {
         is_enabled: !!enabledEl.checked,
         title: titleEl.value.trim(),
         status_message: messageEl.value.trim(),
         image_url: imageEl.value.trim(),
-        start_at: startEl.value || null,
-        end_at: endEl.value || null,
+        start_at: null,
+        end_at: null,
         notification_target: (targetEl.value || 'all') === 'custom' ? 'custom' : 'all',
         customer_ids: getSelectedCustomerIdsBySelectId('customerFlashCustomerSelect'),
         send_push_notification: !!document.getElementById('customerFlashSendPush')?.checked,
         push_title: (document.getElementById('customerFlashPushTitle')?.value || '').trim(),
         push_message: (document.getElementById('customerFlashPushMessage')?.value || '').trim()
     };
+    if (payload.is_enabled) {
+        payload.start_at = startEl.value || null;
+        payload.end_at = endEl.value || null;
+        if (payload.start_at && payload.end_at) {
+            const sdt = new Date(payload.start_at);
+            const edt = new Date(payload.end_at);
+            if (!Number.isNaN(sdt.getTime()) && !Number.isNaN(edt.getTime()) && edt <= sdt) {
+                const fixedEnd = new Date(sdt);
+                fixedEnd.setHours(fixedEnd.getHours() + 1);
+                payload.end_at = toDateTimeLocalValue(fixedEnd);
+                endEl.value = payload.end_at;
+            }
+        }
+    }
     if (payload.is_enabled && (!payload.start_at || !payload.end_at)) {
         showWarning('Missing Time Window', 'Please set both "from" and "to" time.');
         return;
@@ -1046,16 +1068,45 @@ if (typeof io !== 'undefined') {
             try { Notification.requestPermission(); } catch (_e) {}
         }
     };
+    const __systemNotifyDedup = new Map();
     const systemNotify = (title, body) => {
-        if (canSystemNotify()) {
-            try { new Notification(title, { body }); return true; } catch (_e) { return false; }
+        ensureNotifyPermission();
+        if (!canSystemNotify()) return false;
+        const key = `${String(title || '').trim()}|${String(body || '').trim()}`;
+        const now = Date.now();
+        const last = __systemNotifyDedup.get(key) || 0;
+        if ((now - last) < 3000) return true;
+        __systemNotifyDedup.set(key, now);
+        try {
+            const safeTag = `rt-${Math.abs(key.split('').reduce((a, c) => ((a * 31) + c.charCodeAt(0)) | 0, 7))}`;
+            // Use same robust path as Utilities test tray button.
+            showStoreGraceSystemNotification(String(title || 'Notification'), String(body || ''), safeTag, null).catch(() => {});
+            return true;
+        } catch (_e) {
+            return false;
         }
-        return false;
     };
     
+    const identifyAdminSocket = () => {
+        try {
+            if (!socket || !socket.connected) return;
+            if (!currentUser || !currentUser.id) return;
+            const userType = (currentUser.user_type || 'admin').toString().toLowerCase();
+            if (userType !== 'admin' && userType !== 'standard_user') return;
+            socket.emit('identify_user', {
+                user_id: currentUser.id,
+                user_type: userType
+            });
+            console.debug('[admin] identify_user emitted:', currentUser.id, userType);
+        } catch (e) {
+            console.warn('[admin] identify_user emit failed:', e);
+        }
+    };
+
     socket.on('connect', () => {
         console.log('Connected to notification server. ID:', socket.id);
         ensureNotifyPermission();
+        identifyAdminSocket();
         showInfo('System', 'Connected to real-time server.');
     });
 
@@ -1135,6 +1186,9 @@ if (typeof io !== 'undefined') {
         if (typeof window.loadOrders === 'function') window.loadOrders();
         if (typeof loadDashboardStats === 'function') loadDashboardStats();
     });
+
+    // Expose for post-login initialization.
+    window._adminIdentifySocket = identifyAdminSocket;
 }
 
 // Initialize admin dashboard
@@ -1174,6 +1228,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data && data.success && data.user) {
                 if (data.user.user_type === 'admin' || data.user.user_type === 'standard_user') {
                     currentUser = data.user;
+                    try { window._adminIdentifySocket && window._adminIdentifySocket(); } catch (_) {}
                     initializeAdmin();
                 } else if (data.user.user_type === 'rider') {
                     window.location.href = 'rider.html';
@@ -5581,7 +5636,6 @@ async function ensureAdminNotificationSw() {
 
 async function showStoreGraceSystemNotification(title, body, storeId, onClick) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return false;
-    let sent = false;
     try {
         const reg = await ensureAdminNotificationSw();
         if (reg && typeof reg.showNotification === 'function') {
@@ -5592,7 +5646,7 @@ async function showStoreGraceSystemNotification(title, body, storeId, onClick) {
                 renotify: true,
                 data: { store_id: storeId }
             });
-            sent = true;
+            return true;
         }
     } catch (e) {
         console.warn('Service worker notification failed, fallback to Notification API:', e);
@@ -5605,11 +5659,11 @@ async function showStoreGraceSystemNotification(title, body, storeId, onClick) {
             renotify: true
         });
         if (typeof onClick === 'function') notif.onclick = onClick;
-        sent = true;
+        return true;
     } catch (e) {
         console.warn('Notification API failed:', e);
     }
-    return sent;
+    return false;
 }
 
 window._adminDiag = window._adminDiag || {};

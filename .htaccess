@@ -1,3 +1,17 @@
 
- On
-RewriteRule ^api/(.*) http://localhost:3002/api/$1 [P,L]
+RewriteEngine On
+
+# Ensure service worker file is served as JavaScript (not rewritten to HTML)
+<IfModule mod_mime.c>
+  AddType application/javascript .js
+</IfModule>
+
+<IfModule mod_headers.c>
+  <Files "admin-sw.js">
+    Header set Service-Worker-Allowed "/"
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </Files>
+</IfModule>
+
+# Proxy API requests to Node backend
+RewriteRule ^api/(.*)$ http://127.0.0.1:3002/api/$1 [P,L]

@@ -62,3 +62,11 @@ secrets/
 
 # Local restore snapshots
 mobile_app/_restore_points/
+
+# Deployment bundles / archives
+bundle/
+*.zip
+
+# Runtime debug logs
+error_debug.log
+socket_debug.log
