@@ -168,7 +168,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ).user?.id;
 
       final results = await Future.wait([
-        ApiService.getOrders(token),
+        ApiService.getOrders(
+          token,
+          includeItemsCount: false,
+          includeStoreStatuses: false,
+        ),
         ApiService.getVisitorStats(token),
         ApiService.getRecentActivity(token),
       ]);
@@ -1540,7 +1544,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     try {
       final results = await Future.wait<List<dynamic>>([
-        ApiService.getOrders(token),
+        ApiService.getOrders(
+          token,
+          includeItemsCount: false,
+          includeStoreStatuses: false,
+        ),
         ApiService.getAvailableRiders(token),
       ]);
       final orders = results[0];

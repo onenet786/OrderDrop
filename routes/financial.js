@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const router = express.Router();
+let _legacyCpvBackfillDone = false;
 
 // Helper to log errors to file
 const logDebugError = (error) => {
@@ -20,6 +21,57 @@ function generateVoucherNumber(prefix, date = new Date()) {
     const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
     const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
     return `${prefix}-${dateStr}-${randomStr}`;
+}
+
+async function backfillLegacyPaymentVouchersToFinancialTransactions(db) {
+    if (_legacyCpvBackfillDone) return 0;
+    const [pendingRows] = await db.execute(
+        `SELECT cpv.id
+         FROM cash_payment_vouchers cpv
+         LEFT JOIN financial_transactions ft
+           ON ft.reference_type = 'payment_voucher'
+          AND ft.reference_id = cpv.voucher_number
+         WHERE cpv.status IN ('approved', 'paid')
+           AND ft.id IS NULL
+         LIMIT 1`
+    );
+    if (!pendingRows.length) {
+        _legacyCpvBackfillDone = true;
+        return 0;
+    }
+
+    const [result] = await db.execute(
+        `INSERT INTO financial_transactions
+            (transaction_number, transaction_type, category, description, amount, payment_method, related_entity_type, related_entity_id, reference_type, reference_id, notes, created_by, status, created_at)
+         SELECT
+            CONCAT(
+                'FIN-BF-',
+                DATE_FORMAT(COALESCE(cpv.paid_at, cpv.approved_at, cpv.updated_at, cpv.created_at, NOW()), '%Y%m%d'),
+                '-',
+                LPAD(cpv.id, 6, '0')
+            ) AS transaction_number,
+            'expense' AS transaction_type,
+            'payment' AS category,
+            CONCAT('CPV ', cpv.voucher_number, ' | Backfill payment to ', COALESCE(cpv.payee_name, 'N/A')) AS description,
+            cpv.amount,
+            cpv.payment_method,
+            cpv.payee_type,
+            cpv.payee_id,
+            'payment_voucher' AS reference_type,
+            cpv.voucher_number AS reference_id,
+            'Backfilled from legacy CPV' AS notes,
+            COALESCE(cpv.paid_by, cpv.approved_by, cpv.prepared_by, 1) AS created_by,
+            'completed' AS status,
+            COALESCE(cpv.paid_at, cpv.approved_at, cpv.updated_at, cpv.created_at, NOW()) AS created_at
+         FROM cash_payment_vouchers cpv
+         LEFT JOIN financial_transactions ft
+           ON ft.reference_type = 'payment_voucher'
+          AND ft.reference_id = cpv.voucher_number
+         WHERE cpv.status IN ('approved', 'paid')
+           AND ft.id IS NULL`
+    );
+    _legacyCpvBackfillDone = true;
+    return Number(result?.affectedRows || 0);
 }
 
 async function ensureRiderCashMovementTypes(db) {
@@ -563,16 +615,18 @@ router.put('/payment-vouchers/:id', [
         const { id } = req.params;
         const { payee_name, payee_type, payee_id, amount, status, description, payment_method, check_number, cheque_number } = req.body;
 
-        // Get existing voucher data if we're marking it as paid
+        // Get existing voucher data if we're moving voucher into an accounting-posted state
         let existingVoucher = null;
-        if (status === 'paid') {
+        const postingStatuses = new Set(['approved', 'paid']);
+        const targetStatus = (status || '').toString().toLowerCase();
+        if (postingStatuses.has(targetStatus)) {
             const [rows] = await req.db.execute('SELECT * FROM cash_payment_vouchers WHERE id = ?', [id]);
             if (rows.length === 0) {
                 return res.status(404).json({ success: false, message: 'Voucher not found' });
             }
             existingVoucher = rows[0];
             
-            if (existingVoucher.status === 'paid') {
+            if (targetStatus === 'paid' && String(existingVoucher.status || '').toLowerCase() === 'paid') {
                 return res.status(400).json({ success: false, message: 'Voucher is already marked as paid' });
             }
         }
@@ -636,73 +690,100 @@ router.put('/payment-vouchers/:id', [
             params
         );
 
-        // Create financial transaction if status changed to paid or approved
-        if ((status === 'paid' || status === 'approved') && existingVoucher) {
+        // Create CPV financial posting only once when voucher transitions into approved/paid.
+        const previousStatus = String(existingVoucher?.status || '').toLowerCase();
+        const movedIntoPostedState =
+            postingStatuses.has(targetStatus) && !postingStatuses.has(previousStatus);
+
+        if (movedIntoPostedState && existingVoucher) {
             const voucherAmount = amount || existingVoucher.amount;
             const voucherPayee = payee_name || existingVoucher.payee_name;
             const voucherDescription = description || existingVoucher.description || existingVoucher.purpose || 'Payment via voucher';
+            const voucherRef = existingVoucher.voucher_number;
 
-            await recordFinancialTransaction(req.db, {
-                transaction_type: 'expense',
-                category: 'payment',
-                description: `Payment to ${voucherPayee}: ${voucherDescription}`,
-                amount: voucherAmount,
-                payment_method: payment_method || existingVoucher.payment_method,
-                related_entity_type: existingVoucher.payee_type,
-                related_entity_id: existingVoucher.payee_id,
-                reference_type: 'payment_voucher',
-                reference_id: existingVoucher.voucher_number,
-                created_by: req.user.id
-            });
+            // Prevent duplicate posting when status is toggled or retried.
+            const [alreadyPosted] = await req.db.execute(
+                `SELECT id
+                 FROM financial_transactions
+                 WHERE reference_type = 'payment_voucher' AND reference_id = ?
+                 LIMIT 1`,
+                [voucherRef]
+            );
 
-            // If payee is a rider, record cash settlement/advance and update wallet (Debit)
-            const payeeType = payee_type || existingVoucher.payee_type;
-            const payeeId = payee_id !== undefined ? payee_id : existingVoucher.payee_id;
+            if (!alreadyPosted.length) {
+                await recordFinancialTransaction(req.db, {
+                    transaction_type: 'expense',
+                    category: 'payment',
+                    description: `CPV ${voucherRef} | Payment to ${voucherPayee}: ${voucherDescription}`,
+                    amount: voucherAmount,
+                    payment_method: payment_method || existingVoucher.payment_method,
+                    related_entity_type: existingVoucher.payee_type,
+                    related_entity_id: existingVoucher.payee_id,
+                    reference_type: 'payment_voucher',
+                    reference_id: voucherRef,
+                    created_by: req.user.id
+                });
 
-            if (payeeType === 'rider' && payeeId) {
-                const movement_number = generateVoucherNumber('RCM');
-                const movement_date = new Date().toISOString().split('T')[0];
-                const movementType = 'settlement'; // Using settlement for payments to riders
+                // If payee is a rider, record cash settlement/advance and update wallet (Debit)
+                const payeeType = payee_type || existingVoucher.payee_type;
+                const payeeId = payee_id !== undefined ? payee_id : existingVoucher.payee_id;
 
-                const [movementResult] = await req.db.execute(
-                    `INSERT INTO rider_cash_movements 
-                     (movement_number, rider_id, movement_date, movement_type, amount, description, reference_type, reference_id, recorded_by, status, approved_by, approved_at)
-                     VALUES (?, ?, ?, ?, ?, ?, 'payment_voucher', ?, ?, 'completed', ?, NOW())`,
-                    [movement_number, payeeId, movement_date, movementType, voucherAmount, `Cash payment via CPV ${existingVoucher.voucher_number}`, existingVoucher.voucher_number, req.user.id, req.user.id]
-                );
+                if (payeeType === 'rider' && payeeId) {
+                    const movement_number = generateVoucherNumber('RCM');
+                    const movement_date = new Date().toISOString().split('T')[0];
+                    const movementType = 'settlement'; // Using settlement for payments to riders
 
-                // Debit rider wallet (reduce company liability / increase rider liability)
-                await recordRiderWalletTransaction(
-                    req.db,
-                    payeeId,
-                    'debit',
-                    voucherAmount,
-                    `Cash payment via CPV ${existingVoucher.voucher_number}`,
-                    movementResult.insertId,
-                    movementType
-                );
-            } else if (payeeType === 'store' && payeeId) {
-                // Debit store wallet (reduce company liability)
-                await recordStoreWalletTransaction(
-                    req.db,
-                    payeeId,
-                    'debit',
-                    voucherAmount,
-                    `Payment via CPV ${existingVoucher.voucher_number}`,
-                    existingVoucher.id,
-                    'payment_voucher'
-                );
-            } else if (payeeType === 'employee' && payeeId) {
-                // Debit employee wallet (reduce company liability)
-                await recordUserWalletTransaction(
-                    req.db,
-                    payeeId,
-                    'debit',
-                    voucherAmount,
-                    `Payment via CPV ${existingVoucher.voucher_number}`,
-                    existingVoucher.id,
-                    'payment_voucher'
-                );
+                    const [existingMovement] = await req.db.execute(
+                        `SELECT id
+                         FROM rider_cash_movements
+                         WHERE reference_type = 'payment_voucher'
+                           AND reference_id = ?
+                           AND movement_type = 'settlement'
+                         LIMIT 1`,
+                        [voucherRef]
+                    );
+                    if (!existingMovement.length) {
+                        const [movementResult] = await req.db.execute(
+                            `INSERT INTO rider_cash_movements 
+                             (movement_number, rider_id, movement_date, movement_type, amount, description, reference_type, reference_id, recorded_by, status, approved_by, approved_at)
+                             VALUES (?, ?, ?, ?, ?, ?, 'payment_voucher', ?, ?, 'completed', ?, NOW())`,
+                            [movement_number, payeeId, movement_date, movementType, voucherAmount, `Cash payment via CPV ${voucherRef}`, voucherRef, req.user.id, req.user.id]
+                        );
+
+                        // Debit rider wallet (reduce company liability / increase rider liability)
+                        await recordRiderWalletTransaction(
+                            req.db,
+                            payeeId,
+                            'debit',
+                            voucherAmount,
+                            `Cash payment via CPV ${voucherRef}`,
+                            movementResult.insertId,
+                            movementType
+                        );
+                    }
+                } else if (payeeType === 'store' && payeeId) {
+                    // Debit store wallet (reduce company liability)
+                    await recordStoreWalletTransaction(
+                        req.db,
+                        payeeId,
+                        'debit',
+                        voucherAmount,
+                        `Payment via CPV ${voucherRef}`,
+                        existingVoucher.id,
+                        'payment_voucher'
+                    );
+                } else if (payeeType === 'employee' && payeeId) {
+                    // Debit employee wallet (reduce company liability)
+                    await recordUserWalletTransaction(
+                        req.db,
+                        payeeId,
+                        'debit',
+                        voucherAmount,
+                        `Payment via CPV ${voucherRef}`,
+                        existingVoucher.id,
+                        'payment_voucher'
+                    );
+                }
             }
         }
 
@@ -2059,6 +2140,15 @@ router.post('/reports/generate', [
         }
 
         const { report_type, period_from, period_to, rider_id, store_id } = req.body;
+
+        // Auto backfill only for reports that actually read financial_transactions in detail.
+        if (report_type === 'comprehensive_report' || report_type === 'transaction_summary') {
+            try {
+                await backfillLegacyPaymentVouchersToFinancialTransactions(req.db);
+            } catch (backfillError) {
+                console.error('CPV backfill skipped:', backfillError.message);
+            }
+        }
 
         // Permission Check for Reports
         // Admin always allowed. Standard User needs specific report permission.

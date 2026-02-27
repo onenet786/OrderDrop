@@ -2086,6 +2086,11 @@ router.get("/", authenticateToken, async (req, res) => {
     }
 
     const { status, assignment, startDate, endDate } = req.query;
+    const includeItemsCount =
+      String(req.query.includeItemsCount ?? "true").toLowerCase() !== "false";
+    const includeStoreStatuses =
+      String(req.query.includeStoreStatuses ?? "true").toLowerCase() !==
+      "false";
     let conditions = [];
     let params = [];
 
@@ -2117,22 +2122,32 @@ router.get("/", authenticateToken, async (req, res) => {
       whereClause = "WHERE " + conditions.join(" AND ");
     }
 
+    const dynamicFields = [];
+    if (includeItemsCount) {
+      dynamicFields.push(
+        "CAST((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS SIGNED) as items_count",
+      );
+    }
+    if (includeStoreStatuses) {
+      dynamicFields.push(`(
+          SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT(
+              'store_id', s2.id,
+              'store_name', s2.name,
+              'status', COALESCE(oi2.item_status, 'pending')
+          )), ']')
+          FROM order_items oi2
+          JOIN stores s2 ON oi2.store_id = s2.id
+          WHERE oi2.order_id = o.id
+          GROUP BY oi2.order_id
+      ) as store_statuses`);
+    }
+    const selectExtra = dynamicFields.length ? `, ${dynamicFields.join(",\n                   ")}` : "";
+
     const [orders] = await req.db.execute(
       `
             SELECT o.*, u.first_name, u.last_name, u.email, s.name as store_name,
-                   r.first_name as rider_first_name, r.last_name as rider_last_name,
-                   CAST((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS SIGNED) as items_count,
-                   (
-                       SELECT CONCAT('[', GROUP_CONCAT(JSON_OBJECT(
-                           'store_id', s2.id, 
-                           'store_name', s2.name, 
-                           'status', COALESCE(oi2.item_status, 'pending')
-                       )), ']')
-                       FROM order_items oi2
-                       JOIN stores s2 ON oi2.store_id = s2.id
-                       WHERE oi2.order_id = o.id
-                       GROUP BY oi2.order_id
-                   ) as store_statuses
+                   r.first_name as rider_first_name, r.last_name as rider_last_name
+                   ${selectExtra}
             FROM orders o
             JOIN users u ON o.user_id = u.id
             LEFT JOIN stores s ON o.store_id = s.id

@@ -402,8 +402,34 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  static Future<List<dynamic>> getOrders(String token) async {
-    final uri = Uri.parse('$baseUrl/api/orders');
+  static Future<List<dynamic>> getOrders(
+    String token, {
+    String? assignment,
+    String? status,
+    bool includeItemsCount = true,
+    bool includeStoreStatuses = true,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final query = <String, String>{
+      'includeItemsCount': includeItemsCount.toString(),
+      'includeStoreStatuses': includeStoreStatuses.toString(),
+    };
+    if (assignment != null && assignment.trim().isNotEmpty) {
+      query['assignment'] = assignment.trim();
+    }
+    if (status != null && status.trim().isNotEmpty) {
+      query['status'] = status.trim();
+    }
+    if (startDate != null && startDate.trim().isNotEmpty) {
+      query['startDate'] = startDate.trim();
+    }
+    if (endDate != null && endDate.trim().isNotEmpty) {
+      query['endDate'] = endDate.trim();
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/orders',
+    ).replace(queryParameters: query);
     _logger.d('ApiService: GET $uri');
     final response = await http.get(
       uri,
