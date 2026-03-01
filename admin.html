@@ -6,6 +6,7 @@
     <title>Admin Dashboard - ServeNow</title>
     <link rel="stylesheet" href="css/style.css?v=4" />
     <link rel="stylesheet" href="css/admin.css?v=5" />
+    <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
@@ -919,6 +920,14 @@
                     <option value="store_financials">Store Financials</option>
                     <option value="rider_cash_report">Rider Cash Report</option>
                     <option value="rider_fuel_report">Rider Fuel Report</option>
+                    <option value="rider_orders_report">Rider Orders Report</option>
+                    <option value="rider_payments_report">Rider Payments Report</option>
+                    <option value="rider_receivings_report">Rider Receivings Report</option>
+                    <option value="rider_petrol_report">Rider Petrol Report</option>
+                    <option value="rider_daily_mileage_report">Rider Daily Mileage Report</option>
+                    <option value="rider_daily_activity_report">Rider Daily Activity Report</option>
+                    <option value="rider_day_closing_report">Rider Day Closing Report</option>
+                    <option value="order_profit_report">Order Profit Report</option>
                     <option value="general_voucher">General Voucher</option>
                     <option value="expense_report">Expense Report</option>
                     <option value="custom">Custom</option>
@@ -1609,6 +1618,13 @@
 
           <!-- Filters -->
           <div class="filter-controls">
+            <div class="filter-group">
+                <label for="orderDatePreset">Date Mode</label>
+                <select id="orderDatePreset" class="form-control">
+                    <option value="today" selected>Today</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
             <div class="filter-group">
                 <label for="filterStartDate">From Date</label>
                 <input type="date" id="filterStartDate" class="form-control">
@@ -4231,6 +4247,14 @@
               <option value="store_financials">Store Financials (Cost Analysis)</option>
               <option value="rider_cash_report">Rider Cash Report</option>
               <option value="rider_fuel_report">Rider Fuel Report</option>
+              <option value="rider_orders_report">Rider Orders Report</option>
+              <option value="rider_payments_report">Rider Payments Report</option>
+              <option value="rider_receivings_report">Rider Receivings Report</option>
+              <option value="rider_petrol_report">Rider Petrol Report</option>
+              <option value="rider_daily_mileage_report">Rider Daily Mileage Report</option>
+              <option value="rider_daily_activity_report">Rider Daily Activity Report</option>
+              <option value="rider_day_closing_report">Rider Day Closing Report</option>
+              <option value="order_profit_report">Order Profit Report</option>
               <option value="comprehensive_report">Comprehensive Cash Report</option>
               <option value="transaction_summary">Transaction Summary</option>
               <option value="general_voucher">General Voucher (JNV)</option>

@@ -81,6 +81,16 @@ function normalizeNumber(val) {
     return { present: true, value: n, ok: n >= 0 };
 }
 
+function normalizeBoolean(val) {
+    if (val === undefined || val === null) return { present: false, value: false };
+    if (typeof val === 'boolean') return { present: true, value: val };
+    const s = String(val).trim().toLowerCase();
+    if (!s) return { present: false, value: false };
+    if (['1', 'true', 'yes', 'on'].includes(s)) return { present: true, value: true };
+    if (['0', 'false', 'no', 'off'].includes(s)) return { present: true, value: false };
+    return { present: true, value: false };
+}
+
 function normalizeSizeVariantsInput(input) {
     try {
         let raw = input;
@@ -132,7 +142,8 @@ async function ensureProductColumns(db) {
     try {
         const columns = [
             { name: 'discount_type', definition: "ENUM('amount', 'percent') NULL" },
-            { name: 'discount_value', definition: 'DECIMAL(10, 2) NULL' }
+            { name: 'discount_value', definition: 'DECIMAL(10, 2) NULL' },
+            { name: 'manual_variant_cost_override', definition: 'TINYINT(1) NOT NULL DEFAULT 0' }
         ];
 
         for (const col of columns) {
@@ -445,6 +456,7 @@ router.get('/', optionalAuth, async (req, res) => {
                 unit_name: product.unit_name,
                 size_id: product.size_id,
                 size_label: product.size_label,
+                manual_variant_cost_override: Number(product.manual_variant_cost_override || 0) === 1,
                 size_variants: includeVariants
                     ? ((variantsByProductId[product.id] && variantsByProductId[product.id].length)
                         ? variantsByProductId[product.id]
@@ -578,6 +590,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 
         const product = products[0];
         const variantsByProductId = await loadProductSizeVariants(req.db, [product.id]);
+        const hasVariantPricing = !!(variantsByProductId[product.id] && variantsByProductId[product.id].length);
 
         res.json({
             success: true,
@@ -605,6 +618,12 @@ router.get('/:id', optionalAuth, async (req, res) => {
                 unit_name: product.unit_name,
                 size_id: product.size_id,
                 size_label: product.size_label,
+                discount_type: product.discount_type,
+                discount_value: product.discount_value,
+                profit_type: product.profit_type,
+                profit_value: product.profit_value,
+                manual_variant_cost_override: Number(product.manual_variant_cost_override || 0) === 1,
+                has_variant_pricing: hasVariantPricing,
                 size_variants: (variantsByProductId[product.id] && variantsByProductId[product.id].length)
                     ? variantsByProductId[product.id]
                     : (product.size_id ? [{
@@ -721,6 +740,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
     body('stock_quantity').optional().isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer')
 ], async (req, res) => {
     try {
+        await ensureProductColumns(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -743,6 +763,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
         const discount_value = req.body.discount_value;
         const profit_value = req.body.profit_value;
         const profit_type = req.body.profit_type;
+        const manualVariantMode = normalizeBoolean(req.body.manual_variant_cost_override);
         let image_url = req.body.image_url ?? null;
 
         // Check if store exists and user has permission
@@ -851,9 +872,6 @@ router.post('/', authenticateToken, requireStaffAccess, [
             }
         }
 
-        // Ensure columns exist
-        await ensureProductColumns(req.db);
-
         // If image_url is a remote link, download it into /uploads and use that path
         let meta = null;
         try {
@@ -880,9 +898,9 @@ router.post('/', authenticateToken, requireStaffAccess, [
             if (!meta) meta = await extractImageVarsFromPath(String(image_url || ''));
         } catch (e) { /* ignore */ }
 
-        const insertFields = ['name','description','cost_price','price','image_url','category_id','store_id','stock_quantity','discount_type','discount_value'];
-        const insertPlaceholders = ['?','?','?','?','?','?','?','?','?','?'];
-        const insertValues = [name, description, derivedCost, finalPriceForInsert, image_url, category_id, store_id, stock_quantity, discount_type || null, discount_value || null];
+        const insertFields = ['name','description','cost_price','price','image_url','category_id','store_id','stock_quantity','discount_type','discount_value','manual_variant_cost_override'];
+        const insertPlaceholders = ['?','?','?','?','?','?','?','?','?','?','?'];
+        const insertValues = [name, description, derivedCost, finalPriceForInsert, image_url, category_id, store_id, stock_quantity, discount_type || null, discount_value || null, manualVariantMode.value ? 1 : 0];
         if (!hasRequestedVariants) {
             if (unit_id) { insertFields.push('unit_id'); insertPlaceholders.push('?'); insertValues.push(unit_id); }
             if (size_id) { insertFields.push('size_id'); insertPlaceholders.push('?'); insertValues.push(size_id); }
@@ -988,6 +1006,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
     body('stock_quantity').optional().isInt({ min: 0 }).withMessage('Stock quantity must be a non-negative integer')
 ], async (req, res) => {
     try {
+        await ensureProductColumns(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -1027,6 +1046,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
         const name = req.body.name;
         const description = req.body.description;
         const category_id = req.body.category_id;
+        const store_id = req.body.store_id;
         const stock_quantity = req.body.stock_quantity;
         const is_available = req.body.is_available;
         const cost_price = req.body.cost_price;
@@ -1035,8 +1055,38 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
         const discount_value = req.body.discount_value;
         const profit_value = req.body.profit_value;
         const profit_type = req.body.profit_type;
+        const manualVariantMode = normalizeBoolean(req.body.manual_variant_cost_override);
         let image_url = req.body.image_url;
         const profitType = String(profit_type || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
+        let effectivePaymentTerm = product.payment_term;
+
+        if (store_id !== undefined) {
+            const targetStoreId = parseInt(String(store_id), 10);
+            if (!Number.isInteger(targetStoreId) || targetStoreId <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid store_id'
+                });
+            }
+            const [targetStores] = await req.db.execute(
+                'SELECT id, owner_id, payment_term FROM stores WHERE id = ?',
+                [targetStoreId]
+            );
+            if (!targetStores.length) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Target store not found'
+                });
+            }
+            const targetStore = targetStores[0];
+            if (req.user.user_type !== 'admin' && Number(targetStore.owner_id) !== Number(req.user.id)) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You do not have permission to move this product to the selected store'
+                });
+            }
+            effectivePaymentTerm = targetStore.payment_term || effectivePaymentTerm;
+        }
 
         const variantsProvided = (req.body && (req.body.size_variants !== undefined || req.body.variants !== undefined));
         const requestedVariants = normalizeSizeVariantsInput(req.body.size_variants ?? req.body.variants);
@@ -1059,7 +1109,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 const dv = (normDisc.present && normDisc.ok) ? normDisc.value : normalizeNumber(product.discount_value).value;
                 const normProfit = normalizeNumber(profit_value);
                 let pv = (normProfit.present && normProfit.ok) ? normProfit.value : null;
-                if (pv === null && isProfitPaymentTerm(product.payment_term)) {
+                if (pv === null && isProfitPaymentTerm(effectivePaymentTerm)) {
                     const existingPrice = Number(product.price);
                     const existingCost = Number(product.cost_price);
                     if (Number.isFinite(existingPrice) && Number.isFinite(existingCost)) {
@@ -1071,7 +1121,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 const placeholders = [];
                 for (let i = 0; i < requestedVariants.length; i++) {
                     const v = requestedVariants[i];
-                    const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm: product.payment_term, discountType: finalDiscountTypeForVariants, discountValue: dv, profitValue: pv, profitType });
+                    const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm: effectivePaymentTerm, discountType: finalDiscountTypeForVariants, discountValue: dv, profitValue: pv, profitType });
                     let variantPrice = roundMoney(v.price);
                     const hasManualVariantCost = v.cost_price !== null && v.cost_price !== undefined && Number.isFinite(Number(v.cost_price));
                     let variantCost = hasManualVariantCost
@@ -1081,7 +1131,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                         const roundedAutoVariantCost = roundToNearestTen(variantCost);
                         if (roundedAutoVariantCost !== null) variantCost = roundedAutoVariantCost;
                     }
-                    if (isCashOnlyPaymentTerm(product.payment_term) && profitType === 'percent' && !hasManualVariantCost) {
+                    if (isCashOnlyPaymentTerm(effectivePaymentTerm) && profitType === 'percent' && !hasManualVariantCost) {
                         const roundedAutoVariantPrice = roundToNearestTen(variantPrice);
                         if (roundedAutoVariantPrice !== null) variantPrice = roundedAutoVariantPrice;
                     }
@@ -1107,12 +1157,13 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
         if (description !== undefined) { updateFields.push('description = ?'); updateValues.push(description); }
         if (discount_type !== undefined) { updateFields.push('discount_type = ?'); updateValues.push(discount_type || null); }
         if (discount_value !== undefined) { updateFields.push('discount_value = ?'); updateValues.push(discount_value || null); }
+        if (manualVariantMode.present) { updateFields.push('manual_variant_cost_override = ?'); updateValues.push(manualVariantMode.value ? 1 : 0); }
         const normalizedCost = normalizeNumber(cost_price);
         const normalizedPrice = normalizeNumber(price);
         const normalizedDiscount = normalizeNumber(discount_value);
         const normalizedProfit = normalizeNumber(profit_value);
-        const hasDiscount = isDiscountPaymentTerm(product.payment_term);
-        const hasProfitTerm = isProfitPaymentTerm(product.payment_term);
+        const hasDiscount = isDiscountPaymentTerm(effectivePaymentTerm);
+        const hasProfitTerm = isProfitPaymentTerm(effectivePaymentTerm);
         
         // --- LOGIC FIX START: Enforce "Cost = Price - Discount" on Update ---
         
@@ -1170,11 +1221,15 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
 
         if (normalizedPrice.present) {
             if (!normalizedPrice.ok) return res.status(400).json({ success: false, message: 'Invalid price' });
-            if (isCashOnlyPaymentTerm(product.payment_term) && profitType === 'percent') {
+            if (isCashOnlyPaymentTerm(effectivePaymentTerm) && profitType === 'percent') {
                 finalPrice = Math.round(Number(finalPrice || 0));
             }
             updateFields.push('price = ?');
             updateValues.push(finalPrice);
+        }
+        if (store_id !== undefined) {
+            updateFields.push('store_id = ?');
+            updateValues.push(parseInt(String(store_id), 10));
         }
         
         if (derivedCost !== null) {

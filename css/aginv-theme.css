@@ -1,0 +1,319 @@
+/* AGINV Theme Overlay for ServeNow Admin
+   Loaded after css/admin.css to override design tokens safely. */
+
+:root {
+  --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --danger-gradient: linear-gradient(135deg, #ff758c 0%, #ff7eb3 100%);
+  --dark-gradient: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+
+  --primary: #667eea;
+  --primary-dark: #5a67d8;
+  --primary-light: #e0e7ff;
+
+  --success: #11998e;
+  --warning: #f59e0b;
+  --danger: #dc3545;
+  --info: #17a2b8;
+
+  --bg-body: #f8f9fa;
+  --bg-surface: #ffffff;
+  --border-color: #e2e8f0;
+  --text-main: #495057;
+  --text-muted: #6c757d;
+
+  --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.15);
+  --border-radius: 0.5rem;
+}
+
+body {
+  background: var(--bg-body);
+  color: var(--text-main);
+}
+
+.app-header,
+.card,
+.stat-card,
+.table-wrapper,
+.modal-content {
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.card,
+.stat-card,
+.summary-card {
+  border-top: 3px solid var(--primary);
+}
+
+.btn-primary,
+.theme-save-btn {
+  background: var(--primary-gradient);
+  border: none;
+}
+
+.btn-primary:hover,
+.theme-save-btn:hover {
+  filter: brightness(0.96);
+}
+
+.table thead,
+.table-dark {
+  background: var(--dark-gradient) !important;
+  color: #fff !important;
+}
+
+.badge.bg-success {
+  background: var(--success-gradient) !important;
+}
+
+.badge.bg-warning {
+  background: var(--warning-gradient) !important;
+  color: #fff !important;
+}
+
+.badge.bg-danger {
+  background: var(--danger-gradient) !important;
+}
+
+/* Shared app-shell polish for admin/user/rider layouts */
+.app-sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.app-header {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.app-content {
+  background: linear-gradient(180deg, rgba(102, 126, 234, 0.05) 0%, rgba(248, 249, 251, 0.85) 28%, rgba(248, 249, 251, 1) 100%);
+}
+
+/* Cross-page card polish */
+.store-card,
+.category-card,
+.product-card,
+.summary-card,
+.table-container,
+.modal-content {
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+
+.store-card:hover,
+.category-card:hover,
+.product-card:hover,
+.summary-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow);
+}
+
+/* Form and input consistency */
+input,
+select,
+textarea,
+.search-input,
+.search-select,
+.form-control {
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.search-input:focus,
+.search-select:focus,
+.form-control:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+/* Button consistency while preserving existing semantic colors */
+.btn {
+  border-radius: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: var(--transition);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+/* Table readability */
+.table th {
+  letter-spacing: 0.02em;
+  font-weight: 700;
+}
+
+.table td,
+.table th {
+  vertical-align: middle;
+}
+
+/* Hero + highlight sections on public pages */
+.hero {
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+/* Modal header styling */
+.modal-header {
+  background: var(--primary-gradient);
+  color: #fff;
+  border-bottom: none;
+}
+
+.modal-header .btn-close {
+  filter: invert(1);
+}
+
+/* Mobile refinements */
+@media (max-width: 768px) {
+  .hero {
+    border-radius: 14px;
+  }
+
+  .store-card,
+  .category-card,
+  .product-card,
+  .summary-card {
+    border-radius: 12px;
+  }
+
+  .btn {
+    min-height: 40px;
+  }
+}
+
+/* ---------- Role-specific tuning pass (admin/user/rider/auth/utility) ---------- */
+
+:root {
+  --transition: all 0.25s ease;
+}
+
+/* Admin-heavy screens */
+#dashboard .stat-card,
+#orders .stat-card,
+#products .stat-card,
+#stores .stat-card,
+#users .stat-card,
+#riders .stat-card {
+  border-top-width: 4px;
+}
+
+.table-container,
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.nav-menu a.active,
+.tab-link.active,
+.dropdown-menu .tab-link.active {
+  background: rgba(102, 126, 234, 0.14);
+  border-radius: 10px;
+}
+
+/* Customer storefront pages */
+.page-header,
+.store-banner,
+.wallet-header,
+.checkout-container,
+.orders-container,
+.cart-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.search-container,
+.location-filter,
+.topup-section,
+.transactions-section,
+.order-summary,
+.cart-summary {
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.product-grid,
+.store-grid,
+.categories-grid {
+  gap: 1.1rem;
+}
+
+/* Rider workspace */
+#assigned .tabs,
+#completed .tabs,
+#walletContent,
+#profileContent {
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.tab-btn {
+  border-radius: 10px;
+}
+
+.delivery-card,
+.order-card {
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Auth + policy pages */
+.auth-card,
+.deletion-container,
+.container {
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow);
+}
+
+/* Utility quality-of-life */
+.toast,
+.alert,
+.status {
+  border-radius: 10px;
+}
+
+/* Better spacing on narrow screens */
+@media (max-width: 992px) {
+  .app-content {
+    padding: 0.75rem;
+  }
+
+  .page-header,
+  .store-banner,
+  .wallet-header,
+  .checkout-container,
+  .orders-container,
+  .cart-section {
+    padding: 0.85rem;
+  }
+}

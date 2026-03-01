@@ -2123,7 +2123,7 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'rider_orders_report', 'rider_payments_report', 'rider_receivings_report', 'rider_petrol_report', 'rider_daily_mileage_report', 'rider_daily_activity_report', 'rider_day_closing_report', 'order_profit_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
     body('period_from').optional({ checkFalsy: true }).isISO8601(),
     body('period_to').optional({ checkFalsy: true }).isISO8601(),
     body('rider_id').optional({ checkFalsy: true }).toInt(),
@@ -2162,6 +2162,14 @@ router.post('/reports/generate', [
                 'store_financials': 'report_store_financials',
                 'rider_cash_report': 'report_rider_cash',
                 'rider_fuel_report': 'report_rider_fuel',
+                'rider_orders_report': 'report_order_summary',
+                'rider_payments_report': 'report_rider_cash',
+                'rider_receivings_report': 'report_rider_cash',
+                'rider_petrol_report': 'report_rider_fuel',
+                'rider_daily_mileage_report': 'report_rider_fuel',
+                'rider_daily_activity_report': 'report_order_summary',
+                'rider_day_closing_report': 'report_rider_cash',
+                'order_profit_report': 'report_order_summary',
                 'comprehensive_report': 'report_comprehensive_cash',
                 'transaction_summary': 'report_transactions_summary',
                 'general_voucher': 'report_general_voucher',
@@ -2198,6 +2206,14 @@ router.post('/reports/generate', [
             case 'monthly_summary': prefix = 'MSR'; break;
             case 'rider_cash_report': prefix = 'RCR'; break;
             case 'rider_fuel_report': prefix = 'RFR'; break;
+            case 'rider_orders_report': prefix = 'ROR'; break;
+            case 'rider_payments_report': prefix = 'RPR'; break;
+            case 'rider_receivings_report': prefix = 'RRR'; break;
+            case 'rider_petrol_report': prefix = 'RPT'; break;
+            case 'rider_daily_mileage_report': prefix = 'RDM'; break;
+            case 'rider_daily_activity_report': prefix = 'RDA'; break;
+            case 'rider_day_closing_report': prefix = 'RDC'; break;
+            case 'order_profit_report': prefix = 'OPR'; break;
             case 'comprehensive_report': prefix = 'CPR'; break;
             case 'expense_report': prefix = 'EXR'; break;
             case 'delivery_charges_breakdown': prefix = 'DCB'; break;
@@ -2300,6 +2316,466 @@ router.post('/reports/generate', [
                     acc[curr.movement_type] = curr.total;
                     return acc;
                 }, {})
+            };
+        } else if (report_type === 'rider_orders_report') {
+            const dateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND o.rider_id = ?' : '';
+            const params = [];
+            if (period_from && period_to) params.push(period_from, `${period_to} 23:59:59`);
+            if (rider_id) params.push(rider_id);
+
+            const [orders] = await req.db.execute(
+                `SELECT
+                    o.id,
+                    o.order_number,
+                    o.created_at,
+                    o.status,
+                    o.payment_method,
+                    o.payment_status,
+                    o.total_amount,
+                    o.delivery_fee,
+                    CONCAT(r.first_name, ' ', r.last_name) as rider_name,
+                    CONCAT(u.first_name, ' ', u.last_name) as customer_name
+                 FROM orders o
+                 JOIN riders r ON o.rider_id = r.id
+                 LEFT JOIN users u ON o.user_id = u.id
+                 WHERE o.rider_id IS NOT NULL ${dateFilter} ${riderFilter}
+                 ORDER BY o.created_at DESC`,
+                params
+            );
+            const summary = {
+                total_orders: 0,
+                delivered_orders: 0,
+                cancelled_orders: 0,
+                active_orders: 0,
+                total_order_amount: 0,
+                total_delivery_fee: 0
+            };
+            (orders || []).forEach((o) => {
+                const status = String(o.status || '').toLowerCase();
+                summary.total_orders += 1;
+                if (status === 'delivered') summary.delivered_orders += 1;
+                else if (status === 'cancelled') summary.cancelled_orders += 1;
+                else summary.active_orders += 1;
+                summary.total_order_amount += parseFloat(o.total_amount || 0);
+                summary.total_delivery_fee += parseFloat(o.delivery_fee || 0);
+            });
+            total_income = summary.total_delivery_fee;
+            reportData = {
+                type: 'rider_orders',
+                rider_name: riderName,
+                orders,
+                summary
+            };
+        } else if (report_type === 'rider_payments_report') {
+            const dateFilter = period_from && period_to ? 'AND rcm.movement_date BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND rcm.rider_id = ?' : '';
+            const params = [];
+            if (period_from && period_to) params.push(period_from, period_to);
+            if (rider_id) params.push(rider_id);
+
+            const [entries] = await req.db.execute(
+                `SELECT rcm.*, r.first_name, r.last_name
+                 FROM rider_cash_movements rcm
+                 JOIN riders r ON rcm.rider_id = r.id
+                 WHERE rcm.movement_type IN ('store_payment', 'fuel_payment', 'cash_submission')
+                   ${dateFilter} ${riderFilter}
+                 ORDER BY rcm.movement_date DESC, rcm.id DESC`,
+                params
+            );
+            const [summaryRows] = await req.db.execute(
+                `SELECT rcm.movement_type, SUM(rcm.amount) as total
+                 FROM rider_cash_movements rcm
+                 WHERE rcm.movement_type IN ('store_payment', 'fuel_payment', 'cash_submission')
+                   ${dateFilter} ${riderFilter}
+                 GROUP BY rcm.movement_type`,
+                params
+            );
+            const summary = {
+                store_payment: 0,
+                fuel_payment: 0,
+                cash_submission: 0,
+                total_payments: 0
+            };
+            (summaryRows || []).forEach((r) => {
+                const key = String(r.movement_type || '');
+                const val = parseFloat(r.total || 0);
+                if (summary[key] !== undefined) summary[key] = val;
+                summary.total_payments += val;
+            });
+            total_expense = summary.total_payments;
+            reportData = {
+                type: 'rider_payments',
+                rider_name: riderName,
+                entries,
+                summary
+            };
+        } else if (report_type === 'rider_receivings_report') {
+            const dateFilter = period_from && period_to ? 'AND rcm.movement_date BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND rcm.rider_id = ?' : '';
+            const params = [];
+            if (period_from && period_to) params.push(period_from, period_to);
+            if (rider_id) params.push(rider_id);
+
+            const [entries] = await req.db.execute(
+                `SELECT rcm.*, r.first_name, r.last_name
+                 FROM rider_cash_movements rcm
+                 JOIN riders r ON rcm.rider_id = r.id
+                 WHERE rcm.movement_type IN ('cash_collection', 'advance', 'settlement')
+                   ${dateFilter} ${riderFilter}
+                 ORDER BY rcm.movement_date DESC, rcm.id DESC`,
+                params
+            );
+            const [summaryRows] = await req.db.execute(
+                `SELECT rcm.movement_type, SUM(rcm.amount) as total
+                 FROM rider_cash_movements rcm
+                 WHERE rcm.movement_type IN ('cash_collection', 'advance', 'settlement')
+                   ${dateFilter} ${riderFilter}
+                 GROUP BY rcm.movement_type`,
+                params
+            );
+            const summary = {
+                cash_collection: 0,
+                advance: 0,
+                settlement: 0,
+                total_receivings: 0
+            };
+            (summaryRows || []).forEach((r) => {
+                const key = String(r.movement_type || '');
+                const val = parseFloat(r.total || 0);
+                if (summary[key] !== undefined) summary[key] = val;
+                summary.total_receivings += val;
+            });
+            total_income = summary.total_receivings;
+            reportData = {
+                type: 'rider_receivings',
+                rider_name: riderName,
+                entries,
+                summary
+            };
+        } else if (report_type === 'rider_daily_activity_report') {
+            const dateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND o.rider_id = ?' : '';
+            const params = [];
+            if (period_from && period_to) params.push(period_from, `${period_to} 23:59:59`);
+            if (rider_id) params.push(rider_id);
+
+            const [orders] = await req.db.execute(
+                `SELECT
+                    o.id,
+                    o.order_number,
+                    o.created_at,
+                    o.status,
+                    o.payment_method,
+                    o.total_amount,
+                    o.delivery_fee,
+                    CONCAT(r.first_name, ' ', r.last_name) as rider_name,
+                    CAST((
+                        SELECT COUNT(DISTINCT oi.store_id)
+                        FROM order_items oi
+                        WHERE oi.order_id = o.id
+                    ) AS SIGNED) as stores_count,
+                    COALESCE((
+                        SELECT SUM(rsp.amount)
+                        FROM rider_store_payments rsp
+                        WHERE rsp.order_id = o.id AND rsp.rider_id = o.rider_id
+                    ), 0) as paid_to_cash_only_stores,
+                    COALESCE((
+                        SELECT SUM(
+                            oi.quantity * (
+                                oi.price - COALESCE(psp.cost_price, p.cost_price, oi.price)
+                            )
+                        )
+                        FROM order_items oi
+                        JOIN stores s ON s.id = oi.store_id
+                        JOIN products p ON p.id = oi.product_id
+                        LEFT JOIN product_size_prices psp
+                          ON psp.product_id = oi.product_id
+                         AND (
+                           (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id AND psp.unit_id IS NULL)
+                           OR
+                           (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id AND psp.size_id IS NULL)
+                         )
+                        WHERE oi.order_id = o.id
+                          AND LOWER(TRIM(COALESCE(s.payment_term, ''))) = 'cash only'
+                    ), 0) as cash_only_profit
+                 FROM orders o
+                 JOIN riders r ON o.rider_id = r.id
+                 WHERE o.rider_id IS NOT NULL ${dateFilter} ${riderFilter}
+                 ORDER BY o.created_at DESC`,
+                params
+            );
+
+            const normalized = (orders || []).map((o) => {
+                const paymentMethod = String(o.payment_method || '').toLowerCase().trim();
+                const cashCollected = paymentMethod === 'cash'
+                    ? parseFloat(o.total_amount || 0)
+                    : 0;
+                return {
+                    ...o,
+                    cash_collected: cashCollected,
+                    paid_to_cash_only_stores: parseFloat(o.paid_to_cash_only_stores || 0),
+                    cash_only_profit: parseFloat(o.cash_only_profit || 0),
+                    delivery_fee: parseFloat(o.delivery_fee || 0),
+                    stores_count: parseInt(o.stores_count || 0, 10)
+                };
+            });
+
+            const summary = normalized.reduce((acc, o) => {
+                acc.total_orders += 1;
+                acc.total_stores_served += Number(o.stores_count || 0);
+                acc.total_cash_collected += Number(o.cash_collected || 0);
+                acc.total_paid_to_cash_only_stores += Number(o.paid_to_cash_only_stores || 0);
+                acc.total_cash_only_profit += Number(o.cash_only_profit || 0);
+                acc.total_delivery_fee += Number(o.delivery_fee || 0);
+                return acc;
+            }, {
+                total_orders: 0,
+                total_stores_served: 0,
+                total_cash_collected: 0,
+                total_paid_to_cash_only_stores: 0,
+                total_cash_only_profit: 0,
+                total_delivery_fee: 0
+            });
+
+            total_income = summary.total_cash_only_profit + summary.total_delivery_fee;
+            reportData = {
+                type: 'rider_daily_activity',
+                rider_name: riderName,
+                orders: normalized,
+                summary
+            };
+        } else if (report_type === 'rider_day_closing_report') {
+            const movementDateFilter = period_from && period_to ? 'AND rcm.movement_date BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND rcm.rider_id = ?' : '';
+            const params = [];
+            if (period_from && period_to) params.push(period_from, period_to);
+            if (rider_id) params.push(rider_id);
+
+            const [movementRows] = await req.db.execute(
+                `SELECT
+                    rcm.rider_id,
+                    CONCAT(r.first_name, ' ', r.last_name) as rider_name,
+                    DATE(rcm.movement_date) as closing_date,
+                    SUM(CASE WHEN rcm.movement_type = 'cash_collection' THEN rcm.amount ELSE 0 END) as cash_collection,
+                    SUM(CASE WHEN rcm.movement_type = 'advance' THEN rcm.amount ELSE 0 END) as office_advance,
+                    SUM(CASE WHEN rcm.movement_type = 'settlement' THEN rcm.amount ELSE 0 END) as office_settlement,
+                    SUM(CASE WHEN rcm.movement_type = 'store_payment' THEN rcm.amount ELSE 0 END) as store_payment,
+                    SUM(CASE WHEN rcm.movement_type = 'fuel_payment' THEN rcm.amount ELSE 0 END) as fuel_payment,
+                    SUM(CASE WHEN rcm.movement_type = 'cash_submission' THEN rcm.amount ELSE 0 END) as cash_submission
+                 FROM rider_cash_movements rcm
+                 JOIN riders r ON r.id = rcm.rider_id
+                 WHERE 1=1 ${movementDateFilter} ${riderFilter}
+                 GROUP BY rcm.rider_id, DATE(rcm.movement_date), r.first_name, r.last_name
+                 ORDER BY closing_date DESC, rider_name ASC`,
+                params
+            );
+
+            const [deliveryRows] = await req.db.execute(
+                `SELECT
+                    o.rider_id,
+                    DATE(o.updated_at) as closing_date,
+                    SUM(COALESCE(o.delivery_fee, 0)) as delivery_fee_earned
+                 FROM orders o
+                 WHERE o.status = 'delivered'
+                   ${period_from && period_to ? 'AND DATE(o.updated_at) BETWEEN ? AND ?' : ''}
+                   ${rider_id ? 'AND o.rider_id = ?' : ''}
+                 GROUP BY o.rider_id, DATE(o.updated_at)`,
+                [
+                    ...(period_from && period_to ? [period_from, period_to] : []),
+                    ...(rider_id ? [rider_id] : []),
+                ]
+            );
+            const deliveryMap = new Map(
+                (deliveryRows || []).map((d) => [`${d.rider_id}|${d.closing_date}`, parseFloat(d.delivery_fee_earned || 0)])
+            );
+
+            const [closingRows] = await req.db.execute(
+                `SELECT
+                    rider_id,
+                    closed_date,
+                    wallet_balance,
+                    cash_collection as closed_cash_collection,
+                    office_advance as closed_office_advance,
+                    store_payment as closed_store_payment,
+                    fuel_payment as closed_fuel_payment,
+                    delivery_fee_earned as closed_delivery_fee_earned,
+                    notes,
+                    closed_at
+                 FROM rider_day_closings
+                 WHERE 1=1
+                   ${period_from && period_to ? 'AND closed_date BETWEEN ? AND ?' : ''}
+                   ${rider_id ? 'AND rider_id = ?' : ''}`,
+                [
+                    ...(period_from && period_to ? [period_from, period_to] : []),
+                    ...(rider_id ? [rider_id] : []),
+                ]
+            );
+            const closingMap = new Map(
+                (closingRows || []).map((c) => [`${c.rider_id}|${c.closed_date}`, c])
+            );
+
+            const rows = (movementRows || []).map((r) => {
+                const key = `${r.rider_id}|${r.closing_date}`;
+                const deliveryFee = deliveryMap.get(key) || 0;
+                const dayClosing = closingMap.get(key) || null;
+
+                const cashCollection = parseFloat(r.cash_collection || 0);
+                const officeAdvance = parseFloat(r.office_advance || 0);
+                const officeSettlement = parseFloat(r.office_settlement || 0);
+                const storePayment = parseFloat(r.store_payment || 0);
+                const fuelPayment = parseFloat(r.fuel_payment || 0);
+                const cashSubmission = parseFloat(r.cash_submission || 0);
+
+                const takenTotal = cashCollection + officeAdvance + officeSettlement;
+                const givenTotal = storePayment + fuelPayment + cashSubmission;
+                const netInHand = takenTotal - givenTotal;
+
+                return {
+                    ...r,
+                    delivery_fee_earned: deliveryFee,
+                    taken_total: takenTotal,
+                    given_total: givenTotal,
+                    net_in_hand: netInHand,
+                    day_closing: dayClosing,
+                };
+            });
+
+            const summary = rows.reduce((acc, r) => {
+                acc.days += 1;
+                acc.cash_collection += Number(r.cash_collection || 0);
+                acc.office_advance += Number(r.office_advance || 0);
+                acc.office_settlement += Number(r.office_settlement || 0);
+                acc.store_payment += Number(r.store_payment || 0);
+                acc.fuel_payment += Number(r.fuel_payment || 0);
+                acc.cash_submission += Number(r.cash_submission || 0);
+                acc.delivery_fee_earned += Number(r.delivery_fee_earned || 0);
+                acc.taken_total += Number(r.taken_total || 0);
+                acc.given_total += Number(r.given_total || 0);
+                acc.net_in_hand += Number(r.net_in_hand || 0);
+                return acc;
+            }, {
+                days: 0,
+                cash_collection: 0,
+                office_advance: 0,
+                office_settlement: 0,
+                store_payment: 0,
+                fuel_payment: 0,
+                cash_submission: 0,
+                delivery_fee_earned: 0,
+                taken_total: 0,
+                given_total: 0,
+                net_in_hand: 0
+            });
+
+            total_income = summary.taken_total + summary.delivery_fee_earned;
+            total_expense = summary.given_total;
+            reportData = {
+                type: 'rider_day_closing',
+                rider_name: riderName,
+                rows,
+                summary
+            };
+        } else if (report_type === 'order_profit_report') {
+            const dateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const params = period_from && period_to ? [period_from, `${period_to} 23:59:59`] : [];
+
+            const [rows] = await req.db.execute(
+                `SELECT
+                    o.id,
+                    o.order_number,
+                    o.created_at,
+                    o.status,
+                    o.total_amount,
+                    o.delivery_fee,
+                    COALESCE(SUM(oi.quantity * oi.price), 0) AS gross_item_sales,
+                    COALESCE(SUM(
+                        oi.quantity * COALESCE(p.cost_price, 0)
+                    ), 0) AS paid_to_store_expected,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(NULLIF(oi.discount_type, ''), NULLIF(p.discount_type, ''), 'percent'))) IN ('percent', '%')
+                                THEN oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100)
+                            ELSE 0
+                        END
+                    ), 0) AS percent_commission_profit,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(NULLIF(oi.discount_type, ''), NULLIF(p.discount_type, ''), 'percent'))) IN ('percent', '%')
+                                THEN 0
+                            ELSE oi.quantity * (oi.price - COALESCE(p.cost_price, 0))
+                        END
+                    ), 0) AS fixed_discount_margin_profit,
+                    COALESCE((
+                        SELECT SUM(rsp.amount)
+                        FROM rider_store_payments rsp
+                        WHERE rsp.order_id = o.id
+                    ), 0) AS paid_to_store_actual
+                 FROM orders o
+                 LEFT JOIN order_items oi ON oi.order_id = o.id
+                 LEFT JOIN products p ON p.id = oi.product_id
+                 LEFT JOIN stores s ON s.id = oi.store_id
+                 LEFT JOIN product_size_prices psp
+                   ON psp.product_id = oi.product_id
+                  AND (
+                    (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id AND psp.unit_id IS NULL)
+                    OR
+                    (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id AND psp.size_id IS NULL)
+                  )
+                 WHERE o.status = 'delivered' ${dateFilter}
+                 GROUP BY o.id, o.order_number, o.created_at, o.status, o.total_amount, o.delivery_fee
+                 ORDER BY o.created_at DESC`,
+                params
+            );
+
+            const orders = (rows || []).map((r) => {
+                const billTotal = parseFloat(r.total_amount || 0);
+                const deliveryFee = parseFloat(r.delivery_fee || 0);
+                const paidToStoreExpected = parseFloat(r.paid_to_store_expected || 0);
+                const paidToStoreActual = parseFloat(r.paid_to_store_actual || 0);
+                const grossItemSales = parseFloat(r.gross_item_sales || 0);
+                const percentCommissionProfit = parseFloat(r.percent_commission_profit || 0);
+                const fixedDiscountMarginProfit = parseFloat(r.fixed_discount_margin_profit || 0);
+                const itemProfit = percentCommissionProfit + fixedDiscountMarginProfit;
+                const overallProfit = itemProfit + deliveryFee;
+                return {
+                    ...r,
+                    bill_total: billTotal,
+                    delivery_fee: deliveryFee,
+                    gross_item_sales: grossItemSales,
+                    item_profit: itemProfit,
+                    overall_profit: overallProfit,
+                    paid_to_store: paidToStoreActual,
+                    paid_to_store_expected: paidToStoreExpected,
+                    percent_commission_profit: percentCommissionProfit,
+                    fixed_discount_margin_profit: fixedDiscountMarginProfit
+                };
+            });
+
+            const summary = orders.reduce((acc, o) => {
+                acc.total_orders += 1;
+                acc.bill_total += Number(o.bill_total || 0);
+                acc.delivery_fee += Number(o.delivery_fee || 0);
+                acc.item_profit += Number(o.item_profit || 0);
+                acc.overall_profit += Number(o.overall_profit || 0);
+                acc.paid_to_store += Number(o.paid_to_store || 0);
+                acc.paid_to_store_expected += Number(o.paid_to_store_expected || 0);
+                return acc;
+            }, {
+                total_orders: 0,
+                bill_total: 0,
+                delivery_fee: 0,
+                item_profit: 0,
+                overall_profit: 0,
+                paid_to_store: 0,
+                paid_to_store_expected: 0
+            });
+
+            total_income = summary.overall_profit;
+            reportData = {
+                type: 'order_profit',
+                orders,
+                summary
             };
         } else if (report_type === 'store_settlement') {
             const dateFilter = period_from && period_to ? 'AND settlement_date BETWEEN ? AND ?' : '';
@@ -2436,6 +2912,10 @@ router.post('/reports/generate', [
                     p.name as item_name,
                     oi.quantity,
                     oi.price,
+                    oi.discount_type,
+                    oi.discount_value,
+                    p.discount_type as product_discount_type,
+                    p.discount_value as product_discount_value,
                     COALESCE(p.cost_price, 0) as cost_price,
                     COALESCE(s.commission_rate, 10) as commission_rate
                 FROM orders o
@@ -2470,6 +2950,14 @@ router.post('/reports/generate', [
                 const price = parseFloat(row.price || 0);
                 const cost = parseFloat(row.cost_price || 0);
                 const commRate = parseFloat(row.commission_rate || 10);
+                const discountType = String(row.discount_type || row.product_discount_type || '').toLowerCase().trim();
+                const discountValue = parseFloat(
+                    row.discount_value ?? row.product_discount_value ?? 0
+                ) || 0;
+                const isPercentDiscount = discountType.includes('percent') || discountType === '%';
+                const isFixedAmountDiscount =
+                    (discountType && !isPercentDiscount) ||
+                    (discountValue > 0 && !isPercentDiscount);
 
                 order.items.push({
                     name: row.item_name,
@@ -2479,9 +2967,17 @@ router.post('/reports/generate', [
                 });
                 
                 const itemTotal = price * qty;
+                const itemCost = cost * qty;
+                const itemGrossProfit = itemTotal - itemCost;
+                // Business rule:
+                // - Fixed Amount discount items: don't apply commission %, use gross margin (sales - cost).
+                // - Otherwise: apply configured commission %.
+                const commissionValue = isFixedAmountDiscount
+                    ? itemGrossProfit
+                    : (itemTotal * (commRate / 100));
                 order.item_sales_gross += itemTotal;
-                order.total_cost_price += cost * qty;
-                order.estimated_commission += itemTotal * (commRate / 100);
+                order.total_cost_price += itemCost;
+                order.estimated_commission += commissionValue;
             });
 
             const orders = Array.from(ordersMap.values());
@@ -2620,6 +3116,68 @@ router.post('/reports/generate', [
                 rider_name: riderName,
                 entries: fuelEntries,
                 summary: summary[0] || { total_cost: 0, total_distance: 0 }
+            };
+        } else if (report_type === 'rider_petrol_report') {
+            const fuelDateFilter = period_from && period_to ? 'AND rfh.entry_date BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND rfh.rider_id = ?' : '';
+            const params = [];
+            if (period_from && period_to) params.push(period_from, period_to);
+            if (rider_id) params.push(rider_id);
+
+            const [fuelEntries] = await req.db.execute(
+                `SELECT rfh.*, r.first_name, r.last_name
+                 FROM riders_fuel_history rfh
+                 JOIN riders r ON rfh.rider_id = r.id
+                 WHERE 1=1 ${fuelDateFilter} ${riderFilter}
+                 ORDER BY rfh.entry_date DESC, rfh.id DESC`,
+                params
+            );
+            const [summary] = await req.db.execute(
+                `SELECT SUM(fuel_cost) as total_cost, SUM(distance) as total_distance
+                 FROM riders_fuel_history rfh
+                 WHERE 1=1 ${fuelDateFilter} ${riderFilter}`,
+                params
+            );
+            total_expense = parseFloat(summary?.[0]?.total_cost || 0);
+            reportData = {
+                type: 'rider_petrol',
+                rider_name: riderName,
+                entries: fuelEntries,
+                summary: summary[0] || { total_cost: 0, total_distance: 0 }
+            };
+        } else if (report_type === 'rider_daily_mileage_report') {
+            const fuelDateFilter = period_from && period_to ? 'AND rfh.entry_date BETWEEN ? AND ?' : '';
+            const riderFilter = rider_id ? 'AND rfh.rider_id = ?' : '';
+            const params = [];
+            if (period_from && period_to) params.push(period_from, period_to);
+            if (rider_id) params.push(rider_id);
+
+            const [rows] = await req.db.execute(
+                `SELECT
+                    rfh.rider_id,
+                    CONCAT(r.first_name, ' ', r.last_name) as rider_name,
+                    DATE(rfh.entry_date) as mileage_date,
+                    COUNT(*) as trips_logged,
+                    SUM(COALESCE(rfh.distance, 0)) as total_distance,
+                    SUM(COALESCE(rfh.fuel_cost, 0)) as total_fuel_cost
+                 FROM riders_fuel_history rfh
+                 JOIN riders r ON rfh.rider_id = r.id
+                 WHERE 1=1 ${fuelDateFilter} ${riderFilter}
+                 GROUP BY rfh.rider_id, DATE(rfh.entry_date), r.first_name, r.last_name
+                 ORDER BY mileage_date DESC, rider_name ASC`,
+                params
+            );
+            const summary = {
+                total_days_logged: (rows || []).length,
+                total_distance: (rows || []).reduce((s, r) => s + parseFloat(r.total_distance || 0), 0),
+                total_fuel_cost: (rows || []).reduce((s, r) => s + parseFloat(r.total_fuel_cost || 0), 0)
+            };
+            total_expense = summary.total_fuel_cost;
+            reportData = {
+                type: 'rider_daily_mileage',
+                rider_name: riderName,
+                rows,
+                summary
             };
         } else if (report_type === 'comprehensive_report') {
             // Add end-of-day time to period_to if it doesn't have time component

@@ -399,7 +399,17 @@ function initializeFinancialForms() {
             const riderGroup = document.getElementById('reportRiderSelectGroup');
             const riderSelect = document.getElementById('reportRiderSelect');
             
-            if (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report') {
+            if (
+                this.value === 'rider_fuel_report' ||
+                this.value === 'rider_cash_report' ||
+                this.value === 'rider_orders_report' ||
+                this.value === 'rider_payments_report' ||
+                this.value === 'rider_receivings_report' ||
+                this.value === 'rider_petrol_report' ||
+                this.value === 'rider_daily_mileage_report' ||
+                this.value === 'rider_daily_activity_report' ||
+                this.value === 'rider_day_closing_report'
+            ) {
                 if (riderGroup) riderGroup.style.display = 'block';
                 // Populate riders if needed
                 if (riderSelect && riderSelect.options.length <= 1 && window.AppState && window.AppState.riders) {
@@ -2045,7 +2055,18 @@ async function submitGenerateReport() {
     if (periodToInput) {
         payload.period_to = periodToInput;
     }
-    if (riderId && (reportType === 'rider_fuel_report' || reportType === 'rider_cash_report' || reportType === 'order_wise_sale_summary')) {
+    if (riderId && (
+        reportType === 'rider_fuel_report' ||
+        reportType === 'rider_cash_report' ||
+        reportType === 'rider_orders_report' ||
+        reportType === 'rider_payments_report' ||
+        reportType === 'rider_receivings_report' ||
+        reportType === 'rider_petrol_report' ||
+        reportType === 'rider_daily_mileage_report' ||
+        reportType === 'rider_daily_activity_report' ||
+        reportType === 'rider_day_closing_report' ||
+        reportType === 'order_wise_sale_summary'
+    )) {
         payload.rider_id = riderId;
     }
     if (storeId && reportType === 'order_wise_sale_summary') {
@@ -2220,6 +2241,65 @@ function generatePDF(reportId) {
                 theme: 'grid',
                 styles: { fontSize: 8 }
             });
+        } else if (data.type === 'rider_orders') {
+            doc.text('Rider Orders Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Total: ${data.summary.total_orders} | Delivered: ${data.summary.delivered_orders} | Active: ${data.summary.active_orders} | Cancelled: ${data.summary.cancelled_orders}`,
+                    14,
+                    startY + 5
+                );
+                startY += 10;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Order #', 'Date', 'Rider', 'Customer', 'Status', 'Payment', 'Amount', 'Delivery']],
+                body: (data.orders || []).map(o => [
+                    o.order_number,
+                    new Date(o.created_at).toLocaleDateString(),
+                    o.rider_name || '-',
+                    o.customer_name || '-',
+                    o.status || '-',
+                    `${o.payment_method || '-'} / ${o.payment_status || '-'}`,
+                    `Rs ${parseFloat(o.total_amount || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(o.delivery_fee || 0).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+        } else if (data.type === 'rider_payments') {
+            doc.text('Rider Payments Report', 14, startY);
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Rider', 'Date', 'Type', 'Amount', 'Status', 'Description']],
+                body: (data.entries || []).map(e => [
+                    `${e.first_name || ''} ${e.last_name || ''}`.trim(),
+                    new Date(e.movement_date).toLocaleDateString(),
+                    e.movement_type || '-',
+                    `Rs ${parseFloat(e.amount || 0).toFixed(2)}`,
+                    e.status || '-',
+                    e.description || ''
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'rider_receivings') {
+            doc.text('Rider Receivings Report', 14, startY);
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Rider', 'Date', 'Type', 'Amount', 'Status', 'Description']],
+                body: (data.entries || []).map(e => [
+                    `${e.first_name || ''} ${e.last_name || ''}`.trim(),
+                    new Date(e.movement_date).toLocaleDateString(),
+                    e.movement_type || '-',
+                    `Rs ${parseFloat(e.amount || 0).toFixed(2)}`,
+                    e.status || '-',
+                    e.description || ''
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
         } else if (data.type === 'store_financials') {
             doc.text('Store Financials (Cost Analysis)', 14, startY);
             doc.autoTable({
@@ -2287,7 +2367,7 @@ function generatePDF(reportId) {
                 theme: 'grid',
                 styles: { fontSize: 8 }
             });
-        } else if (data.type === 'rider_fuel') {
+        } else if (data.type === 'rider_fuel' || data.type === 'rider_petrol') {
             doc.text('Rider Fuel History', 14, startY);
             
             // Summary for Fuel
@@ -2315,6 +2395,113 @@ function generatePDF(reportId) {
                     styles: { fontSize: 8 }
                 });
             }
+        } else if (data.type === 'rider_daily_mileage') {
+            doc.text('Rider Daily Mileage Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Days: ${data.summary.total_days_logged} | Distance: ${parseFloat(data.summary.total_distance || 0).toFixed(2)} km | Fuel: Rs ${parseFloat(data.summary.total_fuel_cost || 0).toFixed(2)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 10;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Date', 'Rider', 'Trips', 'Distance (km)', 'Fuel Cost']],
+                body: (data.rows || []).map(r => [
+                    new Date(r.mileage_date).toLocaleDateString(),
+                    r.rider_name || '-',
+                    r.trips_logged || 0,
+                    parseFloat(r.total_distance || 0).toFixed(2),
+                    `Rs ${parseFloat(r.total_fuel_cost || 0).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'rider_daily_activity') {
+            doc.text('Rider Daily Activity Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Orders: ${data.summary.total_orders} | Stores: ${data.summary.total_stores_served} | Cash Collected: Rs ${parseFloat(data.summary.total_cash_collected || 0).toFixed(2)} | Paid to Cash-only Stores: Rs ${parseFloat(data.summary.total_paid_to_cash_only_stores || 0).toFixed(2)} | Cash-only Profit: Rs ${parseFloat(data.summary.total_cash_only_profit || 0).toFixed(2)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 12;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Order #', 'Date', 'Status', 'Stores', 'Cash Collected', 'Paid to Cash-only Stores', 'Cash-only Profit']],
+                body: (data.orders || []).map(o => [
+                    o.order_number || '-',
+                    new Date(o.created_at).toLocaleDateString(),
+                    o.status || '-',
+                    o.stores_count || 0,
+                    `Rs ${parseFloat(o.cash_collected || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(o.paid_to_cash_only_stores || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(o.cash_only_profit || 0).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+        } else if (data.type === 'rider_day_closing') {
+            doc.text('Rider Day Closing Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Days: ${data.summary.days} | Taken: Rs ${parseFloat(data.summary.taken_total || 0).toFixed(2)} | Given: Rs ${parseFloat(data.summary.given_total || 0).toFixed(2)} | Net In Hand: Rs ${parseFloat(data.summary.net_in_hand || 0).toFixed(2)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 12;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Date', 'Rider', 'Cash Collected', 'Advance', 'Settlement', 'Store Pay', 'Fuel', 'Submit', 'Taken', 'Given', 'Net']],
+                body: (data.rows || []).map(r => [
+                    new Date(r.closing_date).toLocaleDateString(),
+                    r.rider_name || '-',
+                    `Rs ${parseFloat(r.cash_collection || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(r.office_advance || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(r.office_settlement || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(r.store_payment || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(r.fuel_payment || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(r.cash_submission || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(r.taken_total || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(r.given_total || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(r.net_in_hand || 0).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+        } else if (data.type === 'order_profit') {
+            doc.text('Order Profit Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Orders: ${data.summary.total_orders} | Bill: Rs ${parseFloat(data.summary.bill_total || 0).toFixed(2)} | Delivery: Rs ${parseFloat(data.summary.delivery_fee || 0).toFixed(2)} | Item Profit: Rs ${parseFloat(data.summary.item_profit || 0).toFixed(2)} | Overall Profit: Rs ${parseFloat(data.summary.overall_profit || 0).toFixed(2)} | Paid to Store: Rs ${parseFloat(data.summary.paid_to_store || 0).toFixed(2)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 12;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Order #', 'Date', 'Bill Total', 'Delivery Fee', 'Item Profit', 'Overall Profit', 'Paid to Store', 'Expected Store Pay']],
+                body: (data.orders || []).map(o => [
+                    o.order_number || '-',
+                    new Date(o.created_at).toLocaleDateString(),
+                    `Rs ${parseFloat(o.bill_total || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(o.delivery_fee || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(o.item_profit || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(o.overall_profit || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(o.paid_to_store || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(o.paid_to_store_expected || 0).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
         } else if (data.type === 'comprehensive_report') {
             doc.text('Comprehensive Transaction Report', 14, startY);
             
@@ -2421,6 +2608,50 @@ function viewReport(reportId) {
             extraDetails += `<tr><td>${m.first_name} ${m.last_name}</td><td>${new Date(m.movement_date).toLocaleDateString()}</td><td>${m.movement_type}</td><td>₨ ${parseFloat(m.amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
+    } else if (data && data.type === 'rider_orders') {
+        extraDetails = '<h3>Rider Orders Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Order #</th><th>Date</th><th>Rider</th><th>Customer</th><th>Status</th><th>Payment</th><th>Amount</th><th>Delivery</th></tr></thead><tbody>';
+        (data.orders || []).forEach(o => {
+            extraDetails += `<tr>
+                <td>${o.order_number}</td>
+                <td>${new Date(o.created_at).toLocaleDateString()}</td>
+                <td>${o.rider_name || '-'}</td>
+                <td>${o.customer_name || '-'}</td>
+                <td>${o.status || '-'}</td>
+                <td>${o.payment_method || '-'} / ${o.payment_status || '-'}</td>
+                <td>Rs ${parseFloat(o.total_amount || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(o.delivery_fee || 0).toFixed(2)}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;"><strong>Total:</strong> ${data.summary.total_orders} | <strong>Delivered:</strong> ${data.summary.delivered_orders} | <strong>Active:</strong> ${data.summary.active_orders} | <strong>Cancelled:</strong> ${data.summary.cancelled_orders}</div>`;
+        }
+    } else if (data && data.type === 'rider_payments') {
+        extraDetails = '<h3>Rider Payments Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Type</th><th>Amount</th><th>Status</th><th>Description</th></tr></thead><tbody>';
+        (data.entries || []).forEach(e => {
+            extraDetails += `<tr>
+                <td>${e.first_name || ''} ${e.last_name || ''}</td>
+                <td>${new Date(e.movement_date).toLocaleDateString()}</td>
+                <td>${e.movement_type || '-'}</td>
+                <td>Rs ${parseFloat(e.amount || 0).toFixed(2)}</td>
+                <td>${e.status || '-'}</td>
+                <td>${e.description || ''}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+    } else if (data && data.type === 'rider_receivings') {
+        extraDetails = '<h3>Rider Receivings Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Type</th><th>Amount</th><th>Status</th><th>Description</th></tr></thead><tbody>';
+        (data.entries || []).forEach(e => {
+            extraDetails += `<tr>
+                <td>${e.first_name || ''} ${e.last_name || ''}</td>
+                <td>${new Date(e.movement_date).toLocaleDateString()}</td>
+                <td>${e.movement_type || '-'}</td>
+                <td>Rs ${parseFloat(e.amount || 0).toFixed(2)}</td>
+                <td>${e.status || '-'}</td>
+                <td>${e.description || ''}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'store_financials') {
         extraDetails = '<h3>Store Financials</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Store</th><th>Sales</th><th>Cost</th><th>Profit</th></tr></thead><tbody>';
         data.stores.forEach(s => {
@@ -2433,7 +2664,7 @@ function viewReport(reportId) {
             extraDetails += `<tr><td>${v.voucher_number}</td><td>${new Date(v.voucher_date).toLocaleDateString()}</td><td>${v.description || '-'}</td><td>₨ ${parseFloat(v.total_amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
-    } else if (data && data.type === 'rider_fuel') {
+    } else if (data && (data.type === 'rider_fuel' || data.type === 'rider_petrol')) {
         extraDetails = '<h3>Rider Fuel History</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Distance</th><th>Cost</th></tr></thead><tbody>';
         if (data.entries) {
             data.entries.forEach(e => {
@@ -2443,6 +2674,77 @@ function viewReport(reportId) {
         extraDetails += '</tbody></table></div>';
         if (data.summary) {
             extraDetails += `<div style="margin-top: 10px;"><strong>Total Distance:</strong> ${data.summary.total_distance} km | <strong>Total Cost:</strong> ₨ ${parseFloat(data.summary.total_cost).toFixed(2)}</div>`;
+        }
+    } else if (data && data.type === 'rider_daily_mileage') {
+        extraDetails = '<h3>Rider Daily Mileage Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Date</th><th>Rider</th><th>Trips</th><th>Distance (km)</th><th>Fuel Cost</th></tr></thead><tbody>';
+        (data.rows || []).forEach(r => {
+            extraDetails += `<tr>
+                <td>${new Date(r.mileage_date).toLocaleDateString()}</td>
+                <td>${r.rider_name || '-'}</td>
+                <td>${r.trips_logged || 0}</td>
+                <td>${parseFloat(r.total_distance || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.total_fuel_cost || 0).toFixed(2)}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;"><strong>Days Logged:</strong> ${data.summary.total_days_logged} | <strong>Total Distance:</strong> ${parseFloat(data.summary.total_distance || 0).toFixed(2)} km | <strong>Total Fuel:</strong> Rs ${parseFloat(data.summary.total_fuel_cost || 0).toFixed(2)}</div>`;
+        }
+    } else if (data && data.type === 'rider_daily_activity') {
+        extraDetails = '<h3>Rider Daily Activity Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Order #</th><th>Date</th><th>Status</th><th>Stores</th><th>Cash Collected</th><th>Paid to Cash-only Stores</th><th>Cash-only Profit</th></tr></thead><tbody>';
+        (data.orders || []).forEach(o => {
+            extraDetails += `<tr>
+                <td>${o.order_number || '-'}</td>
+                <td>${new Date(o.created_at).toLocaleDateString()}</td>
+                <td>${o.status || '-'}</td>
+                <td>${o.stores_count || 0}</td>
+                <td>Rs ${parseFloat(o.cash_collected || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(o.paid_to_cash_only_stores || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(o.cash_only_profit || 0).toFixed(2)}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;"><strong>Total Orders:</strong> ${data.summary.total_orders} | <strong>Total Stores Served:</strong> ${data.summary.total_stores_served} | <strong>Cash Collected:</strong> Rs ${parseFloat(data.summary.total_cash_collected || 0).toFixed(2)} | <strong>Paid to Cash-only Stores:</strong> Rs ${parseFloat(data.summary.total_paid_to_cash_only_stores || 0).toFixed(2)} | <strong>Cash-only Profit:</strong> Rs ${parseFloat(data.summary.total_cash_only_profit || 0).toFixed(2)}</div>`;
+        }
+    } else if (data && data.type === 'rider_day_closing') {
+        extraDetails = '<h3>Rider Day Closing Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Date</th><th>Rider</th><th>Cash Collected</th><th>Advance</th><th>Settlement</th><th>Store Pay</th><th>Fuel</th><th>Submission</th><th>Taken</th><th>Given</th><th>Net In Hand</th></tr></thead><tbody>';
+        (data.rows || []).forEach(r => {
+            extraDetails += `<tr>
+                <td>${new Date(r.closing_date).toLocaleDateString()}</td>
+                <td>${r.rider_name || '-'}</td>
+                <td>Rs ${parseFloat(r.cash_collection || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.office_advance || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.office_settlement || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.store_payment || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.fuel_payment || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.cash_submission || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.taken_total || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.given_total || 0).toFixed(2)}</td>
+                <td><strong>Rs ${parseFloat(r.net_in_hand || 0).toFixed(2)}</strong></td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;"><strong>Days:</strong> ${data.summary.days} | <strong>Taken:</strong> Rs ${parseFloat(data.summary.taken_total || 0).toFixed(2)} | <strong>Given:</strong> Rs ${parseFloat(data.summary.given_total || 0).toFixed(2)} | <strong>Net In Hand:</strong> Rs ${parseFloat(data.summary.net_in_hand || 0).toFixed(2)}</div>`;
+        }
+    } else if (data && data.type === 'order_profit') {
+        extraDetails = '<h3>Order Profit Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Order #</th><th>Date</th><th>Bill Total</th><th>Delivery Fee</th><th>Item Profit</th><th>Overall Profit</th><th>Paid to Store</th><th>Expected Store Pay</th></tr></thead><tbody>';
+        (data.orders || []).forEach(o => {
+            extraDetails += `<tr>
+                <td>${o.order_number || '-'}</td>
+                <td>${new Date(o.created_at).toLocaleDateString()}</td>
+                <td>Rs ${parseFloat(o.bill_total || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(o.delivery_fee || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(o.item_profit || 0).toFixed(2)}</td>
+                <td><strong>Rs ${parseFloat(o.overall_profit || 0).toFixed(2)}</strong></td>
+                <td>Rs ${parseFloat(o.paid_to_store || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(o.paid_to_store_expected || 0).toFixed(2)}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;"><strong>Total Orders:</strong> ${data.summary.total_orders} | <strong>Bill Total:</strong> Rs ${parseFloat(data.summary.bill_total || 0).toFixed(2)} | <strong>Delivery Fee:</strong> Rs ${parseFloat(data.summary.delivery_fee || 0).toFixed(2)} | <strong>Item Profit:</strong> Rs ${parseFloat(data.summary.item_profit || 0).toFixed(2)} | <strong>Overall Profit:</strong> Rs ${parseFloat(data.summary.overall_profit || 0).toFixed(2)} | <strong>Paid to Store:</strong> Rs ${parseFloat(data.summary.paid_to_store || 0).toFixed(2)}</div>`;
         }
     } else if (data && data.type === 'store_settlement') {
         extraDetails = '<h3>Store Settlements</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Settlement #</th><th>Date</th><th>Store</th><th>Amount</th><th>Comm.</th><th>Status</th></tr></thead><tbody>';
@@ -2851,7 +3153,19 @@ document.addEventListener('DOMContentLoaded', function() {
         reportTypeModal.addEventListener('change', function() {
             const riderGroup = document.getElementById('reportRiderSelectGroup');
             if (riderGroup) {
-                riderGroup.style.display = (this.value === 'rider_fuel_report' || this.value === 'rider_cash_report' || this.value === 'delivery_charges_breakdown' || this.value === 'order_wise_sale_summary') ? 'block' : 'none';
+                riderGroup.style.display = (
+                    this.value === 'rider_fuel_report' ||
+                    this.value === 'rider_cash_report' ||
+                    this.value === 'rider_orders_report' ||
+                    this.value === 'rider_payments_report' ||
+                    this.value === 'rider_receivings_report' ||
+                    this.value === 'rider_petrol_report' ||
+                    this.value === 'rider_daily_mileage_report' ||
+                    this.value === 'rider_daily_activity_report' ||
+                    this.value === 'rider_day_closing_report' ||
+                    this.value === 'delivery_charges_breakdown' ||
+                    this.value === 'order_wise_sale_summary'
+                ) ? 'block' : 'none';
             }
             const storeGroup = document.getElementById('reportStoreSelectGroup');
             if (storeGroup) {

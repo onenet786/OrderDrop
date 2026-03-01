@@ -1636,6 +1636,7 @@ function initializeAdmin() {
     if (clearDatabaseKeepOneBtn) clearDatabaseKeepOneBtn.addEventListener('click', clearDatabaseKeepOne);
 
     // Add filter event listeners
+    const orderDatePreset = document.getElementById('orderDatePreset');
     const filterStartDate = document.getElementById('filterStartDate');
     const filterEndDate = document.getElementById('filterEndDate');
     const filterRider = document.getElementById('filterRider');
@@ -1652,11 +1653,22 @@ function initializeAdmin() {
         window.setupStoreSettlementListeners = setupStoreSettlementListeners;
     }
 
+    if (orderDatePreset) {
+        orderDatePreset.addEventListener('change', () => {
+            applyOrderDatePreset(orderDatePreset.value, true);
+        });
+    }
     if (filterStartDate) {
-        filterStartDate.addEventListener('change', filterOrders);
+        filterStartDate.addEventListener('change', () => {
+            if (orderDatePreset) orderDatePreset.value = 'custom';
+            loadOrders();
+        });
     }
     if (filterEndDate) {
-        filterEndDate.addEventListener('change', filterOrders);
+        filterEndDate.addEventListener('change', () => {
+            if (orderDatePreset) orderDatePreset.value = 'custom';
+            loadOrders();
+        });
     }
     if (filterRider) {
         filterRider.addEventListener('change', filterOrders);
@@ -3654,11 +3666,58 @@ function toggleProductStatus(productId, currentStatus) {
 }
 
 // Orders Management
+function getTodayDateString() {
+    return new Date().toISOString().split('T')[0];
+}
+
+function ensureOrderDateFiltersDefault(force = false) {
+    const startInput = document.getElementById('filterStartDate');
+    const endInput = document.getElementById('filterEndDate');
+    if (!startInput || !endInput) return;
+    const today = getTodayDateString();
+    if (force || !startInput.value) startInput.value = today;
+    if (force || !endInput.value) endInput.value = today;
+    const preset = document.getElementById('orderDatePreset');
+    if (preset && (force || !preset.value)) {
+        preset.value = 'today';
+    }
+}
+
+function applyOrderDatePreset(mode, triggerLoad = false) {
+    const startInput = document.getElementById('filterStartDate');
+    const endInput = document.getElementById('filterEndDate');
+    if (!startInput || !endInput) return;
+
+    if (mode === 'today') {
+        const today = getTodayDateString();
+        startInput.value = today;
+        endInput.value = today;
+    } else if (mode === 'custom') {
+        if (!startInput.value || !endInput.value) {
+            const today = getTodayDateString();
+            if (!startInput.value) startInput.value = today;
+            if (!endInput.value) endInput.value = today;
+        }
+    }
+    if (triggerLoad) loadOrders();
+}
+
 function loadOrders() {
     let url = `${API_BASE}/api/orders`;
     // If we wanted to support "My Orders" for standard users in admin panel, we could change this.
     // But currently requirement says standard user should see ALL orders to assign riders.
     // So we keep it as /api/orders which now allows standard_user.
+
+    // Default behavior: on page load/reload show current date records.
+    ensureOrderDateFiltersDefault(false);
+    const startDate = document.getElementById('filterStartDate')?.value || '';
+    const endDate = document.getElementById('filterEndDate')?.value || '';
+    const qs = new URLSearchParams();
+    if (startDate) qs.append('startDate', startDate);
+    if (endDate) qs.append('endDate', endDate);
+    if (qs.toString()) {
+        url += `?${qs.toString()}`;
+    }
 
     fetch(url, {
         headers: { 'Authorization': `Bearer ${authToken}` }
@@ -3681,8 +3740,8 @@ function loadOrders() {
         // Populate rider filter
         populateRiderFilter();
         
-        // Display orders
-        displayOrders(AppState.orders);
+        // Apply client-side rider/status/assignment filters on fetched date range.
+        filterOrders();
         
         // Update dashboard tiles
         try {
@@ -3917,14 +3976,15 @@ function filterOrders() {
 }
 
 function clearFilters() {
-    document.getElementById('filterStartDate').value = '';
-    document.getElementById('filterEndDate').value = '';
+    const preset = document.getElementById('orderDatePreset');
+    if (preset) preset.value = 'today';
+    ensureOrderDateFiltersDefault(true);
     document.getElementById('filterRider').value = '';
     const statusFilter = document.getElementById('filterStatus');
     if (statusFilter) statusFilter.value = '';
     const assignmentFilter = document.getElementById('filterAssignment');
     if (assignmentFilter) assignmentFilter.value = 'all';
-    displayOrders(AppState.orders);
+    loadOrders();
 }
 
 function filterStores() {
@@ -5274,7 +5334,10 @@ function hideModal(modalId) {
         if (modalId === 'addUnitModal') AppState.editing.unitId = null;
         if (modalId === 'addSizeModal') AppState.editing.sizeId = null;
         if (modalId === 'addStoreModal') AppState.editing.storeId = null;
-        if (modalId === 'addProductModal') AppState.editing.productId = null;
+        if (modalId === 'addProductModal') {
+            AppState.editing.productId = null;
+            AppState.editing.productStoreId = null;
+        }
         if (modalId === 'addCategoryModal') AppState.editing.categoryId = null;
         if (modalId === 'addRiderModal') AppState.editing.riderId = null;
     } catch (e) { /* ignore */ }
@@ -6070,6 +6133,7 @@ function collectProductSizePrices() {
     const out = [];
     const seen = new Set();
     if (!tbody) return out;
+    const manualVariantMode = isManualVariantCostMode();
     const mode = getProductMeasureMode();
     const rows = Array.from(tbody.querySelectorAll('tr'));
     for (const row of rows) {
@@ -6086,8 +6150,15 @@ function collectProductSizePrices() {
         seen.add(key);
         const rounded = Math.round(price * 100) / 100;
         const costRounded = Number.isFinite(cost) && cost >= 0 ? (Math.round(cost * 100) / 100) : undefined;
-        if (mode === 'size') out.push({ size_id: measureId, price: rounded, cost_price: costRounded });
-        else out.push({ unit_id: measureId, price: rounded, cost_price: costRounded });
+        if (mode === 'size') {
+            const payload = { size_id: measureId, price: rounded };
+            if (manualVariantMode && costRounded !== undefined) payload.cost_price = costRounded;
+            out.push(payload);
+        } else {
+            const payload = { unit_id: measureId, price: rounded };
+            if (manualVariantMode && costRounded !== undefined) payload.cost_price = costRounded;
+            out.push(payload);
+        }
     }
     return out;
 }
@@ -6539,7 +6610,11 @@ async function saveProduct() {
     const rawStoreId = formData.get('store_id');
     const rawName = (formData.get('name') || '').trim();
     const rawItemId = formData.get('item_id') || '';
-    const storeId = parseInt(rawStoreId, 10);
+    const fallbackStoreId = parseInt(String(AppState?.editing?.productStoreId || ''), 10);
+    const parsedStoreId = parseInt(rawStoreId, 10);
+    const storeId = Number.isInteger(parsedStoreId) && parsedStoreId > 0
+        ? parsedStoreId
+        : (Number.isInteger(fallbackStoreId) && fallbackStoreId > 0 ? fallbackStoreId : NaN);
     const usingTemplate = !!rawItemId;
     const rawPrice = String(formData.get('price') || '').trim();
     const priceVal = rawPrice.length ? parseFloat(rawPrice) : NaN;
@@ -6599,6 +6674,7 @@ async function saveProduct() {
     }
     productData.cost_price = finalCostVal;
     productData.manual_cost_override = isManualCostMode();
+    productData.manual_variant_cost_override = useSizePrices ? isManualVariantCostMode() : false;
     const storeTerm = AppState.productStoreTermsById[String(storeId)] || '';
     const hasDiscountTerm = isDiscountPaymentTerm(storeTerm);
     const hasProfitTerm = isProfitPaymentTerm(storeTerm);
@@ -6682,6 +6758,7 @@ async function saveProduct() {
             showSuccess(AppState.editing.productId ? 'Product Updated' : 'Product Created', AppState.editing.productId ? 'Product updated successfully!' : 'Product created successfully!');
             hideModal('addProductModal');
             AppState.editing.productId = null;
+            AppState.editing.productStoreId = null;
             loadProducts();
         } else {
             const msg = data.message || (data.errors ? data.errors.map(e => e.msg).join(', ') : 'Failed to create product');
@@ -6709,6 +6786,8 @@ async function editProduct(productId) {
             return;
         }
         const p = data.product;
+        const persistedManualVariantCost = !!p.manual_variant_cost_override;
+        AppState.editing.productStoreId = p.store_id || null;
         const [storesResponse, categoriesResponse, unitsResp, sizesResp] = await Promise.all([
             fetch(`${API_BASE}/api/stores?lite=1`),
             fetch(`${API_BASE}/api/categories?includeInactive=true&ts=${Date.now()}`, { cache: 'no-store' }),
@@ -6839,7 +6918,7 @@ async function editProduct(productId) {
         if (p.unit_id && unitSelect) unitSelect.value = p.unit_id;
         if (p.size_id && sizeSelect) sizeSelect.value = p.size_id;
         try {
-            const hasVariants = Array.isArray(p.size_variants) && p.size_variants.length > 0;
+            const hasVariants = !!p.has_variant_pricing;
             const shouldUseVariants = hasVariants;
             if (shouldUseVariants) {
                 const hasSizeBasedVariants = (p.size_variants || []).some(v => {
@@ -6861,7 +6940,7 @@ async function editProduct(productId) {
 
                 setProductSizePricesEnabled(true);
                 const manualVariantCostEl = document.getElementById('productManualVariantCost');
-                if (manualVariantCostEl) manualVariantCostEl.checked = true;
+                if (manualVariantCostEl) manualVariantCostEl.checked = persistedManualVariantCost;
                 const tbody = document.getElementById('productSizePricesBody');
                 if (tbody) tbody.innerHTML = '';
                 (p.size_variants || []).forEach(v => addProductSizePriceRow({ size_id: v.size_id, unit_id: v.unit_id, price: v.price, cost_price: v.cost_price }));
@@ -6878,12 +6957,23 @@ async function editProduct(productId) {
             const discountTypeEl = document.getElementById('productDiscountType');
             const discountValueEl = document.getElementById('productDiscountValue');
             const profitValueEl = document.getElementById('productProfitValue');
-            if (Number.isFinite(priceNum) && Number.isFinite(costNum) && priceNum > 0) {
+            const storedDiscountType = String(p.discount_type || '').trim().toLowerCase();
+            const storedDiscountValue = parseFloat(String(p.discount_value ?? '').trim());
+            // Prefer persisted discount fields in edit mode.
+            if ((storedDiscountType === 'amount' || storedDiscountType === 'percent') && Number.isFinite(storedDiscountValue) && storedDiscountValue >= 0) {
+                if (discountTypeEl) discountTypeEl.value = storedDiscountType;
+                if (discountValueEl) discountValueEl.value = (Math.round(storedDiscountValue * 100) / 100).toFixed(2);
+            } else if (Number.isFinite(priceNum) && Number.isFinite(costNum) && priceNum > 0) {
+                // Fallback for old records where discount fields are null.
                 const delta = priceNum - costNum;
                 if (delta > 0) {
                     if (discountTypeEl) discountTypeEl.value = 'amount';
                     if (discountValueEl) discountValueEl.value = (Math.round(delta * 100) / 100).toFixed(2);
+                } else if (discountValueEl) {
+                    discountValueEl.value = '';
                 }
+            } else if (discountValueEl) {
+                discountValueEl.value = '';
             }
             if (profitValueEl) profitValueEl.value = '';
         } else if (isProfitPaymentTerm(storeTerm)) {
@@ -6914,7 +7004,33 @@ async function editProduct(productId) {
             const profitTypeEl = document.getElementById('productProfitType');
             if (profitTypeEl) profitTypeEl.value = 'amount';
         }
+        // Ensure financial rows/fields honor persisted values after term-based UI toggles.
+        try {
+            const discountTypeEl = document.getElementById('productDiscountType');
+            const discountValueEl = document.getElementById('productDiscountValue');
+            const profitTypeEl = document.getElementById('productProfitType');
+            const profitValueEl = document.getElementById('productProfitValue');
+            const storedDiscountType = String(p.discount_type || '').trim().toLowerCase();
+            const storedDiscountValue = parseFloat(String(p.discount_value ?? '').trim());
+            const storedProfitType = String(p.profit_type || '').trim().toLowerCase();
+            const storedProfitValue = parseFloat(String(p.profit_value ?? '').trim());
+            if ((storedDiscountType === 'amount' || storedDiscountType === 'percent') && Number.isFinite(storedDiscountValue)) {
+                if (discountTypeEl) discountTypeEl.value = storedDiscountType;
+                if (discountValueEl) discountValueEl.value = (Math.round(storedDiscountValue * 100) / 100).toFixed(2);
+            }
+            if ((storedProfitType === 'amount' || storedProfitType === 'percent') && Number.isFinite(storedProfitValue)) {
+                if (profitTypeEl) profitTypeEl.value = storedProfitType;
+                if (profitValueEl) profitValueEl.value = (Math.round(storedProfitValue * 100) / 100).toFixed(2);
+            }
+        } catch (e) {}
         try { recalcProductCost(); } catch (e) {}
+        try {
+            const manualVariantCostEl = document.getElementById('productManualVariantCost');
+            if (manualVariantCostEl) {
+                manualVariantCostEl.checked = persistedManualVariantCost;
+                updateVariantCostInputsReadonly();
+            }
+        } catch (e) {}
         if (itemSelect) {
             if (p.item_id) {
                 ensureProductItemCatalog(itemSelect, p.item_id)
@@ -6949,6 +7065,16 @@ async function editProduct(productId) {
             }
         } catch (e) {}
         showModal('addProductModal');
+        // Enforce persisted checkbox state once modal is visible.
+        try {
+            setTimeout(() => {
+                const manualVariantCostEl = document.getElementById('productManualVariantCost');
+                if (manualVariantCostEl) {
+                    manualVariantCostEl.checked = persistedManualVariantCost;
+                    updateVariantCostInputsReadonly();
+                }
+            }, 0);
+        } catch (e) {}
     } catch (e) {
         console.error('Failed to load product for edit', e);
         showError('Error', 'Failed to load product for editing');
