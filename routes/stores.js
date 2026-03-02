@@ -137,6 +137,34 @@ async function ensureStoreFinancialColumns(db) {
              ADD COLUMN grace_alert_muted_until DATETIME NULL`
         );
     }
+    const [discountApplyCols] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'store_discount_apply_all_products'
+         LIMIT 1`
+    );
+    if (!discountApplyCols || !discountApplyCols.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN store_discount_apply_all_products TINYINT(1) NOT NULL DEFAULT 0`
+        );
+    }
+    const [discountPctCols] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'store_discount_percent'
+         LIMIT 1`
+    );
+    if (!discountPctCols || !discountPctCols.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN store_discount_percent DECIMAL(10,2) NULL`
+        );
+    }
 }
 
 function normalizeDateOnlyInput(raw) {
@@ -498,6 +526,7 @@ router.get('/', async (req, res) => {
                 ? `
             SELECT s.id, s.name, s.payment_term, s.is_active, sm.is_closed, sm.status_message
                  , s.payment_grace_days, s.payment_grace_start_date, s.grace_alert_muted_until
+                 , s.store_discount_apply_all_products, s.store_discount_percent
             FROM stores s
             LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             ${whereClause}
@@ -600,6 +629,8 @@ router.get('/', async (req, res) => {
                     payment_grace_start_date: store.payment_grace_start_date || null,
                     payment_grace_due_date: calculateGraceDueDate(store.payment_grace_start_date, store.payment_grace_days),
                     grace_alert_muted_until: store.grace_alert_muted_until || null,
+                    store_discount_apply_all_products: Number(store.store_discount_apply_all_products || 0),
+                    store_discount_percent: store.store_discount_percent === null || store.store_discount_percent === undefined ? null : Number(store.store_discount_percent),
                     is_active: !!store.is_active,
                     is_closed: !!store.is_closed,
                     status_message: store.status_message || ''
@@ -623,6 +654,8 @@ router.get('/', async (req, res) => {
                     payment_grace_start_date: store.payment_grace_start_date || null,
                     payment_grace_due_date: calculateGraceDueDate(store.payment_grace_start_date, store.payment_grace_days),
                     grace_alert_muted_until: store.grace_alert_muted_until || null,
+                    store_discount_apply_all_products: Number(store.store_discount_apply_all_products || 0),
+                    store_discount_percent: store.store_discount_percent === null || store.store_discount_percent === undefined ? null : Number(store.store_discount_percent),
                     latitude: store.latitude,
                     longitude: store.longitude,
                     rating: store.rating,
@@ -1577,6 +1610,8 @@ router.get('/:id', async (req, res) => {
                 payment_grace_start_date: store.payment_grace_start_date || null,
                 payment_grace_due_date: calculateGraceDueDate(store.payment_grace_start_date, store.payment_grace_days),
                 grace_alert_muted_until: store.grace_alert_muted_until || null,
+                store_discount_apply_all_products: Number(store.store_discount_apply_all_products || 0),
+                store_discount_percent: store.store_discount_percent === null || store.store_discount_percent === undefined ? null : Number(store.store_discount_percent),
                 latitude: store.latitude,
                 longitude: store.longitude,
                 rating: store.rating,
@@ -1669,9 +1704,29 @@ router.post('/', authenticateToken, requireStoreOwner, [
             payment_term,
             payment_grace_days,
             payment_grace_start_date,
+            store_discount_apply_all_products,
+            store_discount_percent,
             image_url,
             rating
         } = req.body;
+        const discountApplicable = String(payment_term || '').toLowerCase().includes('discount');
+        const applyStoreDiscount = discountApplicable && (
+            store_discount_apply_all_products === true
+            || String(store_discount_apply_all_products || '').toLowerCase() === 'true'
+            || String(store_discount_apply_all_products || '') === '1'
+        );
+        const parsedStoreDiscountPercentRaw = store_discount_percent === null || store_discount_percent === undefined || String(store_discount_percent).trim() === ''
+            ? null
+            : Number.parseFloat(String(store_discount_percent));
+        const parsedStoreDiscountPercent = applyStoreDiscount && Number.isFinite(parsedStoreDiscountPercentRaw) && parsedStoreDiscountPercentRaw >= 0
+            ? parsedStoreDiscountPercentRaw
+            : null;
+        if (applyStoreDiscount && parsedStoreDiscountPercent === null) {
+            return res.status(400).json({
+                success: false,
+                message: 'Store Discount (%) is required when apply-on-all-products is enabled'
+            });
+        }
         const parsedGraceDaysRaw = payment_grace_days === null || payment_grace_days === undefined || String(payment_grace_days).trim() === ''
             ? null
             : Math.max(0, parseInt(String(payment_grace_days), 10));
@@ -1705,6 +1760,8 @@ router.post('/', authenticateToken, requireStoreOwner, [
             'payment_term',
             'payment_grace_days',
             'payment_grace_start_date',
+            'store_discount_apply_all_products',
+            'store_discount_percent',
             'phone',
             'email',
             'address',
@@ -1724,6 +1781,8 @@ router.post('/', authenticateToken, requireStoreOwner, [
             payment_term || null,
             Number.isInteger(parsedGraceDays) ? parsedGraceDays : null,
             parsedGraceStartDate,
+            applyStoreDiscount ? 1 : 0,
+            parsedStoreDiscountPercent,
             phone || null,
             email || null,
             address || null,
@@ -1757,7 +1816,9 @@ router.post('/', authenticateToken, requireStoreOwner, [
                 payment_term: payment_term || null,
                 payment_grace_days: Number.isInteger(parsedGraceDays) ? parsedGraceDays : null,
                 payment_grace_start_date: parsedGraceStartDate,
-                payment_grace_due_date: calculateGraceDueDate(parsedGraceStartDate, parsedGraceDays)
+                payment_grace_due_date: calculateGraceDueDate(parsedGraceStartDate, parsedGraceDays),
+                store_discount_apply_all_products: applyStoreDiscount ? 1 : 0,
+                store_discount_percent: parsedStoreDiscountPercent
             }
         });
 
@@ -1841,6 +1902,8 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             payment_term,
             payment_grace_days,
             payment_grace_start_date,
+            store_discount_apply_all_products,
+            store_discount_percent,
             image_url,
             rating,
             category_id,
@@ -1895,11 +1958,38 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
         if (closing_time !== undefined) { updateFields.push('closing_time = ?'); updateValues.push(closing_time); }
         const nextPaymentTerm = payment_term !== undefined ? payment_term : store.payment_term;
         const graceApplicable = isGraceApplicablePaymentTerm(nextPaymentTerm);
+        const discountApplicable = String(nextPaymentTerm || '').toLowerCase().includes('discount');
+        const requestedApplyStoreDiscount = store_discount_apply_all_products !== undefined
+            ? (store_discount_apply_all_products === true
+                || String(store_discount_apply_all_products || '').toLowerCase() === 'true'
+                || String(store_discount_apply_all_products || '') === '1')
+            : Number(store.store_discount_apply_all_products || 0) === 1;
+        const applyStoreDiscount = discountApplicable ? requestedApplyStoreDiscount : false;
+        const parsedStoreDiscountPercentRaw = store_discount_percent === undefined || store_discount_percent === null || String(store_discount_percent).trim() === ''
+            ? (store.store_discount_percent === null || store.store_discount_percent === undefined ? null : Number(store.store_discount_percent))
+            : Number.parseFloat(String(store_discount_percent));
+        const parsedStoreDiscountPercent = applyStoreDiscount && Number.isFinite(parsedStoreDiscountPercentRaw) && parsedStoreDiscountPercentRaw >= 0
+            ? parsedStoreDiscountPercentRaw
+            : null;
+        if (applyStoreDiscount && parsedStoreDiscountPercent === null) {
+            return res.status(400).json({
+                success: false,
+                message: 'Store Discount (%) is required when apply-on-all-products is enabled'
+            });
+        }
         if (payment_term !== undefined) {
             updateFields.push('payment_term = ?');
             updateValues.push(payment_term);
             updateFields.push('grace_alert_muted_until = ?');
             updateValues.push(null);
+        }
+        if (store_discount_apply_all_products !== undefined || payment_term !== undefined) {
+            updateFields.push('store_discount_apply_all_products = ?');
+            updateValues.push(applyStoreDiscount ? 1 : 0);
+        }
+        if (store_discount_percent !== undefined || payment_term !== undefined || store_discount_apply_all_products !== undefined) {
+            updateFields.push('store_discount_percent = ?');
+            updateValues.push(parsedStoreDiscountPercent);
         }
         if (payment_grace_days !== undefined) {
             const parsedGraceDaysRaw = payment_grace_days === null || String(payment_grace_days).trim() === ''
@@ -1962,6 +2052,28 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             `UPDATE stores SET ${updateFields.join(', ')} WHERE id = ?`,
             updateValues
         );
+
+        if (applyStoreDiscount && Number.isFinite(parsedStoreDiscountPercent)) {
+            await req.db.execute(
+                `UPDATE products
+                 SET discount_type = 'percent',
+                     discount_value = ?,
+                     cost_price = GREATEST(0, ROUND(price - (price * ? / 100), 2))
+                 WHERE store_id = ?`,
+                [parsedStoreDiscountPercent, parsedStoreDiscountPercent, id]
+            );
+            try {
+                await req.db.execute(
+                    `UPDATE product_size_prices psp
+                     JOIN products p ON p.id = psp.product_id
+                     SET psp.cost_price = GREATEST(0, ROUND(psp.price - (psp.price * ? / 100), 2))
+                     WHERE p.store_id = ?`,
+                    [parsedStoreDiscountPercent, id]
+                );
+            } catch (e) {
+                console.warn('Failed to auto-apply store discount to product size prices:', e.message);
+            }
+        }
 
         res.json({
             success: true,

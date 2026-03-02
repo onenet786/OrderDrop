@@ -2690,20 +2690,38 @@ router.post('/reports/generate', [
                     o.delivery_fee,
                     COALESCE(SUM(oi.quantity * oi.price), 0) AS gross_item_sales,
                     COALESCE(SUM(
-                        oi.quantity * COALESCE(p.cost_price, 0)
+                        oi.quantity * (
+                            CASE
+                                WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                                    THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                                WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                                    THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                                ELSE COALESCE(psp.cost_price, p.cost_price, oi.price, 0)
+                            END
+                        )
                     ), 0) AS paid_to_store_expected,
                     COALESCE(SUM(
                         CASE
-                            WHEN LOWER(TRIM(COALESCE(NULLIF(oi.discount_type, ''), NULLIF(p.discount_type, ''), 'percent'))) IN ('percent', '%')
+                            WHEN LOWER(TRIM(COALESCE(NULLIF(oi.discount_type, ''), 'percent'))) IN ('percent', '%')
                                 THEN oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100)
                             ELSE 0
                         END
                     ), 0) AS percent_commission_profit,
                     COALESCE(SUM(
                         CASE
-                            WHEN LOWER(TRIM(COALESCE(NULLIF(oi.discount_type, ''), NULLIF(p.discount_type, ''), 'percent'))) IN ('percent', '%')
+                            WHEN LOWER(TRIM(COALESCE(NULLIF(oi.discount_type, ''), 'percent'))) IN ('percent', '%')
                                 THEN 0
-                            ELSE oi.quantity * (oi.price - COALESCE(p.cost_price, 0))
+                            ELSE oi.quantity * (
+                                oi.price - (
+                                    CASE
+                                        WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                                            THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                                        WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                                            THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                                        ELSE COALESCE(psp.cost_price, p.cost_price, oi.price, 0)
+                                    END
+                                )
+                            )
                         END
                     ), 0) AS fixed_discount_margin_profit,
                     COALESCE((
@@ -2714,7 +2732,7 @@ router.post('/reports/generate', [
                  FROM orders o
                  LEFT JOIN order_items oi ON oi.order_id = o.id
                  LEFT JOIN products p ON p.id = oi.product_id
-                 LEFT JOIN stores s ON s.id = oi.store_id
+                 LEFT JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
                  LEFT JOIN product_size_prices psp
                    ON psp.product_id = oi.product_id
                   AND (
@@ -2914,13 +2932,22 @@ router.post('/reports/generate', [
                     oi.price,
                     oi.discount_type,
                     oi.discount_value,
-                    p.discount_type as product_discount_type,
-                    p.discount_value as product_discount_value,
-                    COALESCE(p.cost_price, 0) as cost_price,
+                    CASE
+                        WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                            THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                        WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                            THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                        ELSE COALESCE(psp.cost_price, p.cost_price, oi.price, 0)
+                    END as cost_price,
                     COALESCE(s.commission_rate, 10) as commission_rate
                 FROM orders o
                 JOIN order_items oi ON o.id = oi.order_id
                 JOIN products p ON oi.product_id = p.id
+                LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id
+                    AND (
+                        (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR
+                        (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                    )
                 JOIN stores s ON COALESCE(oi.store_id, p.store_id) = s.id
                 WHERE o.status = 'delivered' ${dateFilter} ${riderFilter} ${storeFilter}
                 ORDER BY o.created_at DESC
@@ -2950,14 +2977,12 @@ router.post('/reports/generate', [
                 const price = parseFloat(row.price || 0);
                 const cost = parseFloat(row.cost_price || 0);
                 const commRate = parseFloat(row.commission_rate || 10);
-                const discountType = String(row.discount_type || row.product_discount_type || '').toLowerCase().trim();
-                const discountValue = parseFloat(
-                    row.discount_value ?? row.product_discount_value ?? 0
-                ) || 0;
-                const isPercentDiscount = discountType.includes('percent') || discountType === '%';
-                const isFixedAmountDiscount =
-                    (discountType && !isPercentDiscount) ||
-                    (discountValue > 0 && !isPercentDiscount);
+                // Use historical order-item discount fields only.
+                // Do not fallback to current product discount config, otherwise old orders can be misclassified.
+                const discountType = String(row.discount_type || '').toLowerCase().trim();
+                const isPercentDiscount = discountType === 'percent' || discountType === '%' || discountType === 'percentage';
+                const isFixedAmountDiscount = discountType === 'amount' || discountType.includes('fixed');
+                const hasKnownDiscountType = isPercentDiscount || isFixedAmountDiscount;
 
                 order.items.push({
                     name: row.item_name,
@@ -2970,11 +2995,14 @@ router.post('/reports/generate', [
                 const itemCost = cost * qty;
                 const itemGrossProfit = itemTotal - itemCost;
                 // Business rule:
-                // - Fixed Amount discount items: don't apply commission %, use gross margin (sales - cost).
-                // - Otherwise: apply configured commission %.
+                // - Fixed amount items => use gross margin.
+                // - Percent items => use commission rate.
+                // - Unknown/missing type (legacy rows) => use gross margin to avoid undercount from wrong fallback.
                 const commissionValue = isFixedAmountDiscount
                     ? itemGrossProfit
-                    : (itemTotal * (commRate / 100));
+                    : (isPercentDiscount
+                        ? (itemTotal * (commRate / 100))
+                        : (hasKnownDiscountType ? (itemTotal * (commRate / 100)) : itemGrossProfit));
                 order.item_sales_gross += itemTotal;
                 order.total_cost_price += itemCost;
                 order.estimated_commission += commissionValue;

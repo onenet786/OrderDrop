@@ -21,6 +21,7 @@ const AppState = {
     customerFlashMessage: null,
     notificationCustomers: [],
     productStoreTermsById: {},
+    productStoreDiscountById: {},
     productItemCatalog: {
         loadedAt: 0,
         products: [],
@@ -1532,9 +1533,14 @@ function initializeAdmin() {
     const storePaymentTermEl = document.getElementById('storePaymentTerm');
     const storeGraceDaysEl = document.getElementById('storeGraceDays');
     const storeGraceStartDateEl = document.getElementById('storeGraceStartDate');
+    const storeDiscountApplyEl = document.getElementById('storeDiscountApplyAllProducts');
     if (storePaymentTermEl && !storePaymentTermEl.dataset.boundGraceControls) {
         storePaymentTermEl.addEventListener('change', updateStoreGraceControls);
         storePaymentTermEl.dataset.boundGraceControls = '1';
+    }
+    if (storeDiscountApplyEl && !storeDiscountApplyEl.dataset.boundDiscountControls) {
+        storeDiscountApplyEl.addEventListener('change', updateStoreDiscountControls);
+        storeDiscountApplyEl.dataset.boundDiscountControls = '1';
     }
     if (storeGraceDaysEl && !storeGraceDaysEl.dataset.boundGracePreview) {
         storeGraceDaysEl.addEventListener('input', updateStoreGraceDuePreview);
@@ -5365,6 +5371,8 @@ async function showAddStoreModal() {
             if (form.querySelector('#storeGraceDays')) form.querySelector('#storeGraceDays').value = '';
             if (form.querySelector('#storeGraceStartDate')) form.querySelector('#storeGraceStartDate').value = '';
             if (form.querySelector('#storePaymentTerm')) form.querySelector('#storePaymentTerm').value = '';
+            if (form.querySelector('#storeDiscountApplyAllProducts')) form.querySelector('#storeDiscountApplyAllProducts').checked = false;
+            if (form.querySelector('#storeDiscountPercent')) form.querySelector('#storeDiscountPercent').value = '';
         }
         updateStoreGraceControls();
     } catch (e) {}
@@ -5401,6 +5409,8 @@ async function saveStore() {
     const formData = new FormData(formEl);
     const paymentTermRaw = formData.get('payment_term') || null;
     const graceApplicable = isGraceApplicableStoreTerm(paymentTermRaw);
+    const discountApplicable = isDiscountPaymentTerm(paymentTermRaw);
+    const storeDiscountApply = discountApplicable && !!document.getElementById('storeDiscountApplyAllProducts')?.checked;
     const storeData = {
         name: formData.get('name'),
         description: formData.get('description'),
@@ -5425,11 +5435,22 @@ async function saveStore() {
             const raw = String(formData.get('payment_grace_start_date') || '').trim();
             return raw.length ? raw : null;
         })(),
+        store_discount_apply_all_products: storeDiscountApply,
+        store_discount_percent: (() => {
+            if (!storeDiscountApply) return null;
+            const raw = String(formData.get('store_discount_percent') || '').trim();
+            const n = parseFloat(raw);
+            return Number.isFinite(n) && n >= 0 ? n : null;
+        })(),
         address: formData.get('address'),
         status: formData.get('status') || 'active',
         category_id: formData.get('category_id') || null,
         owner_name: (formData.get('owner_name') || '').trim() || undefined
     };
+    if (storeData.store_discount_apply_all_products && (!Number.isFinite(Number(storeData.store_discount_percent)) || Number(storeData.store_discount_percent) < 0)) {
+        showError('Invalid Input', 'Please enter a valid Store Discount (%) value.');
+        return;
+    }
 
     // If a file was selected, upload it first to server to get back a public URL and variants
     const fileInput = document.getElementById('storeImageFile');
@@ -5547,6 +5568,8 @@ async function editStore(storeId) {
         if (s.opening_time) form.querySelector('#storeOpeningTime').value = s.opening_time;
         if (s.closing_time) form.querySelector('#storeClosingTime').value = s.closing_time;
         if (form.querySelector('#storePaymentTerm')) form.querySelector('#storePaymentTerm').value = s.payment_term || '';
+        if (form.querySelector('#storeDiscountApplyAllProducts')) form.querySelector('#storeDiscountApplyAllProducts').checked = Number(s.store_discount_apply_all_products || 0) === 1;
+        if (form.querySelector('#storeDiscountPercent')) form.querySelector('#storeDiscountPercent').value = s.store_discount_percent ?? '';
         if (form.querySelector('#storeGraceDays')) form.querySelector('#storeGraceDays').value = (s.payment_grace_days ?? '').toString();
         if (form.querySelector('#storeGraceStartDate')) form.querySelector('#storeGraceStartDate').value = normalizeDateInputValue(s.payment_grace_start_date);
         if (form.querySelector('#storeCategory') && selectedCategoryId !== null) {
@@ -5601,9 +5624,16 @@ async function populateStoreCategorySelect(selectedId = null) {
 
 function setProductStoreTerms(stores) {
     AppState.productStoreTermsById = {};
+    AppState.productStoreDiscountById = {};
     (stores || []).forEach(s => {
         if (s && s.id !== undefined && s.id !== null) {
             AppState.productStoreTermsById[String(s.id)] = s.payment_term || '';
+            const enabled = Number(s.store_discount_apply_all_products || 0) === 1;
+            const percent = parseFloat(String(s.store_discount_percent ?? '').trim());
+            AppState.productStoreDiscountById[String(s.id)] = {
+                enabled,
+                percent: Number.isFinite(percent) && percent >= 0 ? percent : null
+            };
         }
     });
 }
@@ -5622,6 +5652,14 @@ function isProfitPaymentTerm(term) {
 
 function isCashOnlyPaymentTerm(term) {
     return String(term || '').toLowerCase().trim() === 'cash only';
+}
+
+function getStoreDiscountOverride(storeId) {
+    const cfg = AppState.productStoreDiscountById[String(storeId || '')] || null;
+    if (!cfg || !cfg.enabled) return null;
+    const pct = Number(cfg.percent);
+    if (!Number.isFinite(pct) || pct < 0) return null;
+    return { type: 'percent', value: pct };
 }
 
 function isGraceApplicableStoreTerm(term) {
@@ -5644,7 +5682,25 @@ function updateStoreGraceControls() {
         if (graceDaysEl) graceDaysEl.value = '';
         if (graceStartEl) graceStartEl.value = '';
     }
+    updateStoreDiscountControls();
     updateStoreGraceDuePreview();
+}
+
+function updateStoreDiscountControls() {
+    const termEl = document.getElementById('storePaymentTerm');
+    const applyGroup = document.getElementById('storeDiscountApplyGroup');
+    const percentGroup = document.getElementById('storeDiscountPercentGroup');
+    const applyEl = document.getElementById('storeDiscountApplyAllProducts');
+    const percentEl = document.getElementById('storeDiscountPercent');
+    if (!termEl || !applyGroup || !percentGroup || !applyEl || !percentEl) return;
+
+    const discountTerm = isDiscountPaymentTerm(termEl.value);
+    applyGroup.style.display = discountTerm ? '' : 'none';
+    percentGroup.style.display = discountTerm && applyEl.checked ? '' : 'none';
+    if (!discountTerm) {
+        applyEl.checked = false;
+        percentEl.value = '';
+    }
 }
 
 function updateStoreGraceDuePreview() {
@@ -5924,9 +5980,27 @@ function recalcProductCost() {
     if (!priceEl || !costEl || !storeEl) return;
 
     const term = AppState.productStoreTermsById[String(storeEl.value || '')] || '';
+    const enforcedStoreDiscount = getStoreDiscountOverride(storeEl.value || '');
     const hasDiscount = isDiscountPaymentTerm(term);
     const hasProfit = isProfitPaymentTerm(term);
     if (discountRow) discountRow.style.display = hasDiscount ? '' : 'none';
+    if (hasDiscount && enforcedStoreDiscount) {
+        if (discountTypeEl) {
+            discountTypeEl.value = 'percent';
+            discountTypeEl.disabled = true;
+        }
+        if (discountValueEl) {
+            discountValueEl.value = String(enforcedStoreDiscount.value);
+            discountValueEl.readOnly = true;
+            discountValueEl.style.backgroundColor = '#f1f5f9';
+        }
+    } else {
+        if (discountTypeEl) discountTypeEl.disabled = false;
+        if (discountValueEl) {
+            discountValueEl.readOnly = false;
+            discountValueEl.style.backgroundColor = '#ffffff';
+        }
+    }
     if (profitRow) profitRow.style.display = hasProfit ? '' : 'none';
 
     const rawPrice = String(priceEl.value || '').trim();
@@ -5945,6 +6019,23 @@ function recalcProductCost() {
 
     let cost = price;
     if (hasDiscount) {
+        if (enforcedStoreDiscount) {
+            if (discountTypeEl) {
+                discountTypeEl.value = 'percent';
+                discountTypeEl.disabled = true;
+            }
+            if (discountValueEl) {
+                discountValueEl.value = String(enforcedStoreDiscount.value);
+                discountValueEl.readOnly = true;
+                discountValueEl.style.backgroundColor = '#f1f5f9';
+            }
+        } else {
+            if (discountTypeEl) discountTypeEl.disabled = false;
+            if (discountValueEl) {
+                discountValueEl.readOnly = false;
+                discountValueEl.style.backgroundColor = '#ffffff';
+            }
+        }
         const dtype = String(discountTypeEl?.value || 'amount');
         const rawD = String(discountValueEl?.value || '').trim();
         const dval = rawD.length ? parseFloat(rawD) : NaN;
@@ -5954,6 +6045,11 @@ function recalcProductCost() {
         }
         if (profitValueEl) profitValueEl.value = '';
     } else if (hasProfit) {
+        if (discountTypeEl) discountTypeEl.disabled = false;
+        if (discountValueEl) {
+            discountValueEl.readOnly = false;
+            discountValueEl.style.backgroundColor = '#ffffff';
+        }
         const pType = String(profitTypeEl?.value || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
         const rawP = String(profitValueEl?.value || '').trim();
         const pval = rawP.length ? parseFloat(rawP) : NaN;
@@ -5964,6 +6060,11 @@ function recalcProductCost() {
         if (discountValueEl) discountValueEl.value = '';
         if (discountTypeEl) discountTypeEl.value = 'amount';
     } else {
+        if (discountTypeEl) discountTypeEl.disabled = false;
+        if (discountValueEl) {
+            discountValueEl.readOnly = false;
+            discountValueEl.style.backgroundColor = '#ffffff';
+        }
         if (discountValueEl) discountValueEl.value = '';
         if (discountTypeEl) discountTypeEl.value = 'amount';
         if (profitValueEl) profitValueEl.value = '';
@@ -6676,14 +6777,20 @@ async function saveProduct() {
     productData.manual_cost_override = isManualCostMode();
     productData.manual_variant_cost_override = useSizePrices ? isManualVariantCostMode() : false;
     const storeTerm = AppState.productStoreTermsById[String(storeId)] || '';
+    const enforcedStoreDiscount = getStoreDiscountOverride(storeId);
     const hasDiscountTerm = isDiscountPaymentTerm(storeTerm);
     const hasProfitTerm = isProfitPaymentTerm(storeTerm);
     const discountType = String(formData.get('discount_type') || '').trim();
     const discountValueRaw = String(formData.get('discount_value') || '').trim();
     const profitValueRaw = String(formData.get('profit_value') || '').trim();
     if (hasDiscountTerm) {
-        if (discountType) productData.discount_type = discountType;
-        if (discountValueRaw.length) productData.discount_value = parseFloat(discountValueRaw);
+        if (enforcedStoreDiscount) {
+            productData.discount_type = 'percent';
+            productData.discount_value = Number(enforcedStoreDiscount.value);
+        } else {
+            if (discountType) productData.discount_type = discountType;
+            if (discountValueRaw.length) productData.discount_value = parseFloat(discountValueRaw);
+        }
     }
     if (hasProfitTerm && profitValueRaw.length) {
         productData.profit_type = String(formData.get('profit_type') || 'amount').trim().toLowerCase() === 'percent' ? 'percent' : 'amount';
@@ -7010,13 +7117,31 @@ async function editProduct(productId) {
             const discountValueEl = document.getElementById('productDiscountValue');
             const profitTypeEl = document.getElementById('productProfitType');
             const profitValueEl = document.getElementById('productProfitValue');
+            const enforcedStoreDiscount = getStoreDiscountOverride(p.store_id || '');
             const storedDiscountType = String(p.discount_type || '').trim().toLowerCase();
             const storedDiscountValue = parseFloat(String(p.discount_value ?? '').trim());
             const storedProfitType = String(p.profit_type || '').trim().toLowerCase();
             const storedProfitValue = parseFloat(String(p.profit_value ?? '').trim());
-            if ((storedDiscountType === 'amount' || storedDiscountType === 'percent') && Number.isFinite(storedDiscountValue)) {
-                if (discountTypeEl) discountTypeEl.value = storedDiscountType;
-                if (discountValueEl) discountValueEl.value = (Math.round(storedDiscountValue * 100) / 100).toFixed(2);
+            if (enforcedStoreDiscount) {
+                if (discountTypeEl) {
+                    discountTypeEl.value = 'percent';
+                    discountTypeEl.disabled = true;
+                }
+                if (discountValueEl) {
+                    discountValueEl.value = (Math.round(Number(enforcedStoreDiscount.value) * 100) / 100).toFixed(2);
+                    discountValueEl.readOnly = true;
+                    discountValueEl.style.backgroundColor = '#f1f5f9';
+                }
+            } else if ((storedDiscountType === 'amount' || storedDiscountType === 'percent') && Number.isFinite(storedDiscountValue)) {
+                if (discountTypeEl) {
+                    discountTypeEl.value = storedDiscountType;
+                    discountTypeEl.disabled = false;
+                }
+                if (discountValueEl) {
+                    discountValueEl.value = (Math.round(storedDiscountValue * 100) / 100).toFixed(2);
+                    discountValueEl.readOnly = false;
+                    discountValueEl.style.backgroundColor = '#ffffff';
+                }
             }
             if ((storedProfitType === 'amount' || storedProfitType === 'percent') && Number.isFinite(storedProfitValue)) {
                 if (profitTypeEl) profitTypeEl.value = storedProfitType;

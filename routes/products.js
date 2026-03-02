@@ -143,6 +143,8 @@ async function ensureProductColumns(db) {
         const columns = [
             { name: 'discount_type', definition: "ENUM('amount', 'percent') NULL" },
             { name: 'discount_value', definition: 'DECIMAL(10, 2) NULL' },
+            { name: 'profit_type', definition: "ENUM('amount', 'percent') NULL" },
+            { name: 'profit_value', definition: 'DECIMAL(10, 2) NULL' },
             { name: 'manual_variant_cost_override', definition: 'TINYINT(1) NOT NULL DEFAULT 0' }
         ];
 
@@ -768,7 +770,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
 
         // Check if store exists and user has permission
         const [stores] = await req.db.execute(
-            'SELECT owner_id, payment_term FROM stores WHERE id = ? AND is_active = true',
+            'SELECT owner_id, payment_term, store_discount_apply_all_products, store_discount_percent FROM stores WHERE id = ? AND is_active = true',
             [store_id]
         );
 
@@ -796,10 +798,18 @@ router.post('/', authenticateToken, requireStaffAccess, [
             return res.status(400).json({ success: false, message: hasRequestedVariants ? 'At least one valid size price is required' : 'Price is required' });
         }
         const paymentTerm = stores[0].payment_term;
+        const storeDiscountEnabled = isDiscountPaymentTerm(paymentTerm) && Number(stores[0].store_discount_apply_all_products || 0) === 1;
+        const storeDiscountPercent = Number(stores[0].store_discount_percent);
+        const effectiveDiscountType = storeDiscountEnabled ? 'percent' : discount_type;
         const normalizedCost = normalizeNumber(cost_price);
         const normalizedDiscount = normalizeNumber(discount_value);
+        const effectiveDiscountValue = storeDiscountEnabled
+            ? (Number.isFinite(storeDiscountPercent) && storeDiscountPercent >= 0 ? storeDiscountPercent : 0)
+            : (normalizedDiscount.present && normalizedDiscount.ok ? normalizedDiscount.value : null);
         const normalizedProfit = normalizeNumber(profit_value);
         const profitType = String(profit_type || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
+        const hasDiscountTerm = isDiscountPaymentTerm(paymentTerm);
+        const hasProfitTerm = isProfitPaymentTerm(paymentTerm);
         let derivedCost = null;
         const manualCostOverride = normalizedCost.present && normalizedCost.ok;
         
@@ -811,13 +821,13 @@ router.post('/', authenticateToken, requireStaffAccess, [
         if (normalizedCost.present && normalizedCost.ok) {
             // Manual cost price override should take precedence.
             derivedCost = roundMoney(normalizedCost.value);
-        } else if (isDiscountPaymentTerm(paymentTerm)) {
-            if (normalizedDiscount.present && normalizedDiscount.ok && discount_type) {
+        } else if (hasDiscountTerm) {
+            if (Number.isFinite(effectiveDiscountValue) && effectiveDiscountType) {
                 // Case 1: Store has discount. Calculate Cost = Price - Discount.
                 derivedCost = computeCostFromPrice({ 
                     price: normalizedEffectivePrice.value, 
-                    discountType: discount_type, 
-                    discountValue: normalizedDiscount.value 
+                    discountType: effectiveDiscountType, 
+                    discountValue: effectiveDiscountValue 
                 });
             } else if (normalizedCost.present && normalizedCost.ok) {
                 // Case 2: User manually set cost.
@@ -826,7 +836,7 @@ router.post('/', authenticateToken, requireStaffAccess, [
                 // Case 3: No discount, no cost. Default Cost = Price (0 Profit).
                 derivedCost = roundMoney(normalizedEffectivePrice.value);
             }
-        } else if (isProfitPaymentTerm(paymentTerm)) {
+        } else if (hasProfitTerm) {
             if (normalizedProfit.present && normalizedProfit.ok) {
                 const profitAmount = profitType === 'percent'
                     ? (normalizedEffectivePrice.value * normalizedProfit.value / 100)
@@ -898,9 +908,22 @@ router.post('/', authenticateToken, requireStaffAccess, [
             if (!meta) meta = await extractImageVarsFromPath(String(image_url || ''));
         } catch (e) { /* ignore */ }
 
-        const insertFields = ['name','description','cost_price','price','image_url','category_id','store_id','stock_quantity','discount_type','discount_value','manual_variant_cost_override'];
-        const insertPlaceholders = ['?','?','?','?','?','?','?','?','?','?','?'];
-        const insertValues = [name, description, derivedCost, finalPriceForInsert, image_url, category_id, store_id, stock_quantity, discount_type || null, discount_value || null, manualVariantMode.value ? 1 : 0];
+        const resolvedDiscountType = hasDiscountTerm ? (effectiveDiscountType || null) : null;
+        const resolvedDiscountValue = hasDiscountTerm
+            ? (Number.isFinite(effectiveDiscountValue) ? effectiveDiscountValue : null)
+            : null;
+        let resolvedProfitType = hasProfitTerm ? profitType : null;
+        let resolvedProfitValue = hasProfitTerm && normalizedProfit.present && normalizedProfit.ok ? normalizedProfit.value : null;
+        if (hasProfitTerm && resolvedProfitValue === null && Number.isFinite(Number(finalPriceForInsert)) && Number.isFinite(Number(derivedCost))) {
+            const profitAmt = Math.max(0, roundMoney(Number(finalPriceForInsert) - Number(derivedCost)));
+            resolvedProfitValue = resolvedProfitType === 'percent' && Number(finalPriceForInsert) > 0
+                ? roundMoney((profitAmt / Number(finalPriceForInsert)) * 100)
+                : profitAmt;
+        }
+
+        const insertFields = ['name','description','cost_price','price','image_url','category_id','store_id','stock_quantity','discount_type','discount_value','profit_type','profit_value','manual_variant_cost_override'];
+        const insertPlaceholders = ['?','?','?','?','?','?','?','?','?','?','?','?','?'];
+        const insertValues = [name, description, derivedCost, finalPriceForInsert, image_url, category_id, store_id, stock_quantity, resolvedDiscountType, resolvedDiscountValue, resolvedProfitType, resolvedProfitValue, manualVariantMode.value ? 1 : 0];
         if (!hasRequestedVariants) {
             if (unit_id) { insertFields.push('unit_id'); insertPlaceholders.push('?'); insertValues.push(unit_id); }
             if (size_id) { insertFields.push('size_id'); insertPlaceholders.push('?'); insertValues.push(size_id); }
@@ -940,14 +963,14 @@ router.post('/', authenticateToken, requireStaffAccess, [
             if (!ensured) {
                 return res.status(500).json({ success: false, message: 'Failed to initialize size pricing table' });
             }
-            const dv = (normalizedDiscount.present && normalizedDiscount.ok) ? normalizedDiscount.value : null;
+            const dv = Number.isFinite(effectiveDiscountValue) ? effectiveDiscountValue : null;
             const pv = (normalizedProfit.present && normalizedProfit.ok) ? normalizedProfit.value : null;
             const values = [];
             const placeholders = [];
             const variantsWithCost = [];
             for (let i = 0; i < requestedVariants.length; i++) {
                 const v = requestedVariants[i];
-                const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm, discountType: discount_type, discountValue: dv, profitValue: pv, profitType });
+                const derivedVariantCost = deriveCostForPrice({ price: v.price, paymentTerm, discountType: effectiveDiscountType, discountValue: dv, profitValue: pv, profitType });
                 let variantPrice = roundMoney(v.price);
                 const hasManualVariantCost = v.cost_price !== null && v.cost_price !== undefined && Number.isFinite(Number(v.cost_price));
                 let variantCost = hasManualVariantCost
@@ -1020,7 +1043,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
 
         // Check if product exists and get store info
         const [products] = await req.db.execute(`
-            SELECT p.*, s.owner_id, s.payment_term
+            SELECT p.*, s.owner_id, s.payment_term, s.store_discount_apply_all_products, s.store_discount_percent
             FROM products p
             JOIN stores s ON p.store_id = s.id
             WHERE p.id = ?
@@ -1059,6 +1082,8 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
         let image_url = req.body.image_url;
         const profitType = String(profit_type || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
         let effectivePaymentTerm = product.payment_term;
+        let effectiveStoreDiscountEnabled = isDiscountPaymentTerm(product.payment_term) && Number(product.store_discount_apply_all_products || 0) === 1;
+        let effectiveStoreDiscountPercent = Number(product.store_discount_percent);
 
         if (store_id !== undefined) {
             const targetStoreId = parseInt(String(store_id), 10);
@@ -1069,7 +1094,7 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 });
             }
             const [targetStores] = await req.db.execute(
-                'SELECT id, owner_id, payment_term FROM stores WHERE id = ?',
+                'SELECT id, owner_id, payment_term, store_discount_apply_all_products, store_discount_percent FROM stores WHERE id = ?',
                 [targetStoreId]
             );
             if (!targetStores.length) {
@@ -1086,6 +1111,8 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 });
             }
             effectivePaymentTerm = targetStore.payment_term || effectivePaymentTerm;
+            effectiveStoreDiscountEnabled = isDiscountPaymentTerm(effectivePaymentTerm) && Number(targetStore.store_discount_apply_all_products || 0) === 1;
+            effectiveStoreDiscountPercent = Number(targetStore.store_discount_percent);
         }
 
         const variantsProvided = (req.body && (req.body.size_variants !== undefined || req.body.variants !== undefined));
@@ -1106,7 +1133,9 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                 if (!ensured) return res.status(500).json({ success: false, message: 'Failed to initialize size pricing table' });
                 await req.db.execute('DELETE FROM product_size_prices WHERE product_id = ?', [id]);
                 const normDisc = normalizeNumber(discount_value);
-                const dv = (normDisc.present && normDisc.ok) ? normDisc.value : normalizeNumber(product.discount_value).value;
+                const dv = effectiveStoreDiscountEnabled
+                    ? (Number.isFinite(effectiveStoreDiscountPercent) && effectiveStoreDiscountPercent >= 0 ? effectiveStoreDiscountPercent : 0)
+                    : ((normDisc.present && normDisc.ok) ? normDisc.value : normalizeNumber(product.discount_value).value);
                 const normProfit = normalizeNumber(profit_value);
                 let pv = (normProfit.present && normProfit.ok) ? normProfit.value : null;
                 if (pv === null && isProfitPaymentTerm(effectivePaymentTerm)) {
@@ -1116,7 +1145,9 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
                         pv = Math.max(0, roundMoney(existingPrice - existingCost));
                     }
                 }
-                const finalDiscountTypeForVariants = discount_type !== undefined ? discount_type : product.discount_type;
+                const finalDiscountTypeForVariants = effectiveStoreDiscountEnabled
+                    ? 'percent'
+                    : (discount_type !== undefined ? discount_type : product.discount_type);
                 const values = [];
                 const placeholders = [];
                 for (let i = 0; i < requestedVariants.length; i++) {
@@ -1155,22 +1186,52 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
 
         if (name !== undefined) { updateFields.push('name = ?'); updateValues.push(name); }
         if (description !== undefined) { updateFields.push('description = ?'); updateValues.push(description); }
-        if (discount_type !== undefined) { updateFields.push('discount_type = ?'); updateValues.push(discount_type || null); }
-        if (discount_value !== undefined) { updateFields.push('discount_value = ?'); updateValues.push(discount_value || null); }
+        const hasDiscount = isDiscountPaymentTerm(effectivePaymentTerm);
+        const hasProfitTerm = isProfitPaymentTerm(effectivePaymentTerm);
+        const effectiveDiscountTypeFromStore = effectiveStoreDiscountEnabled ? 'percent' : undefined;
+        const effectiveDiscountValueFromStore = effectiveStoreDiscountEnabled
+            ? (Number.isFinite(effectiveStoreDiscountPercent) && effectiveStoreDiscountPercent >= 0 ? effectiveStoreDiscountPercent : 0)
+            : undefined;
+        if (hasDiscount) {
+            if (effectiveStoreDiscountEnabled) {
+                updateFields.push('discount_type = ?');
+                updateValues.push('percent');
+                updateFields.push('discount_value = ?');
+                updateValues.push(effectiveDiscountValueFromStore);
+            } else {
+                if (discount_type !== undefined) { updateFields.push('discount_type = ?'); updateValues.push(discount_type || null); }
+                if (discount_value !== undefined) { updateFields.push('discount_value = ?'); updateValues.push(discount_value || null); }
+            }
+            // Discount model store => clear profit model fields
+            updateFields.push('profit_type = ?');
+            updateValues.push(null);
+            updateFields.push('profit_value = ?');
+            updateValues.push(null);
+        } else if (hasProfitTerm) {
+            // Profit model store => clear discount model fields unless forcibly discount-driven
+            if (!effectiveStoreDiscountEnabled) {
+                updateFields.push('discount_type = ?');
+                updateValues.push(null);
+                updateFields.push('discount_value = ?');
+                updateValues.push(null);
+            }
+        }
         if (manualVariantMode.present) { updateFields.push('manual_variant_cost_override = ?'); updateValues.push(manualVariantMode.value ? 1 : 0); }
         const normalizedCost = normalizeNumber(cost_price);
         const normalizedPrice = normalizeNumber(price);
-        const normalizedDiscount = normalizeNumber(discount_value);
+        const normalizedDiscount = normalizeNumber(
+            effectiveStoreDiscountEnabled ? effectiveDiscountValueFromStore : discount_value
+        );
         const normalizedProfit = normalizeNumber(profit_value);
-        const hasDiscount = isDiscountPaymentTerm(effectivePaymentTerm);
-        const hasProfitTerm = isProfitPaymentTerm(effectivePaymentTerm);
         
         // --- LOGIC FIX START: Enforce "Cost = Price - Discount" on Update ---
         
         let derivedCost = null;
         const manualCostOverride = normalizedCost.present && normalizedCost.ok;
         let finalPrice = normalizedPrice.present && normalizedPrice.ok ? roundMoney(normalizedPrice.value) : product.price;
-        let finalDiscountType = discount_type !== undefined ? discount_type : product.discount_type;
+        let finalDiscountType = effectiveStoreDiscountEnabled
+            ? 'percent'
+            : (discount_type !== undefined ? discount_type : product.discount_type);
         let finalDiscountValue = normalizedDiscount.present && normalizedDiscount.ok ? normalizedDiscount.value : product.discount_value;
         
         // Always recalculate cost if Price, Discount, or Cost is touched, OR if store logic dictates it
@@ -1226,6 +1287,22 @@ router.put('/:id', authenticateToken, requireStaffAccess, [
             }
             updateFields.push('price = ?');
             updateValues.push(finalPrice);
+        }
+        if (hasProfitTerm) {
+            const resolvedProfitType = String(
+                profit_type !== undefined ? profit_type : (product.profit_type || 'amount')
+            ).toLowerCase() === 'percent' ? 'percent' : 'amount';
+            let resolvedProfitValue = normalizedProfit.present && normalizedProfit.ok ? normalizedProfit.value : null;
+            if (resolvedProfitValue === null && Number.isFinite(Number(finalPrice)) && Number.isFinite(Number(derivedCost))) {
+                const profitAmt = Math.max(0, roundMoney(Number(finalPrice) - Number(derivedCost)));
+                resolvedProfitValue = resolvedProfitType === 'percent' && Number(finalPrice) > 0
+                    ? roundMoney((profitAmt / Number(finalPrice)) * 100)
+                    : profitAmt;
+            }
+            updateFields.push('profit_type = ?');
+            updateValues.push(resolvedProfitType);
+            updateFields.push('profit_value = ?');
+            updateValues.push(resolvedProfitValue);
         }
         if (store_id !== undefined) {
             updateFields.push('store_id = ?');

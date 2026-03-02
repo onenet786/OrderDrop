@@ -82,6 +82,67 @@ function calculateDeliveryFeeByStoreCount(storeCount, feeConfig) {
   );
 }
 
+function isProfitPaymentTerm(term) {
+  const t = String(term || "").toLowerCase().trim();
+  return t === "cash only" || t === "credit";
+}
+
+function isDiscountPaymentTerm(term) {
+  const t = String(term || "").toLowerCase().trim();
+  return t.includes("discount");
+}
+
+function normalizeAdjustmentType(rawType) {
+  const t = String(rawType || "").toLowerCase().trim();
+  if (t === "percent" || t === "%") return "percent";
+  if (t === "amount" || t === "pkr" || t === "fixed") return "amount";
+  return null;
+}
+
+function normalizeNonNegativeNumber(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function deriveOrderItemAdjustmentSnapshot({
+  paymentTerm,
+  unitPrice,
+  productCostPrice,
+  discountType,
+  discountValue,
+  profitType,
+  profitValue,
+}) {
+  const p = normalizeNonNegativeNumber(unitPrice) ?? 0;
+  const c = normalizeNonNegativeNumber(productCostPrice);
+  const dType = normalizeAdjustmentType(discountType);
+  const dVal = normalizeNonNegativeNumber(discountValue);
+  const pType = normalizeAdjustmentType(profitType);
+  const pVal = normalizeNonNegativeNumber(profitValue);
+
+  if (isProfitPaymentTerm(paymentTerm)) {
+    if (pType && pVal !== null) {
+      return { type: pType, value: pVal };
+    }
+    if (c !== null && p >= c) {
+      return { type: "amount", value: Math.round((p - c) * 100) / 100 };
+    }
+    return { type: "amount", value: 0 };
+  }
+
+  if (isDiscountPaymentTerm(paymentTerm)) {
+    if (dType && dVal !== null) {
+      return { type: dType, value: dVal };
+    }
+    if (c !== null && p >= c) {
+      return { type: "amount", value: Math.round((p - c) * 100) / 100 };
+    }
+    return { type: "amount", value: 0 };
+  }
+
+  return { type: null, value: null };
+}
+
 async function ensureGlobalDeliveryStatusTable(db) {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS global_delivery_status (
@@ -225,6 +286,25 @@ async function ensureOrderItemsSchema(db) {
       "ALTER TABLE order_items MODIFY COLUMN item_status ENUM('pending','confirmed','preparing','ready','ready_for_pickup','picked_up','out_for_delivery','delivered','cancelled') DEFAULT 'pending'"
     );
   } catch (_) {}
+}
+
+async function ensureProductsProfitSchema(db) {
+  const columns = [
+    { name: "profit_type", definition: "ENUM('amount', 'percent') NULL" },
+    { name: "profit_value", definition: "DECIMAL(10, 2) NULL" },
+  ];
+  for (const col of columns) {
+    try {
+      const exists = await hasColumn(db, "products", col.name);
+      if (!exists) {
+        await db.execute(
+          `ALTER TABLE products ADD COLUMN ${col.name} ${col.definition}`,
+        );
+      }
+    } catch (e) {
+      console.error(`Failed to ensure products.${col.name}:`, e);
+    }
+  }
 }
 
 async function ensureOrdersParentColumn(db) {
@@ -540,6 +620,8 @@ router.post("/", authenticateToken, async (req, res) => {
       });
     }
 
+    await ensureProductsProfitSchema(req.db);
+
     const {
       items,
       delivery_address,
@@ -625,7 +707,12 @@ router.post("/", authenticateToken, async (req, res) => {
       }
 
       const [products] = await req.db.execute(
-        "SELECT id, price, store_id, name, size_id, unit_id, discount_type, discount_value FROM products WHERE id = ? AND is_available = true",
+        `SELECT p.id, p.price, p.cost_price, p.store_id, p.name, p.size_id, p.unit_id,
+                p.discount_type, p.discount_value, p.profit_type, p.profit_value,
+                s.payment_term
+           FROM products p
+           LEFT JOIN stores s ON s.id = p.store_id
+          WHERE p.id = ? AND p.is_available = true`,
         [productId],
       );
 
@@ -705,6 +792,16 @@ router.post("/", authenticateToken, async (req, res) => {
         }
       }
 
+      const financialSnapshot = deriveOrderItemAdjustmentSnapshot({
+        paymentTerm: product.payment_term,
+        unitPrice,
+        productCostPrice: product.cost_price,
+        discountType: product.discount_type,
+        discountValue: product.discount_value,
+        profitType: product.profit_type,
+        profitValue: product.profit_value,
+      });
+
       preparedItems.push({
         productId,
         quantity,
@@ -713,8 +810,8 @@ router.post("/", authenticateToken, async (req, res) => {
         unitId,
         variantLabel,
         storeId: product.store_id,
-        discount_type: product.discount_type,
-        discount_value: product.discount_value,
+        discount_type: financialSnapshot.type,
+        discount_value: financialSnapshot.value,
       });
       // Keep order total consistent with stored order_items price.
       itemsSubtotal += unitPrice * quantity;
@@ -3873,6 +3970,7 @@ router.post(
   requireStaffAccess,
   async (req, res) => {
     try {
+      await ensureProductsProfitSchema(req.db);
       const { id } = req.params;
       const { product_id, quantity, store_id } = req.body;
 
@@ -3905,7 +4003,10 @@ router.post(
       }
 
       const [products] = await req.db.execute(
-        "SELECT id, price, cost_price, store_id, discount_type, discount_value FROM products WHERE id = ? AND is_available = true",
+        `SELECT p.id, p.price, p.cost_price, p.store_id, p.discount_type, p.discount_value, p.profit_type, p.profit_value, s.payment_term
+           FROM products p
+           LEFT JOIN stores s ON s.id = p.store_id
+          WHERE p.id = ? AND p.is_available = true`,
         [product_id],
       );
 
@@ -3922,6 +4023,16 @@ router.post(
       const itemStoreId =
         store_id || order.store_id || product.store_id || null;
 
+      const financialSnapshot = deriveOrderItemAdjustmentSnapshot({
+        paymentTerm: product.payment_term,
+        unitPrice: price,
+        productCostPrice: product.cost_price,
+        discountType: product.discount_type,
+        discountValue: product.discount_value,
+        profitType: product.profit_type,
+        profitValue: product.profit_value,
+      });
+
       const [result] = await req.db.execute(
         `
             INSERT INTO order_items (order_id, product_id, quantity, price, store_id, discount_type, discount_value)
@@ -3933,8 +4044,8 @@ router.post(
           quantity,
           price,
           itemStoreId,
-          product.discount_type,
-          product.discount_value,
+          financialSnapshot.type,
+          financialSnapshot.value,
         ],
       );
 
