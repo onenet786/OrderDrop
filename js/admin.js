@@ -1530,6 +1530,18 @@ function initializeAdmin() {
     document.getElementById('saveCategoryBtn').addEventListener('click', saveCategory);
     document.getElementById('saveRiderBtn').addEventListener('click', saveRider);
     document.getElementById('saveOrderBtn').addEventListener('click', saveOrder);
+    const openManualOrderBtn = document.getElementById('openManualOrderBtn');
+    if (openManualOrderBtn) openManualOrderBtn.addEventListener('click', openManualOrderModal);
+    const submitManualOrderBtn = document.getElementById('submitManualOrderBtn');
+    if (submitManualOrderBtn) submitManualOrderBtn.addEventListener('click', submitManualOrder);
+    const toggleCreateManualCustomerBtn = document.getElementById('toggleCreateManualCustomerBtn');
+    if (toggleCreateManualCustomerBtn) toggleCreateManualCustomerBtn.addEventListener('click', toggleManualCreateCustomerPanel);
+    const createManualCustomerBtn = document.getElementById('createManualCustomerBtn');
+    if (createManualCustomerBtn) createManualCustomerBtn.addEventListener('click', createManualOrderCustomer);
+    const toggleCreateManualStoreBtn = document.getElementById('toggleCreateManualStoreBtn');
+    if (toggleCreateManualStoreBtn) toggleCreateManualStoreBtn.addEventListener('click', toggleManualCreateStorePanel);
+    const createManualStoreBtn = document.getElementById('createManualStoreBtn');
+    if (createManualStoreBtn) createManualStoreBtn.addEventListener('click', createManualOrderStore);
     const storePaymentTermEl = document.getElementById('storePaymentTerm');
     const storeGraceDaysEl = document.getElementById('storeGraceDays');
     const storeGraceStartDateEl = document.getElementById('storeGraceStartDate');
@@ -1740,9 +1752,11 @@ function initializeAdmin() {
     // Stores filters
     const storeSearch = document.getElementById('storeSearch');
     const storeStatusFilter = document.getElementById('storeStatusFilter');
+    const storeVisibilityFilter = document.getElementById('storeVisibilityFilter');
     const storeClearFiltersBtn = document.getElementById('storeClearFiltersBtn');
     if (storeSearch) storeSearch.addEventListener('input', filterStores);
     if (storeStatusFilter) storeStatusFilter.addEventListener('change', filterStores);
+    if (storeVisibilityFilter) storeVisibilityFilter.addEventListener('change', filterStores);
     if (storeClearFiltersBtn) storeClearFiltersBtn.addEventListener('click', clearStoreFilters);
 
     // Products filters
@@ -4069,10 +4083,381 @@ function clearFilters() {
     loadOrders();
 }
 
+async function openManualOrderModal() {
+    const tasks = [
+        loadManualOrderCustomers(),
+        loadManualOrderStores(),
+        loadManualOrderCategories(),
+        loadManualOrderRiders()
+    ];
+    const results = await Promise.allSettled(tasks);
+    const hasFailure = results.some((r) => r.status === 'rejected');
+    if (hasFailure) {
+        console.warn('Some manual order dropdowns failed to load:', results);
+    }
+
+    const form = document.getElementById('manualOrderForm');
+    if (form) form.reset();
+    const createPanel = document.getElementById('manualCreateCustomerPanel');
+    if (createPanel) createPanel.style.display = 'none';
+    const createStorePanel = document.getElementById('manualCreateStorePanel');
+    if (createStorePanel) createStorePanel.style.display = 'none';
+    const qtyEl = document.getElementById('manualOrderQty');
+    if (qtyEl) qtyEl.value = '1';
+    const saveForFutureEl = document.getElementById('manualOrderSaveForFuture');
+    if (saveForFutureEl) saveForFutureEl.checked = true;
+    const visibleStoreEl = document.getElementById('manualStoreVisibleToCustomers');
+    if (visibleStoreEl) visibleStoreEl.checked = false;
+
+    showModal('manualOrderModal');
+}
+
+function toggleManualCreateCustomerPanel() {
+    const panel = document.getElementById('manualCreateCustomerPanel');
+    if (!panel) return;
+    panel.style.display = panel.style.display === 'none' || !panel.style.display ? 'block' : 'none';
+}
+
+function generateManualCustomerPassword() {
+    const seed = Math.random().toString(36).slice(2, 8);
+    return `SN${seed}9!`;
+}
+
+function buildAutoCustomerEmail(phoneRaw) {
+    const phonePart = String(phoneRaw || '').replace(/\D/g, '').slice(-10) || String(Date.now()).slice(-10);
+    return `cust${phonePart}@servenow.pk`;
+}
+
+async function createManualOrderCustomer() {
+    const firstName = (document.getElementById('manualCustomerFirstName')?.value || '').trim();
+    const lastName = (document.getElementById('manualCustomerLastName')?.value || '').trim();
+    const phone = (document.getElementById('manualCustomerPhone')?.value || '').trim();
+    const emailInput = (document.getElementById('manualCustomerEmail')?.value || '').trim();
+    const address = (document.getElementById('manualCustomerAddress')?.value || '').trim();
+
+    if (!firstName || !lastName) {
+        showWarning('Missing Data', 'First name and last name are required for customer creation.');
+        return;
+    }
+
+    const email = emailInput || buildAutoCustomerEmail(phone);
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPhone = phone.trim();
+    const existingCustomers = Array.isArray(AppState.notificationCustomers) ? AppState.notificationCustomers : [];
+    const duplicateEmail = existingCustomers.find((c) => String(c.email || '').trim().toLowerCase() === normalizedEmail);
+    if (duplicateEmail) {
+        showWarning('Duplicate Email', `Customer email already exists (${normalizedEmail}).`);
+        return;
+    }
+    if (normalizedPhone) {
+        const duplicatePhone = existingCustomers.find((c) => String(c.phone || '').trim() === normalizedPhone);
+        if (duplicatePhone) {
+            showWarning('Duplicate Phone', `Customer phone already exists (${normalizedPhone}).`);
+            return;
+        }
+    }
+    const payload = {
+        firstName,
+        lastName,
+        email,
+        password: generateManualCustomerPassword(),
+        phone: phone || undefined,
+        address: address || undefined,
+        user_type: 'customer',
+        is_verified: true,
+        is_active: true
+    };
+
+    const btn = document.getElementById('createManualCustomerBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/users`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success || !data.user_id) {
+            showError('Create Failed', data.message || 'Failed to create customer');
+            return;
+        }
+
+        const sel = document.getElementById('manualOrderCustomer');
+        if (sel) {
+            const opt = document.createElement('option');
+            opt.value = String(data.user_id);
+            opt.textContent = `${firstName} ${lastName}${phone ? ` (${phone})` : ''}`;
+            sel.appendChild(opt);
+            sel.value = String(data.user_id);
+        }
+        const panel = document.getElementById('manualCreateCustomerPanel');
+        if (panel) panel.style.display = 'none';
+        showSuccess('Customer Created', `Customer created and selected (${email}).`);
+        await loadManualOrderCustomers();
+        const customerSel = document.getElementById('manualOrderCustomer');
+        if (customerSel) customerSel.value = String(data.user_id);
+    } catch (error) {
+        console.error('Error creating manual customer:', error);
+        showError('Create Failed', 'Failed to create customer');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Create & Select Customer';
+        }
+    }
+}
+
+function toggleManualCreateStorePanel() {
+    const panel = document.getElementById('manualCreateStorePanel');
+    if (!panel) return;
+    panel.style.display = panel.style.display === 'none' || !panel.style.display ? 'block' : 'none';
+}
+
+async function createManualOrderStore() {
+    const name = (document.getElementById('manualStoreName')?.value || '').trim();
+    const location = (document.getElementById('manualStoreLocation')?.value || '').trim();
+    const phone = (document.getElementById('manualStorePhone')?.value || '').trim();
+    const email = (document.getElementById('manualStoreEmail')?.value || '').trim();
+    const visibleToCustomers = !!document.getElementById('manualStoreVisibleToCustomers')?.checked;
+
+    if (!name || !location) {
+        showWarning('Missing Data', 'Store name and location are required.');
+        return;
+    }
+
+    const btn = document.getElementById('createManualStoreBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    }
+
+    try {
+        const payload = {
+            name,
+            location,
+            phone: phone || undefined,
+            email: email || undefined,
+            is_customer_visible: visibleToCustomers
+        };
+
+        const response = await fetch(`${API_BASE}/api/stores`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success || !data.store?.id) {
+            showError('Create Failed', data.message || 'Failed to create store');
+            return;
+        }
+
+        await loadStores();
+        await loadManualOrderStores();
+        const storeSel = document.getElementById('manualOrderStore');
+        if (storeSel) storeSel.value = String(data.store.id);
+
+        const panel = document.getElementById('manualCreateStorePanel');
+        if (panel) panel.style.display = 'none';
+        showSuccess('Store Created', `Store created and selected.${visibleToCustomers ? '' : ' Hidden from customer listing.'}`);
+    } catch (error) {
+        console.error('Error creating manual store:', error);
+        showError('Create Failed', 'Failed to create store');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Create & Select Store';
+        }
+    }
+}
+
+async function loadManualOrderCustomers() {
+    const sel = document.getElementById('manualOrderCustomer');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Loading customers...</option>';
+
+    const response = await fetch(`${API_BASE}/api/stores/notification-customers`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        sel.innerHTML = '<option value="">Failed to load customers</option>';
+        return;
+    }
+    const customers = Array.isArray(data.customers) ? data.customers : [];
+    AppState.notificationCustomers = customers;
+    sel.innerHTML = '<option value="">Select customer</option>';
+    customers.forEach((c) => {
+        const id = Number(c.id);
+        if (!Number.isInteger(id) || id <= 0) return;
+        const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || `Customer ${id}`;
+        const phone = String(c.phone || '').trim();
+        const email = String(c.email || '').trim();
+        const suffix = [phone, email].filter(Boolean).join(' | ');
+        const opt = document.createElement('option');
+        opt.value = String(id);
+        opt.textContent = suffix ? `${name} (${suffix})` : name;
+        sel.appendChild(opt);
+    });
+}
+
+async function loadManualOrderStores() {
+    const sel = document.getElementById('manualOrderStore');
+    if (!sel) return;
+    if (!Array.isArray(AppState.stores) || !AppState.stores.length) {
+        await loadStores();
+    }
+    sel.innerHTML = '<option value="">Select store</option>';
+    (AppState.stores || [])
+        .filter((s) => s && (s.is_active === true || s.is_active === 1 || s.is_active === '1'))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+        .forEach((s) => {
+            const opt = document.createElement('option');
+            opt.value = String(s.id);
+            opt.textContent = `${s.name || 'Store'}${s.phone ? ` (${s.phone})` : ''}`;
+            sel.appendChild(opt);
+        });
+}
+
+async function loadManualOrderCategories() {
+    const sel = document.getElementById('manualOrderCategory');
+    if (!sel) return;
+    if (!Array.isArray(AppState.categories) || !AppState.categories.length) {
+        await loadCategories();
+    }
+    sel.innerHTML = '<option value="">Auto select default category</option>';
+    (AppState.categories || [])
+        .filter((c) => c && (c.is_active === true || c.is_active === 1 || c.is_active === '1'))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+        .forEach((c) => {
+            const opt = document.createElement('option');
+            opt.value = String(c.id);
+            opt.textContent = c.name || `Category ${c.id}`;
+            sel.appendChild(opt);
+        });
+}
+
+async function loadManualOrderRiders() {
+    const sel = document.getElementById('manualOrderRider');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Assign later</option>';
+    try {
+        const response = await fetch(`${API_BASE}/api/orders/available-riders`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success || !Array.isArray(data.riders)) return;
+        data.riders.forEach((r) => {
+            const id = Number(r.id);
+            if (!Number.isInteger(id) || id <= 0) return;
+            const opt = document.createElement('option');
+            opt.value = String(id);
+            opt.textContent = `${r.first_name || ''} ${r.last_name || ''}`.trim() || `Rider ${id}`;
+            sel.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('Error loading riders for manual order:', e);
+    }
+}
+
+async function submitManualOrder() {
+    const customerId = Number(document.getElementById('manualOrderCustomer')?.value || 0);
+    const riderId = Number(document.getElementById('manualOrderRider')?.value || 0);
+    const storeId = Number(document.getElementById('manualOrderStore')?.value || 0);
+    const categoryIdRaw = document.getElementById('manualOrderCategory')?.value || '';
+    const itemName = (document.getElementById('manualOrderItemName')?.value || '').trim();
+    const qty = Number(document.getElementById('manualOrderQty')?.value || 0);
+    const unitPrice = Number(document.getElementById('manualOrderUnitPrice')?.value || 0);
+    const address = (document.getElementById('manualOrderAddress')?.value || '').trim();
+    const paymentMethod = (document.getElementById('manualOrderPaymentMethod')?.value || 'cash').trim() || 'cash';
+    const instructions = (document.getElementById('manualOrderInstructions')?.value || '').trim();
+    const saveForFuture = !!document.getElementById('manualOrderSaveForFuture')?.checked;
+
+    if (!customerId || !storeId || !itemName || !qty || qty < 1 || !unitPrice || unitPrice <= 0 || !address) {
+        showWarning('Missing Data', 'Please fill all required manual order fields.');
+        return;
+    }
+
+    const submitBtn = document.getElementById('submitManualOrderBtn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+    }
+
+    try {
+        const payload = {
+            customer_id: customerId,
+            store_id: storeId,
+            item_name: itemName,
+            quantity: qty,
+            unit_price: unitPrice,
+            delivery_address: address,
+            payment_method: paymentMethod,
+            special_instructions: instructions || null,
+            save_for_future: saveForFuture
+        };
+        const categoryId = Number(categoryIdRaw);
+        if (Number.isInteger(categoryId) && categoryId > 0) {
+            payload.category_id = categoryId;
+        }
+
+        const createRes = await fetch(`${API_BASE}/api/orders/admin/manual-create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const createData = await createRes.json();
+        if (!createRes.ok || !createData.success || !createData.order?.id) {
+            showError('Create Failed', createData.message || 'Failed to create manual order');
+            return;
+        }
+
+        const newOrderId = Number(createData.order.id);
+        if (Number.isInteger(riderId) && riderId > 0) {
+            await fetch(`${API_BASE}/api/orders/${newOrderId}/assign-rider`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ rider_id: riderId })
+            });
+        }
+
+        hideModal('manualOrderModal');
+        loadOrders();
+        showSuccess(
+            'Manual Order Created',
+            `Order ${createData.order.order_number || `#${newOrderId}`} created successfully.${saveForFuture ? ' Item saved for future use.' : ''}`
+        );
+    } catch (error) {
+        console.error('Error creating manual order:', error);
+        showError('Create Failed', 'Failed to create manual order');
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-check"></i> Create Order';
+        }
+    }
+}
+
 function filterStores() {
     try {
         const q = (document.getElementById('storeSearch')?.value || '').trim().toLowerCase();
         const status = document.getElementById('storeStatusFilter')?.value || '';
+        const visibility = document.getElementById('storeVisibilityFilter')?.value || '';
         let filtered = AppState.stores || [];
         if (q) {
             filtered = filtered.filter(s => {
@@ -4086,12 +4471,17 @@ function filterStores() {
         } else if (status === 'inactive') {
             filtered = filtered.filter(s => s.is_active !== true && s.is_active !== 1 && s.is_active !== '1');
         }
+        if (visibility === 'visible') {
+            filtered = filtered.filter(s => s.is_customer_visible === undefined || s.is_customer_visible === true || s.is_customer_visible === 1 || s.is_customer_visible === '1');
+        } else if (visibility === 'hidden') {
+            filtered = filtered.filter(s => !(s.is_customer_visible === undefined || s.is_customer_visible === true || s.is_customer_visible === 1 || s.is_customer_visible === '1'));
+        }
         displayStores(filtered);
     } catch (e) { console.warn('filterStores error', e); }
 }
 
 function clearStoreFilters() {
-    const ids = ['storeSearch', 'storeStatusFilter'];
+    const ids = ['storeSearch', 'storeStatusFilter', 'storeVisibilityFilter'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     displayStores(AppState.stores);
 }
@@ -5665,7 +6055,7 @@ async function editStore(storeId) {
     // Open edit modal and populate
     AppState.editing.storeId = storeId;
     try {
-        const resp = await fetch(`${API_BASE}/api/stores/${storeId}`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+        const resp = await fetch(`${API_BASE}/api/stores/${storeId}?admin=1`, { headers: { 'Authorization': `Bearer ${authToken}` } });
         const data = await resp.json();
         if (!data || !data.success || !data.store) { showError('Error', 'Failed to load store'); return; }
         const s = data.store;
@@ -8481,6 +8871,13 @@ function displayStores(stores) {
     stores.forEach(store => {
         const ownerDisplay = store.owner_name || '-';
         const priorityDisplay = store.priority ? `<span class="priority-badge priority-${store.priority}">P${store.priority}</span>` : '-';
+        const active = store.is_active === true || store.is_active === 1 || store.is_active === '1';
+        const customerVisible = store.is_customer_visible === undefined
+            ? true
+            : (store.is_customer_visible === true || store.is_customer_visible === 1 || store.is_customer_visible === '1');
+        const customerVisibilityBadge = customerVisible
+            ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:rgba(22,163,74,0.12);color:#166534;font-size:12px;font-weight:700;"><i class="fas fa-eye"></i> Visible</span>`
+            : `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:rgba(107,114,128,0.16);color:#374151;font-size:12px;font-weight:700;"><i class="fas fa-eye-slash"></i> Hidden</span>`;
         const row = document.createElement('tr');
         row.innerHTML = `
             <td>${store.id}</td>
@@ -8489,7 +8886,12 @@ function displayStores(stores) {
             <td>${ownerDisplay}</td>
             <td>${store.rating} ⭐</td>
             <td>${priorityDisplay}</td>
-            <td><span class="status-${store.is_active ? 'active' : 'inactive'}">${store.is_active ? 'Active' : 'Inactive'}</span></td>
+            <td>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span class="status-${active ? 'active' : 'inactive'}">${active ? 'Active' : 'Inactive'}</span>
+                    ${customerVisibilityBadge}
+                </div>
+            </td>
             <td>
                 <div class="action-buttons">
                     <button class="btn-small btn-edit" onclick="editStore(${store.id})">

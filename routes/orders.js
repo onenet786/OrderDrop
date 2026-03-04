@@ -375,6 +375,30 @@ function roundAmount(value) {
   return Math.round(n * 100) / 100;
 }
 
+async function generateOrderNumber(db) {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const datePart = `${yy}${mm}${dd}`;
+  const prefix = `Ord${datePart}`;
+
+  const [rows] = await db.execute(
+    "SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY order_number DESC LIMIT 1",
+    [`${prefix}%`],
+  );
+
+  let sequence = 1;
+  if (rows && rows.length > 0) {
+    const lastOrderNumber = rows[0].order_number;
+    const lastSequenceStr = lastOrderNumber.slice(-4);
+    if (/^\d{4}$/.test(lastSequenceStr)) {
+      sequence = parseInt(lastSequenceStr, 10) + 1;
+    }
+  }
+  return `${prefix}${String(sequence).padStart(4, "0")}`;
+}
+
 async function ensureRiderStorePaymentsTable(db) {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS rider_store_payments (
@@ -473,7 +497,7 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
 
     const { status } = req.query;
     let query = `
-            SELECT o.*, s.name as store_name, s.location as store_location,
+            SELECT o.*, s.name as store_name, s.location as store_location, s.phone as store_phone,
                    r.first_name as rider_first_name, r.last_name as rider_last_name, r.phone as rider_phone
             FROM orders o
             LEFT JOIN stores s ON o.store_id = s.id
@@ -511,6 +535,7 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
       if (hasVariantsTable) {
         itemsQuery = `
                 SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name,
+                       s.phone as item_store_phone,
                        v.label as variant_label
                 FROM order_items oi
                 JOIN products p ON oi.product_id = p.id
@@ -521,6 +546,7 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
       } else {
          itemsQuery = `
                 SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name,
+                       s.phone as item_store_phone,
                        NULL as variant_label
                 FROM order_items oi
                 JOIN products p ON oi.product_id = p.id
@@ -549,6 +575,7 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
             storeGroups[sId] = {
               store_id: sId,
               store_name: item.item_store_name || 'Unknown Store',
+              store_phone: item.item_store_phone || "",
               status: item.item_status || 'pending', // Use item-specific status!
               items: [],
               rider_first_name: order.rider_first_name,
@@ -651,29 +678,7 @@ router.post("/", authenticateToken, async (req, res) => {
       });
     }
 
-    // Generate Order Number: Ordyymmddxxxx
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(-2);
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
-    const datePart = `${yy}${mm}${dd}`;
-    const prefix = `Ord${datePart}`;
-
-    const [rows] = await req.db.execute(
-      "SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY order_number DESC LIMIT 1",
-      [`${prefix}%`],
-    );
-
-    let sequence = 1;
-    if (rows && rows.length > 0) {
-      const lastOrderNumber = rows[0].order_number;
-      const lastSequenceStr = lastOrderNumber.slice(-4);
-      if (/^\d{4}$/.test(lastSequenceStr)) {
-        sequence = parseInt(lastSequenceStr, 10) + 1;
-      }
-    }
-
-    const order_number = `${prefix}${String(sequence).padStart(4, "0")}`;
+    const order_number = await generateOrderNumber(req.db);
 
     // Validate and prepare items
     const preparedItems = [];
@@ -1085,6 +1090,250 @@ router.post("/", authenticateToken, async (req, res) => {
     });
   }
 });
+
+// Create manual order by admin/staff, with optional auto-create product for future reuse
+router.post(
+  "/admin/manual-create",
+  authenticateToken,
+  requireStaffAccess,
+  async (req, res) => {
+    try {
+      await ensureOrderItemsSchema(req.db);
+      await ensureOrdersStoreIdNullable(req.db);
+      await ensureProductsProfitSchema(req.db);
+
+      const {
+        customer_id,
+        delivery_address,
+        payment_method,
+        special_instructions,
+        store_id,
+        item_name,
+        quantity,
+        unit_price,
+        category_id,
+        save_for_future = true,
+      } = req.body || {};
+
+      const customerId = parseInt(String(customer_id || ""), 10);
+      const storeId = parseInt(String(store_id || ""), 10);
+      const qty = parseInt(String(quantity || ""), 10);
+      const unitPrice = Number(unit_price);
+
+      if (!Number.isInteger(customerId) || customerId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid customer is required",
+        });
+      }
+      if (!Number.isInteger(storeId) || storeId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid store is required",
+        });
+      }
+      if (!String(delivery_address || "").trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Delivery address is required",
+        });
+      }
+      if (!String(item_name || "").trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Item name is required",
+        });
+      }
+      if (!Number.isInteger(qty) || qty <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Quantity must be greater than zero",
+        });
+      }
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Unit price must be greater than zero",
+        });
+      }
+
+      const [users] = await req.db.execute(
+        "SELECT id FROM users WHERE id = ? LIMIT 1",
+        [customerId],
+      );
+      if (!users.length) {
+        return res.status(404).json({
+          success: false,
+          message: "Customer not found",
+        });
+      }
+
+      const [stores] = await req.db.execute(
+        "SELECT id, name, is_active, payment_term FROM stores WHERE id = ? LIMIT 1",
+        [storeId],
+      );
+      if (!stores.length) {
+        return res.status(404).json({
+          success: false,
+          message: "Store not found",
+        });
+      }
+      const store = stores[0];
+      if (!store.is_active) {
+        return res.status(400).json({
+          success: false,
+          message: `Store "${store.name}" is not active`,
+        });
+      }
+
+      let productId = null;
+      const normalizedItemName = String(item_name).trim();
+
+      const [existingProducts] = await req.db.execute(
+        `SELECT p.id, p.price, p.cost_price, p.discount_type, p.discount_value, p.profit_type, p.profit_value
+           FROM products p
+          WHERE p.store_id = ?
+            AND LOWER(TRIM(p.name)) = LOWER(TRIM(?))
+          ORDER BY p.id DESC
+          LIMIT 1`,
+        [storeId, normalizedItemName],
+      );
+
+      if (existingProducts.length > 0) {
+        productId = existingProducts[0].id;
+      } else if (save_for_future) {
+        let finalCategoryId = null;
+        const categoryIdNumber = parseInt(String(category_id || ""), 10);
+        if (Number.isInteger(categoryIdNumber) && categoryIdNumber > 0) {
+          finalCategoryId = categoryIdNumber;
+        } else {
+          const [cats] = await req.db.execute(
+            "SELECT id FROM categories WHERE is_active = true ORDER BY id ASC LIMIT 1",
+          );
+          finalCategoryId = cats[0]?.id || null;
+        }
+
+        const baseCost = roundAmount(unitPrice);
+        const productPrice = roundAmount(unitPrice);
+        const [insertProduct] = await req.db.execute(
+          `INSERT INTO products (
+             name, description, cost_price, price, image_url, category_id, store_id, stock_quantity,
+             discount_type, discount_value, profit_type, profit_value
+           ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, 'amount', 0)`,
+          [
+            normalizedItemName,
+            "Created from admin manual order",
+            baseCost,
+            productPrice,
+            finalCategoryId,
+            storeId,
+            9999,
+          ],
+        );
+        productId = insertProduct.insertId;
+      }
+
+      if (!productId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Product not found in selected store. Enable 'save for future' to create it.",
+        });
+      }
+
+      const [productRows] = await req.db.execute(
+        `SELECT id, cost_price, discount_type, discount_value, profit_type, profit_value
+           FROM products
+          WHERE id = ?
+          LIMIT 1`,
+        [productId],
+      );
+      const product = productRows[0] || {};
+
+      const feeConfig = await getDeliveryFeeConfig(req.db);
+      const deliveryFee = calculateDeliveryFeeByStoreCount(1, feeConfig);
+      const subtotal = roundAmount(qty * roundAmount(unitPrice));
+      const totalAmount = roundAmount(subtotal + deliveryFee);
+      const orderNumber = await generateOrderNumber(req.db);
+
+      const [orderResult] = await req.db.execute(
+        `INSERT INTO orders (
+           order_number, user_id, store_id, total_amount, delivery_fee, payment_method,
+           delivery_address, special_instructions
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          orderNumber,
+          customerId,
+          storeId,
+          totalAmount,
+          deliveryFee,
+          String(payment_method || "cash"),
+          String(delivery_address).trim(),
+          special_instructions ? String(special_instructions) : null,
+        ],
+      );
+      const orderId = orderResult.insertId;
+
+      const financialSnapshot = deriveOrderItemAdjustmentSnapshot({
+        paymentTerm: store.payment_term,
+        unitPrice: roundAmount(unitPrice),
+        productCostPrice: product.cost_price,
+        discountType: product.discount_type,
+        discountValue: product.discount_value,
+        profitType: product.profit_type,
+        profitValue: product.profit_value,
+      });
+
+      await req.db.execute(
+        `INSERT INTO order_items (
+          order_id, product_id, store_id, quantity, price, discount_type, discount_value
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          orderId,
+          productId,
+          storeId,
+          qty,
+          roundAmount(unitPrice),
+          financialSnapshot.type || null,
+          financialSnapshot.value || null,
+        ],
+      );
+
+      try {
+        if (req.io) {
+          req.io.to("admins").emit("new_order", {
+            id: orderId,
+            order_number: orderNumber,
+            total_amount: totalAmount,
+            store_id: storeId,
+            created_at: new Date(),
+            user_id: customerId,
+          });
+        }
+      } catch (_) {}
+
+      return res.status(201).json({
+        success: true,
+        message: "Manual order created successfully",
+        order: {
+          id: orderId,
+          order_number: orderNumber,
+          total_amount: totalAmount,
+          delivery_fee: deliveryFee,
+          store_id: storeId,
+          auto_saved_product_id: productId,
+        },
+      });
+    } catch (error) {
+      console.error("Error creating manual admin order:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to create manual order",
+        error: error.message,
+      });
+    }
+  },
+);
 
 // Get available riders (Admin & Dispatch)
 router.get(

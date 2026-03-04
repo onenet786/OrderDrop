@@ -1226,6 +1226,14 @@
                     <option value="inactive">Inactive</option>
                 </select>
             </div>
+            <div class="filter-group">
+                <label for="storeVisibilityFilter">Customer Visibility</label>
+                <select id="storeVisibilityFilter" class="form-control">
+                    <option value="">All</option>
+                    <option value="visible">Visible to Customer</option>
+                    <option value="hidden">Hidden from Customer</option>
+                </select>
+            </div>
             <button class="btn btn-secondary" id="storeClearFiltersBtn">Clear</button>
           </div>
 
@@ -1617,6 +1625,11 @@
 
         <div id="orders" class="tab-content">
           <h2>Orders Management</h2>
+          <div style="margin-bottom: 0.85rem;">
+            <button class="btn btn-primary" id="openManualOrderBtn">
+              <i class="fas fa-plus"></i> Create Manual Order
+            </button>
+          </div>
 
           <!-- Filters -->
           <div class="filter-controls">
@@ -3688,6 +3701,170 @@
               <i class="fas fa-check"></i> Save Changes
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="manualOrderModal" class="modal">
+      <div class="modal-content" style="max-width: 980px;">
+        <div class="modal-header">
+          <h3>Create Manual Order (Call/No Listing)</h3>
+          <span class="close" data-modal="manualOrderModal">&times;</span>
+        </div>
+        <div class="modal-body">
+          <form id="manualOrderForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="manualOrderCustomer">Customer</label>
+                <select id="manualOrderCustomer" class="form-control" required>
+                  <option value="">Select customer</option>
+                </select>
+                <div style="margin-top: 8px;">
+                  <button type="button" class="btn btn-secondary btn-small" id="toggleCreateManualCustomerBtn">
+                    <i class="fas fa-user-plus"></i> Create Customer On The Fly
+                  </button>
+                </div>
+                <div id="manualCreateCustomerPanel" style="display:none; margin-top: 10px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa;">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="manualCustomerFirstName">First Name</label>
+                      <input type="text" id="manualCustomerFirstName" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                      <label for="manualCustomerLastName">Last Name</label>
+                      <input type="text" id="manualCustomerLastName" class="form-control" />
+                    </div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="manualCustomerPhone">Phone</label>
+                      <input type="text" id="manualCustomerPhone" class="form-control" placeholder="03xxxxxxxxx" />
+                    </div>
+                    <div class="form-group">
+                      <label for="manualCustomerEmail">Email (optional)</label>
+                      <input type="email" id="manualCustomerEmail" class="form-control" placeholder="auto-generated if empty" />
+                    </div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="manualCustomerAddress">Address (optional)</label>
+                      <input type="text" id="manualCustomerAddress" class="form-control" />
+                    </div>
+                  </div>
+                  <div style="display:flex; justify-content:flex-end;">
+                    <button type="button" class="btn btn-primary btn-small" id="createManualCustomerBtn">
+                      <i class="fas fa-check"></i> Create & Select Customer
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="manualOrderRider">Assign Rider (optional)</label>
+                <select id="manualOrderRider" class="form-control">
+                  <option value="">Assign later</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="manualOrderStore">Store</label>
+                <select id="manualOrderStore" class="form-control" required>
+                  <option value="">Select store</option>
+                </select>
+                <div style="margin-top: 8px;">
+                  <button type="button" class="btn btn-secondary btn-small" id="toggleCreateManualStoreBtn">
+                    <i class="fas fa-store"></i> Create Store On The Fly
+                  </button>
+                </div>
+                <div id="manualCreateStorePanel" style="display:none; margin-top: 10px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa;">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="manualStoreName">Store Name</label>
+                      <input type="text" id="manualStoreName" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                      <label for="manualStoreLocation">Location</label>
+                      <input type="text" id="manualStoreLocation" class="form-control" />
+                    </div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="manualStorePhone">Phone (optional)</label>
+                      <input type="text" id="manualStorePhone" class="form-control" />
+                    </div>
+                    <div class="form-group">
+                      <label for="manualStoreEmail">Email (optional)</label>
+                      <input type="email" id="manualStoreEmail" class="form-control" />
+                    </div>
+                  </div>
+                  <label class="global-delivery-toggle" style="margin-top: 0.25rem;">
+                    <input type="checkbox" id="manualStoreVisibleToCustomers" />
+                    <span>Visible in customer store listing</span>
+                  </label>
+                  <small style="display:block; margin-top:6px; color:#6b7280;">Default is hidden from customer app listing.</small>
+                  <div style="display:flex; justify-content:flex-end; margin-top: 8px;">
+                    <button type="button" class="btn btn-primary btn-small" id="createManualStoreBtn">
+                      <i class="fas fa-check"></i> Create & Select Store
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="manualOrderPaymentMethod">Payment Method</label>
+                <select id="manualOrderPaymentMethod" class="form-control">
+                  <option value="cash">Cash</option>
+                  <option value="wallet">Wallet</option>
+                  <option value="card">Card</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="manualOrderItemName">Item Name</label>
+                <input type="text" id="manualOrderItemName" class="form-control" required />
+              </div>
+              <div class="form-group">
+                <label for="manualOrderCategory">Category (optional)</label>
+                <select id="manualOrderCategory" class="form-control">
+                  <option value="">Auto select default category</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="manualOrderQty">Quantity</label>
+                <input type="number" min="1" value="1" id="manualOrderQty" class="form-control" required />
+              </div>
+              <div class="form-group">
+                <label for="manualOrderUnitPrice">Unit Price (PKR)</label>
+                <input type="number" min="0.01" step="0.01" id="manualOrderUnitPrice" class="form-control" required />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="manualOrderAddress">Delivery Address</label>
+                <input type="text" id="manualOrderAddress" class="form-control" required />
+              </div>
+            </div>
+            <div class="form-row-full">
+              <div class="form-group">
+                <label for="manualOrderInstructions">Special Instructions (optional)</label>
+                <textarea id="manualOrderInstructions" class="form-control" rows="3"></textarea>
+              </div>
+            </div>
+            <label class="global-delivery-toggle" style="margin-top: 0.6rem;">
+              <input type="checkbox" id="manualOrderSaveForFuture" checked />
+              <span>Save this item as product for future use</span>
+            </label>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-small btn-secondary" data-modal="manualOrderModal">
+            <i class="fas fa-ban"></i> Cancel
+          </button>
+          <button type="button" class="btn btn-small btn-primary" id="submitManualOrderBtn">
+            <i class="fas fa-check"></i> Create Order
+          </button>
         </div>
       </div>
     </div>

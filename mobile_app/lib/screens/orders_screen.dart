@@ -450,6 +450,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final status = (order['status'] ?? 'pending').toString();
     final createdAt = DateTime.tryParse((order['created_at'] ?? '').toString());
     final riderPhone = (order['rider_phone'] ?? '').toString().trim();
+    final storePhone = (order['store_phone'] ?? '').toString().trim();
     final riderName =
         "${order['rider_first_name'] ?? ''} ${order['rider_last_name'] ?? ''}".trim();
 
@@ -593,6 +594,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                 child: _buildRiderContact(riderName, riderPhone),
               ),
+            if (storePhone.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: _buildStoreContact(
+                  (order['store_name'] ?? 'Store').toString(),
+                  storePhone,
+                ),
+              ),
           ],
         ],
       ),
@@ -614,6 +623,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ...subOrders.map<Widget>((entry) {
           final sub = Map<String, dynamic>.from(entry as Map);
           final items = (sub['items'] as List?) ?? const [];
+          final storePhone = (sub['store_phone'] ?? '').toString().trim();
           final subtotal = items.fold<double>(0.0, (sum, it) {
             final item = Map<String, dynamic>.from(it as Map);
             final qty = _toInt(item['quantity']);
@@ -647,6 +657,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     _buildStatusBadge((sub['status'] ?? 'pending').toString()),
                   ],
                 ),
+                if (storePhone.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => _makeCall(storePhone),
+                      icon: const Icon(Icons.call_outlined, size: 16),
+                      label: const Text('Call Store'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+                        minimumSize: const Size(0, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 6),
                 ...items.map<Widget>((it) {
                   final item = Map<String, dynamic>.from(it as Map);
@@ -800,6 +824,38 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreContact(String storeName, String storePhone) {
+    final displayStore =
+        storeName.trim().isEmpty ? 'Store' : storeName.trim();
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F0FF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFDCCEFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Store: $displayStore',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: _contactButton(
+              icon: Icons.call_outlined,
+              color: Colors.deepPurple,
+              label: 'Call Store',
+              onPressed: () => _makeCall(storePhone),
+            ),
           ),
         ],
       ),

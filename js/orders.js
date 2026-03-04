@@ -80,6 +80,19 @@ async function displayOrders(status = 'pending') {
                         </div>
                     `;
                 }
+                let contactStoreHtml = '';
+                if (order.store_phone) {
+                    contactStoreHtml = `
+                        <div class="rider-contact" style="margin-top: 10px; padding: 10px; background: #fff8f0; border-radius: 8px; border: 1px solid #ffe1bf; width: 100%; box-sizing: border-box;">
+                            <p style="margin-bottom: 8px;"><strong>Store Contact:</strong> ${order.store_name || 'Store'}</p>
+                            <div class="contact-actions" style="display: flex; gap: 8px; width: 100%;">
+                                <a href="tel:${order.store_phone}" class="btn btn-small" style="background: #7c3aed; color: white; padding: 8px 0; border-radius: 4px; text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; flex: 1; text-align: center; white-space: nowrap;">
+                                    <i class="fas fa-phone" style="margin-right: 5px;"></i> Call Store
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                }
 
                 let storeHtml = `<p><strong>Store:</strong> ${order.store_name}</p>`;
                 if (order.is_group && order.sub_orders) {
@@ -87,8 +100,11 @@ async function displayOrders(status = 'pending') {
                     storeHtml += `<div style="margin-top: 10px; padding: 10px; background-color: #f5f5f5; border-radius: 5px;">
                         <p style="margin-bottom: 5px;"><strong>Shipments:</strong></p>`;
                     order.sub_orders.forEach(sub => {
+                        const callStoreBtn = sub.store_phone
+                            ? `<a href="tel:${sub.store_phone}" style="margin-left:8px; font-size:0.85em; color:#7c3aed; text-decoration:none;"><i class="fas fa-phone"></i> Call</a>`
+                            : '';
                         storeHtml += `<div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.9em;">
-                            <span>${sub.store_name}</span>
+                            <span>${sub.store_name}${callStoreBtn}</span>
                             <span class="status-${sub.status}" style="padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">${sub.status}</span>
                         </div>`;
                     });
@@ -112,6 +128,7 @@ async function displayOrders(status = 'pending') {
                             (order.rider_location ? `<p><strong>Rider Location:</strong> ${order.rider_location}</p>` : '')}
                         ${order.estimated_delivery_time ? `<p><strong>Estimated Delivery:</strong> ${new Date(order.estimated_delivery_time).toLocaleString()}</p>` : ''}
                         ${contactRiderHtml}
+                        ${contactStoreHtml}
                     </div>
                     <div class="order-actions">
                         ${isStaff ? (status === 'pending' ? `

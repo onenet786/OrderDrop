@@ -85,10 +85,18 @@ router.post('/', authenticateToken, requireAdmin, [
         }
 
         const { firstName, lastName, email, password, phone, address, user_type, is_verified, is_active, store_id } = req.body;
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const normalizedPhone = phone === undefined || phone === null ? '' : String(phone).trim();
 
-        const [existing] = await req.db.execute('SELECT id FROM users WHERE email = ?', [email]);
+        const [existing] = await req.db.execute('SELECT id FROM users WHERE LOWER(email) = ?', [normalizedEmail]);
         if (existing.length > 0) {
             return res.status(400).json({ success: false, message: 'Email already exists' });
+        }
+        if (normalizedPhone) {
+            const [existingPhone] = await req.db.execute('SELECT id FROM users WHERE phone = ?', [normalizedPhone]);
+            if (existingPhone.length > 0) {
+                return res.status(400).json({ success: false, message: 'Phone already exists' });
+            }
         }
 
         const saltRounds = 10;
@@ -103,11 +111,11 @@ router.post('/', authenticateToken, requireAdmin, [
 
         const [result] = await req.db.execute(
             'INSERT INTO users (first_name, last_name, email, phone, password, address, user_type, verification_code, verification_expires_at, is_verified, is_active, store_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [firstName, lastName, email, phone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, verified, active, store_id || null]
+            [firstName, lastName, normalizedEmail, normalizedPhone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, verified, active, store_id || null]
         );
 
         try {
-            await sendVerificationEmail(email, verificationCode);
+            await sendVerificationEmail(normalizedEmail, verificationCode);
         } catch (e) {
             console.error('Error sending verification email:', e);
         }
@@ -152,14 +160,16 @@ router.put('/:id', authenticateToken, requireAdmin, [
             firstName, lastName, email, phone, address, password,
             user_type, is_active, is_verified, store_id
         } = req.body;
+        const normalizedEmail = email === undefined ? undefined : String(email || '').trim().toLowerCase();
+        const normalizedPhone = phone === undefined ? undefined : String(phone || '').trim();
 
         const updateFields = [];
         const updateValues = [];
 
         if (firstName !== undefined) { updateFields.push('first_name = ?'); updateValues.push(firstName); }
         if (lastName !== undefined) { updateFields.push('last_name = ?'); updateValues.push(lastName); }
-        if (email !== undefined) { updateFields.push('email = ?'); updateValues.push(email); }
-        if (phone !== undefined) { updateFields.push('phone = ?'); updateValues.push(phone); }
+        if (email !== undefined) { updateFields.push('email = ?'); updateValues.push(normalizedEmail); }
+        if (phone !== undefined) { updateFields.push('phone = ?'); updateValues.push(normalizedPhone || null); }
         if (address !== undefined) { updateFields.push('address = ?'); updateValues.push(address); }
         if (user_type !== undefined) { updateFields.push('user_type = ?'); updateValues.push(user_type); }
         if (is_active !== undefined) { updateFields.push('is_active = ?'); updateValues.push(is_active); }
@@ -183,9 +193,15 @@ router.put('/:id', authenticateToken, requireAdmin, [
 
         // If email is being changed, ensure uniqueness
         if (email !== undefined) {
-            const [existing] = await req.db.execute('SELECT id FROM users WHERE email = ? AND id != ?', [email, id]);
+            const [existing] = await req.db.execute('SELECT id FROM users WHERE LOWER(email) = ? AND id != ?', [normalizedEmail, id]);
             if (existing.length > 0) {
                 return res.status(400).json({ success: false, message: 'Email already in use by another user' });
+            }
+        }
+        if (phone !== undefined && normalizedPhone) {
+            const [existingPhone] = await req.db.execute('SELECT id FROM users WHERE phone = ? AND id != ?', [normalizedPhone, id]);
+            if (existingPhone.length > 0) {
+                return res.status(400).json({ success: false, message: 'Phone already in use by another user' });
             }
         }
 

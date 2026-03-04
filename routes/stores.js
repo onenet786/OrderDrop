@@ -167,6 +167,23 @@ async function ensureStoreFinancialColumns(db) {
     }
 }
 
+async function ensureStoreCustomerVisibilityColumn(db) {
+    const [rows] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'is_customer_visible'
+         LIMIT 1`
+    );
+    if (!rows || !rows.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN is_customer_visible TINYINT(1) NOT NULL DEFAULT 1`
+        );
+    }
+}
+
 function normalizeDateOnlyInput(raw) {
     const value = String(raw || '').trim();
     if (!value) return null;
@@ -475,9 +492,10 @@ router.get('/', async (req, res) => {
         await ensureStoreStatusMessagesTable(req.db);
         await ensureServiceGeoLimitsTable(req.db);
         await ensureStoreFinancialColumns(req.db);
+        await ensureStoreCustomerVisibilityColumn(req.db);
         const { category, category_id, search, admin, lite, latitude, longitude, city } = req.query;
         const liteMode = String(lite || '').toLowerCase() === '1' || String(lite || '').toLowerCase() === 'true';
-        const whereClauses = admin === '1' ? [] : ['s.is_active = true'];
+        const whereClauses = admin === '1' ? [] : ['s.is_active = true', 'COALESCE(s.is_customer_visible, 1) = 1'];
         const params = [];
 
         if (search) {
@@ -524,7 +542,7 @@ router.get('/', async (req, res) => {
         const [stores] = await req.db.execute(
             liteMode
                 ? `
-            SELECT s.id, s.name, s.payment_term, s.is_active, sm.is_closed, sm.status_message
+            SELECT s.id, s.name, s.payment_term, s.is_active, s.is_customer_visible, sm.is_closed, sm.status_message
                  , s.payment_grace_days, s.payment_grace_start_date, s.grace_alert_muted_until
                  , s.store_discount_apply_all_products, s.store_discount_percent
             FROM stores s
@@ -632,6 +650,7 @@ router.get('/', async (req, res) => {
                     store_discount_apply_all_products: Number(store.store_discount_apply_all_products || 0),
                     store_discount_percent: store.store_discount_percent === null || store.store_discount_percent === undefined ? null : Number(store.store_discount_percent),
                     is_active: !!store.is_active,
+                    is_customer_visible: Number(store.is_customer_visible ?? 1) === 1,
                     is_closed: !!store.is_closed,
                     status_message: store.status_message || ''
                 }))
@@ -666,6 +685,7 @@ router.get('/', async (req, res) => {
                     description: store.description,
                     image_url: store.cover_image || null,
                     is_active: store.is_active,
+                    is_customer_visible: Number(store.is_customer_visible ?? 1) === 1,
                     is_closed: manuallyClosed,
                     status_message: store.status_message || '',
                     is_open: !manuallyClosed && scheduleOpen,
@@ -1562,6 +1582,7 @@ router.get('/:id', async (req, res) => {
     try {
         await ensureStoreStatusMessagesTable(req.db);
         await ensureStoreFinancialColumns(req.db);
+        await ensureStoreCustomerVisibilityColumn(req.db);
         const { id } = req.params;
 
         const [stores] = await req.db.execute(`
@@ -1569,8 +1590,8 @@ router.get('/:id', async (req, res) => {
             FROM stores s
             LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             LEFT JOIN users u ON s.owner_id = u.id
-            WHERE s.id = ? AND s.is_active = true
-        `, [id]);
+            WHERE s.id = ? AND s.is_active = true AND (? = '1' OR COALESCE(s.is_customer_visible, 1) = 1)
+        `, [id, String(req.query?.admin || '0')]);
 
         if (stores.length === 0) {
             return res.status(404).json({
@@ -1676,10 +1697,12 @@ router.post('/', authenticateToken, requireStoreOwner, [
     body('location').trim().notEmpty().withMessage('Location is required'),
     body('phone').optional().isMobilePhone().withMessage('Please provide a valid phone number'),
     body('email').optional().isEmail().withMessage('Please provide a valid email'),
-    body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5')
+    body('rating').optional().isFloat({ min: 0, max: 5 }).withMessage('Rating must be between 0 and 5'),
+    body('is_customer_visible').optional().isBoolean().withMessage('is_customer_visible must be boolean')
 ], async (req, res) => {
     try {
         await ensureStoreFinancialColumns(req.db);
+        await ensureStoreCustomerVisibilityColumn(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -1707,8 +1730,14 @@ router.post('/', authenticateToken, requireStoreOwner, [
             store_discount_apply_all_products,
             store_discount_percent,
             image_url,
-            rating
+            rating,
+            is_customer_visible
         } = req.body;
+        const customerVisible = is_customer_visible === undefined
+            ? true
+            : (is_customer_visible === true
+                || String(is_customer_visible).toLowerCase() === 'true'
+                || String(is_customer_visible) === '1');
         const discountApplicable = String(payment_term || '').toLowerCase().includes('discount');
         const applyStoreDiscount = discountApplicable && (
             store_discount_apply_all_products === true
@@ -1767,6 +1796,8 @@ router.post('/', authenticateToken, requireStoreOwner, [
             'address',
             'owner_id',
             'cover_image'
+            ,
+            'is_customer_visible'
         ];
         const insertValues = [
             name,
@@ -1787,7 +1818,8 @@ router.post('/', authenticateToken, requireStoreOwner, [
             email || null,
             address || null,
             ownerId,
-            image_url || null
+            image_url || null,
+            customerVisible ? 1 : 0
         ];
 
         if (rating !== undefined && req.user.user_type === 'admin') {
@@ -1818,7 +1850,8 @@ router.post('/', authenticateToken, requireStoreOwner, [
                 payment_grace_start_date: parsedGraceStartDate,
                 payment_grace_due_date: calculateGraceDueDate(parsedGraceStartDate, parsedGraceDays),
                 store_discount_apply_all_products: applyStoreDiscount ? 1 : 0,
-                store_discount_percent: parsedStoreDiscountPercent
+                store_discount_percent: parsedStoreDiscountPercent,
+                is_customer_visible: customerVisible
             }
         });
 
@@ -1847,10 +1880,12 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
         }
         return true;
     }),
-    body('status').optional()
+    body('status').optional(),
+    body('is_customer_visible').optional().isBoolean().withMessage('is_customer_visible must be boolean')
 ], async (req, res) => {
     try {
         await ensureStoreFinancialColumns(req.db);
+        await ensureStoreCustomerVisibilityColumn(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -1907,7 +1942,8 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             image_url,
             rating,
             category_id,
-            priority
+            priority,
+            is_customer_visible
         } = req.body;
 
         // Check priority permission and duplicate prevention
@@ -2036,6 +2072,13 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             const priorityNum = parseInt(priority, 10);
             updateFields.push('priority = ?');
             updateValues.push(Number.isInteger(priorityNum) && priorityNum >= 1 && priorityNum <= 5 ? priorityNum : null);
+        }
+        if (is_customer_visible !== undefined && req.user.user_type === 'admin') {
+            const visible = is_customer_visible === true
+                || String(is_customer_visible).toLowerCase() === 'true'
+                || String(is_customer_visible) === '1';
+            updateFields.push('is_customer_visible = ?');
+            updateValues.push(visible ? 1 : 0);
         }
         if (is_active !== undefined && req.user.user_type === 'admin') { updateFields.push('is_active = ?'); updateValues.push(is_active); }
 
