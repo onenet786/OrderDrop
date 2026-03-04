@@ -23,6 +23,29 @@ function generateVoucherNumber(prefix, date = new Date()) {
     return `${prefix}-${dateStr}-${randomStr}`;
 }
 
+function isDiscountPaymentTerm(term) {
+    return String(term || '').toLowerCase().includes('discount');
+}
+
+function getSettlementUnitAdjustment(item, unitPrice) {
+    const useStoreDiscount =
+        isDiscountPaymentTerm(item.payment_term) &&
+        Number(item.store_discount_apply_all_products || 0) === 1 &&
+        Number(item.store_discount_percent || 0) > 0;
+
+    if (useStoreDiscount) {
+        return unitPrice * (Number(item.store_discount_percent || 0) / 100);
+    }
+
+    if (item.discount_type === 'percent' && Number(item.discount_value || 0) > 0) {
+        return unitPrice * (Number(item.discount_value || 0) / 100);
+    }
+    if (item.discount_type === 'amount' && Number(item.discount_value || 0) > 0) {
+        return Number(item.discount_value || 0);
+    }
+    return 0;
+}
+
 async function backfillLegacyPaymentVouchersToFinancialTransactions(db) {
     if (_legacyCpvBackfillDone) return 0;
     const [pendingRows] = await db.execute(
@@ -81,6 +104,24 @@ async function ensureRiderCashMovementTypes(db) {
              MODIFY COLUMN movement_type ENUM('cash_collection', 'cash_submission', 'advance', 'settlement', 'adjustment', 'store_payment', 'fuel_payment') NOT NULL`
         );
     } catch (_) {}
+}
+
+async function ensureRiderCashSubmissionOrdersTable(db) {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS rider_cash_submission_orders (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            movement_id INT NOT NULL,
+            order_id INT NOT NULL,
+            rider_id INT NOT NULL,
+            order_number VARCHAR(64) NULL,
+            order_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_movement_order (movement_id, order_id),
+            KEY idx_rcso_order (order_id),
+            KEY idx_rcso_rider (rider_id),
+            KEY idx_rcso_movement (movement_id)
+        )
+    `);
 }
 
 router.use(authenticateToken);
@@ -160,7 +201,10 @@ router.get('/dashboard', async (req, res) => {
         }
 
         const [transactions] = await req.db.execute(
-            `SELECT transaction_type, SUM(amount) as total FROM financial_transactions ft ${dateFilter} GROUP BY transaction_type`,
+            `SELECT transaction_type, category, SUM(amount) as total
+             FROM financial_transactions ft
+             ${dateFilter}
+             GROUP BY transaction_type, category`,
             dateParams
         );
 
@@ -224,10 +268,26 @@ router.get('/dashboard', async (req, res) => {
             riderCashParams
         );
 
+        let cashInHandDateFilter = '';
+        const cashInHandParams = [];
+        if (period === 'today') {
+            cashInHandDateFilter = 'AND DATE(created_at) = DATE(?)';
+            cashInHandParams.push(dateParams[0]);
+        } else if (period === 'week') {
+            cashInHandDateFilter = 'AND created_at >= ? AND created_at < ?';
+            cashInHandParams.push(...dateParams);
+        } else if (period === 'month') {
+            cashInHandDateFilter = 'AND YEAR(created_at) = ? AND MONTH(created_at) = ?';
+            cashInHandParams.push(...dateParams);
+        } else if (period === 'year') {
+            cashInHandDateFilter = 'AND YEAR(created_at) = ?';
+            cashInHandParams.push(new Date().getFullYear());
+        }
+
         const [cashInHandResult] = await req.db.execute(`
             SELECT 
                 SUM(CASE 
-                    WHEN transaction_type = 'income' THEN amount 
+                    WHEN transaction_type = 'income' AND COALESCE(category, '') <> 'rider_cash' THEN amount 
                     WHEN transaction_type = 'adjustment' AND category = 'rider_cash' THEN amount 
                     WHEN transaction_type = 'adjustment' AND category = 'receipt' THEN amount 
                     WHEN transaction_type = 'expense' THEN -amount 
@@ -239,7 +299,8 @@ router.get('/dashboard', async (req, res) => {
             WHERE payment_method = 'cash' 
             AND status = 'completed'
             AND category != 'rider_receivable'
-        `);
+            ${cashInHandDateFilter}
+        `, cashInHandParams);
 
         const stats = {
             income: 0,
@@ -255,7 +316,16 @@ router.get('/dashboard', async (req, res) => {
         };
 
         transactions.forEach(t => {
-            stats[t.transaction_type] = parseFloat(t.total || 0);
+            const transactionType = String(t.transaction_type || '').trim();
+            const category = String(t.category || '').trim();
+            const amount = parseFloat(t.total || 0);
+
+            // Rider cash submission is custody transfer, not new revenue.
+            if (transactionType === 'income' && category === 'rider_cash') {
+                return;
+            }
+
+            stats[transactionType] = (stats[transactionType] || 0) + amount;
         });
 
         riderCash.forEach(rc => {
@@ -1070,11 +1140,11 @@ router.put('/receipt-vouchers/:id', [
                     [movement_number, payerId, movement_date, voucherAmount, `Cash submission via CRV ${existingVoucher.voucher_number}`, existingVoucher.voucher_number, req.user.id, req.user.id]
                 );
 
-                // Credit rider wallet (reduce cash in hand liability)
+                // Debit rider wallet: rider submitted cash to office, so rider-held cash decreases.
                 await recordRiderWalletTransaction(
                     req.db,
                     payerId,
-                    'credit',
+                    'debit',
                     voucherAmount,
                     `Cash submission via CRV ${existingVoucher.voucher_number}`,
                     movementResult.insertId,
@@ -1121,8 +1191,10 @@ router.put('/receipt-vouchers/:id', [
 
 router.get('/rider-cash', async (req, res) => {
     try {
-        const { rider_id, type, status, page = 1, limit = 20 } = req.query;
-        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const { rider_id, type, status, page = 1, limit = 500, from, to, date } = req.query;
+        const normalizedLimit = Math.max(1, Math.min(2000, parseInt(limit, 10) || 500));
+        const normalizedPage = Math.max(1, parseInt(page, 10) || 1);
+        const offset = (normalizedPage - 1) * normalizedLimit;
 
         let whereClause = 'WHERE 1=1';
         const params = [];
@@ -1139,20 +1211,37 @@ router.get('/rider-cash', async (req, res) => {
             whereClause += ' AND rcm.status = ?';
             params.push(status);
         }
+        if (date) {
+            whereClause += ' AND DATE(rcm.movement_date) = ?';
+            params.push(date);
+        } else {
+            if (from) {
+                whereClause += ' AND DATE(rcm.movement_date) >= ?';
+                params.push(from);
+            }
+            if (to) {
+                whereClause += ' AND DATE(rcm.movement_date) <= ?';
+                params.push(to);
+            }
+        }
 
         // Only show movements for active riders
         whereClause += ' AND r.is_active = true';
 
         const [movements] = await req.db.execute(
-            `SELECT rcm.*, r.first_name, r.last_name, rb.first_name as recorded_by_name, ab.first_name as approved_by_name
+            `SELECT rcm.*, r.first_name, r.last_name, rb.first_name as recorded_by_name, ab.first_name as approved_by_name,
+                    o.order_number
              FROM rider_cash_movements rcm
              LEFT JOIN riders r ON rcm.rider_id = r.id
              LEFT JOIN users rb ON rcm.recorded_by = rb.id
              LEFT JOIN users ab ON rcm.approved_by = ab.id
+             LEFT JOIN orders o
+               ON rcm.reference_type = 'order'
+              AND CAST(rcm.reference_id AS UNSIGNED) = o.id
              ${whereClause}
-             ORDER BY rcm.movement_date DESC
+             ORDER BY rcm.movement_date DESC, rcm.id DESC
              LIMIT ? OFFSET ?`,
-            [...params, parseInt(limit), offset]
+            [...params, normalizedLimit, offset]
         );
 
         const [countResult] = await req.db.execute(
@@ -1166,8 +1255,8 @@ router.get('/rider-cash', async (req, res) => {
             success: true,
             movements,
             total: countResult[0]?.total || 0,
-            page: parseInt(page),
-            limit: parseInt(limit)
+            page: normalizedPage,
+            limit: normalizedLimit
         });
     } catch (error) {
         console.error('Error fetching rider cash movements:', error);
@@ -1203,6 +1292,22 @@ async function getOrCreateRiderWallet(db, riderId) {
 
 // Helper function to record wallet transaction and update balance
 async function recordRiderWalletTransaction(db, riderId, type, amount, description, movementId, movementType) {
+    // Idempotency guard: one wallet transaction per rider_cash_movement reference.
+    // If already posted, do not post again.
+    const [existingTx] = await db.execute(
+        `SELECT wt.id, wt.type, wt.amount
+         FROM wallet_transactions wt
+         JOIN wallets w ON w.id = wt.wallet_id
+         WHERE w.rider_id = ?
+           AND wt.reference_type = 'rider_cash_movement'
+           AND wt.reference_id = ?
+         LIMIT 1`,
+        [riderId, movementId]
+    );
+    if (existingTx.length > 0) {
+        return { walletId: null, newBalance: null, skipped: true, existing: existingTx[0] };
+    }
+
     const wallet = await getOrCreateRiderWallet(db, riderId);
     const newBalance = type === 'credit' 
         ? parseFloat(wallet.balance || 0) + parseFloat(amount)
@@ -1232,6 +1337,68 @@ async function recordRiderWalletTransaction(db, riderId, type, amount, descripti
     return { walletId: wallet.id, newBalance };
 }
 
+async function ensureWalletCreditsForSubmissionOrders(db, riderId, movementId) {
+    await ensureRiderCashSubmissionOrdersTable(db);
+    const wallet = await getOrCreateRiderWallet(db, riderId);
+
+    // Find linked orders missing wallet credit entries.
+    const [missingRows] = await db.execute(
+        `SELECT rcso.order_id,
+                rcso.order_number,
+                rcso.order_amount
+         FROM rider_cash_submission_orders rcso
+         LEFT JOIN wallet_transactions wt
+           ON wt.wallet_id = ?
+          AND wt.type = 'credit'
+          AND wt.reference_type = 'order'
+          AND CAST(wt.reference_id AS UNSIGNED) = rcso.order_id
+         WHERE rcso.movement_id = ?
+           AND rcso.rider_id = ?
+           AND wt.id IS NULL
+         ORDER BY rcso.order_id ASC`,
+        [wallet.id, movementId, riderId]
+    );
+
+    let runningBalance = parseFloat(wallet.balance || 0);
+    for (const row of missingRows) {
+        const amount = Number(row.order_amount || 0);
+        if (amount <= 0) continue;
+        runningBalance += amount;
+
+        await db.execute(
+            `INSERT INTO wallet_transactions
+             (wallet_id, type, amount, description, reference_type, reference_id, balance_after)
+             VALUES (?, 'credit', ?, ?, 'order', ?, ?)`,
+            [
+                wallet.id,
+                amount,
+                `Auto backfill from submitted cash order #${row.order_number || row.order_id}`,
+                row.order_id,
+                runningBalance
+            ]
+        );
+    }
+
+    if (missingRows.length > 0) {
+        await db.execute(
+            `UPDATE wallets
+             SET balance = ?,
+                 total_credited = total_credited + ?
+             WHERE id = ?`,
+            [
+                runningBalance,
+                missingRows.reduce((s, r) => s + Number(r.order_amount || 0), 0),
+                wallet.id
+            ]
+        );
+    }
+
+    return {
+        backfilledCount: missingRows.length,
+        backfilledAmount: missingRows.reduce((s, r) => s + Number(r.order_amount || 0), 0)
+    };
+}
+
 router.post('/rider-cash', [
     body('rider_id').isInt({ min: 1 }),
     body('movement_type').isIn(['cash_collection', 'cash_submission', 'advance', 'settlement', 'adjustment', 'store_payment', 'fuel_payment']),
@@ -1240,6 +1407,7 @@ router.post('/rider-cash', [
 ], async (req, res) => {
     try {
         await ensureRiderCashMovementTypes(req.db);
+        await ensureRiderCashSubmissionOrdersTable(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -1250,8 +1418,62 @@ router.post('/rider-cash', [
         }
 
         const { rider_id, movement_type, amount, description, reference_type, reference_id, notes } = req.body;
+        const linkedOrderIds = Array.from(
+            new Set(
+                (Array.isArray(req.body.linked_orders) ? req.body.linked_orders : [])
+                    .map((v) => parseInt(v, 10))
+                    .filter((v) => Number.isInteger(v) && v > 0)
+            )
+        );
         const movement_number = generateVoucherNumber('RCM');
         const movement_date = new Date().toISOString().split('T')[0];
+
+        let eligibleOrders = [];
+        if (movement_type === 'cash_submission' && linkedOrderIds.length > 0) {
+            const placeholders = linkedOrderIds.map(() => '?').join(',');
+            const [orders] = await req.db.execute(
+                `SELECT id, order_number, total_amount
+                 FROM orders
+                 WHERE rider_id = ?
+                   AND status = 'delivered'
+                   AND LOWER(TRIM(COALESCE(payment_method, ''))) = 'cash'
+                   AND LOWER(TRIM(COALESCE(payment_status, ''))) = 'paid'
+                   AND id IN (${placeholders})`,
+                [rider_id, ...linkedOrderIds]
+            );
+            eligibleOrders = orders || [];
+            if (eligibleOrders.length !== linkedOrderIds.length) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'One or more selected orders are invalid for this rider cash submission'
+                });
+            }
+
+            const [alreadyLinked] = await req.db.execute(
+                `SELECT rcso.order_id, COALESCE(o.order_number, CONCAT('#', rcso.order_id)) AS order_number
+                 FROM rider_cash_submission_orders rcso
+                 JOIN rider_cash_movements rcm ON rcm.id = rcso.movement_id
+                 LEFT JOIN orders o ON o.id = rcso.order_id
+                 WHERE rcso.order_id IN (${placeholders})
+                   AND rcm.movement_type = 'cash_submission'
+                   AND rcm.status IN ('pending', 'approved', 'completed')`,
+                linkedOrderIds
+            );
+            if (alreadyLinked.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Some orders are already submitted: ${alreadyLinked.map((r) => r.order_number).join(', ')}`
+                });
+            }
+
+            const expectedAmount = eligibleOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0);
+            if (Math.abs(Number(amount || 0) - expectedAmount) > 0.01) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Amount must match selected orders total (${expectedAmount.toFixed(2)})`
+                });
+            }
+        }
 
         const [result] = await req.db.execute(
             `INSERT INTO rider_cash_movements 
@@ -1259,6 +1481,20 @@ router.post('/rider-cash', [
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
             [movement_number, rider_id, movement_date, movement_type, amount, description || null, reference_type || null, reference_id || null, req.user.id, notes || null]
         );
+
+        if (movement_type === 'cash_submission' && eligibleOrders.length > 0) {
+            const valuesSql = eligibleOrders.map(() => '(?, ?, ?, ?, ?)').join(', ');
+            const insertParams = [];
+            eligibleOrders.forEach((o) => {
+                insertParams.push(result.insertId, o.id, rider_id, o.order_number || null, Number(o.total_amount || 0));
+            });
+            await req.db.execute(
+                `INSERT INTO rider_cash_submission_orders
+                 (movement_id, order_id, rider_id, order_number, order_amount)
+                 VALUES ${valuesSql}`,
+                insertParams
+            );
+        }
 
         // Auto-update wallet for advances (debit to rider wallet as they now owe the company)
         if (movement_type === 'advance') {
@@ -1336,8 +1572,23 @@ router.put('/rider-cash/:id', [
         const movement = movements[0];
         const updates = [];
         const params = [];
+        const movementStatus = String(movement.status || '').toLowerCase().trim();
+        const requestedAmountChange =
+            amount !== undefined &&
+            amount !== null &&
+            parseFloat(amount) !== parseFloat(movement.amount);
+        const requestedDescriptionChange = description !== undefined;
 
-        if (amount && amount !== movement.amount) {
+        // Finalized movements should be immutable in amount/description.
+        if ((movementStatus === 'approved' || movementStatus === 'completed') &&
+            (requestedAmountChange || requestedDescriptionChange)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Approved/completed movement cannot be edited'
+            });
+        }
+
+        if (requestedAmountChange) {
             updates.push('amount = ?');
             params.push(amount);
         }
@@ -1367,11 +1618,17 @@ router.put('/rider-cash/:id', [
                 let descriptionPrefix = '';
 
                 if (movement.movement_type === 'cash_submission') {
-                    // Credit to rider wallet when cash submission is approved (reduces debt)
+                    // Guard: ensure all linked submitted orders have wallet credits
+                    // before debiting rider for submission, so ledger never drifts negative
+                    // due to missing historical credit rows.
+                    await ensureWalletCreditsForSubmissionOrders(req.db, movement.rider_id, movement.id);
+
+                    // Debit rider wallet when cash submission is approved:
+                    // rider has handed over cash to office.
                     await recordRiderWalletTransaction(
                         req.db,
                         movement.rider_id,
-                        'credit',
+                        'debit',
                         effectiveAmount,
                         `Cash submission via ${movement.movement_number}`,
                         movement.id,
@@ -1388,7 +1645,7 @@ router.put('/rider-cash/:id', [
                         await recordRiderWalletTransaction(
                             req.db,
                             movement.rider_id,
-                            'debit',
+                            'credit',
                             effectiveAmount,
                             `Cash collection via ${movement.movement_number}`,
                             movement.id,
@@ -1484,7 +1741,10 @@ router.get('/store-settlements/unsettled-items', async (req, res) => {
                 oi.variant_label, oi.discount_type, oi.discount_value,
                 o.order_number, o.created_at as order_date,
                 p.name as product_name,
-                s.commission_rate
+                s.commission_rate,
+                s.payment_term,
+                s.store_discount_apply_all_products,
+                s.store_discount_percent
             FROM order_items oi
             JOIN orders o ON oi.order_id = o.id
             JOIN products p ON oi.product_id = p.id
@@ -1496,25 +1756,22 @@ router.get('/store-settlements/unsettled-items', async (req, res) => {
             ORDER BY o.created_at ASC
         `, [store_id]);
 
-        // Calculate totals
-        let total_amount = 0; // Net item sales after item discounts
+        // Calculate totals for settlement:
+        // - Gross sales shown as qty * price
+        // - Profit/discount adjustment deducted from gross to get net payable
+        let total_amount = 0; // Total payable to store after adjustments
         let gross_amount = 0;
         let total_discount = 0;
         let commission_amount = 0;
-        // Keep compatibility for UI field
-        const commission_rate = items.length > 0 ? parseFloat(items[0].commission_rate || 10) : 10;
+        // Keep compatibility for UI fields (legacy commission section).
+        const commission_rate = 0;
         
         items.forEach(item => {
             const qty = Number(item.quantity || 0);
             const unitPrice = Number(item.price || 0);
             const lineGross = unitPrice * qty;
-            const itemRate = Number(item.commission_rate || 10);
-            let unitDiscount = 0;
-            if (item.discount_type === 'percent' && Number(item.discount_value || 0) > 0) {
-                unitDiscount = unitPrice * (Number(item.discount_value || 0) / 100);
-            } else if (item.discount_type === 'amount' && Number(item.discount_value || 0) > 0) {
-                unitDiscount = Number(item.discount_value || 0);
-            }
+            const itemRate = 0;
+            const unitDiscount = getSettlementUnitAdjustment(item, unitPrice);
             const lineDiscount = Math.max(0, unitDiscount * qty);
             const lineNet = Math.max(0, lineGross - lineDiscount);
             const lineCommission = lineNet * (itemRate / 100);
@@ -1522,7 +1779,7 @@ router.get('/store-settlements/unsettled-items', async (req, res) => {
 
             gross_amount += lineGross;
             total_discount += lineDiscount;
-            total_amount += lineNet;
+            total_amount += linePayable;
             commission_amount += lineCommission;
 
             item.line_gross = lineGross;
@@ -1532,17 +1789,17 @@ router.get('/store-settlements/unsettled-items', async (req, res) => {
             item.line_payable = linePayable;
         });
 
-        const net_amount = total_amount - commission_amount;
+        const net_amount = total_amount;
 
         res.json({
             success: true,
             items,
             summary: {
-                total_orders_amount: total_amount,
+                total_orders_amount: gross_amount,
                 total_gross_amount: gross_amount,
                 total_discount,
                 commission_rate,
-                commissions: commission_amount,
+                commissions: total_discount,
                 net_amount,
                 item_count: items.length
             }
@@ -1636,7 +1893,10 @@ router.post('/store-settlements', [
              const [items] = await conn.execute(`
                 SELECT 
                     oi.id, oi.quantity, oi.price, oi.discount_type, oi.discount_value,
-                    s.commission_rate
+                    s.commission_rate,
+                    s.payment_term,
+                    s.store_discount_apply_all_products,
+                    s.store_discount_percent
                 FROM order_items oi
                 JOIN orders o ON oi.order_id = o.id
                 JOIN products p ON oi.product_id = p.id
@@ -1656,30 +1916,26 @@ router.post('/store-settlements', [
                 });
             }
 
-            let calculated_total = 0; // Net item sales after discount
-            let calculated_commissions = 0;
+            let calculated_total = 0; // Gross item sales
+            let calculated_adjustment = 0; // Profit/discount adjustment total
             
             items.forEach(item => {
                 const qty = Number(item.quantity || 0);
                 const unitPrice = Number(item.price || 0);
-                const itemRate = Number(item.commission_rate || 10);
+                const itemRate = 0;
                 const gross = unitPrice * qty;
-                let unitDiscount = 0;
-                if (item.discount_type === 'percent' && Number(item.discount_value || 0) > 0) {
-                    unitDiscount = unitPrice * (Number(item.discount_value || 0) / 100);
-                } else if (item.discount_type === 'amount' && Number(item.discount_value || 0) > 0) {
-                    unitDiscount = Number(item.discount_value || 0);
-                }
+                const unitDiscount = getSettlementUnitAdjustment(item, unitPrice);
                 const lineDiscount = Math.max(0, unitDiscount * qty);
                 const lineNet = Math.max(0, gross - lineDiscount);
                 const lineCommission = lineNet * (itemRate / 100);
-                calculated_total += lineNet;
-                calculated_commissions += lineCommission;
+                const linePayable = lineNet - lineCommission;
+                calculated_total += gross;
+                calculated_adjustment += (gross - linePayable);
                 settlement_items.push(item.id);
             });
 
             final_total = calculated_total;
-            final_commissions = calculated_commissions;
+            final_commissions = calculated_adjustment;
             final_deductions = parseFloat(deductions || 0);
             final_net = final_total - final_commissions - final_deductions;
         }
@@ -2123,7 +2379,7 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'rider_orders_report', 'rider_payments_report', 'rider_receivings_report', 'rider_petrol_report', 'rider_daily_mileage_report', 'rider_daily_activity_report', 'rider_day_closing_report', 'order_profit_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'rider_orders_report', 'rider_payments_report', 'rider_receivings_report', 'rider_petrol_report', 'rider_daily_mileage_report', 'rider_daily_activity_report', 'rider_day_closing_report', 'order_profit_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'store_payable_reconciliation', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
     body('period_from').optional({ checkFalsy: true }).isISO8601(),
     body('period_to').optional({ checkFalsy: true }).isISO8601(),
     body('rider_id').optional({ checkFalsy: true }).toInt(),
@@ -2171,6 +2427,7 @@ router.post('/reports/generate', [
                 'rider_day_closing_report': 'report_rider_cash',
                 'order_profit_report': 'report_order_summary',
                 'comprehensive_report': 'report_comprehensive_cash',
+                'store_payable_reconciliation': 'report_store_settlement',
                 'transaction_summary': 'report_transactions_summary',
                 'general_voucher': 'report_general_voucher',
                 'expense_report': 'report_expense',
@@ -2215,6 +2472,7 @@ router.post('/reports/generate', [
             case 'rider_day_closing_report': prefix = 'RDC'; break;
             case 'order_profit_report': prefix = 'OPR'; break;
             case 'comprehensive_report': prefix = 'CPR'; break;
+            case 'store_payable_reconciliation': prefix = 'SPR'; break;
             case 'expense_report': prefix = 'EXR'; break;
             case 'delivery_charges_breakdown': prefix = 'DCB'; break;
             case 'general_voucher': prefix = 'GVR'; break;
@@ -2292,26 +2550,107 @@ router.post('/reports/generate', [
             }
 
             const [movements] = await req.db.execute(
-                `SELECT rcm.*, r.first_name, r.last_name 
-                 FROM rider_cash_movements rcm
-                 JOIN riders r ON rcm.rider_id = r.id
-                 WHERE 1=1 ${riderDateFilter} ${riderFilter}
-                 ORDER BY movement_date DESC`,
-                params
+                `SELECT * FROM (
+                    SELECT 
+                        rcm.id,
+                        rcm.movement_number,
+                        rcm.rider_id,
+                        rcm.movement_date,
+                        rcm.movement_type,
+                        rcm.amount,
+                        rcm.description,
+                        rcm.status,
+                        rcm.reference_type,
+                        rcm.reference_id,
+                        r.first_name,
+                        r.last_name,
+                        o.order_number
+                    FROM rider_cash_movements rcm
+                    JOIN riders r ON rcm.rider_id = r.id
+                    LEFT JOIN orders o
+                      ON rcm.reference_type = 'order'
+                     AND CAST(rcm.reference_id AS UNSIGNED) = o.id
+                    WHERE 1=1 ${riderDateFilter} ${riderFilter}
+
+                    UNION ALL
+
+                    SELECT
+                        NULL AS id,
+                        CONCAT('AUTO-ORD-', o.id) AS movement_number,
+                        o.rider_id,
+                        DATE(o.created_at) AS movement_date,
+                        'cash_collection' AS movement_type,
+                        o.total_amount AS amount,
+                        CONCAT('Auto backfill from delivered cash order #', o.order_number) AS description,
+                        'completed' AS status,
+                        'order' AS reference_type,
+                        CAST(o.id AS CHAR) AS reference_id,
+                        r2.first_name,
+                        r2.last_name,
+                        o.order_number
+                    FROM orders o
+                    JOIN riders r2 ON r2.id = o.rider_id
+                    WHERE o.status = 'delivered'
+                      AND LOWER(TRIM(COALESCE(o.payment_method, ''))) = 'cash'
+                      ${period_from && period_to ? 'AND DATE(o.created_at) BETWEEN ? AND ?' : ''}
+                      ${rider_id ? 'AND o.rider_id = ?' : ''}
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM rider_cash_movements x
+                          WHERE x.reference_type = 'order'
+                            AND CAST(x.reference_id AS UNSIGNED) = o.id
+                            AND x.movement_type = 'cash_collection'
+                      )
+                ) t
+                ORDER BY t.movement_date DESC, t.id DESC, t.order_number DESC`,
+                [
+                    ...params,
+                    ...(period_from && period_to ? [period_from, period_to] : []),
+                    ...(rider_id ? [rider_id] : [])
+                ]
             );
-            
-            const [summary] = await req.db.execute(
-                `SELECT movement_type, SUM(amount) as total 
-                 FROM rider_cash_movements rcm
-                 WHERE 1=1 ${riderDateFilter} ${riderFilter}
-                 GROUP BY movement_type`,
-                params
+
+            const summaryMap = {};
+            for (const m of movements) {
+                const k = String(m.movement_type || '').trim() || 'unknown';
+                summaryMap[k] = (summaryMap[k] || 0) + Number(m.amount || 0);
+            }
+            const summary = Object.entries(summaryMap).map(([movement_type, total]) => ({ movement_type, total }));
+            const totalCashIncome = Number(summaryMap.cash_collection || 0);
+
+            const orderKpiParams = [];
+            const orderKpiDateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const orderKpiRiderFilter = rider_id ? 'AND o.rider_id = ?' : '';
+            if (period_from && period_to) {
+                orderKpiParams.push(period_from, `${period_to} 23:59:59`);
+            }
+            if (rider_id) {
+                orderKpiParams.push(rider_id);
+            }
+            const [orderKpiRows] = await req.db.execute(
+                `SELECT 
+                    COUNT(*) AS total_orders,
+                    COALESCE(SUM(o.delivery_fee), 0) AS total_delivery_charges
+                 FROM orders o
+                 WHERE o.status = 'delivered'
+                   ${orderKpiDateFilter}
+                   ${orderKpiRiderFilter}`,
+                orderKpiParams
             );
+            const orderKpis = orderKpiRows?.[0] || {};
+
+            // For rider cash report, expose cash-collection income explicitly in report totals.
+            total_income = totalCashIncome;
 
             reportData = {
                 type: 'rider_cash',
                 rider_name: riderName,
                 movements,
+                kpis: {
+                    total_income: totalCashIncome,
+                    total_orders: Number(orderKpis.total_orders || 0),
+                    total_delivery_charges: Number(orderKpis.total_delivery_charges || 0)
+                },
                 summary: summary.reduce((acc, curr) => {
                     acc[curr.movement_type] = curr.total;
                     return acc;
@@ -3338,6 +3677,40 @@ router.post('/reports/generate', [
                 orderParams
             );
             const total_store_commission = parseFloat(commissionData[0].total_commission || 0);
+            const gross_store_payable = Math.max(0, total_item_sales_net - total_store_commission);
+
+            // Paid settlements should reduce payable liability shown in comprehensive report.
+            const settlementDateFilter = period_from && endDate ? 'AND settlement_date BETWEEN ? AND ?' : '';
+            const settlementParams = period_from && endDate ? [period_from, endDate] : [];
+            const [settledData] = await req.db.execute(
+                `SELECT COALESCE(SUM(net_amount), 0) AS total_store_settlement_paid
+                 FROM store_settlements
+                 WHERE status = 'paid'
+                 ${settlementDateFilter}`,
+                settlementParams
+            );
+            const total_store_settlement_paid = parseFloat(settledData[0].total_store_settlement_paid || 0);
+            const period_store_payable_flow = gross_store_payable - total_store_settlement_paid;
+
+            // Real current liability (all-time outstanding) from unsettled delivered+paid items.
+            // This is the balance figure that should never be confused with period flow.
+            const [outstandingData] = await req.db.execute(
+                `SELECT COALESCE(SUM(
+                    (oi.quantity * oi.price)
+                    - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
+                ), 0) AS current_outstanding_store_payable
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 WHERE o.status = 'delivered'
+                   AND o.payment_status = 'paid'
+                   AND oi.settlement_id IS NULL`
+            );
+            const current_outstanding_store_payable = Math.max(
+                0,
+                parseFloat(outstandingData[0].current_outstanding_store_payable || 0)
+            );
 
             const net_flow = total_income - total_expense - total_settlements - total_refunds;
 
@@ -3358,8 +3731,135 @@ router.post('/reports/generate', [
                     total_item_sales_net,   // Net Sales (after discount)
                     total_item_discount,
                     total_store_commission, // The 10% profit from stores
-                    estimated_gross_profit: total_delivery_fees + total_store_commission
+                    estimated_gross_profit: total_delivery_fees + total_store_commission,
+                    gross_store_payable,
+                    total_store_settlement_paid,
+                    period_store_payable_flow,
+                    current_outstanding_store_payable
                 }
+            };
+        } else if (report_type === 'store_payable_reconciliation') {
+            const hasRange = Boolean(period_from && period_to);
+            const periodStart = hasRange ? `${period_from} 00:00:00` : null;
+            const periodEnd = hasRange ? `${period_to} 23:59:59` : null;
+            const hasStore = Boolean(store_id);
+
+            const [stores] = await req.db.execute(
+                `SELECT id, name
+                 FROM stores
+                 ${hasStore ? 'WHERE id = ?' : ''}
+                 ORDER BY name ASC`,
+                hasStore ? [store_id] : []
+            );
+
+            const [generatedRows] = await req.db.execute(
+                `SELECT
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    SUM(
+                        (oi.quantity * oi.price)
+                        - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
+                    ) AS period_generated_payable
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 WHERE o.status = 'delivered'
+                   AND o.payment_status = 'paid'
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND s.id = ?' : ''}
+                 GROUP BY COALESCE(oi.store_id, p.store_id)`,
+                [
+                    ...(hasRange ? [periodStart, periodEnd] : []),
+                    ...(hasStore ? [store_id] : [])
+                ]
+            );
+
+            const [paidRows] = await req.db.execute(
+                `SELECT
+                    ss.store_id,
+                    SUM(ss.net_amount) AS period_paid_settlements
+                 FROM store_settlements ss
+                 WHERE ss.status = 'paid'
+                   ${hasRange ? 'AND ss.settlement_date BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND ss.store_id = ?' : ''}
+                 GROUP BY ss.store_id`,
+                [
+                    ...(hasRange ? [periodStart, periodEnd] : []),
+                    ...(hasStore ? [store_id] : [])
+                ]
+            );
+
+            const [outstandingRows] = await req.db.execute(
+                `SELECT
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    SUM(
+                        (oi.quantity * oi.price)
+                        - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
+                    ) AS current_outstanding
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 WHERE o.status = 'delivered'
+                   AND o.payment_status = 'paid'
+                   AND oi.settlement_id IS NULL
+                   ${hasStore ? 'AND s.id = ?' : ''}
+                 GROUP BY COALESCE(oi.store_id, p.store_id)`,
+                hasStore ? [store_id] : []
+            );
+
+            const generatedMap = new Map((generatedRows || []).map(r => [Number(r.store_id), Number(r.period_generated_payable || 0)]));
+            const paidMap = new Map((paidRows || []).map(r => [Number(r.store_id), Number(r.period_paid_settlements || 0)]));
+            const outstandingMap = new Map((outstandingRows || []).map(r => [Number(r.store_id), Number(r.current_outstanding || 0)]));
+
+            const rows = (stores || []).map(s => {
+                const sid = Number(s.id);
+                const generated = Number(generatedMap.get(sid) || 0);
+                const paid = Number(paidMap.get(sid) || 0);
+                const flow = generated - paid;
+                const outstanding = Math.max(0, Number(outstandingMap.get(sid) || 0));
+                return {
+                    store_id: sid,
+                    store_name: s.name,
+                    period_generated_payable: generated,
+                    period_paid_settlements: paid,
+                    period_flow: flow,
+                    current_outstanding: outstanding
+                };
+            }).filter(r =>
+                r.period_generated_payable !== 0 ||
+                r.period_paid_settlements !== 0 ||
+                r.current_outstanding !== 0
+            );
+
+            const summary = rows.reduce((acc, r) => {
+                acc.period_generated_payable += Number(r.period_generated_payable || 0);
+                acc.period_paid_settlements += Number(r.period_paid_settlements || 0);
+                acc.period_flow += Number(r.period_flow || 0);
+                acc.current_outstanding += Number(r.current_outstanding || 0);
+                return acc;
+            }, {
+                period_generated_payable: 0,
+                period_paid_settlements: 0,
+                period_flow: 0,
+                current_outstanding: 0
+            });
+
+            total_income = summary.period_generated_payable;
+            total_expense = summary.period_paid_settlements;
+            total_settlements = 0;
+            total_refunds = 0;
+            total_adjustments = 0;
+
+            reportData = {
+                type: 'store_payable_reconciliation',
+                filters: {
+                    period_from: period_from || null,
+                    period_to: period_to || null,
+                    store_id: store_id || null
+                },
+                rows,
+                summary
             };
         } else if (report_type === 'transaction_summary') {
             const dateFilter = period_from && period_to ? 'AND ft.created_at BETWEEN ? AND ?' : '';
@@ -3509,50 +4009,58 @@ router.post('/reports/generate', [
 // Get pending cash orders for a rider
 router.get('/riders/:id/pending-cash-orders', async (req, res) => {
     try {
+        await ensureRiderCashSubmissionOrdersTable(req.db);
         const { id } = req.params;
-        
-        // Find orders that are NOT yet linked to any approved cash submission
-        // We look for 'rider_cash_movements' that mention this order in description or reference
-        // Note: This is a heuristic because we don't have a direct junction table yet.
-        // Ideally, we should have a 'rider_cash_submission_orders' table.
-        
-        // 1. Get all delivered cash orders for this rider
-        const [orders] = await req.db.execute(
-            `SELECT id, order_number, total_amount, created_at 
-             FROM orders 
-             WHERE rider_id = ? 
-             AND status = 'delivered' 
-             AND payment_method = 'cash' 
-             ORDER BY created_at DESC`,
+
+        const [pendingOrders] = await req.db.execute(
+            `SELECT o.id, o.order_number, o.total_amount, o.created_at
+             FROM orders o
+             WHERE o.rider_id = ?
+               AND o.status = 'delivered'
+               AND LOWER(TRIM(COALESCE(o.payment_method, ''))) = 'cash'
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM rider_cash_submission_orders rcso
+                   JOIN rider_cash_movements rcm ON rcm.id = rcso.movement_id
+                   WHERE rcso.order_id = o.id
+                     AND rcm.movement_type = 'cash_submission'
+                     AND rcm.status IN ('pending', 'approved', 'completed')
+               )
+             ORDER BY o.created_at DESC`,
             [id]
         );
-        
-        // 2. Get all approved cash submissions for this rider
-        // We'll search their descriptions for order numbers (if admin put them there)
-        // OR we can implement a logic where we mark orders as "submitted" in the future.
-        // For now, let's just return the orders. 
-        // The user issue is that the UI shows them as "pending" even if submitted.
-        // If the UI is just listing "delivered cash orders", that's technically correct (they are cash orders).
-        // But if it implies "Unsubmitted Cash", we need to filter.
-        
-        // Current implementation just returns list.
-        // If the user wants them to disappear, we need to know WHICH orders were paid.
-        // Since we don't store order_ids in cash_submission, we can't filter them out automatically yet.
-        // We will add a 'is_cash_submitted' flag to orders table in future.
-        
-        // Temporary fix: Filter out orders if their order_number appears in any approved submission description
-        const [submissions] = await req.db.execute(
-            `SELECT description FROM rider_cash_movements 
-             WHERE rider_id = ? AND movement_type = 'cash_submission' AND status IN ('approved', 'completed')`,
-            [id]
-        );
-        
-        const submittedDescriptions = submissions.map(s => s.description || '').join(' ');
-        
-        const pendingOrders = orders.filter(o => !submittedDescriptions.includes(o.order_number));
-        const total = pendingOrders.reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
+        const total = pendingOrders.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
 
         res.json({ success: true, orders: pendingOrders, total });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/riders/:id/submitted-cash-orders', async (req, res) => {
+    try {
+        await ensureRiderCashSubmissionOrdersTable(req.db);
+        const { id } = req.params;
+        const [rows] = await req.db.execute(
+            `SELECT 
+                rcso.order_id AS id,
+                COALESCE(o.order_number, rcso.order_number) AS order_number,
+                COALESCE(o.total_amount, rcso.order_amount, 0) AS total_amount,
+                COALESCE(o.created_at, rcso.created_at) AS created_at,
+                rcm.movement_number,
+                rcm.status AS submission_status,
+                rcm.movement_date AS submitted_at
+             FROM rider_cash_submission_orders rcso
+             JOIN rider_cash_movements rcm ON rcm.id = rcso.movement_id
+             LEFT JOIN orders o ON o.id = rcso.order_id
+             WHERE rcso.rider_id = ?
+               AND rcm.movement_type = 'cash_submission'
+               AND rcm.status IN ('pending', 'approved', 'completed')
+             ORDER BY rcm.movement_date DESC, rcso.id DESC`,
+            [id]
+        );
+        const total = rows.reduce((sum, r) => sum + parseFloat(r.total_amount || 0), 0);
+        res.json({ success: true, orders: rows, total });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -4053,23 +4561,55 @@ router.get('/reports/stores-detailed', async (req, res) => {
             params.push(store_id);
         }
 
+        const reportParams = [];
+        if (start_date && end_date) {
+            // earn subquery date window
+            reportParams.push(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
+            // paid subquery date window
+            reportParams.push(`${start_date} 00:00:00`, `${end_date} 23:59:59`);
+        }
+        if (store_id && store_id !== 'all') {
+            reportParams.push(store_id);
+        }
+
         const [stores] = await req.db.execute(
             `SELECT 
                 s.id, 
                 s.name, 
                 s.email, 
                 s.phone,
-                COUNT(DISTINCT o.id) as total_orders,
-                SUM(CASE WHEN o.status = 'delivered' THEN oi.price * oi.quantity ELSE 0 END) as total_earnings,
-                COALESCE((SELECT SUM(net_amount) FROM store_settlements WHERE store_id = s.id AND status = 'paid'), 0) as total_paid,
-                COALESCE((SELECT SUM(oi2.price * oi2.quantity) FROM order_items oi2 JOIN orders o2 ON oi2.order_id = o2.id WHERE oi2.store_id = s.id AND o2.status = 'delivered'), 0) - COALESCE((SELECT SUM(net_amount) FROM store_settlements WHERE store_id = s.id AND status = 'paid'), 0) as pending_settlement
+                s.payment_term,
+                COALESCE(earn.total_orders, 0) AS total_orders,
+                COALESCE(earn.total_earnings, 0) AS total_earnings,
+                COALESCE(paid.total_paid, 0) AS total_paid,
+                CASE
+                    WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) IN ('cash only', 'cash with discount')
+                        THEN 0
+                    ELSE GREATEST(0, COALESCE(earn.total_earnings, 0) - COALESCE(paid.total_paid, 0))
+                END AS pending_settlement
             FROM stores s
-            LEFT JOIN order_items oi ON s.id = oi.store_id
-            LEFT JOIN orders o ON oi.order_id = o.id ${dateFilter}
+            LEFT JOIN (
+                SELECT
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    COUNT(DISTINCT o.id) AS total_orders,
+                    SUM(oi.price * oi.quantity) AS total_earnings
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                JOIN products p ON oi.product_id = p.id
+                WHERE o.status = 'delivered'
+                ${start_date && end_date ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                GROUP BY COALESCE(oi.store_id, p.store_id)
+            ) earn ON earn.store_id = s.id
+            LEFT JOIN (
+                SELECT store_id, SUM(net_amount) AS total_paid
+                FROM store_settlements
+                WHERE status = 'paid'
+                ${start_date && end_date ? 'AND settlement_date BETWEEN ? AND ?' : ''}
+                GROUP BY store_id
+            ) paid ON paid.store_id = s.id
             ${storeFilter}
-            GROUP BY s.id, s.name, s.email, s.phone
-            ORDER BY total_earnings DESC`,
-            params
+            ORDER BY COALESCE(earn.total_earnings, 0) DESC`,
+            reportParams
         );
         res.json({ success: true, stores });
     } catch (error) {

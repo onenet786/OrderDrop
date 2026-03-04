@@ -1571,17 +1571,6 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             if (isAssigned && status == 'out_for_delivery') ...[
               Row(
                 children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _markAsDelivered(delivery['id']),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Mark Delivered'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
                   if (paymentStatus != 'paid')
                     Expanded(
                       child: ElevatedButton(
@@ -1593,8 +1582,33 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                         child: const Text('Payment Recvd'),
                       ),
                     ),
+                  if (paymentStatus != 'paid') const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: paymentStatus == 'paid'
+                          ? () => _markAsDelivered(delivery['id'])
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Mark Delivered'),
+                    ),
+                  ),
                 ],
               ),
+              if (paymentStatus != 'paid')
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Mark payment received first to enable delivery.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
             ],
           ],
         ),

@@ -851,6 +851,7 @@
               <thead>
                 <tr>
                   <th>Ref #</th>
+                  <th>Order #</th>
                   <th>Date</th>
                   <th>Rider</th>
                   <th>Type</th>
@@ -918,6 +919,7 @@
                     <option value="monthly_summary">Monthly Summary</option>
                     <option value="store_settlement">Store Settlement</option>
                     <option value="store_financials">Store Financials</option>
+                    <option value="store_payable_reconciliation">Store Payable Reconciliation</option>
                     <option value="rider_cash_report">Rider Cash Report</option>
                     <option value="rider_fuel_report">Rider Fuel Report</option>
                     <option value="rider_orders_report">Rider Orders Report</option>
@@ -933,7 +935,7 @@
                     <option value="custom">Custom</option>
                 </select>
             </div>
-            <button class="btn btn-primary" onclick="generateFinancialReport()">
+            <button id="generateFinancialReportBtn" class="btn btn-primary" onclick="window.generateFinancialReport && window.generateFinancialReport()">
                 <i class="fas fa-plus"></i> Generate New Report
             </button>
             <button class="btn btn-secondary" onclick="loadFinancialReports()">
@@ -1658,6 +1660,12 @@
                     <option value="out_for_delivery">Out for Delivery</option>
                     <option value="delivered">Delivered</option>
                     <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filterStore">Store</label>
+                <select id="filterStore" class="form-control">
+                    <option value="">All Stores</option>
                 </select>
             </div>
             <button class="btn btn-secondary" id="clearFiltersBtn" style="align-self: flex-end; margin-bottom: 2px;">
@@ -3580,6 +3588,7 @@
                   style="font-size: 1.375rem; font-weight: 700; color: #0369a1; width: 100%; border: 1px solid #bfdbfe; border-radius: 4px; padding: 0.5rem; background: #fff;"
                 />
               </div>
+              <div id="orderStoreWiseTotals" style="margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed #bfdbfe;"></div>
             </div>
             
             <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e2e8f0;" />
@@ -4059,6 +4068,36 @@
               </div>
           </div>
 
+          <div id="submittedOrdersContainer" style="display:none; margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; background: #f5f7ff; border-radius: 4px;">
+              <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 0.9em;">Submitted Cash Orders</h4>
+              <div style="max-height: 150px; overflow-y: auto;">
+                  <table class="table table-sm table-bordered" style="font-size: 0.8em; width: 100%; table-layout: fixed;">
+                      <colgroup>
+                          <col style="width: 34%;">
+                          <col style="width: 23%;">
+                          <col style="width: 21%;">
+                          <col style="width: 22%;">
+                      </colgroup>
+                      <thead>
+                          <tr>
+                              <th>Order #</th>
+                              <th>Date</th>
+                              <th style="text-align: right;">Amount</th>
+                              <th>Submission #</th>
+                          </tr>
+                      </thead>
+                      <tbody id="submittedOrdersListBody"></tbody>
+                      <tfoot>
+                          <tr>
+                              <th colspan="2">Total Submitted:</th>
+                              <th style="text-align: right;" id="submittedOrdersTotal">0.00</th>
+                              <th></th>
+                          </tr>
+                      </tfoot>
+                  </table>
+              </div>
+          </div>
+
           <div class="form-group">
             <label>Amount (₨)</label>
             <input
@@ -4202,7 +4241,7 @@
                     <td id="unsettledTotalSales">₨ 0.00</td>
                   </tr>
                   <tr>
-                    <td colspan="4" style="text-align: right;">Commission (<span id="unsettledCommissionRate">10</span>%):</td>
+                    <td colspan="4" style="text-align: right;">Profit/Discount Adjustment:</td>
                     <td id="unsettledCommission">₨ 0.00</td>
                   </tr>
                   <tr>
@@ -4267,6 +4306,7 @@
               <option value="rider_day_closing_report">Rider Day Closing Report</option>
               <option value="order_profit_report">Order Profit Report</option>
               <option value="comprehensive_report">Comprehensive Cash Report</option>
+              <option value="store_payable_reconciliation">Store Payable Reconciliation</option>
               <option value="transaction_summary">Transaction Summary</option>
               <option value="general_voucher">General Voucher (JNV)</option>
               <option value="expense_report">Expense Report</option>
@@ -4578,4 +4618,5 @@
     </style>
   </body>
 </html>
+
 

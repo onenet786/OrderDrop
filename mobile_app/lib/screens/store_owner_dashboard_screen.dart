@@ -753,6 +753,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     final ownerName = (_stats['owner_name'] ?? 'N/A').toString();
     final ownerEmail = (_stats['owner_email'] ?? 'N/A').toString();
     final ownerPhone = (_stats['owner_phone'] ?? 'N/A').toString();
+    final paymentTerm = (_stats['payment_term'] ?? '').toString().trim();
     final totalOrders = _stats['total_orders']?.toString() ?? '0';
     final delivered = _stats['delivered']?.toString() ?? '0';
     final preparing = _stats['preparing']?.toString() ?? '0';
@@ -761,6 +762,14 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
         double.tryParse(_stats['total_amount']?.toString() ?? '0')
                 ?.toStringAsFixed(2) ??
             '0.00';
+    final grossSales =
+        double.tryParse(_stats['gross_sales']?.toString() ?? '0')
+                ?.toStringAsFixed(2) ??
+            '0.00';
+    final netSales =
+        double.tryParse(_stats['net_sales']?.toString() ?? '0')
+                ?.toStringAsFixed(2) ??
+            totalAmount;
     final balance = double.tryParse(_stats['received_balance']?.toString() ?? '0')
             ?.toStringAsFixed(2) ??
         '0.00';
@@ -780,63 +789,59 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$storeName ($storeId)',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth <= 340;
+              final leftInfo = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$storeName ($storeId)',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
                     ),
-                    const Text(
-                      'Store Dashboard',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const Text(
+                    'Store Dashboard',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Owner: $ownerName',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Owner: $ownerName',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w600,
                     ),
-                    Text(
-                      'Email: $ownerEmail',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.black54,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Email: $ownerEmail',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.black54,
                     ),
-                    Text(
-                      'Phone: $ownerPhone',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.black54,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Phone: $ownerPhone',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.black54,
                     ),
-                  ],
-                ),
-              ),
-              Column(
+                  ),
+                ],
+              );
+
+              final receivable = Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   const Text(
-                    'Balance',
+                    'Net Receivable',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey,
@@ -851,8 +856,28 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                     ),
                   ),
                 ],
-              ),
-            ],
+              );
+
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    leftInfo,
+                    const SizedBox(height: 8),
+                    Align(alignment: Alignment.centerRight, child: receivable),
+                  ],
+                );
+              }
+
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(child: leftInfo),
+                  const SizedBox(width: 12),
+                  receivable,
+                ],
+              );
+            },
           ),
           const Divider(height: 24),
           Row(
@@ -868,9 +893,47 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildStatItem('Ready', ready, Colors.purple),
-              _buildStatItem('Revenue', 'PKR $totalAmount', Colors.teal, flex: 2),
+              _buildStatItem('Net Sales', 'PKR $netSales', Colors.teal, flex: 2),
             ],
           ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatItem(
+                'Gross Sales',
+                'PKR $grossSales',
+                Colors.indigo,
+                flex: 2,
+              ),
+              const SizedBox(width: 12),
+              const Expanded(child: SizedBox.shrink()),
+            ],
+          ),
+          if (paymentTerm.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3E0),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE65100), width: 0.8),
+                ),
+                child: Text(
+                  paymentTerm,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: Color(0xFFE65100),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
+                  ),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

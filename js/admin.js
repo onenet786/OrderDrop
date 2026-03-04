@@ -1646,6 +1646,7 @@ function initializeAdmin() {
     const filterStartDate = document.getElementById('filterStartDate');
     const filterEndDate = document.getElementById('filterEndDate');
     const filterRider = document.getElementById('filterRider');
+    const filterStore = document.getElementById('filterStore');
     const clearFiltersBtn = document.getElementById('clearFiltersBtn');
 
     // Make functions globally available for inline onclick attributes
@@ -1682,6 +1683,11 @@ function initializeAdmin() {
     const filterStatus = document.getElementById('filterStatus');
     if (filterStatus) {
         filterStatus.addEventListener('change', filterOrders);
+    }
+    if (filterStore) {
+        filterStore.addEventListener('change', () => {
+            loadOrders();
+        });
     }
     const filterAssignment = document.getElementById('filterAssignment');
     if (filterAssignment) {
@@ -3718,9 +3724,11 @@ function loadOrders() {
     ensureOrderDateFiltersDefault(false);
     const startDate = document.getElementById('filterStartDate')?.value || '';
     const endDate = document.getElementById('filterEndDate')?.value || '';
+    const storeId = document.getElementById('filterStore')?.value || '';
     const qs = new URLSearchParams();
     if (startDate) qs.append('startDate', startDate);
     if (endDate) qs.append('endDate', endDate);
+    if (storeId) qs.append('storeId', storeId);
     if (qs.toString()) {
         url += `?${qs.toString()}`;
     }
@@ -3745,6 +3753,7 @@ function loadOrders() {
         
         // Populate rider filter
         populateRiderFilter();
+        populateStoreFilter();
         
         // Apply client-side rider/status/assignment filters on fetched date range.
         filterOrders();
@@ -3800,6 +3809,54 @@ function populateRiderFilter() {
     });
     
     filterRider.value = currentValue;
+}
+
+function populateStoreFilter() {
+    const filterStore = document.getElementById('filterStore');
+    if (!filterStore) return;
+
+    const currentValue = filterStore.value;
+    const uniqueStores = new Map();
+
+    (AppState.orders || []).forEach(order => {
+        const orderStoreId = order?.store_id;
+        const orderStoreName = (order?.store_name || '').trim();
+        if (orderStoreId && orderStoreName) {
+            uniqueStores.set(String(orderStoreId), orderStoreName);
+        }
+
+        const rawStatuses = order?.store_statuses;
+        if (!rawStatuses) return;
+        let parsed = rawStatuses;
+        if (typeof rawStatuses === 'string') {
+            try { parsed = JSON.parse(rawStatuses); } catch (_) { parsed = []; }
+        }
+        if (Array.isArray(parsed)) {
+            parsed.forEach(s => {
+                const sid = s?.store_id;
+                const sname = (s?.store_name || '').trim();
+                if (sid && sname) {
+                    uniqueStores.set(String(sid), sname);
+                }
+            });
+        }
+    });
+
+    filterStore.innerHTML = '<option value="">All Stores</option>';
+    Array.from(uniqueStores.entries())
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .forEach(([id, name]) => {
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = name;
+            filterStore.appendChild(option);
+        });
+
+    if (currentValue && uniqueStores.has(currentValue)) {
+        filterStore.value = currentValue;
+    } else {
+        filterStore.value = '';
+    }
 }
 
 function displayOrders(orders = AppState.orders) {
@@ -3936,6 +3993,7 @@ function filterOrders() {
     const endDateFilter = document.getElementById('filterEndDate').value;
     const riderFilter = document.getElementById('filterRider').value;
     const statusFilter = document.getElementById('filterStatus') ? document.getElementById('filterStatus').value : '';
+    const storeFilter = document.getElementById('filterStore') ? document.getElementById('filterStore').value : '';
     const assignmentFilter = document.getElementById('filterAssignment') ? document.getElementById('filterAssignment').value : 'all';
     
     let filtered = AppState.orders;
@@ -3971,6 +4029,22 @@ function filterOrders() {
         });
     }
 
+    // Filter by store
+    if (storeFilter) {
+        filtered = filtered.filter(order => {
+            if (String(order?.store_id || '') === String(storeFilter)) return true;
+
+            const rawStatuses = order?.store_statuses;
+            if (!rawStatuses) return false;
+            let parsed = rawStatuses;
+            if (typeof rawStatuses === 'string') {
+                try { parsed = JSON.parse(rawStatuses); } catch (_) { parsed = []; }
+            }
+            if (!Array.isArray(parsed)) return false;
+            return parsed.some(s => String(s?.store_id || '') === String(storeFilter));
+        });
+    }
+
     // Filter by assignment
     if (assignmentFilter === 'unassigned') {
         filtered = filtered.filter(order => !order.rider_id && order.status !== 'delivered' && order.status !== 'cancelled');
@@ -3986,6 +4060,8 @@ function clearFilters() {
     if (preset) preset.value = 'today';
     ensureOrderDateFiltersDefault(true);
     document.getElementById('filterRider').value = '';
+    const storeFilter = document.getElementById('filterStore');
+    if (storeFilter) storeFilter.value = '';
     const statusFilter = document.getElementById('filterStatus');
     if (statusFilter) statusFilter.value = '';
     const assignmentFilter = document.getElementById('filterAssignment');
@@ -4212,10 +4288,18 @@ async function viewOrderDetails(orderId) {
                     </tr>
                 `;
             });
+            const storeSubtotal = (store.items || []).reduce((sum, item) => {
+                const price = parseFloat(item && item.price) || 0;
+                const qty = Number(item && item.quantity) || 0;
+                return sum + (price * qty);
+            }, 0);
 
             html += `
                         </tbody>
                     </table>
+                    <div style="text-align:right;margin-top:8px;font-weight:700;color:#0f172a;">
+                        Store Subtotal: PKR ${storeSubtotal.toFixed(2)}
+                    </div>
                 </div>
             `;
         });
@@ -4258,6 +4342,48 @@ function calculateDeliveryCharges(uniqueStoreCount) {
     const base = Number(window._deliveryFeeBase ?? 70);
     const extra = Number(window._deliveryFeeAdditional ?? 30);
     return base + (uniqueStoreCount - 1) * extra;
+}
+
+function computeStoreWiseItemTotals(items) {
+    const map = new Map();
+    (items || []).forEach((item) => {
+        const sid = item && item.store_id ? String(item.store_id) : 'unknown';
+        const sname = item && item.store_name ? String(item.store_name) : 'Unknown Store';
+        const qty = Number(item && item.quantity) || 0;
+        const price = Number(item && item.price) || 0;
+        const subtotal = qty * price;
+        if (!map.has(sid)) {
+            map.set(sid, { store_id: sid, store_name: sname, lines: 0, qty: 0, subtotal: 0 });
+        }
+        const row = map.get(sid);
+        row.lines += 1;
+        row.qty += qty;
+        row.subtotal += subtotal;
+    });
+    return Array.from(map.values()).sort((a, b) => b.subtotal - a.subtotal);
+}
+
+function renderStoreWiseOrderTotals(containerId, items) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    const rows = computeStoreWiseItemTotals(items);
+    if (!rows.length) {
+        el.innerHTML = '';
+        return;
+    }
+    const inner = rows.map((r) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #e5edf8;">
+            <div>
+                <strong style="color:#1e293b;">${escapeHtml(r.store_name)}</strong>
+                <span style="color:#64748b;font-size:12px;"> (${r.lines} lines, qty ${r.qty})</span>
+            </div>
+            <div style="font-weight:700;color:#0f172a;">PKR ${Number(r.subtotal || 0).toFixed(2)}</div>
+        </div>
+    `).join('');
+    el.innerHTML = `
+        <div style="font-size:0.82rem;color:#475569;margin-bottom:6px;"><strong>Store-wise Item Totals</strong></div>
+        <div>${inner}</div>
+    `;
 }
 
 function _setDeliveryFeeInputs(baseValue, additionalValue) {
@@ -4476,6 +4602,7 @@ async function editOrder(orderId) {
                     });
                     const currentDeliveryFee = document.getElementById('orderDeliveryFee').value;
                     updateOrderSummary(items, currentDeliveryFee);
+                    renderStoreWiseOrderTotals('orderStoreWiseTotals', items);
                 });
             });
 
@@ -4489,6 +4616,7 @@ async function editOrder(orderId) {
                     };
                 });
                 updateOrderSummary(items, this.value);
+                renderStoreWiseOrderTotals('orderStoreWiseTotals', items);
             });
 
             document.getElementById('orderTotalAmount').addEventListener('input', function() {
@@ -4513,6 +4641,7 @@ async function editOrder(orderId) {
                 if (itemsSubtotalEl) {
                     itemsSubtotalEl.textContent = `PKR ${itemsSubtotal.toFixed(2)}`;
                 }
+                renderStoreWiseOrderTotals('orderStoreWiseTotals', items);
             });
 
             const uniqueStores = new Set(itemsData.items.map(item => item.store_id).filter(Boolean));
@@ -4543,6 +4672,7 @@ async function editOrder(orderId) {
             console.log(`[Order ${orderId}] Subtotal: ${itemsSubtotal}, Delivery Fee: ${deliveryFee}, Total: ${itemsSubtotal + deliveryFee}`);
             
             updateOrderSummary(itemsData.items, deliveryFee);
+            renderStoreWiseOrderTotals('orderStoreWiseTotals', itemsData.items);
             
             if (freshOrder?.delivery_fee === undefined && freshOrder?.total_amount === undefined) {
                 showSuccess('Auto-Calculated', `Delivery fee calculated: ${storeCount} store(s) = PKR ${deliveryFee}`);
@@ -4550,6 +4680,7 @@ async function editOrder(orderId) {
         } else {
             itemsContainer.innerHTML = '<p style="color: #718096; text-align: center; margin: 1rem 0;">No items found</p>';
             updateOrderSummary([], 0);
+            renderStoreWiseOrderTotals('orderStoreWiseTotals', []);
         }
         
         const addItemBtn = document.getElementById('addItemBtn');

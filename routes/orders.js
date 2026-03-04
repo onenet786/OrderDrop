@@ -1924,51 +1924,120 @@ router.get(
           WHERE oi.store_id IN (${placeholders})
       `, [...storeIds]);
 
-      // 2. Total Revenue (Net item sales for this store in delivered orders)
-      // Keep this aligned with admin store balance logic:
-      // net = sum(qty * (gross_price - item_discount))
-      const [revenueRows] = await req.db.execute(`
-          SELECT 
-            COALESCE(
-                SUM(
-                    oi.quantity * (
-                      oi.price - (
-                        CASE
-                          WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
-                            THEN oi.price * (oi.discount_value / 100)
-                          WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
-                            THEN oi.discount_value
-                          ELSE 0
-                        END
-                      )
-                    )
-                ), 
-            0) as revenue
-          FROM order_items oi
-          JOIN orders o ON oi.order_id = o.id
-          WHERE oi.store_id IN (${placeholders}) AND o.status = 'delivered'
-      `, [...storeIds]);
-
-      // 3. Wallet Balance (use store wallet(s), not owner user wallet)
-      const [walletRows] = await req.db.execute(
-          `SELECT COALESCE(SUM(balance), 0) as balance
-           FROM wallets
-           WHERE store_id IN (${placeholders})`,
+      // 2. Sales breakdown (gross, discount/share, net) for delivered orders.
+      const [revenueRows] = await req.db.execute(
+          `SELECT
+              COALESCE(SUM(oi.quantity * oi.price), 0) AS gross_sales,
+              COALESCE(SUM(
+                oi.quantity * (
+                  CASE
+                    WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                         AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                         AND COALESCE(s.store_discount_percent, 0) > 0
+                      THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                    WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                      THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                    WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                      THEN COALESCE(oi.discount_value, 0)
+                    ELSE 0
+                  END
+                )
+              ), 0) AS discount_share
+           FROM order_items oi
+           JOIN orders o ON oi.order_id = o.id
+           JOIN stores s ON s.id = oi.store_id
+           WHERE oi.store_id IN (${placeholders})
+             AND o.status = 'delivered'`,
           [...storeIds]
       );
-      const balance = walletRows.length > 0 ? walletRows[0].balance : 0;
+      const grossSales = roundAmount(Number(revenueRows?.[0]?.gross_sales || 0));
+      const discountShare = roundAmount(Number(revenueRows?.[0]?.discount_share || 0));
+      const netSales = roundAmount(Math.max(0, grossSales - discountShare));
 
-      // 4. Get Store Name explicitly for dashboard display
+      // 3. Store wallet ledger balance (kept for diagnostics/display if needed)
+      const [walletLedgerRows] = await req.db.execute(
+          `SELECT
+              COALESCE(SUM(CASE WHEN wt.type = 'credit' THEN wt.amount ELSE 0 END), 0) AS credits,
+              COALESCE(SUM(CASE WHEN wt.type = 'debit' THEN wt.amount ELSE 0 END), 0) AS debits
+           FROM wallets w
+           LEFT JOIN wallet_transactions wt ON wt.wallet_id = w.id
+           WHERE w.store_id IN (${placeholders})`,
+          [...storeIds]
+      );
+      const ledgerCredits = Number(walletLedgerRows?.[0]?.credits || 0);
+      const ledgerDebits = Number(walletLedgerRows?.[0]?.debits || 0);
+      const walletBalance = roundAmount(ledgerCredits - ledgerDebits);
+
+      // 4. Pending settlement payable (business balance for store owner dashboard)
+      // Align with web store reports: for cash-only/cash-with-discount stores, pending is zero.
+      const [pendingRows] = await req.db.execute(
+          `SELECT
+              COALESCE(SUM(earn.total_payable), 0) AS total_payable,
+              COALESCE(SUM(paid.total_paid), 0) AS total_paid,
+              COALESCE(SUM(
+                CASE
+                  WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) IN ('cash only', 'cash with discount')
+                    THEN 0
+                  ELSE GREATEST(0, COALESCE(earn.total_payable, 0) - COALESCE(paid.total_paid, 0))
+                END
+              ), 0) AS pending_settlement
+           FROM stores s
+           LEFT JOIN (
+             SELECT
+               COALESCE(oi.store_id, p.store_id) AS store_id,
+               SUM(
+                 GREATEST(
+                   0,
+                   (oi.price * oi.quantity) -
+                   (
+                     oi.quantity * (
+                       CASE
+                         WHEN LOWER(TRIM(COALESCE(s2.payment_term, ''))) LIKE '%discount%'
+                              AND COALESCE(s2.store_discount_apply_all_products, 0) = 1
+                              AND COALESCE(s2.store_discount_percent, 0) > 0
+                           THEN oi.price * (COALESCE(s2.store_discount_percent, 0) / 100)
+                         WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                           THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                         WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                           THEN COALESCE(oi.discount_value, 0)
+                         ELSE 0
+                       END
+                     )
+                   )
+                 )
+               ) AS total_payable
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             JOIN products p ON p.id = oi.product_id
+             JOIN stores s2 ON s2.id = COALESCE(oi.store_id, p.store_id)
+             WHERE o.status = 'delivered'
+             GROUP BY COALESCE(oi.store_id, p.store_id)
+           ) earn ON earn.store_id = s.id
+           LEFT JOIN (
+             SELECT store_id, SUM(net_amount) AS total_paid
+             FROM store_settlements
+             WHERE status = 'paid'
+             GROUP BY store_id
+           ) paid ON paid.store_id = s.id
+           WHERE s.id IN (${placeholders})`,
+          [...storeIds]
+      );
+      const pendingSettlement = roundAmount(Number(pendingRows?.[0]?.pending_settlement || 0));
+
+      // 5. Get Store Name explicitly for dashboard display
       const [storeInfo] = await req.db.execute(
-          'SELECT name, owner_name FROM stores WHERE id = ?', 
+          'SELECT name, owner_name, payment_term FROM stores WHERE id = ?', 
           [myStores[0].id]
       );
       const storeName = storeInfo.length > 0 ? storeInfo[0].name : myStores[0].name;
       const storeOwnerName = storeInfo.length > 0
         ? (storeInfo[0].owner_name || '').toString().trim()
         : '';
+      const paymentTerm = storeInfo.length > 0
+        ? (storeInfo[0].payment_term || '').toString().trim()
+        : '';
 
-      // 5. Owner info for dashboard header
+      // 6. Owner info for dashboard header
       const ownerId = myStores[0].owner_id || req.user.id;
       const [ownerInfoRows] = await req.db.execute(
           `SELECT first_name, last_name, email, phone
@@ -1995,12 +2064,19 @@ router.get(
           owner_name: ownerName || 'N/A',
           owner_email: ownerInfo.email || 'N/A',
           owner_phone: ownerInfo.phone || 'N/A',
+          payment_term: paymentTerm || '',
           total_orders: countRows[0].total_orders,
           delivered: countRows[0].delivered,
           preparing: countRows[0].preparing,
           ready: countRows[0].ready,
-          total_amount: revenueRows[0].revenue,
-          received_balance: balance
+          total_amount: netSales, // Keep old key for compatibility
+          gross_sales: grossSales,
+          discount_share: discountShare,
+          net_sales: netSales,
+          // Business-facing balance for store dashboard
+          received_balance: pendingSettlement,
+          // Diagnostics: underlying wallet ledger balance
+          wallet_balance: walletBalance
       };
 
       res.json({ success: true, orders, stats });
@@ -2046,6 +2122,15 @@ router.get("/:id(\\d+)", authenticateToken, async (req, res) => {
     }
 
     const order = orders[0];
+
+    // Strict rule: delivery is allowed only after payment is marked as paid.
+    if (String(order.payment_status || "").toLowerCase() !== "paid") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment must be marked as paid before order can be delivered.",
+      });
+    }
 
     // Check permission: Admin, Standard User, Rider assigned, Customer who owns the order, or Store Owner linked to items
     let isStoreOwner = false;
@@ -2182,7 +2267,7 @@ router.get("/", authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied" });
     }
 
-    const { status, assignment, startDate, endDate } = req.query;
+    const { status, assignment, startDate, endDate, storeId } = req.query;
     const includeItemsCount =
       String(req.query.includeItemsCount ?? "true").toLowerCase() !== "false";
     const includeStoreStatuses =
@@ -2212,6 +2297,13 @@ router.get("/", authenticateToken, async (req, res) => {
     if (endDate) {
       conditions.push(`DATE(o.created_at) <= ?`);
       params.push(endDate);
+    }
+
+    if (storeId) {
+      conditions.push(
+        `(o.store_id = ? OR EXISTS (SELECT 1 FROM order_items oi_store WHERE oi_store.order_id = o.id AND oi_store.store_id = ?))`,
+      );
+      params.push(storeId, storeId);
     }
 
     let whereClause = "";
