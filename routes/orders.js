@@ -1092,6 +1092,44 @@ router.post("/", authenticateToken, async (req, res) => {
 });
 
 // Create manual order by admin/staff, with optional auto-create product for future reuse
+router.get(
+  "/admin/manual-products",
+  authenticateToken,
+  requireStaffAccess,
+  async (req, res) => {
+    try {
+      const storeId = parseInt(String(req.query.store_id || ""), 10);
+      if (!Number.isInteger(storeId) || storeId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid store_id is required",
+        });
+      }
+
+      const [products] = await req.db.execute(
+        `SELECT id, name, price, cost_price, category_id, is_available
+           FROM products
+          WHERE store_id = ?
+          ORDER BY name ASC, id DESC
+          LIMIT 1000`,
+        [storeId],
+      );
+
+      return res.json({
+        success: true,
+        products: products || [],
+      });
+    } catch (error) {
+      console.error("Error fetching manual products:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch products",
+        error: error.message,
+      });
+    }
+  },
+);
+
 router.post(
   "/admin/manual-create",
   authenticateToken,
@@ -1108,17 +1146,24 @@ router.post(
         payment_method,
         special_instructions,
         store_id,
+        product_id,
         item_name,
         quantity,
         unit_price,
+        cost_price,
         category_id,
         save_for_future = true,
       } = req.body || {};
 
       const customerId = parseInt(String(customer_id || ""), 10);
       const storeId = parseInt(String(store_id || ""), 10);
+      const selectedProductId = parseInt(String(product_id || ""), 10);
       const qty = parseInt(String(quantity || ""), 10);
       const unitPrice = Number(unit_price);
+      const costPrice =
+        cost_price === null || cost_price === undefined || String(cost_price).trim() === ""
+          ? null
+          : Number(cost_price);
 
       if (!Number.isInteger(customerId) || customerId <= 0) {
         return res.status(400).json({
@@ -1138,10 +1183,13 @@ router.post(
           message: "Delivery address is required",
         });
       }
-      if (!String(item_name || "").trim()) {
+      if (
+        (!Number.isInteger(selectedProductId) || selectedProductId <= 0) &&
+        !String(item_name || "").trim()
+      ) {
         return res.status(400).json({
           success: false,
-          message: "Item name is required",
+          message: "Item name or valid product is required",
         });
       }
       if (!Number.isInteger(qty) || qty <= 0) {
@@ -1154,6 +1202,12 @@ router.post(
         return res.status(400).json({
           success: false,
           message: "Unit price must be greater than zero",
+        });
+      }
+      if (costPrice !== null && (!Number.isFinite(costPrice) || costPrice < 0)) {
+        return res.status(400).json({
+          success: false,
+          message: "Cost price must be a non-negative number",
         });
       }
 
@@ -1187,21 +1241,41 @@ router.post(
       }
 
       let productId = null;
-      const normalizedItemName = String(item_name).trim();
+      const normalizedItemName = String(item_name || "").trim();
 
-      const [existingProducts] = await req.db.execute(
-        `SELECT p.id, p.price, p.cost_price, p.discount_type, p.discount_value, p.profit_type, p.profit_value
-           FROM products p
-          WHERE p.store_id = ?
-            AND LOWER(TRIM(p.name)) = LOWER(TRIM(?))
-          ORDER BY p.id DESC
-          LIMIT 1`,
-        [storeId, normalizedItemName],
-      );
+      if (Number.isInteger(selectedProductId) && selectedProductId > 0) {
+        const [pickedProducts] = await req.db.execute(
+          `SELECT p.id, p.name, p.price, p.cost_price, p.discount_type, p.discount_value, p.profit_type, p.profit_value, p.category_id
+             FROM products p
+            WHERE p.id = ? AND p.store_id = ?
+            LIMIT 1`,
+          [selectedProductId, storeId],
+        );
+        if (!pickedProducts.length) {
+          return res.status(400).json({
+            success: false,
+            message: "Selected product does not belong to this store",
+          });
+        }
+        productId = pickedProducts[0].id;
+      }
 
-      if (existingProducts.length > 0) {
-        productId = existingProducts[0].id;
-      } else if (save_for_future) {
+      if (!productId && normalizedItemName) {
+        const [existingProducts] = await req.db.execute(
+          `SELECT p.id, p.price, p.cost_price, p.discount_type, p.discount_value, p.profit_type, p.profit_value
+             FROM products p
+            WHERE p.store_id = ?
+              AND LOWER(TRIM(p.name)) = LOWER(TRIM(?))
+            ORDER BY p.id DESC
+            LIMIT 1`,
+          [storeId, normalizedItemName],
+        );
+
+        if (existingProducts.length > 0) {
+          productId = existingProducts[0].id;
+        }
+      }
+      if (!productId && save_for_future) {
         let finalCategoryId = null;
         const categoryIdNumber = parseInt(String(category_id || ""), 10);
         if (Number.isInteger(categoryIdNumber) && categoryIdNumber > 0) {
@@ -1213,7 +1287,7 @@ router.post(
           finalCategoryId = cats[0]?.id || null;
         }
 
-        const baseCost = roundAmount(unitPrice);
+        const baseCost = roundAmount(costPrice !== null ? costPrice : unitPrice);
         const productPrice = roundAmount(unitPrice);
         const [insertProduct] = await req.db.execute(
           `INSERT INTO products (
@@ -1277,7 +1351,7 @@ router.post(
       const financialSnapshot = deriveOrderItemAdjustmentSnapshot({
         paymentTerm: store.payment_term,
         unitPrice: roundAmount(unitPrice),
-        productCostPrice: product.cost_price,
+        productCostPrice: costPrice !== null ? costPrice : product.cost_price,
         discountType: product.discount_type,
         discountValue: product.discount_value,
         profitType: product.profit_type,

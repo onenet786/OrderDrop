@@ -1507,15 +1507,22 @@ async function createRiderCash() {
     const typeSelect = document.getElementById('movementType');
     const container = document.getElementById('pendingOrdersContainer');
     const submittedContainer = document.getElementById('submittedOrdersContainer');
+    const pendingFuelContainer = document.getElementById('pendingFuelContainer');
+    const submittedFuelContainer = document.getElementById('submittedFuelContainer');
     
     // Reset container visibility
     if (container) container.style.display = 'none';
     if (submittedContainer) submittedContainer.style.display = 'none';
+    if (pendingFuelContainer) pendingFuelContainer.style.display = 'none';
+    if (submittedFuelContainer) submittedFuelContainer.style.display = 'none';
 
     // Global variables to track pending orders (ensure they are reset)
     window.pendingCashOrders = [];
     window.selectedPendingOrders = new Set();
     window.submittedCashOrders = [];
+    window.pendingFuelEntries = [];
+    window.selectedPendingFuelEntries = new Set();
+    window.submittedFuelEntries = [];
 
     const checkPendingOrders = async () => {
         const riderId = riderSelect.value;
@@ -1553,14 +1560,63 @@ async function createRiderCash() {
                     window.submittedCashOrders = [];
                     if (submittedContainer) submittedContainer.style.display = 'none';
                 }
+                if (pendingFuelContainer) pendingFuelContainer.style.display = 'none';
+                if (submittedFuelContainer) submittedFuelContainer.style.display = 'none';
             } catch (e) {
                 console.error('Error fetching pending orders:', e);
                 container.style.display = 'none';
                 if (submittedContainer) submittedContainer.style.display = 'none';
+                if (pendingFuelContainer) pendingFuelContainer.style.display = 'none';
+                if (submittedFuelContainer) submittedFuelContainer.style.display = 'none';
             }
+        } else if (pendingFuelContainer && type === 'fuel_payment' && riderId) {
+            try {
+                const [fuelRes, submittedFuelRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/financial/riders/${riderId}/pending-fuel-entries`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+                    }),
+                    fetch(`${API_BASE}/api/financial/riders/${riderId}/submitted-fuel-entries`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+                    })
+                ]);
+                const fuelData = await fuelRes.json();
+                const submittedFuelData = await submittedFuelRes.json();
+                if (fuelData.success && fuelData.entries && fuelData.entries.length > 0) {
+                    window.pendingFuelEntries = fuelData.entries;
+                    window.selectedPendingFuelEntries = new Set(fuelData.entries.map(e => e.id));
+                    renderPendingFuelTable();
+                    pendingFuelContainer.style.display = 'block';
+                } else {
+                    window.pendingFuelEntries = [];
+                    window.selectedPendingFuelEntries = new Set();
+                    pendingFuelContainer.style.display = 'none';
+                    const amountInput = document.getElementById('riderCashAmountInput');
+                    if (amountInput) amountInput.value = '';
+                }
+
+                if (submittedFuelData.success && submittedFuelData.entries && submittedFuelData.entries.length > 0) {
+                    window.submittedFuelEntries = submittedFuelData.entries;
+                    renderSubmittedFuelTable();
+                    if (submittedFuelContainer) submittedFuelContainer.style.display = 'block';
+                } else {
+                    window.submittedFuelEntries = [];
+                    if (submittedFuelContainer) submittedFuelContainer.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('Error fetching pending fuel entries:', e);
+                window.pendingFuelEntries = [];
+                window.selectedPendingFuelEntries = new Set();
+                pendingFuelContainer.style.display = 'none';
+                window.submittedFuelEntries = [];
+                if (submittedFuelContainer) submittedFuelContainer.style.display = 'none';
+            }
+            if (container) container.style.display = 'none';
+            if (submittedContainer) submittedContainer.style.display = 'none';
         } else if (container) {
             container.style.display = 'none';
             if (submittedContainer) submittedContainer.style.display = 'none';
+            if (pendingFuelContainer) pendingFuelContainer.style.display = 'none';
+            if (submittedFuelContainer) submittedFuelContainer.style.display = 'none';
         }
     };
     
@@ -1569,6 +1625,89 @@ async function createRiderCash() {
     typeSelect.onchange = checkPendingOrders;
     
     openModal('riderCashModal');
+}
+
+function renderPendingFuelTable() {
+    const tbody = document.getElementById('pendingFuelListBody');
+    const totalEl = document.getElementById('pendingFuelTotal');
+    const selectAllCb = document.getElementById('selectAllPendingFuel');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+    let totalSelected = 0;
+    (window.pendingFuelEntries || []).forEach((entry) => {
+        const isSelected = window.selectedPendingFuelEntries.has(entry.id);
+        const fuelCost = parseFloat(entry.fuel_cost || 0);
+        const distance = parseFloat(entry.distance || 0);
+        if (isSelected) totalSelected += fuelCost;
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td style="text-align:center;"><input type="checkbox" value="${entry.id}" ${isSelected ? 'checked' : ''} onchange="togglePendingFuel(${entry.id}, this.checked)" style="cursor:pointer;"></td>
+            <td>${entry.entry_date ? new Date(entry.entry_date).toLocaleDateString() : '-'}</td>
+            <td style="text-align:right">₨ ${fuelCost.toFixed(2)}</td>
+            <td style="text-align:right">${distance.toFixed(2)}</td>
+            <td>${entry.notes || '-'}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    if (!window.pendingFuelEntries || window.pendingFuelEntries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No pending fuel entries</td></tr>';
+    }
+
+    if (totalEl) totalEl.textContent = `₨ ${totalSelected.toFixed(2)}`;
+    if (selectAllCb) {
+        selectAllCb.checked = window.pendingFuelEntries.length > 0 &&
+            window.selectedPendingFuelEntries.size === window.pendingFuelEntries.length;
+    }
+
+    const amountInput = document.getElementById('riderCashAmountInput');
+    if (amountInput && document.getElementById('movementType').value === 'fuel_payment') {
+        amountInput.value = totalSelected.toFixed(2);
+    }
+}
+
+function togglePendingFuel(id, checked) {
+    if (checked) window.selectedPendingFuelEntries.add(id);
+    else window.selectedPendingFuelEntries.delete(id);
+    renderPendingFuelTable();
+}
+
+function toggleAllPendingFuel(cb) {
+    if (cb.checked) {
+        window.selectedPendingFuelEntries = new Set((window.pendingFuelEntries || []).map(e => e.id));
+    } else {
+        window.selectedPendingFuelEntries.clear();
+    }
+    renderPendingFuelTable();
+}
+
+function renderSubmittedFuelTable() {
+    const tbody = document.getElementById('submittedFuelListBody');
+    const totalEl = document.getElementById('submittedFuelTotal');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+    let total = 0;
+
+    (window.submittedFuelEntries || []).forEach((entry) => {
+        const cost = parseFloat(entry.fuel_cost || 0);
+        total += cost;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${entry.fuel_history_id || entry.id || '-'}</td>
+            <td>${entry.entry_date ? new Date(entry.entry_date).toLocaleDateString() : '-'}</td>
+            <td style="text-align:right">₨ ${cost.toFixed(2)}</td>
+            <td>${entry.movement_number || '-'}</td>
+            <td>${entry.status || '-'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (!window.submittedFuelEntries || window.submittedFuelEntries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No submitted fuel entries</td></tr>';
+    }
+    if (totalEl) totalEl.textContent = `₨ ${total.toFixed(2)}`;
 }
 
 function renderSubmittedOrdersTable() {
@@ -1712,7 +1851,8 @@ async function submitRiderCash() {
         movement_type: movementType,
         amount,
         description,
-        linked_orders: Array.from(window.selectedPendingOrders || [])
+        linked_orders: Array.from(window.selectedPendingOrders || []),
+        linked_fuel_entries: Array.from(window.selectedPendingFuelEntries || [])
     };
 
     try {

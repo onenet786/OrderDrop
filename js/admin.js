@@ -1542,6 +1542,24 @@ function initializeAdmin() {
     if (toggleCreateManualStoreBtn) toggleCreateManualStoreBtn.addEventListener('click', toggleManualCreateStorePanel);
     const createManualStoreBtn = document.getElementById('createManualStoreBtn');
     if (createManualStoreBtn) createManualStoreBtn.addEventListener('click', createManualOrderStore);
+    const manualOrderStoreEl = document.getElementById('manualOrderStore');
+    if (manualOrderStoreEl && !manualOrderStoreEl.dataset.boundProductsLoad) {
+        manualOrderStoreEl.addEventListener('change', () => {
+            handleManualOrderStoreChange().catch((e) => console.error('Error on manual order store change:', e));
+        });
+        manualOrderStoreEl.dataset.boundProductsLoad = '1';
+    }
+    const manualOrderCustomerEl = document.getElementById('manualOrderCustomer');
+    if (manualOrderCustomerEl && !manualOrderCustomerEl.dataset.boundAutofillAddress) {
+        manualOrderCustomerEl.addEventListener('change', autofillManualOrderAddressFromCustomer);
+        manualOrderCustomerEl.dataset.boundAutofillAddress = '1';
+    }
+    const manualOrderExistingProductEl = document.getElementById('manualOrderExistingProduct');
+    if (manualOrderExistingProductEl && !manualOrderExistingProductEl.dataset.boundResolveProduct) {
+        manualOrderExistingProductEl.addEventListener('input', resolveManualOrderProductSelection);
+        manualOrderExistingProductEl.addEventListener('change', resolveManualOrderProductSelection);
+        manualOrderExistingProductEl.dataset.boundResolveProduct = '1';
+    }
     const storePaymentTermEl = document.getElementById('storePaymentTerm');
     const storeGraceDaysEl = document.getElementById('storeGraceDays');
     const storeGraceStartDateEl = document.getElementById('storeGraceStartDate');
@@ -1690,20 +1708,23 @@ function initializeAdmin() {
         });
     }
     if (filterRider) {
+        filterRider.addEventListener('input', filterOrders);
         filterRider.addEventListener('change', filterOrders);
     }
     const filterStatus = document.getElementById('filterStatus');
     if (filterStatus) {
+        filterStatus.addEventListener('input', filterOrders);
         filterStatus.addEventListener('change', filterOrders);
     }
     if (filterStore) {
-        filterStore.addEventListener('change', () => {
-            loadOrders();
-        });
+        filterStore.addEventListener('input', filterOrders);
+        filterStore.addEventListener('change', filterOrders);
     }
     const filterAssignment = document.getElementById('filterAssignment');
     if (filterAssignment) {
+        filterAssignment.addEventListener('input', filterOrders);
         filterAssignment.addEventListener('change', filterOrders);
+        if (!filterAssignment.value) filterAssignment.value = 'All Assignments';
     }
 
     // Wire up restore confirmation modal
@@ -1766,8 +1787,14 @@ function initializeAdmin() {
     const productStatusFilter = document.getElementById('productStatusFilter');
     const productClearFiltersBtn = document.getElementById('productClearFiltersBtn');
     if (productSearch) productSearch.addEventListener('input', filterProducts);
-    if (productCategoryFilter) productCategoryFilter.addEventListener('change', filterProducts);
-    if (productStoreFilter) productStoreFilter.addEventListener('change', filterProducts);
+    if (productCategoryFilter) {
+        productCategoryFilter.addEventListener('input', filterProducts);
+        productCategoryFilter.addEventListener('change', filterProducts);
+    }
+    if (productStoreFilter) {
+        productStoreFilter.addEventListener('input', filterProducts);
+        productStoreFilter.addEventListener('change', filterProducts);
+    }
     if (productStatusFilter) productStatusFilter.addEventListener('change', filterProducts);
     if (productClearFiltersBtn) productClearFiltersBtn.addEventListener('click', clearProductFilters);
 
@@ -3738,11 +3765,11 @@ function loadOrders() {
     ensureOrderDateFiltersDefault(false);
     const startDate = document.getElementById('filterStartDate')?.value || '';
     const endDate = document.getElementById('filterEndDate')?.value || '';
-    const storeId = document.getElementById('filterStore')?.value || '';
+    const storeFilterRaw = (document.getElementById('filterStore')?.value || '').trim();
     const qs = new URLSearchParams();
     if (startDate) qs.append('startDate', startDate);
     if (endDate) qs.append('endDate', endDate);
-    if (storeId) qs.append('storeId', storeId);
+    if (storeFilterRaw && /^\d+$/.test(storeFilterRaw)) qs.append('storeId', storeFilterRaw);
     if (qs.toString()) {
         url += `?${qs.toString()}`;
     }
@@ -3803,6 +3830,8 @@ function loadOrders() {
 
 function populateRiderFilter() {
     const filterRider = document.getElementById('filterRider');
+    const filterRiderList = document.getElementById('filterRiderList');
+    if (!filterRider || !filterRiderList) return;
     const riders = new Set();
     
     AppState.orders.forEach(order => {
@@ -3811,23 +3840,22 @@ function populateRiderFilter() {
         }
     });
     
-    // Keep "All Riders" option and add unique riders
     const currentValue = filterRider.value;
-    filterRider.innerHTML = '<option value="">All Riders</option>';
-    
+    filterRiderList.innerHTML = '<option value="All Riders"></option>';
+
     Array.from(riders).sort().forEach(rider => {
         const option = document.createElement('option');
         option.value = rider;
-        option.textContent = rider;
-        filterRider.appendChild(option);
+        filterRiderList.appendChild(option);
     });
-    
+
     filterRider.value = currentValue;
 }
 
 function populateStoreFilter() {
     const filterStore = document.getElementById('filterStore');
-    if (!filterStore) return;
+    const filterStoreList = document.getElementById('filterStoreList');
+    if (!filterStore || !filterStoreList) return;
 
     const currentValue = filterStore.value;
     const uniqueStores = new Map();
@@ -3856,21 +3884,16 @@ function populateStoreFilter() {
         }
     });
 
-    filterStore.innerHTML = '<option value="">All Stores</option>';
+    filterStoreList.innerHTML = '<option value="All Stores"></option>';
     Array.from(uniqueStores.entries())
         .sort((a, b) => a[1].localeCompare(b[1]))
-        .forEach(([id, name]) => {
+        .forEach(([, name]) => {
             const option = document.createElement('option');
-            option.value = id;
-            option.textContent = name;
-            filterStore.appendChild(option);
+            option.value = name;
+            filterStoreList.appendChild(option);
         });
 
-    if (currentValue && uniqueStores.has(currentValue)) {
-        filterStore.value = currentValue;
-    } else {
-        filterStore.value = '';
-    }
+    filterStore.value = currentValue;
 }
 
 function displayOrders(orders = AppState.orders) {
@@ -4005,10 +4028,29 @@ function displayOrders(orders = AppState.orders) {
 function filterOrders() {
     const startDateFilter = document.getElementById('filterStartDate').value;
     const endDateFilter = document.getElementById('filterEndDate').value;
-    const riderFilter = document.getElementById('filterRider').value;
-    const statusFilter = document.getElementById('filterStatus') ? document.getElementById('filterStatus').value : '';
-    const storeFilter = document.getElementById('filterStore') ? document.getElementById('filterStore').value : '';
-    const assignmentFilter = document.getElementById('filterAssignment') ? document.getElementById('filterAssignment').value : 'all';
+    const riderFilter = (document.getElementById('filterRider')?.value || '').trim().toLowerCase();
+    const statusInput = (document.getElementById('filterStatus')?.value || '').trim().toLowerCase();
+    const storeFilter = (document.getElementById('filterStore')?.value || '').trim().toLowerCase();
+    const assignmentInput = (document.getElementById('filterAssignment')?.value || '').trim().toLowerCase();
+    const statusMap = {
+        'pending': 'pending',
+        'confirmed': 'confirmed',
+        'preparing': 'preparing',
+        'ready': 'ready',
+        'out for delivery': 'out_for_delivery',
+        'out_for_delivery': 'out_for_delivery',
+        'delivered': 'delivered',
+        'cancelled': 'cancelled',
+        'all statuses': ''
+    };
+    const assignmentMap = {
+        'all assignments': 'all',
+        'all': 'all',
+        'unassigned': 'unassigned',
+        'assigned': 'assigned'
+    };
+    const statusFilter = statusMap[statusInput] !== undefined ? statusMap[statusInput] : statusInput;
+    const assignmentFilter = assignmentMap[assignmentInput] !== undefined ? assignmentMap[assignmentInput] : (assignmentInput || 'all');
     
     let filtered = AppState.orders;
     
@@ -4039,13 +4081,15 @@ function filterOrders() {
             const riderName = order.rider_first_name
                 ? `${order.rider_first_name} ${order.rider_last_name || ''}`.trim()
                 : '';
-            return riderName === riderFilter;
+            return riderName.toLowerCase().includes(riderFilter);
         });
     }
 
     // Filter by store
-    if (storeFilter) {
+    if (storeFilter && storeFilter !== 'all stores') {
         filtered = filtered.filter(order => {
+            const topStoreName = String(order?.store_name || '').trim().toLowerCase();
+            if (topStoreName.includes(storeFilter)) return true;
             if (String(order?.store_id || '') === String(storeFilter)) return true;
 
             const rawStatuses = order?.store_statuses;
@@ -4055,7 +4099,10 @@ function filterOrders() {
                 try { parsed = JSON.parse(rawStatuses); } catch (_) { parsed = []; }
             }
             if (!Array.isArray(parsed)) return false;
-            return parsed.some(s => String(s?.store_id || '') === String(storeFilter));
+            return parsed.some(s =>
+                String(s?.store_id || '') === String(storeFilter)
+                || String(s?.store_name || '').trim().toLowerCase().includes(storeFilter)
+            );
         });
     }
 
@@ -4079,7 +4126,7 @@ function clearFilters() {
     const statusFilter = document.getElementById('filterStatus');
     if (statusFilter) statusFilter.value = '';
     const assignmentFilter = document.getElementById('filterAssignment');
-    if (assignmentFilter) assignmentFilter.value = 'all';
+    if (assignmentFilter) assignmentFilter.value = 'All Assignments';
     loadOrders();
 }
 
@@ -4104,6 +4151,12 @@ async function openManualOrderModal() {
     if (createStorePanel) createStorePanel.style.display = 'none';
     const qtyEl = document.getElementById('manualOrderQty');
     if (qtyEl) qtyEl.value = '1';
+    const existingProductInput = document.getElementById('manualOrderExistingProduct');
+    if (existingProductInput) existingProductInput.value = '';
+    const existingProductId = document.getElementById('manualOrderProductId');
+    if (existingProductId) existingProductId.value = '';
+    const existingProductList = document.getElementById('manualOrderExistingProductList');
+    if (existingProductList) existingProductList.innerHTML = '';
     const saveForFutureEl = document.getElementById('manualOrderSaveForFuture');
     if (saveForFutureEl) saveForFutureEl.checked = true;
     const visibleStoreEl = document.getElementById('manualStoreVisibleToCustomers');
@@ -4265,6 +4318,7 @@ async function createManualOrderStore() {
         await loadManualOrderStores();
         const storeSel = document.getElementById('manualOrderStore');
         if (storeSel) storeSel.value = String(data.store.id);
+        await loadManualOrderProducts();
 
         const panel = document.getElementById('manualCreateStorePanel');
         if (panel) panel.style.display = 'none';
@@ -4295,10 +4349,12 @@ async function loadManualOrderCustomers() {
     }
     const customers = Array.isArray(data.customers) ? data.customers : [];
     AppState.notificationCustomers = customers;
+    AppState.manualOrderCustomersById = {};
     sel.innerHTML = '<option value="">Select customer</option>';
     customers.forEach((c) => {
         const id = Number(c.id);
         if (!Number.isInteger(id) || id <= 0) return;
+        AppState.manualOrderCustomersById[id] = c;
         const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || `Customer ${id}`;
         const phone = String(c.phone || '').trim();
         const email = String(c.email || '').trim();
@@ -4316,16 +4372,55 @@ async function loadManualOrderStores() {
     if (!Array.isArray(AppState.stores) || !AppState.stores.length) {
         await loadStores();
     }
+    AppState.manualOrderStoresById = {};
     sel.innerHTML = '<option value="">Select store</option>';
     (AppState.stores || [])
         .filter((s) => s && (s.is_active === true || s.is_active === 1 || s.is_active === '1'))
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
         .forEach((s) => {
+            AppState.manualOrderStoresById[Number(s.id)] = s;
             const opt = document.createElement('option');
             opt.value = String(s.id);
             opt.textContent = `${s.name || 'Store'}${s.phone ? ` (${s.phone})` : ''}`;
             sel.appendChild(opt);
         });
+}
+
+function autofillManualOrderAddressFromCustomer() {
+    const customerId = Number(document.getElementById('manualOrderCustomer')?.value || 0);
+    const addressEl = document.getElementById('manualOrderAddress');
+    if (!addressEl || !Number.isInteger(customerId) || customerId <= 0) return;
+    const map = AppState.manualOrderCustomersById || {};
+    const customer = map[customerId];
+    const customerAddress = String(customer?.address || '').trim();
+    if (customerAddress) {
+        addressEl.value = customerAddress;
+        return;
+    }
+    // Fallback only when customer has no address: use selected store location/address.
+    if (!addressEl.value.trim()) {
+        autofillManualOrderAddressFromStore();
+    }
+}
+
+function autofillManualOrderAddressFromStore() {
+    const storeId = Number(document.getElementById('manualOrderStore')?.value || 0);
+    const addressEl = document.getElementById('manualOrderAddress');
+    if (!addressEl || !Number.isInteger(storeId) || storeId <= 0) return;
+    // Do not override existing typed address.
+    if (addressEl.value && String(addressEl.value).trim()) return;
+    const map = AppState.manualOrderStoresById || {};
+    const store = map[storeId];
+    const location = String(store?.location || '').trim();
+    const address = String(store?.address || '').trim();
+    const fallback = address || location;
+    if (fallback) addressEl.value = fallback;
+}
+
+async function handleManualOrderStoreChange() {
+    await loadManualOrderProducts();
+    autofillManualOrderAddressFromCustomer();
+    autofillManualOrderAddressFromStore();
 }
 
 async function loadManualOrderCategories() {
@@ -4369,21 +4464,111 @@ async function loadManualOrderRiders() {
     }
 }
 
+function getManualOrderProductLabel(product) {
+    const id = Number(product?.id || 0);
+    const name = String(product?.name || '').trim() || `Product ${id}`;
+    const price = Number(product?.price || 0);
+    return `${name} (#${id}) - PKR ${price.toFixed(2)}`;
+}
+
+async function loadManualOrderProducts() {
+    const storeId = Number(document.getElementById('manualOrderStore')?.value || 0);
+    const listEl = document.getElementById('manualOrderExistingProductList');
+    const inputEl = document.getElementById('manualOrderExistingProduct');
+    const hiddenIdEl = document.getElementById('manualOrderProductId');
+    if (!listEl || !inputEl || !hiddenIdEl) return;
+
+    hiddenIdEl.value = '';
+    inputEl.value = '';
+    listEl.innerHTML = '';
+    AppState.manualOrderProductsByLabel = {};
+
+    if (!Number.isInteger(storeId) || storeId <= 0) return;
+
+    const response = await fetch(`${API_BASE}/api/orders/admin/manual-products?store_id=${storeId}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success || !Array.isArray(data.products)) {
+        return;
+    }
+
+    data.products.forEach((p) => {
+        const label = getManualOrderProductLabel(p);
+        AppState.manualOrderProductsByLabel[label] = p;
+        const opt = document.createElement('option');
+        opt.value = label;
+        listEl.appendChild(opt);
+    });
+
+    // If store has exactly one product and item field is empty, prefill it.
+    if (data.products.length === 1) {
+        const only = data.products[0];
+        const itemNameEl = document.getElementById('manualOrderItemName');
+        const unitPriceEl = document.getElementById('manualOrderUnitPrice');
+        const costPriceEl = document.getElementById('manualOrderCostPrice');
+        const categoryEl = document.getElementById('manualOrderCategory');
+        const hiddenIdEl2 = document.getElementById('manualOrderProductId');
+        const inputEl2 = document.getElementById('manualOrderExistingProduct');
+        if (hiddenIdEl2) hiddenIdEl2.value = String(only.id || '');
+        if (inputEl2) inputEl2.value = getManualOrderProductLabel(only);
+        if (itemNameEl && !itemNameEl.value.trim()) itemNameEl.value = String(only.name || '');
+        if (unitPriceEl) unitPriceEl.value = Number(only.price || 0).toFixed(2);
+        if (costPriceEl && only.cost_price !== undefined && only.cost_price !== null) {
+            costPriceEl.value = Number(only.cost_price).toFixed(2);
+        }
+        if (categoryEl && only.category_id) categoryEl.value = String(only.category_id);
+    }
+}
+
+function resolveManualOrderProductSelection() {
+    const inputEl = document.getElementById('manualOrderExistingProduct');
+    const hiddenIdEl = document.getElementById('manualOrderProductId');
+    const itemNameEl = document.getElementById('manualOrderItemName');
+    const unitPriceEl = document.getElementById('manualOrderUnitPrice');
+    const costPriceEl = document.getElementById('manualOrderCostPrice');
+    const categoryEl = document.getElementById('manualOrderCategory');
+    if (!inputEl || !hiddenIdEl) return;
+
+    const selectedLabel = String(inputEl.value || '').trim();
+    const productsByLabel = AppState.manualOrderProductsByLabel || {};
+    const picked = productsByLabel[selectedLabel];
+    if (!picked) {
+        hiddenIdEl.value = '';
+        return;
+    }
+
+    hiddenIdEl.value = String(picked.id || '');
+    if (itemNameEl && !itemNameEl.value.trim()) itemNameEl.value = String(picked.name || '');
+    if (unitPriceEl) unitPriceEl.value = Number(picked.price || 0).toFixed(2);
+    if (costPriceEl && picked.cost_price !== undefined && picked.cost_price !== null) {
+        costPriceEl.value = Number(picked.cost_price).toFixed(2);
+    }
+    if (categoryEl && picked.category_id) categoryEl.value = String(picked.category_id);
+}
+
 async function submitManualOrder() {
     const customerId = Number(document.getElementById('manualOrderCustomer')?.value || 0);
     const riderId = Number(document.getElementById('manualOrderRider')?.value || 0);
     const storeId = Number(document.getElementById('manualOrderStore')?.value || 0);
+    const selectedProductId = Number(document.getElementById('manualOrderProductId')?.value || 0);
     const categoryIdRaw = document.getElementById('manualOrderCategory')?.value || '';
     const itemName = (document.getElementById('manualOrderItemName')?.value || '').trim();
     const qty = Number(document.getElementById('manualOrderQty')?.value || 0);
     const unitPrice = Number(document.getElementById('manualOrderUnitPrice')?.value || 0);
+    const costPriceRaw = (document.getElementById('manualOrderCostPrice')?.value || '').trim();
+    const costPrice = costPriceRaw === '' ? null : Number(costPriceRaw);
     const address = (document.getElementById('manualOrderAddress')?.value || '').trim();
     const paymentMethod = (document.getElementById('manualOrderPaymentMethod')?.value || 'cash').trim() || 'cash';
     const instructions = (document.getElementById('manualOrderInstructions')?.value || '').trim();
     const saveForFuture = !!document.getElementById('manualOrderSaveForFuture')?.checked;
 
-    if (!customerId || !storeId || !itemName || !qty || qty < 1 || !unitPrice || unitPrice <= 0 || !address) {
-        showWarning('Missing Data', 'Please fill all required manual order fields.');
+    if (!customerId || !storeId || (!selectedProductId && !itemName) || !qty || qty < 1 || !unitPrice || unitPrice <= 0 || !address) {
+        showWarning('Missing Data', 'Please fill all required manual order fields (existing product or item name).');
+        return;
+    }
+    if (costPrice !== null && (!Number.isFinite(costPrice) || costPrice < 0)) {
+        showWarning('Validation Error', 'Cost price must be a valid non-negative number.');
         return;
     }
 
@@ -4398,8 +4583,10 @@ async function submitManualOrder() {
             customer_id: customerId,
             store_id: storeId,
             item_name: itemName,
+            product_id: Number.isInteger(selectedProductId) && selectedProductId > 0 ? selectedProductId : undefined,
             quantity: qty,
             unit_price: unitPrice,
+            cost_price: costPrice,
             delivery_address: address,
             payment_method: paymentMethod,
             special_instructions: instructions || null,
@@ -4487,39 +4674,51 @@ function clearStoreFilters() {
 }
 
 function populateProductFilters() {
-    const catSel = document.getElementById('productCategoryFilter');
-    const storeSel = document.getElementById('productStoreFilter');
-    if (!catSel && !storeSel) return;
+    const catInput = document.getElementById('productCategoryFilter');
+    const storeInput = document.getElementById('productStoreFilter');
+    const catList = document.getElementById('productCategoryFilterList');
+    const storeList = document.getElementById('productStoreFilterList');
+    if (!catInput && !storeInput && !catList && !storeList) return;
     const cats = new Set();
     const stores = new Set();
     (AppState.products || []).forEach(p => {
         if (p.category_name) cats.add(String(p.category_name));
         if (p.store_name) stores.add(String(p.store_name));
     });
-    if (catSel) {
-        const prev = catSel.value;
-        catSel.innerHTML = '<option value="">All</option>' + Array.from(cats).sort().map(c => `<option value="${c}">${c}</option>`).join('');
-        catSel.value = prev;
+    if (catInput) {
+        const prev = catInput.value;
+        if (catList) {
+            catList.innerHTML = Array.from(cats)
+                .sort()
+                .map(c => `<option value="${c}"></option>`)
+                .join('');
+        }
+        catInput.value = prev;
     }
-    if (storeSel) {
-        const prev2 = storeSel.value;
-        storeSel.innerHTML = '<option value="">All</option>' + Array.from(stores).sort().map(s => `<option value="${s}">${s}</option>`).join('');
-        storeSel.value = prev2;
+    if (storeInput) {
+        const prev2 = storeInput.value;
+        if (storeList) {
+            storeList.innerHTML = Array.from(stores)
+                .sort()
+                .map(s => `<option value="${s}"></option>`)
+                .join('');
+        }
+        storeInput.value = prev2;
     }
 }
 
 function filterProducts() {
     try {
         const q = (document.getElementById('productSearch')?.value || '').trim().toLowerCase();
-        const cat = document.getElementById('productCategoryFilter')?.value || '';
-        const store = document.getElementById('productStoreFilter')?.value || '';
+        const cat = (document.getElementById('productCategoryFilter')?.value || '').trim().toLowerCase();
+        const store = (document.getElementById('productStoreFilter')?.value || '').trim().toLowerCase();
         const status = document.getElementById('productStatusFilter')?.value || '';
         let filtered = AppState.products || [];
         if (q) {
             filtered = filtered.filter(p => (String(p.name || '').toLowerCase().includes(q)));
         }
-        if (cat) filtered = filtered.filter(p => String(p.category_name || '') === cat);
-        if (store) filtered = filtered.filter(p => String(p.store_name || '') === store);
+        if (cat) filtered = filtered.filter(p => String(p.category_name || '').toLowerCase().includes(cat));
+        if (store) filtered = filtered.filter(p => String(p.store_name || '').toLowerCase().includes(store));
         if (status) filtered = filtered.filter(p => ((p.is_available ? 'available' : 'unavailable') === status));
         displayProducts(filtered);
     } catch (e) { console.warn('filterProducts error', e); }

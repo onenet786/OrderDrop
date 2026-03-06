@@ -451,6 +451,27 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               ?.cast<String, dynamic>();
       final summaryDate =
           (dailySummary['date'] ?? _dateOnly(toDate)).toString();
+      final finalizedStatuses = <String>{'approved', 'completed'};
+      double totalCollection = 0;
+      double totalSubmitted = 0;
+      for (final raw in movements) {
+        final m = (raw as Map?)?.cast<String, dynamic>() ?? {};
+        final movementType = (m['movement_type'] ?? '').toString().toLowerCase();
+        final movementStatus = (m['status'] ?? '').toString().toLowerCase().trim();
+        final amount = _parseDouble(m['amount']);
+        final includeInTotals =
+            movementStatus.isEmpty || finalizedStatuses.contains(movementStatus);
+        if (!includeInTotals) continue;
+        if (movementType == 'cash_collection') {
+          totalCollection += amount;
+        } else if (movementType == 'cash_submission') {
+          totalSubmitted += amount;
+        }
+      }
+      if (totalCollection == 0 && movements.isEmpty) {
+        totalCollection = _parseDouble(summary['cash_collection']);
+      }
+      final unsettledCollection = (totalCollection - totalSubmitted).clamp(0, double.infinity);
 
       Color movementColor(String type) {
         final t = type.toLowerCase();
@@ -471,7 +492,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         final amount = _parseDouble(value).toStringAsFixed(2);
         return Expanded(
           child: Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
@@ -480,23 +501,33 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, color: color, size: 18),
-                const SizedBox(height: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.black54,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Row(
+                  children: [
+                    Icon(icon, color: color, size: 14),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w600,
+                          height: 1.0,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   'PKR $amount',
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 12.5,
                     color: color,
                     fontWeight: FontWeight.bold,
+                    height: 1.0,
                   ),
                 ),
               ],
@@ -564,7 +595,25 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                             ],
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            summaryTile(
+                              label: 'Total Collection',
+                              value: totalCollection,
+                              icon: Icons.payments_outlined,
+                              color: const Color(0xFF15803D),
+                            ),
+                            const SizedBox(width: 8),
+                            summaryTile(
+                              label: 'Unsettled Collection',
+                              value: unsettledCollection,
+                              icon: Icons.account_balance_wallet_outlined,
+                              color: const Color(0xFFE65100),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
                         Row(
                           children: [
                             summaryTile(
@@ -573,30 +622,30 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                               icon: Icons.account_balance_wallet_outlined,
                               color: const Color(0xFF0F766E),
                             ),
-                            const SizedBox(width: 10),
-                            summaryTile(
-                              label: 'Cash Collection',
-                              value: summary['cash_collection'],
-                              icon: Icons.payments_outlined,
-                              color: const Color(0xFF15803D),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
+                            const SizedBox(width: 8),
                             summaryTile(
                               label: 'Store Payment',
                               value: summary['store_payment'],
                               icon: Icons.storefront_outlined,
                               color: const Color(0xFF1D4ED8),
                             ),
-                            const SizedBox(width: 10),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
                             summaryTile(
                               label: 'Fuel Payment',
                               value: summary['fuel_payment'],
                               icon: Icons.local_gas_station_outlined,
                               color: const Color(0xFFD97706),
+                            ),
+                            const SizedBox(width: 8),
+                            summaryTile(
+                              label: 'Office Advance',
+                              value: summary['office_advance'],
+                              icon: Icons.request_page_outlined,
+                              color: const Color(0xFF7C3AED),
                             ),
                           ],
                         ),

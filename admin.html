@@ -832,6 +832,7 @@
                     <option value="advance">Advance</option>
                     <option value="settlement">Settlement</option>
                     <option value="adjustment">Adjustment</option>
+                    <option value="fuel_payment">Fuel Payment</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -1569,15 +1570,19 @@
             </div>
             <div class="filter-group">
                 <label for="productCategoryFilter">Category</label>
-                <select id="productCategoryFilter" class="form-control">
-                    <option value="">All Categories</option>
-                </select>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-tags search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="productCategoryFilter" class="form-control" list="productCategoryFilterList" placeholder="Type category..." style="padding-left: 2.5rem;">
+                    <datalist id="productCategoryFilterList"></datalist>
+                </div>
             </div>
             <div class="filter-group">
                 <label for="productStoreFilter">Store</label>
-                <select id="productStoreFilter" class="form-control">
-                    <option value="">All Stores</option>
-                </select>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-store search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="productStoreFilter" class="form-control" list="productStoreFilterList" placeholder="Type store..." style="padding-left: 2.5rem;">
+                    <datalist id="productStoreFilterList"></datalist>
+                </div>
             </div>
             <div class="filter-group">
                 <label for="productStatusFilter">Status</label>
@@ -1650,36 +1655,52 @@
             </div>
             <div class="filter-group">
                 <label for="filterAssignment">Assignment</label>
-                <select id="filterAssignment" class="form-control">
-                    <option value="all">All Assignments</option>
-                    <option value="unassigned">Unassigned</option>
-                    <option value="assigned">Assigned</option>
-                </select>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-user-check search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="filterAssignment" class="form-control" list="filterAssignmentList" placeholder="Type assignment..." style="padding-left: 2.5rem;">
+                    <datalist id="filterAssignmentList">
+                        <option value="All Assignments"></option>
+                        <option value="Unassigned"></option>
+                        <option value="Assigned"></option>
+                    </datalist>
+                </div>
             </div>
             <div class="filter-group">
                 <label for="filterRider">Rider</label>
-                <select id="filterRider" class="form-control">
-                    <option value="">All Riders</option>
-                </select>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-motorcycle search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="filterRider" class="form-control" list="filterRiderList" placeholder="Type rider..." style="padding-left: 2.5rem;">
+                    <datalist id="filterRiderList">
+                        <option value="All Riders"></option>
+                    </datalist>
+                </div>
             </div>
             <div class="filter-group">
                 <label for="filterStatus">Status</label>
-                <select id="filterStatus" class="form-control">
-                    <option value="">All Statuses</option>
-                    <option value="pending">Pending</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="preparing">Preparing</option>
-                    <option value="ready">Ready</option>
-                    <option value="out_for_delivery">Out for Delivery</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="cancelled">Cancelled</option>
-                </select>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-tasks search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="filterStatus" class="form-control" list="filterStatusList" placeholder="Type status..." style="padding-left: 2.5rem;">
+                    <datalist id="filterStatusList">
+                        <option value="All Statuses"></option>
+                        <option value="Pending"></option>
+                        <option value="Confirmed"></option>
+                        <option value="Preparing"></option>
+                        <option value="Ready"></option>
+                        <option value="Out for Delivery"></option>
+                        <option value="Delivered"></option>
+                        <option value="Cancelled"></option>
+                    </datalist>
+                </div>
             </div>
             <div class="filter-group">
                 <label for="filterStore">Store</label>
-                <select id="filterStore" class="form-control">
-                    <option value="">All Stores</option>
-                </select>
+                <div class="search-input-wrapper">
+                    <i class="fas fa-store search-icon" style="top: 2.5rem;"></i>
+                    <input type="text" id="filterStore" class="form-control" list="filterStoreList" placeholder="Type store..." style="padding-left: 2.5rem;">
+                    <datalist id="filterStoreList">
+                        <option value="All Stores"></option>
+                    </datalist>
+                </div>
             </div>
             <button class="btn btn-secondary" id="clearFiltersBtn" style="align-self: flex-end; margin-bottom: 2px;">
                 <i class="fas fa-times"></i> Clear
@@ -1737,18 +1758,6 @@
             </button>
           </div>
 
-          <div class="actions-toolbar" style="margin-top: 1rem; margin-bottom: 1rem;">
-            <button class="btn btn-primary" id="openTransactionModalBtn">
-              <i class="fas fa-plus"></i> Add Transaction
-            </button>
-            <button class="btn btn-secondary" id="openCompReportModalBtn">
-              <i class="fas fa-file-invoice-dollar"></i> Comprehensive Report
-            </button>
-            <button class="btn btn-secondary" id="openOrderDetailReportModalBtn">
-              <i class="fas fa-list-alt"></i> Order Detail Report
-            </button>
-          </div>
-          
           <div class="stats-grid">
             <div class="stat-card" onclick="showCashLedger()" style="cursor: pointer" title="Click to view Cash Ledger">
               <h3 id="cashInHandAmount">-</h3>
@@ -3820,6 +3829,14 @@
             </div>
             <div class="form-row">
               <div class="form-group">
+                <label for="manualOrderExistingProduct">Existing Product (optional)</label>
+                <input type="text" id="manualOrderExistingProduct" class="form-control" list="manualOrderExistingProductList" placeholder="Type to search product..." />
+                <datalist id="manualOrderExistingProductList"></datalist>
+                <input type="hidden" id="manualOrderProductId" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
                 <label for="manualOrderItemName">Item Name</label>
                 <input type="text" id="manualOrderItemName" class="form-control" required />
               </div>
@@ -3838,6 +3855,10 @@
               <div class="form-group">
                 <label for="manualOrderUnitPrice">Unit Price (PKR)</label>
                 <input type="number" min="0.01" step="0.01" id="manualOrderUnitPrice" class="form-control" required />
+              </div>
+              <div class="form-group">
+                <label for="manualOrderCostPrice">Cost Price (PKR)</label>
+                <input type="number" min="0" step="0.01" id="manualOrderCostPrice" class="form-control" placeholder="For profit calculation" />
               </div>
             </div>
             <div class="form-row">
@@ -4203,6 +4224,7 @@
               <option value="advance">Advance</option>
               <option value="settlement">Settlement</option>
               <option value="adjustment">Adjustment</option>
+              <option value="fuel_payment">Fuel Payment</option>
             </select>
           </div>
           
@@ -4269,6 +4291,68 @@
                               <th colspan="2">Total Submitted:</th>
                               <th style="text-align: right;" id="submittedOrdersTotal">0.00</th>
                               <th></th>
+                          </tr>
+                      </tfoot>
+                  </table>
+              </div>
+          </div>
+
+          <div id="pendingFuelContainer" style="display:none; margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; background: #fff7ed; border-radius: 4px;">
+              <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 0.9em;">Pending Fuel Entries</h4>
+              <div style="max-height: 150px; overflow-y: auto;">
+                  <table class="table table-sm table-bordered" style="font-size: 0.8em; width: 100%; table-layout: fixed;">
+                      <colgroup>
+                          <col style="width: 10%;">
+                          <col style="width: 25%;">
+                          <col style="width: 20%;">
+                          <col style="width: 20%;">
+                          <col style="width: 25%;">
+                      </colgroup>
+                      <thead>
+                          <tr>
+                              <th style="text-align: center;"><input type="checkbox" id="selectAllPendingFuel" onchange="toggleAllPendingFuel(this)" style="cursor: pointer;"></th>
+                              <th>Date</th>
+                              <th style="text-align: right;">Fuel Cost</th>
+                              <th style="text-align: right;">Distance</th>
+                              <th>Notes</th>
+                          </tr>
+                      </thead>
+                      <tbody id="pendingFuelListBody"></tbody>
+                      <tfoot>
+                          <tr>
+                              <th colspan="4">Total Selected Fuel:</th>
+                              <th style="text-align: right;" id="pendingFuelTotal">0.00</th>
+                          </tr>
+                      </tfoot>
+                  </table>
+              </div>
+          </div>
+
+          <div id="submittedFuelContainer" style="display:none; margin-bottom: 15px; border: 1px solid #ddd; padding: 10px; background: #eef2ff; border-radius: 4px;">
+              <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 0.9em;">Submitted Fuel Entries</h4>
+              <div style="max-height: 150px; overflow-y: auto;">
+                  <table class="table table-sm table-bordered" style="font-size: 0.8em; width: 100%; table-layout: fixed;">
+                      <colgroup>
+                          <col style="width: 17%;">
+                          <col style="width: 22%;">
+                          <col style="width: 18%;">
+                          <col style="width: 21%;">
+                          <col style="width: 22%;">
+                      </colgroup>
+                      <thead>
+                          <tr>
+                              <th>Fuel Entry #</th>
+                              <th>Date</th>
+                              <th style="text-align: right;">Fuel Cost</th>
+                              <th>Submission #</th>
+                              <th>Status</th>
+                          </tr>
+                      </thead>
+                      <tbody id="submittedFuelListBody"></tbody>
+                      <tfoot>
+                          <tr>
+                              <th colspan="4">Total Submitted Fuel:</th>
+                              <th style="text-align: right;" id="submittedFuelTotal">0.00</th>
                           </tr>
                       </tfoot>
                   </table>

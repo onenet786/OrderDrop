@@ -929,7 +929,7 @@ router.get('/global-delivery-status', async (req, res) => {
 router.get('/notification-customers', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const [rows] = await req.db.execute(
-            `SELECT u.id, u.first_name, u.last_name, u.email, u.phone
+            `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.address
              FROM users u
              WHERE (u.user_type IS NULL OR u.user_type = '' OR LOWER(u.user_type) IN ('customer', 'standard_user'))
                AND (u.is_active IS NULL OR u.is_active = 1)

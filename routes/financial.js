@@ -124,6 +124,24 @@ async function ensureRiderCashSubmissionOrdersTable(db) {
     `);
 }
 
+async function ensureRiderFuelPaymentEntriesTable(db) {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS rider_fuel_payment_entries (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            movement_id INT NOT NULL,
+            fuel_history_id INT NOT NULL,
+            rider_id INT NOT NULL,
+            entry_date DATE NULL,
+            fuel_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_movement_fuel_entry (movement_id, fuel_history_id),
+            KEY idx_rfpe_fuel_history (fuel_history_id),
+            KEY idx_rfpe_rider (rider_id),
+            KEY idx_rfpe_movement (movement_id)
+        )
+    `);
+}
+
 router.use(authenticateToken);
 
 // Custom authorization for financial routes
@@ -176,114 +194,74 @@ router.use(async (req, res, next) => {
 router.get('/dashboard', async (req, res) => {
     try {
         const { period = 'today' } = req.query;
-        let dateFilter = '';
-        let dateParams = [];
-
         const today = new Date();
-        
-        if (period === 'today') {
-            const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-            const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-            dateFilter = 'WHERE DATE(ft.created_at) = DATE(?)';
-            dateParams = [startOfDay.toISOString().split('T')[0]];
-        } else if (period === 'week') {
-            const startOfWeek = new Date(today);
-            startOfWeek.setDate(today.getDate() - today.getDay());
-            const endOfWeek = new Date(startOfWeek);
-            endOfWeek.setDate(startOfWeek.getDate() + 7);
-            dateFilter = 'WHERE ft.created_at >= ? AND ft.created_at < ?';
-            dateParams = [startOfWeek.toISOString(), endOfWeek.toISOString()];
-        } else if (period === 'month') {
-            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-            dateFilter = 'WHERE YEAR(ft.created_at) = ? AND MONTH(ft.created_at) = ?';
-            dateParams = [startOfMonth.getFullYear(), startOfMonth.getMonth() + 1];
-        }
+        const dateOnly = today.toISOString().split('T')[0];
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay());
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 7);
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth() + 1;
+
+        const buildPeriodFilter = (columnName) => {
+            if (period === 'today') {
+                return { clause: `DATE(${columnName}) = DATE(?)`, params: [dateOnly] };
+            }
+            if (period === 'week') {
+                return { clause: `${columnName} >= ? AND ${columnName} < ?`, params: [startOfWeek.toISOString(), endOfWeek.toISOString()] };
+            }
+            if (period === 'month') {
+                return { clause: `YEAR(${columnName}) = ? AND MONTH(${columnName}) = ?`, params: [currentYear, currentMonth] };
+            }
+            if (period === 'year') {
+                return { clause: `YEAR(${columnName}) = ?`, params: [currentYear] };
+            }
+            return { clause: '', params: [] }; // all
+        };
+
+        const ftPeriod = buildPeriodFilter('ft.created_at');
+        const ftWhere = [
+            "ft.status = 'completed'",
+            ftPeriod.clause || null
+        ].filter(Boolean);
 
         const [transactions] = await req.db.execute(
             `SELECT transaction_type, category, SUM(amount) as total
              FROM financial_transactions ft
-             ${dateFilter}
+             WHERE ${ftWhere.join(' AND ')}
              GROUP BY transaction_type, category`,
-            dateParams
+            ftPeriod.params
         );
 
-        let paymentVoucherFilter = '';
-        let paymentVoucherParams = [];
-        if (period === 'today') {
-            paymentVoucherFilter = 'WHERE status = \'paid\' AND DATE(voucher_date) = DATE(?)';
-            paymentVoucherParams = [dateParams[0]];
-        } else if (period === 'week') {
-            paymentVoucherFilter = 'WHERE status = \'paid\' AND voucher_date >= ? AND voucher_date < ?';
-            paymentVoucherParams = dateParams;
-        } else if (period === 'month') {
-            paymentVoucherFilter = 'WHERE status = \'paid\' AND YEAR(voucher_date) = ? AND MONTH(voucher_date) = ?';
-            paymentVoucherParams = dateParams;
-        } else {
-            paymentVoucherFilter = 'WHERE status = \'paid\'';
-        }
-
+        const cpvPeriod = buildPeriodFilter('voucher_date');
+        const cpvWhere = ["status = 'paid'", cpvPeriod.clause || null].filter(Boolean);
         const [paymentVouchers] = await req.db.execute(
-            `SELECT SUM(amount) as total FROM cash_payment_vouchers ${paymentVoucherFilter}`,
-            paymentVoucherParams
+            `SELECT SUM(amount) as total FROM cash_payment_vouchers WHERE ${cpvWhere.join(' AND ')}`,
+            cpvPeriod.params
         );
 
-        let receiptVoucherFilter = '';
-        let receiptVoucherParams = [];
-        if (period === 'today') {
-            receiptVoucherFilter = 'WHERE status = \'received\' AND DATE(voucher_date) = DATE(?)';
-            receiptVoucherParams = [dateParams[0]];
-        } else if (period === 'week') {
-            receiptVoucherFilter = 'WHERE status = \'received\' AND voucher_date >= ? AND voucher_date < ?';
-            receiptVoucherParams = dateParams;
-        } else if (period === 'month') {
-            receiptVoucherFilter = 'WHERE status = \'received\' AND YEAR(voucher_date) = ? AND MONTH(voucher_date) = ?';
-            receiptVoucherParams = dateParams;
-        } else {
-            receiptVoucherFilter = 'WHERE status = \'received\'';
-        }
-
+        const crvPeriod = buildPeriodFilter('voucher_date');
+        const crvWhere = ["status = 'received'", crvPeriod.clause || null].filter(Boolean);
         const [receiptVouchers] = await req.db.execute(
-            `SELECT SUM(amount) as total FROM cash_receipt_vouchers ${receiptVoucherFilter}`,
-            receiptVoucherParams
+            `SELECT SUM(amount) as total FROM cash_receipt_vouchers WHERE ${crvWhere.join(' AND ')}`,
+            crvPeriod.params
         );
 
-        let riderCashFilter = '';
-        let riderCashParams = [];
-        if (period === 'today') {
-            riderCashFilter = 'WHERE status IN (\'approved\', \'completed\') AND DATE(movement_date) = DATE(?)';
-            riderCashParams = [dateParams[0]];
-        } else if (period === 'week') {
-            riderCashFilter = 'WHERE status IN (\'approved\', \'completed\') AND movement_date >= ? AND movement_date < ?';
-            riderCashParams = dateParams;
-        } else if (period === 'month') {
-            riderCashFilter = 'WHERE status IN (\'approved\', \'completed\') AND YEAR(movement_date) = ? AND MONTH(movement_date) = ?';
-            riderCashParams = dateParams;
-        } else {
-            riderCashFilter = 'WHERE status IN (\'approved\', \'completed\')';
-        }
-
+        const riderPeriod = buildPeriodFilter('movement_date');
+        const riderWhere = [
+            "status IN ('approved', 'completed')",
+            riderPeriod.clause || null
+        ].filter(Boolean);
         const [riderCash] = await req.db.execute(
-            `SELECT movement_type, SUM(amount) as total FROM rider_cash_movements rcm ${riderCashFilter} GROUP BY movement_type`,
-            riderCashParams
+            `SELECT movement_type, SUM(amount) as total
+             FROM rider_cash_movements rcm
+             WHERE ${riderWhere.join(' AND ')}
+             GROUP BY movement_type`,
+            riderPeriod.params
         );
 
-        let cashInHandDateFilter = '';
-        const cashInHandParams = [];
-        if (period === 'today') {
-            cashInHandDateFilter = 'AND DATE(created_at) = DATE(?)';
-            cashInHandParams.push(dateParams[0]);
-        } else if (period === 'week') {
-            cashInHandDateFilter = 'AND created_at >= ? AND created_at < ?';
-            cashInHandParams.push(...dateParams);
-        } else if (period === 'month') {
-            cashInHandDateFilter = 'AND YEAR(created_at) = ? AND MONTH(created_at) = ?';
-            cashInHandParams.push(...dateParams);
-        } else if (period === 'year') {
-            cashInHandDateFilter = 'AND YEAR(created_at) = ?';
-            cashInHandParams.push(new Date().getFullYear());
-        }
-
+        // Cash in hand should represent current office cash position (all-time net),
+        // so do not apply period filter on this card.
         const [cashInHandResult] = await req.db.execute(`
             SELECT 
                 SUM(CASE 
@@ -295,12 +273,11 @@ router.get('/dashboard', async (req, res) => {
                     WHEN transaction_type = 'refund' THEN -amount 
                     ELSE 0 
                 END) as total
-            FROM financial_transactions 
+            FROM financial_transactions ft
             WHERE payment_method = 'cash' 
-            AND status = 'completed'
-            AND category != 'rider_receivable'
-            ${cashInHandDateFilter}
-        `, cashInHandParams);
+            AND ft.status = 'completed'
+            AND COALESCE(category, '') != 'rider_receivable'
+        `);
 
         const stats = {
             income: 0,
@@ -1408,6 +1385,7 @@ router.post('/rider-cash', [
     try {
         await ensureRiderCashMovementTypes(req.db);
         await ensureRiderCashSubmissionOrdersTable(req.db);
+        await ensureRiderFuelPaymentEntriesTable(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -1425,10 +1403,18 @@ router.post('/rider-cash', [
                     .filter((v) => Number.isInteger(v) && v > 0)
             )
         );
+        const linkedFuelEntryIds = Array.from(
+            new Set(
+                (Array.isArray(req.body.linked_fuel_entries) ? req.body.linked_fuel_entries : [])
+                    .map((v) => parseInt(v, 10))
+                    .filter((v) => Number.isInteger(v) && v > 0)
+            )
+        );
         const movement_number = generateVoucherNumber('RCM');
         const movement_date = new Date().toISOString().split('T')[0];
 
         let eligibleOrders = [];
+        let eligibleFuelEntries = [];
         if (movement_type === 'cash_submission' && linkedOrderIds.length > 0) {
             const placeholders = linkedOrderIds.map(() => '?').join(',');
             const [orders] = await req.db.execute(
@@ -1475,6 +1461,48 @@ router.post('/rider-cash', [
             }
         }
 
+        if (movement_type === 'fuel_payment' && linkedFuelEntryIds.length > 0) {
+            const placeholders = linkedFuelEntryIds.map(() => '?').join(',');
+            const [fuelEntries] = await req.db.execute(
+                `SELECT fh.id, fh.rider_id, fh.entry_date, fh.fuel_cost
+                 FROM riders_fuel_history fh
+                 WHERE fh.rider_id = ?
+                   AND fh.id IN (${placeholders})`,
+                [rider_id, ...linkedFuelEntryIds]
+            );
+            eligibleFuelEntries = fuelEntries || [];
+            if (eligibleFuelEntries.length !== linkedFuelEntryIds.length) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'One or more selected fuel entries are invalid for this rider'
+                });
+            }
+
+            const [alreadyLinkedFuel] = await req.db.execute(
+                `SELECT rfpe.fuel_history_id
+                 FROM rider_fuel_payment_entries rfpe
+                 JOIN rider_cash_movements rcm ON rcm.id = rfpe.movement_id
+                 WHERE rfpe.fuel_history_id IN (${placeholders})
+                   AND rcm.movement_type = 'fuel_payment'
+                   AND rcm.status IN ('pending', 'approved', 'completed')`,
+                linkedFuelEntryIds
+            );
+            if (alreadyLinkedFuel.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Some selected fuel entries are already linked to fuel payment'
+                });
+            }
+
+            const expectedFuelAmount = eligibleFuelEntries.reduce((s, r) => s + Number(r.fuel_cost || 0), 0);
+            if (Math.abs(Number(amount || 0) - expectedFuelAmount) > 0.01) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Amount must match selected fuel entries total (${expectedFuelAmount.toFixed(2)})`
+                });
+            }
+        }
+
         const [result] = await req.db.execute(
             `INSERT INTO rider_cash_movements 
              (movement_number, rider_id, movement_date, movement_type, amount, description, reference_type, reference_id, recorded_by, notes, status)
@@ -1491,6 +1519,26 @@ router.post('/rider-cash', [
             await req.db.execute(
                 `INSERT INTO rider_cash_submission_orders
                  (movement_id, order_id, rider_id, order_number, order_amount)
+                 VALUES ${valuesSql}`,
+                insertParams
+            );
+        }
+
+        if (movement_type === 'fuel_payment' && eligibleFuelEntries.length > 0) {
+            const valuesSql = eligibleFuelEntries.map(() => '(?, ?, ?, ?, ?)').join(', ');
+            const insertParams = [];
+            eligibleFuelEntries.forEach((f) => {
+                insertParams.push(
+                    result.insertId,
+                    f.id,
+                    rider_id,
+                    f.entry_date || null,
+                    Number(f.fuel_cost || 0)
+                );
+            });
+            await req.db.execute(
+                `INSERT INTO rider_fuel_payment_entries
+                 (movement_id, fuel_history_id, rider_id, entry_date, fuel_cost)
                  VALUES ${valuesSql}`,
                 insertParams
             );
@@ -4032,6 +4080,64 @@ router.get('/riders/:id/pending-cash-orders', async (req, res) => {
         const total = pendingOrders.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
 
         res.json({ success: true, orders: pendingOrders, total });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/riders/:id/pending-fuel-entries', async (req, res) => {
+    try {
+        await ensureRiderFuelPaymentEntriesTable(req.db);
+        const { id } = req.params;
+
+        const [entries] = await req.db.execute(
+            `SELECT fh.id, fh.entry_date, fh.fuel_cost, fh.distance, fh.notes
+             FROM riders_fuel_history fh
+             WHERE fh.rider_id = ?
+               AND COALESCE(fh.fuel_cost, 0) > 0
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM rider_fuel_payment_entries rfpe
+                   JOIN rider_cash_movements rcm ON rcm.id = rfpe.movement_id
+                   WHERE rfpe.fuel_history_id = fh.id
+                     AND rcm.movement_type = 'fuel_payment'
+                     AND rcm.status IN ('pending', 'approved', 'completed')
+               )
+             ORDER BY fh.entry_date DESC, fh.id DESC`,
+            [id]
+        );
+
+        const total = entries.reduce((sum, row) => sum + parseFloat(row.fuel_cost || 0), 0);
+        res.json({ success: true, entries, total });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+router.get('/riders/:id/submitted-fuel-entries', async (req, res) => {
+    try {
+        await ensureRiderFuelPaymentEntriesTable(req.db);
+        const { id } = req.params;
+
+        const [rows] = await req.db.execute(
+            `SELECT
+                rfpe.id,
+                rfpe.fuel_history_id,
+                rfpe.entry_date,
+                rfpe.fuel_cost,
+                rcm.movement_number,
+                rcm.status
+             FROM rider_fuel_payment_entries rfpe
+             JOIN rider_cash_movements rcm ON rcm.id = rfpe.movement_id
+             WHERE rfpe.rider_id = ?
+               AND rcm.movement_type = 'fuel_payment'
+               AND rcm.status IN ('pending', 'approved', 'completed')
+             ORDER BY rfpe.entry_date DESC, rfpe.id DESC`,
+            [id]
+        );
+
+        const total = rows.reduce((sum, row) => sum + parseFloat(row.fuel_cost || 0), 0);
+        res.json({ success: true, entries: rows, total });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
