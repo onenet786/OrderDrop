@@ -585,6 +585,14 @@ img, video, canvas, svg {
   margin-bottom: 0.5rem;
 }
 
+/* Financial dashboard amounts are color-coded dynamically in JS. */
+#financial-dashboard .stat-card h3 {
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+}
+
 /* Order Details View Styles */
 .order-info-section {
     display: grid;

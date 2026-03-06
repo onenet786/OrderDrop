@@ -2052,6 +2052,16 @@ document.addEventListener('click', function(e) {
     } catch (e) { /* ignore delegated handler errors */ }
 });
 
+// Keep admin modals open on ESC; user must close using explicit modal controls.
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    const openModal = document.querySelector('.modal.show');
+    if (openModal) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+});
+
 // Delegated handlers for Save buttons (in case direct listeners didn't attach)
 document.addEventListener('click', function(e) {
     try {
@@ -3108,7 +3118,10 @@ function showActivityDetails(item) {
 
     // Close on outside click
     modal.onclick = (e) => {
-        if (e.target === modal) modal.remove();
+        if (e.target === modal) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
     };
 }
 

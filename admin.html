@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Dashboard - ServeNow</title>
     <link rel="stylesheet" href="css/style.css?v=4" />
-    <link rel="stylesheet" href="css/admin.css?v=5" />
+    <link rel="stylesheet" href="css/admin.css?v=6" />
     <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
     <link
       rel="stylesheet"
@@ -921,6 +921,7 @@
                     <option value="store_settlement">Store Settlement</option>
                     <option value="store_financials">Store Financials</option>
                     <option value="store_payable_reconciliation">Store Payable Reconciliation</option>
+                    <option value="unsettled_amounts_report">Unsettled Amounts Report</option>
                     <option value="rider_cash_report">Rider Cash Report</option>
                     <option value="rider_fuel_report">Rider Fuel Report</option>
                     <option value="rider_orders_report">Rider Orders Report</option>
@@ -1740,6 +1741,18 @@
 
         <!-- Financial Dashboard Tab -->
         <div id="financial-dashboard" class="tab-content">
+          <style>
+            #cashInHandAmount { color: #0f766e !important; }
+            #totalIncomeAmount { color: #16a34a !important; }
+            #totalExpenseAmount { color: #dc2626 !important; }
+            #netProfitAmount { color: #16a34a !important; }
+            #totalSettlementsAmount { color: #d97706 !important; }
+            #totalRiderCashAmount { color: #2563eb !important; }
+            #paymentVouchersAmount { color: #7c3aed !important; }
+            #receiptVouchersAmount { color: #4f46e5 !important; }
+            #totalUnsettledAmount { color: #ea580c !important; }
+            #netProfitIfSettledAmount { color: #059669 !important; }
+          </style>
           <h2>Financial Dashboard</h2>
           
           <div class="filter-controls">
@@ -1761,35 +1774,43 @@
           <div class="stats-grid">
             <div class="stat-card" onclick="showCashLedger()" style="cursor: pointer" title="Click to view Cash Ledger">
               <h3 id="cashInHandAmount">-</h3>
-              <p>Cash in Hand (Office)</p>
+              <p><i class="fas fa-cash-register"></i> Cash in Hand (Office)</p>
             </div>
             <div class="stat-card">
               <h3 id="totalIncomeAmount">-</h3>
-              <p>Total Income</p>
+              <p><i class="fas fa-arrow-down"></i> Total Income</p>
             </div>
             <div class="stat-card">
               <h3 id="totalExpenseAmount">-</h3>
-              <p>Total Expenses</p>
+              <p><i class="fas fa-arrow-up"></i> Total Expenses</p>
             </div>
             <div class="stat-card">
               <h3 id="netProfitAmount">-</h3>
-              <p>Net Profit</p>
+              <p><i class="fas fa-chart-line"></i> Net Profit</p>
             </div>
             <div class="stat-card">
               <h3 id="totalSettlementsAmount">-</h3>
-              <p>Settlements</p>
+              <p><i class="fas fa-handshake"></i> Settlements</p>
             </div>
             <div class="stat-card">
               <h3 id="totalRiderCashAmount">-</h3>
-              <p>Rider Cash Submitted</p>
+              <p><i class="fas fa-motorcycle"></i> Rider Cash Submitted</p>
             </div>
             <div class="stat-card">
               <h3 id="paymentVouchersAmount">-</h3>
-              <p>Payment Vouchers (CPV)</p>
+              <p><i class="fas fa-file-invoice-dollar"></i> Payment Vouchers (CPV)</p>
             </div>
             <div class="stat-card">
               <h3 id="receiptVouchersAmount">-</h3>
-              <p>Receipt Vouchers (CRV)</p>
+              <p><i class="fas fa-receipt"></i> Receipt Vouchers (CRV)</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="totalUnsettledAmount">-</h3>
+              <p><i class="fas fa-hourglass-half"></i> Total Unsettled Amount</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="netProfitIfSettledAmount">-</h3>
+              <p><i class="fas fa-balance-scale"></i> Total Net Profit If Settled</p>
             </div>
           </div>
         </div>
@@ -3896,8 +3917,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
-    <script src="js/financial.js?v=8" defer></script>
-    <script src="js/admin.js?v=21" defer></script>
+    <script src="js/financial.js?v=11" defer></script>
+    <script src="js/admin.js?v=22" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");
@@ -4568,6 +4589,7 @@
               <option value="order_profit_report">Order Profit Report</option>
               <option value="comprehensive_report">Comprehensive Cash Report</option>
               <option value="store_payable_reconciliation">Store Payable Reconciliation</option>
+              <option value="unsettled_amounts_report">Unsettled Amounts Report</option>
               <option value="transaction_summary">Transaction Summary</option>
               <option value="general_voucher">General Voucher (JNV)</option>
               <option value="expense_report">Expense Report</option>
@@ -4774,9 +4796,12 @@
     </div>
 
     <script>
+      // Modal closing policy:
+      // close only via explicit close controls (X / Close / Cancel buttons).
+      // Backdrop click must not close modals.
       window.addEventListener("click", function (event) {
-        if (event.target.classList.contains("modal")) {
-          event.target.classList.remove("show");
+        if (event.target.classList && event.target.classList.contains("modal")) {
+          event.stopPropagation();
         }
       });
     </script>

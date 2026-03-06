@@ -481,17 +481,57 @@ async function loadFinancialDashboard() {
         const data = await response.json();
 
         if (data.success) {
-            document.getElementById('totalIncomeAmount').textContent = `₨ ${parseFloat(data.stats.income).toFixed(2)}`;
-            document.getElementById('totalExpenseAmount').textContent = `₨ ${parseFloat(data.stats.expense).toFixed(2)}`;
-            document.getElementById('totalSettlementsAmount').textContent = `₨ ${parseFloat(data.stats.settlement).toFixed(2)}`;
-            const netProfit = data.stats.income - (data.stats.expense + data.stats.settlement + (data.stats.refund || 0));
-            document.getElementById('netProfitAmount').textContent = `₨ ${parseFloat(netProfit).toFixed(2)}`;
-            document.getElementById('paymentVouchersAmount').textContent = `₨ ${parseFloat(data.stats.paymentVouchers).toFixed(2)}`;
-            document.getElementById('receiptVouchersAmount').textContent = `₨ ${parseFloat(data.stats.receiptVouchers).toFixed(2)}`;
-            document.getElementById('totalRiderCashAmount').textContent = `₨ ${parseFloat(data.stats.riderCashSubmitted).toFixed(2)}`;
-            if (document.getElementById('cashInHandAmount')) {
-                document.getElementById('cashInHandAmount').textContent = `₨ ${parseFloat(data.stats.cashInHand).toFixed(2)}`;
-            }
+            const toNum = (v) => {
+                const n = parseFloat(v);
+                return Number.isFinite(n) ? n : 0;
+            };
+            const setAmount = (id, value, color) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.textContent = `₨ ${toNum(value).toFixed(2)}`;
+                el.style.setProperty('color', color, 'important');
+                el.style.setProperty('-webkit-text-fill-color', color, 'important');
+                el.style.setProperty('background', 'none', 'important');
+                el.style.setProperty('-webkit-background-clip', 'initial', 'important');
+                el.style.fontWeight = '700';
+            };
+            const setTileStyle = (id, accent, bg) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const card = el.closest('.stat-card');
+                if (!card) return;
+                card.style.setProperty('border-left', `4px solid ${accent}`, 'important');
+                card.style.setProperty('background', bg, 'important');
+            };
+            const setDynamicAmount = (id, value, positiveColor, negativeColor) => {
+                const num = toNum(value);
+                setAmount(id, num, num < 0 ? negativeColor : positiveColor);
+            };
+
+            const stats = data.stats || {};
+            const netProfit = toNum(stats.income) - (toNum(stats.expense) + toNum(stats.settlement) + toNum(stats.refund));
+
+            setAmount('cashInHandAmount', stats.cashInHand, '#0f766e');
+            setAmount('totalIncomeAmount', stats.income, '#16a34a');
+            setAmount('totalExpenseAmount', stats.expense, '#dc2626');
+            setDynamicAmount('netProfitAmount', netProfit, '#16a34a', '#b91c1c');
+            setAmount('totalSettlementsAmount', stats.settlement, '#d97706');
+            setAmount('totalRiderCashAmount', stats.riderCashSubmitted, '#2563eb');
+            setAmount('paymentVouchersAmount', stats.paymentVouchers, '#7c3aed');
+            setAmount('receiptVouchersAmount', stats.receiptVouchers, '#4f46e5');
+            setAmount('totalUnsettledAmount', stats.totalUnsettledAmount || 0, '#ea580c');
+            setDynamicAmount('netProfitIfSettledAmount', stats.netProfitIfSettled || 0, '#059669', '#b91c1c');
+
+            setTileStyle('cashInHandAmount', '#0f766e', 'linear-gradient(135deg,#f0fdfa,#ecfeff)');
+            setTileStyle('totalIncomeAmount', '#16a34a', 'linear-gradient(135deg,#f0fdf4,#ecfdf5)');
+            setTileStyle('totalExpenseAmount', '#dc2626', 'linear-gradient(135deg,#fef2f2,#fff1f2)');
+            setTileStyle('netProfitAmount', netProfit < 0 ? '#b91c1c' : '#16a34a', netProfit < 0 ? 'linear-gradient(135deg,#fff1f2,#fef2f2)' : 'linear-gradient(135deg,#ecfdf5,#f0fdf4)');
+            setTileStyle('totalSettlementsAmount', '#d97706', 'linear-gradient(135deg,#fffbeb,#fefce8)');
+            setTileStyle('totalRiderCashAmount', '#2563eb', 'linear-gradient(135deg,#eff6ff,#eef2ff)');
+            setTileStyle('paymentVouchersAmount', '#7c3aed', 'linear-gradient(135deg,#f5f3ff,#faf5ff)');
+            setTileStyle('receiptVouchersAmount', '#4f46e5', 'linear-gradient(135deg,#eef2ff,#e0e7ff)');
+            setTileStyle('totalUnsettledAmount', '#ea580c', 'linear-gradient(135deg,#fff7ed,#ffedd5)');
+            setTileStyle('netProfitIfSettledAmount', toNum(stats.netProfitIfSettled || 0) < 0 ? '#b91c1c' : '#059669', toNum(stats.netProfitIfSettled || 0) < 0 ? 'linear-gradient(135deg,#fff1f2,#fef2f2)' : 'linear-gradient(135deg,#ecfdf5,#f0fdf4)');
         }
     } catch (error) {
         console.error('Error loading financial dashboard:', error);
@@ -2303,7 +2343,7 @@ async function submitGenerateReport() {
     if (storeId && reportType === 'order_wise_sale_summary') {
         payload.store_id = storeId;
     }
-    if (storeId && reportType === 'store_payable_reconciliation') {
+    if (storeId && (reportType === 'store_payable_reconciliation' || reportType === 'unsettled_amounts_report')) {
         payload.store_id = storeId;
     }
 
@@ -2594,7 +2634,7 @@ function generatePDF(reportId) {
                 theme: 'grid',
                 styles: { fontSize: 8 }
             });
-        } else if (data.type === 'store_payable_reconciliation') {
+        } else if (data.type === 'store_payable_reconciliation' || data.type === 'unsettled_amounts_report') {
             doc.text('Store Payable Reconciliation', 14, startY);
             if (data.summary) {
                 doc.setFontSize(10);
@@ -2618,6 +2658,22 @@ function generatePDF(reportId) {
                 theme: 'grid',
                 styles: { fontSize: 8 }
             });
+            if (data.type === 'unsettled_amounts_report' && Array.isArray(data.order_rows) && data.order_rows.length > 0) {
+                const afterY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : startY + 30;
+                doc.text('Order-wise Unsettled (Descending)', 14, afterY);
+                doc.autoTable({
+                    startY: afterY + 4,
+                    head: [['Order #', 'Date', 'Store', 'Unsettled Amount']],
+                    body: data.order_rows.map(o => [
+                        o.order_number || '-',
+                        o.order_date ? new Date(o.order_date).toLocaleDateString() : '-',
+                        o.store_name || '-',
+                        `Rs ${parseFloat(o.unsettled_amount || 0).toFixed(2)}`
+                    ]),
+                    theme: 'grid',
+                    styles: { fontSize: 7 }
+                });
+            }
         } else if (data.type === 'general_voucher') {
             doc.text('Journal Vouchers', 14, startY);
             doc.autoTable({
@@ -2764,6 +2820,33 @@ function generatePDF(reportId) {
                     `Rs ${parseFloat(o.overall_profit || 0).toFixed(2)}`,
                     `Rs ${parseFloat(o.paid_to_store || 0).toFixed(2)}`,
                     `Rs ${parseFloat(o.paid_to_store_expected || 0).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+        } else if (data.type === 'expense_report') {
+            doc.text('Expense Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Entries: ${data.summary.total_count || 0} | Recorded: Rs ${parseFloat(data.summary.total_recorded || 0).toFixed(2)} | Paid: Rs ${parseFloat(data.summary.total_paid || 0).toFixed(2)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 12;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Ref #', 'Date', 'Category', 'Description', 'Method', 'Vendor', 'Status', 'Amount']],
+                body: (data.expenses || []).map(e => [
+                    e.expense_number || e.transaction_number || '-',
+                    e.expense_date ? new Date(e.expense_date).toLocaleDateString() : '-',
+                    e.category || '-',
+                    e.description || '-',
+                    e.payment_method || '-',
+                    e.vendor_name || e.entity_name || '-',
+                    e.status || '-',
+                    `Rs ${parseFloat(e.amount || 0).toFixed(2)}`
                 ]),
                 theme: 'grid',
                 styles: { fontSize: 7 }
@@ -3020,6 +3103,24 @@ function viewReport(reportId) {
         if (data.summary) {
             extraDetails += `<div style="margin-top: 10px;"><strong>Total Orders:</strong> ${data.summary.total_orders} | <strong>Bill Total:</strong> Rs ${parseFloat(data.summary.bill_total || 0).toFixed(2)} | <strong>Delivery Fee:</strong> Rs ${parseFloat(data.summary.delivery_fee || 0).toFixed(2)} | <strong>Item Profit:</strong> Rs ${parseFloat(data.summary.item_profit || 0).toFixed(2)} | <strong>Overall Profit:</strong> Rs ${parseFloat(data.summary.overall_profit || 0).toFixed(2)} | <strong>Paid to Store:</strong> Rs ${parseFloat(data.summary.paid_to_store || 0).toFixed(2)}</div>`;
         }
+    } else if (data && data.type === 'expense_report') {
+        extraDetails = '<h3>Expense Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Ref #</th><th>Date</th><th>Category</th><th>Description</th><th>Method</th><th>Vendor</th><th>Status</th><th>Amount</th></tr></thead><tbody>';
+        (data.expenses || []).forEach(e => {
+            extraDetails += `<tr>
+                <td>${e.expense_number || e.transaction_number || '-'}</td>
+                <td>${e.expense_date ? new Date(e.expense_date).toLocaleDateString() : '-'}</td>
+                <td>${e.category || '-'}</td>
+                <td>${e.description || '-'}</td>
+                <td>${e.payment_method || '-'}</td>
+                <td>${e.vendor_name || e.entity_name || '-'}</td>
+                <td>${e.status || '-'}</td>
+                <td>Rs ${parseFloat(e.amount || 0).toFixed(2)}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;"><strong>Entries:</strong> ${data.summary.total_count || 0} | <strong>Recorded:</strong> Rs ${parseFloat(data.summary.total_recorded || 0).toFixed(2)} | <strong>Paid:</strong> Rs ${parseFloat(data.summary.total_paid || 0).toFixed(2)}</div>`;
+        }
     } else if (data && data.type === 'store_settlement') {
         extraDetails = '<h3>Store Settlements</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Settlement #</th><th>Date</th><th>Store</th><th>Amount</th><th>Comm.</th><th>Status</th></tr></thead><tbody>';
         if (data.settlements) {
@@ -3052,7 +3153,7 @@ function viewReport(reportId) {
         if (data.summary) {
             extraDetails += `<div style="margin-top: 10px;"><strong>Total Orders:</strong> ${data.summary.total_orders} | <strong>Total Delivery Fees:</strong> ₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</div>`;
         }
-    } else if (data && data.type === 'store_payable_reconciliation') {
+    } else if (data && (data.type === 'store_payable_reconciliation' || data.type === 'unsettled_amounts_report')) {
         extraDetails = '<h3>Store Payable Reconciliation</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.85em"><thead><tr><th>Store</th><th>Generated (Period)</th><th>Settled (Paid, Period)</th><th>Period Flow</th><th>Current Outstanding</th></tr></thead><tbody>';
         if (data.rows) {
             data.rows.forEach(r => {
@@ -3074,6 +3175,18 @@ function viewReport(reportId) {
                 Period Flow: Rs ${parseFloat(data.summary.period_flow || 0).toFixed(2)} |
                 <strong>Current Outstanding: Rs ${parseFloat(data.summary.current_outstanding || 0).toFixed(2)}</strong>
             </div>`;
+        }
+        if (data.type === 'unsettled_amounts_report' && Array.isArray(data.order_rows) && data.order_rows.length > 0) {
+            extraDetails += '<h3 style="margin-top:14px;">Order-wise Unsettled (Descending)</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.85em"><thead><tr><th>Order #</th><th>Date</th><th>Store</th><th>Unsettled Amount</th></tr></thead><tbody>';
+            data.order_rows.forEach(o => {
+                extraDetails += `<tr>
+                    <td>${o.order_number || '-'}</td>
+                    <td>${o.order_date ? new Date(o.order_date).toLocaleDateString() : '-'}</td>
+                    <td>${o.store_name || '-'}</td>
+                    <td>Rs ${parseFloat(o.unsettled_amount || 0).toFixed(2)}</td>
+                </tr>`;
+            });
+            extraDetails += '</tbody></table></div>';
         }
     } else if (data && data.type === 'comprehensive_report') {
         extraDetails = '<h3>Comprehensive Transactions</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.8em"><thead><tr><th>Date</th><th>Ref #</th><th>Type</th><th>Entity</th><th>In</th><th>Out</th><th>Desc</th></tr></thead><tbody>';
@@ -3335,6 +3448,15 @@ function viewTransaction(id) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Hard fallback: if old cached admin.html still contains deprecated dashboard buttons,
+    // remove them on load.
+    ['openTransactionModalBtn', 'openCompReportModalBtn', 'openOrderDetailReportModalBtn'].forEach((id) => {
+        const btn = document.getElementById(id);
+        if (btn && btn.parentElement) {
+            btn.parentElement.removeChild(btn);
+        }
+    });
+
     const financialPeriodFilter = document.getElementById('financialPeriodFilter');
     const refreshFinancialDashboardBtn = document.getElementById('refreshFinancialDashboardBtn');
     const transactionTypeFilter = document.getElementById('transactionTypeFilter');
@@ -3469,7 +3591,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (storeGroup) {
                 storeGroup.style.display = (
                     this.value === 'order_wise_sale_summary' ||
-                    this.value === 'store_payable_reconciliation'
+                    this.value === 'store_payable_reconciliation' ||
+                    this.value === 'unsettled_amounts_report'
                 ) ? 'block' : 'none';
             }
         });

@@ -4,6 +4,7 @@ RewriteEngine On
 # Ensure service worker file is served as JavaScript (not rewritten to HTML)
 <IfModule mod_mime.c>
   AddType application/javascript .js
+  AddType text/css .css
 </IfModule>
 
 <IfModule mod_headers.c>

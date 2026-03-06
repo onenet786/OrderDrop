@@ -221,7 +221,7 @@ router.get('/dashboard', async (req, res) => {
 
         const ftPeriod = buildPeriodFilter('ft.created_at');
         const ftWhere = [
-            "ft.status = 'completed'",
+            "COALESCE(ft.status, '') <> 'cancelled'",
             ftPeriod.clause || null
         ].filter(Boolean);
 
@@ -260,12 +260,32 @@ router.get('/dashboard', async (req, res) => {
             riderPeriod.params
         );
 
+        const unsettledPeriod = buildPeriodFilter('o.created_at');
+        const unsettledWhere = [
+            "o.status = 'delivered'",
+            "o.payment_status = 'paid'",
+            "oi.settlement_id IS NULL",
+            unsettledPeriod.clause || null
+        ].filter(Boolean);
+        const [unsettledRows] = await req.db.execute(
+            `SELECT COALESCE(SUM(
+                (oi.quantity * oi.price)
+                - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
+            ), 0) AS total_unsettled_amount
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             JOIN products p ON p.id = oi.product_id
+             JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+             WHERE ${unsettledWhere.join(' AND ')}`,
+            unsettledPeriod.params
+        );
+
         // Cash in hand should represent current office cash position (all-time net),
         // so do not apply period filter on this card.
         const [cashInHandResult] = await req.db.execute(`
             SELECT 
                 SUM(CASE 
-                    WHEN transaction_type = 'income' AND COALESCE(category, '') <> 'rider_cash' THEN amount 
+                    WHEN transaction_type = 'income' THEN amount 
                     WHEN transaction_type = 'adjustment' AND category = 'rider_cash' THEN amount 
                     WHEN transaction_type = 'adjustment' AND category = 'receipt' THEN amount 
                     WHEN transaction_type = 'expense' THEN -amount 
@@ -289,18 +309,14 @@ router.get('/dashboard', async (req, res) => {
             receiptVouchers: parseFloat(receiptVouchers[0]?.total || 0),
             riderCashSubmitted: 0,
             riderCashAdvance: 0,
-            cashInHand: parseFloat(cashInHandResult[0]?.total || 0)
+            cashInHand: parseFloat(cashInHandResult[0]?.total || 0),
+            totalUnsettledAmount: parseFloat(unsettledRows?.[0]?.total_unsettled_amount || 0),
+            netProfitIfSettled: 0
         };
 
         transactions.forEach(t => {
             const transactionType = String(t.transaction_type || '').trim();
-            const category = String(t.category || '').trim();
             const amount = parseFloat(t.total || 0);
-
-            // Rider cash submission is custody transfer, not new revenue.
-            if (transactionType === 'income' && category === 'rider_cash') {
-                return;
-            }
 
             stats[transactionType] = (stats[transactionType] || 0) + amount;
         });
@@ -314,6 +330,7 @@ router.get('/dashboard', async (req, res) => {
         });
 
         stats.net_profit = stats.income - (stats.expense + stats.settlement + stats.refund);
+        stats.netProfitIfSettled = stats.net_profit - stats.totalUnsettledAmount;
 
         res.json({
             success: true,
@@ -2427,7 +2444,7 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'rider_orders_report', 'rider_payments_report', 'rider_receivings_report', 'rider_petrol_report', 'rider_daily_mileage_report', 'rider_daily_activity_report', 'rider_day_closing_report', 'order_profit_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'store_payable_reconciliation', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'rider_orders_report', 'rider_payments_report', 'rider_receivings_report', 'rider_petrol_report', 'rider_daily_mileage_report', 'rider_daily_activity_report', 'rider_day_closing_report', 'order_profit_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'store_payable_reconciliation', 'unsettled_amounts_report', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
     body('period_from').optional({ checkFalsy: true }).isISO8601(),
     body('period_to').optional({ checkFalsy: true }).isISO8601(),
     body('rider_id').optional({ checkFalsy: true }).toInt(),
@@ -2476,6 +2493,7 @@ router.post('/reports/generate', [
                 'order_profit_report': 'report_order_summary',
                 'comprehensive_report': 'report_comprehensive_cash',
                 'store_payable_reconciliation': 'report_store_settlement',
+                'unsettled_amounts_report': 'report_store_settlement',
                 'transaction_summary': 'report_transactions_summary',
                 'general_voucher': 'report_general_voucher',
                 'expense_report': 'report_expense',
@@ -2521,6 +2539,7 @@ router.post('/reports/generate', [
             case 'order_profit_report': prefix = 'OPR'; break;
             case 'comprehensive_report': prefix = 'CPR'; break;
             case 'store_payable_reconciliation': prefix = 'SPR'; break;
+            case 'unsettled_amounts_report': prefix = 'UAR'; break;
             case 'expense_report': prefix = 'EXR'; break;
             case 'delivery_charges_breakdown': prefix = 'DCB'; break;
             case 'general_voucher': prefix = 'GVR'; break;
@@ -3594,6 +3613,56 @@ router.post('/reports/generate', [
                 rows,
                 summary
             };
+        } else if (report_type === 'expense_report') {
+            const hasRange = Boolean(period_from && period_to);
+            const params = [];
+            const rangeFrom = hasRange ? `${period_from} 00:00:00` : null;
+            const rangeTo = hasRange ? `${period_to} 23:59:59` : null;
+            const dateFilter = hasRange ? 'AND ft.created_at BETWEEN ? AND ?' : '';
+            if (hasRange) params.push(rangeFrom, rangeTo);
+
+            const [expenses] = await req.db.execute(
+                `SELECT
+                    ft.id,
+                    ft.transaction_number,
+                    ft.created_at AS expense_date,
+                    ft.category,
+                    ft.description,
+                    ft.amount,
+                    ft.payment_method,
+                    ft.status,
+                    CASE
+                        WHEN ft.related_entity_type = 'rider' THEN CONCAT(r.first_name, ' ', r.last_name)
+                        WHEN ft.related_entity_type = 'store' THEN s.name
+                        WHEN ft.related_entity_type = 'employee' OR ft.related_entity_type = 'user' THEN CONCAT(u.first_name, ' ', u.last_name)
+                        ELSE NULL
+                    END AS entity_name
+                 FROM financial_transactions ft
+                 LEFT JOIN riders r ON ft.related_entity_type = 'rider' AND ft.related_entity_id = r.id
+                 LEFT JOIN stores s ON ft.related_entity_type = 'store' AND ft.related_entity_id = s.id
+                 LEFT JOIN users u ON (ft.related_entity_type = 'employee' OR ft.related_entity_type = 'user') AND ft.related_entity_id = u.id
+                 WHERE ft.transaction_type = 'expense'
+                   ${dateFilter}
+                 ORDER BY ft.created_at DESC, ft.id DESC`,
+                params
+            );
+
+            const summary = (expenses || []).reduce((acc, e) => {
+                const amount = parseFloat(e.amount || 0);
+                acc.total_recorded += amount;
+                if (String(e.status || '').toLowerCase() === 'completed') {
+                    acc.total_paid += amount;
+                }
+                acc.total_count += 1;
+                return acc;
+            }, { total_recorded: 0, total_paid: 0, total_count: 0 });
+
+            total_expense = summary.total_recorded;
+            reportData = {
+                type: 'expense_report',
+                expenses,
+                summary
+            };
         } else if (report_type === 'comprehensive_report') {
             // Add end-of-day time to period_to if it doesn't have time component
             let endDate = period_to;
@@ -3786,7 +3855,7 @@ router.post('/reports/generate', [
                     current_outstanding_store_payable
                 }
             };
-        } else if (report_type === 'store_payable_reconciliation') {
+        } else if (report_type === 'store_payable_reconciliation' || report_type === 'unsettled_amounts_report') {
             const hasRange = Boolean(period_from && period_to);
             const periodStart = hasRange ? `${period_from} 00:00:00` : null;
             const periodEnd = hasRange ? `${period_to} 23:59:59` : null;
@@ -3856,6 +3925,34 @@ router.post('/reports/generate', [
                 hasStore ? [store_id] : []
             );
 
+            const [orderRows] = await req.db.execute(
+                `SELECT
+                    o.id AS order_id,
+                    o.order_number,
+                    o.created_at AS order_date,
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    s.name AS store_name,
+                    SUM(
+                        (oi.quantity * oi.price)
+                        - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
+                    ) AS unsettled_amount
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 WHERE o.status = 'delivered'
+                   AND o.payment_status = 'paid'
+                   AND oi.settlement_id IS NULL
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND s.id = ?' : ''}
+                 GROUP BY o.id, o.order_number, o.created_at, COALESCE(oi.store_id, p.store_id), s.name
+                 ORDER BY o.created_at DESC, o.id DESC`,
+                [
+                    ...(hasRange ? [periodStart, periodEnd] : []),
+                    ...(hasStore ? [store_id] : [])
+                ]
+            );
+
             const generatedMap = new Map((generatedRows || []).map(r => [Number(r.store_id), Number(r.period_generated_payable || 0)]));
             const paidMap = new Map((paidRows || []).map(r => [Number(r.store_id), Number(r.period_paid_settlements || 0)]));
             const outstandingMap = new Map((outstandingRows || []).map(r => [Number(r.store_id), Number(r.current_outstanding || 0)]));
@@ -3900,13 +3997,16 @@ router.post('/reports/generate', [
             total_adjustments = 0;
 
             reportData = {
-                type: 'store_payable_reconciliation',
+                type: report_type === 'unsettled_amounts_report'
+                    ? 'unsettled_amounts_report'
+                    : 'store_payable_reconciliation',
                 filters: {
                     period_from: period_from || null,
                     period_to: period_to || null,
                     store_id: store_id || null
                 },
                 rows,
+                order_rows: orderRows || [],
                 summary
             };
         } else if (report_type === 'transaction_summary') {
