@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -1912,6 +1912,62 @@
               <p><i class="fas fa-balance-scale"></i> Total Net Profit If Settled</p>
             </div>
           </div>
+
+          <section class="global-delivery-admin-card" style="margin-top: 10px;">
+            <div class="global-delivery-admin-head">
+              <div>
+                <h3>Store Wise Financial Details</h3>
+                <p>Filter store-level earnings, paid settlements, and pending balance by period and store options.</p>
+              </div>
+              <span class="global-delivery-state state-available">Store Summary</span>
+            </div>
+            <div class="filter-controls" style="margin-bottom: 8px;">
+              <div class="filter-group">
+                <label for="fdStoreFilter">Store</label>
+                <select id="fdStoreFilter" class="form-control">
+                  <option value="all">All Stores</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="fdPaymentTermFilter">Payment Term</label>
+                <select id="fdPaymentTermFilter" class="form-control">
+                  <option value="all">All Terms</option>
+                  <option value="cash only">Cash Only</option>
+                  <option value="cash with discount">Cash with Discount</option>
+                  <option value="credit">Credit</option>
+                  <option value="credit with discount">Credit with Discount</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="fdPendingFilter">Pending Filter</label>
+                <select id="fdPendingFilter" class="form-control">
+                  <option value="all">All</option>
+                  <option value="pending_only">Pending Only</option>
+                  <option value="cleared_only">Cleared Only</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="refreshStoreWiseFinancialBtn" style="align-self: flex-end; margin-bottom: 2px;">
+                <i class="fas fa-sync"></i> Refresh Store Details
+              </button>
+            </div>
+            <div class="table-container">
+              <table id="financialStoreWiseTable">
+                <thead>
+                  <tr>
+                    <th>Store</th>
+                    <th>Payment Term</th>
+                    <th>Total Orders</th>
+                    <th>Total Earnings</th>
+                    <th>Total Paid</th>
+                    <th>Pending Settlement</th>
+                  </tr>
+                </thead>
+                <tbody id="financialStoreWiseBody">
+                  <tr><td colspan="6" style="text-align:center;padding:14px;">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
 
         <!-- Payments Tab -->
@@ -2931,7 +2987,7 @@
           </div>
         </div>
         <footer class="app-footer">
-          <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
+          <p>Â© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
         </footer>
 
       </main>
@@ -4016,7 +4072,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
-    <script src="js/financial.js?v=11" defer></script>
+    <script src="js/financial.js?v=14" defer></script>
     <script src="js/admin.js?v=23" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
@@ -4088,7 +4144,7 @@
             <input type="hidden" id="payeeId" name="payeeId">
           </div>
           <div class="form-group">
-            <label>Amount (₨)</label>
+            <label>Amount (Rs )</label>
             <input
               type="number"
               id="paymentAmount"
@@ -4165,7 +4221,7 @@
             <input type="hidden" id="payerId" name="payerId">
           </div>
           <div class="form-group">
-            <label>Amount (₨)</label>
+            <label>Amount (Rs )</label>
             <input
               type="number"
               id="receiptAmount"
@@ -4269,7 +4325,7 @@
         <form id="transactionForm">
           <input type="hidden" id="transactionId" name="id" />
           <div class="form-group">
-            <label>Amount (₨)</label>
+            <label>Amount (Rs )</label>
             <input
               type="number"
               id="transactionAmount"
@@ -4480,7 +4536,7 @@
           </div>
 
           <div class="form-group">
-            <label>Amount (₨)</label>
+            <label>Amount (Rs )</label>
             <input
               type="number"
               id="riderCashAmountInput"
@@ -4574,7 +4630,7 @@
             </select>
           </div>
           <div class="form-group">
-            <label>Net Amount (₨)</label>
+            <label>Net Amount (Rs )</label>
             <input
               type="number"
               id="settlementAmount"
@@ -4619,15 +4675,15 @@
                 <tfoot style="font-weight: bold; background: #eee;">
                   <tr>
                     <td colspan="4" style="text-align: right;">Total Sales:</td>
-                    <td id="unsettledTotalSales">₨ 0.00</td>
+                    <td id="unsettledTotalSales">Rs  0.00</td>
                   </tr>
                   <tr>
                     <td colspan="4" style="text-align: right;">Profit/Discount Adjustment:</td>
-                    <td id="unsettledCommission">₨ 0.00</td>
+                    <td id="unsettledCommission">Rs  0.00</td>
                   </tr>
                   <tr>
                     <td colspan="4" style="text-align: right;">Net Payable:</td>
-                    <td id="unsettledNetPayable" style="color: green;">₨ 0.00</td>
+                    <td id="unsettledNetPayable" style="color: green;">Rs  0.00</td>
                   </tr>
                 </tfoot>
               </table>
@@ -4768,7 +4824,7 @@
         <form id="expenseForm">
           <input type="hidden" id="expenseId" name="id" />
           <div class="form-group">
-            <label>Amount (₨)</label>
+            <label>Amount (Rs )</label>
             <input
               type="number"
               id="expenseAmount"
@@ -4856,7 +4912,7 @@
                   <th style="width: 120px;">Entity Type</th>
                   <th style="width: 100px;">Entity ID</th>
                   <th style="width: 100px;">Entry Type</th>
-                  <th style="width: 120px;">Amount (₨)</th>
+                  <th style="width: 120px;">Amount (Rs )</th>
                   <th style="width: 200px;">Entry Description</th>
                   <th style="width: 50px;"></th>
                 </tr>
@@ -5003,5 +5059,6 @@
     </style>
   </body>
 </html>
+
 
 

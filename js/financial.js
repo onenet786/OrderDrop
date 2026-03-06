@@ -1,4 +1,4 @@
-let currentTransactions = [];
+﻿let currentTransactions = [];
 let currentPaymentVouchers = [];
 let currentReceiptVouchers = [];
 let currentRiderCash = [];
@@ -78,7 +78,7 @@ function displayJournalVouchers(vouchers) {
             <td>${date}</td>
             <td>${v.description || '-'}</td>
             <td>${v.reference_number || '-'}</td>
-            <td>₨ ${parseFloat(v.total_amount).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(v.total_amount).toFixed(2)}</td>
             <td><span class="status-${v.status}">${v.status}</span></td>
             <td>${v.prepared_by_name || '-'}</td>
             <td>
@@ -289,7 +289,7 @@ async function viewJournalVoucher(id) {
                     <td>${e.entity_type}</td>
                     <td>${e.entity_id || '-'}</td>
                     <td><span class="badge badge-${e.entry_type}">${e.entry_type.toUpperCase()}</span></td>
-                    <td>₨ ${parseFloat(e.amount).toFixed(2)}</td>
+                    <td>Rs  ${parseFloat(e.amount).toFixed(2)}</td>
                     <td>${e.description || '-'}</td>
                 </tr>
             `).join('');
@@ -488,7 +488,7 @@ async function loadFinancialDashboard() {
             const setAmount = (id, value, color) => {
                 const el = document.getElementById(id);
                 if (!el) return;
-                el.textContent = `₨ ${toNum(value).toFixed(2)}`;
+                el.textContent = `Rs  ${toNum(value).toFixed(2)}`;
                 el.style.setProperty('color', color, 'important');
                 el.style.setProperty('-webkit-text-fill-color', color, 'important');
                 el.style.setProperty('background', 'none', 'important');
@@ -532,10 +532,133 @@ async function loadFinancialDashboard() {
             setTileStyle('receiptVouchersAmount', '#4f46e5', 'linear-gradient(135deg,#eef2ff,#e0e7ff)');
             setTileStyle('totalUnsettledAmount', '#ea580c', 'linear-gradient(135deg,#fff7ed,#ffedd5)');
             setTileStyle('netProfitIfSettledAmount', toNum(stats.netProfitIfSettled || 0) < 0 ? '#b91c1c' : '#059669', toNum(stats.netProfitIfSettled || 0) < 0 ? 'linear-gradient(135deg,#fff1f2,#fef2f2)' : 'linear-gradient(135deg,#ecfdf5,#f0fdf4)');
+
+            // Refresh dependent store-wise grid for the same selected period.
+            await loadFinancialDashboardStoreWise();
         }
     } catch (error) {
         console.error('Error loading financial dashboard:', error);
         showError('Dashboard Error', 'Failed to load financial dashboard');
+    }
+}
+
+function periodToDateRange(period) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const toYmd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    if (period === 'all') return { start: null, end: null };
+    if (period === 'today') {
+        const d = toYmd(now);
+        return { start: d, end: d };
+    }
+    if (period === 'week') {
+        const s = new Date(now);
+        s.setHours(0, 0, 0, 0);
+        s.setDate(s.getDate() - s.getDay());
+        const e = new Date(s);
+        e.setDate(s.getDate() + 6);
+        return { start: toYmd(s), end: toYmd(e) };
+    }
+    if (period === 'year') {
+        const y = now.getFullYear();
+        return { start: `${y}-01-01`, end: `${y}-12-31` };
+    }
+    // month default
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { start: toYmd(start), end: toYmd(end) };
+}
+
+async function loadFinancialDashboardStoreFilters() {
+    const storeSel = document.getElementById('fdStoreFilter');
+    if (!storeSel) return;
+    if (storeSel.dataset.loaded === '1') return;
+    try {
+        const response = await fetch(`${API_BASE}/api/stores?admin=1&lite=1`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) return;
+        const stores = Array.isArray(data.stores) ? data.stores : [];
+        storeSel.innerHTML = '<option value="all">All Stores</option>';
+        stores.forEach((s) => {
+            const id = parseInt(String(s.id), 10);
+            if (!Number.isInteger(id) || id <= 0) return;
+            const opt = document.createElement('option');
+            opt.value = String(id);
+            opt.textContent = `${s.name || 'Store'} (#${id})`;
+            storeSel.appendChild(opt);
+        });
+        storeSel.dataset.loaded = '1';
+    } catch (e) {
+        console.error('Error loading financial dashboard store filters:', e);
+    }
+}
+
+function renderFinancialStoreWiseRows(rows) {
+    const tbody = document.getElementById('financialStoreWiseBody');
+    if (!tbody) return;
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:14px;">No records found</td></tr>';
+        return;
+    }
+    const money = (v) => {
+        const n = parseFloat(v);
+        return `PKR ${Number.isFinite(n) ? n.toFixed(2) : '0.00'}`;
+    };
+    tbody.innerHTML = rows.map((r) => `
+        <tr>
+            <td>${r.name || '-'}</td>
+            <td>${r.payment_term || '-'}</td>
+            <td>${parseInt(String(r.total_orders || 0), 10) || 0}</td>
+            <td>${money(r.total_earnings)}</td>
+            <td>${money(r.total_paid)}</td>
+            <td style="font-weight:700;color:${parseFloat(r.pending_settlement || 0) > 0 ? '#b45309' : '#059669'};">${money(r.pending_settlement)}</td>
+        </tr>
+    `).join('');
+}
+
+async function loadFinancialDashboardStoreWise() {
+    const tbody = document.getElementById('financialStoreWiseBody');
+    if (!tbody) return;
+    try {
+        await loadFinancialDashboardStoreFilters();
+        const period = document.getElementById('financialPeriodFilter')?.value || 'month';
+        const storeId = document.getElementById('fdStoreFilter')?.value || 'all';
+        const paymentTermFilter = (document.getElementById('fdPaymentTermFilter')?.value || 'all').toLowerCase().trim();
+        const pendingFilter = document.getElementById('fdPendingFilter')?.value || 'all';
+
+        const dr = periodToDateRange(period);
+        const params = new URLSearchParams();
+        if (dr.start && dr.end) {
+            params.set('start_date', dr.start);
+            params.set('end_date', dr.end);
+        }
+        params.set('store_id', storeId || 'all');
+        const response = await fetch(`${API_BASE}/api/financial/reports/stores-detailed?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:14px;">Failed to load store-wise details</td></tr>';
+            return;
+        }
+        let rows = Array.isArray(data.stores) ? data.stores : [];
+        if (paymentTermFilter !== 'all') {
+            rows = rows.filter((r) => String(r.payment_term || '').toLowerCase().trim() === paymentTermFilter);
+        }
+        if (pendingFilter === 'pending_only') {
+            rows = rows.filter((r) => parseFloat(r.pending_settlement || 0) > 0);
+        } else if (pendingFilter === 'cleared_only') {
+            rows = rows.filter((r) => parseFloat(r.pending_settlement || 0) <= 0);
+        }
+        renderFinancialStoreWiseRows(rows);
+    } catch (error) {
+        console.error('Error loading financial dashboard store-wise details:', error);
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:14px;">Failed to load store-wise details</td></tr>';
+        }
     }
 }
 
@@ -578,7 +701,7 @@ async function loadCashLedger() {
                     <td>${t.description || '-'}</td>
                     <td><span class="badge badge-${t.transaction_type}">${t.transaction_type}</span></td>
                     <td>${t.category || '-'}</td>
-                    <td class="${amountClass}" style="font-weight:bold">₨ ${displayAmount.toFixed(2)}</td>
+                    <td class="${amountClass}" style="font-weight:bold">Rs  ${displayAmount.toFixed(2)}</td>
                     <td>${t.created_by_name || '-'}</td>
                 `;
                 tbody.appendChild(row);
@@ -588,7 +711,7 @@ async function loadCashLedger() {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 2rem;">No cash transactions found for this period</td></tr>';
             }
             
-            document.getElementById('ledgerTotal').textContent = `₨ ${total.toFixed(2)}`;
+            document.getElementById('ledgerTotal').textContent = `Rs  ${total.toFixed(2)}`;
         }
     } catch (error) {
         console.error('Error loading cash ledger:', error);
@@ -631,7 +754,7 @@ function displayTransactions(transactions) {
             <td>${t.transaction_number}</td>
             <td><span class="badge badge-${t.transaction_type}">${t.transaction_type}</span></td>
             <td>${t.description || '-'}</td>
-            <td>₨ ${parseFloat(t.amount).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(t.amount).toFixed(2)}</td>
             <td>${t.payment_method}</td>
             <td><span class="status-${t.status}">${t.status}</span></td>
             <td>${date}</td>
@@ -703,7 +826,7 @@ function displayBankPaymentVouchers(vouchers) {
             <td>${date}</td>
             <td>${v.payee_name}</td>
             <td>${v.payee_type}</td>
-            <td>₨ ${parseFloat(v.amount).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(v.amount).toFixed(2)}</td>
             <td>${v.purpose || '-'}</td>
             <td><span class="status-${v.status}">${v.status}</span></td>
             <td>
@@ -731,7 +854,7 @@ function displayPaymentVouchers(vouchers) {
             <td>${date}</td>
             <td>${v.payee_name}</td>
             <td>${v.payee_type}</td>
-            <td>₨ ${parseFloat(v.amount).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(v.amount).toFixed(2)}</td>
             <td>${v.purpose || '-'}</td>
             <td><span class="status-${v.status}">${v.status}</span></td>
             <td>
@@ -803,7 +926,7 @@ function displayBankReceiptVouchers(vouchers) {
             <td>${date}</td>
             <td>${v.payer_name}</td>
             <td>${v.payer_type}</td>
-            <td>₨ ${parseFloat(v.amount).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(v.amount).toFixed(2)}</td>
             <td>${v.description || '-'}</td>
             <td><span class="status-${v.status}">${v.status}</span></td>
             <td>
@@ -831,7 +954,7 @@ function displayReceiptVouchers(vouchers) {
             <td>${date}</td>
             <td>${v.payer_name}</td>
             <td>${v.payer_type}</td>
-            <td>₨ ${parseFloat(v.amount).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(v.amount).toFixed(2)}</td>
             <td>${v.description || '-'}</td>
             <td><span class="status-${v.status}">${v.status}</span></td>
             <td>
@@ -945,7 +1068,7 @@ function displayStoreSettlements(settlements) {
             <td>${date}</td>
             <td>${from}</td>
             <td>${to}</td>
-            <td>₨ ${parseFloat(s.net_amount).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(s.net_amount).toFixed(2)}</td>
             <td><span class="status-${s.status}">${s.status}</span></td>
             <td>${
                 s.status === 'pending'
@@ -1007,7 +1130,7 @@ function displayExpenses(expenses) {
             <td>${date}</td>
             <td>${e.category}</td>
             <td>${e.description || '-'}</td>
-            <td>₨ ${parseFloat(e.amount).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(e.amount).toFixed(2)}</td>
             <td>${e.vendor_name || '-'}</td>
             <td><span class="status-${e.status}">${e.status}</span></td>
             <td>${actionButtons}</td>
@@ -1104,7 +1227,7 @@ function displayUnsettledItems(items, summary) {
             <td>${item.order_number}</td>
             <td>${item.product_name} (${item.variant_label || '-'})</td>
             <td>${item.quantity}</td>
-            <td>₨ ${(item.price * item.quantity).toFixed(2)}</td>
+            <td>Rs  ${(item.price * item.quantity).toFixed(2)}</td>
         `;
         tbody.appendChild(row);
     });
@@ -1113,9 +1236,9 @@ function displayUnsettledItems(items, summary) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No unpaid items found</td></tr>';
     }
     
-    document.getElementById('unsettledTotalSales').textContent = `₨ ${summary.total_orders_amount.toFixed(2)}`;
-    document.getElementById('unsettledCommission').textContent = `₨ ${summary.commissions.toFixed(2)}`;
-    document.getElementById('unsettledNetPayable').textContent = `₨ ${summary.net_amount.toFixed(2)}`;
+    document.getElementById('unsettledTotalSales').textContent = `Rs  ${summary.total_orders_amount.toFixed(2)}`;
+    document.getElementById('unsettledCommission').textContent = `Rs  ${summary.commissions.toFixed(2)}`;
+    document.getElementById('unsettledNetPayable').textContent = `Rs  ${summary.net_amount.toFixed(2)}`;
 }
 
 async function loadFinancialReports() {
@@ -1153,9 +1276,9 @@ function displayReports(reports) {
             <td>${r.report_type.replace(/_/g, ' ')}</td>
             <td>${fromDate}</td>
             <td>${toDate}</td>
-            <td>₨ ${parseFloat(r.total_income).toFixed(2)}</td>
-            <td>₨ ${parseFloat(r.total_expense).toFixed(2)}</td>
-            <td>₨ ${parseFloat(r.net_profit).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(r.total_income).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(r.total_expense).toFixed(2)}</td>
+            <td>Rs  ${parseFloat(r.net_profit).toFixed(2)}</td>
             <td>${created}</td>
             <td>
                 <button class="btn-small btn-info" onclick="viewReport(${r.id})">View</button>
@@ -1684,7 +1807,7 @@ function renderPendingFuelTable() {
         row.innerHTML = `
             <td style="text-align:center;"><input type="checkbox" value="${entry.id}" ${isSelected ? 'checked' : ''} onchange="togglePendingFuel(${entry.id}, this.checked)" style="cursor:pointer;"></td>
             <td>${entry.entry_date ? new Date(entry.entry_date).toLocaleDateString() : '-'}</td>
-            <td style="text-align:right">₨ ${fuelCost.toFixed(2)}</td>
+            <td style="text-align:right">Rs  ${fuelCost.toFixed(2)}</td>
             <td style="text-align:right">${distance.toFixed(2)}</td>
             <td>${entry.notes || '-'}</td>
         `;
@@ -1695,7 +1818,7 @@ function renderPendingFuelTable() {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No pending fuel entries</td></tr>';
     }
 
-    if (totalEl) totalEl.textContent = `₨ ${totalSelected.toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `Rs  ${totalSelected.toFixed(2)}`;
     if (selectAllCb) {
         selectAllCb.checked = window.pendingFuelEntries.length > 0 &&
             window.selectedPendingFuelEntries.size === window.pendingFuelEntries.length;
@@ -1737,7 +1860,7 @@ function renderSubmittedFuelTable() {
         tr.innerHTML = `
             <td>${entry.fuel_history_id || entry.id || '-'}</td>
             <td>${entry.entry_date ? new Date(entry.entry_date).toLocaleDateString() : '-'}</td>
-            <td style="text-align:right">₨ ${cost.toFixed(2)}</td>
+            <td style="text-align:right">Rs  ${cost.toFixed(2)}</td>
             <td>${entry.movement_number || '-'}</td>
             <td>${entry.status || '-'}</td>
         `;
@@ -1747,7 +1870,7 @@ function renderSubmittedFuelTable() {
     if (!window.submittedFuelEntries || window.submittedFuelEntries.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No submitted fuel entries</td></tr>';
     }
-    if (totalEl) totalEl.textContent = `₨ ${total.toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `Rs  ${total.toFixed(2)}`;
 }
 
 function renderSubmittedOrdersTable() {
@@ -1763,7 +1886,7 @@ function renderSubmittedOrdersTable() {
         tr.innerHTML = `
             <td>${o.order_number || '-'}</td>
             <td>${new Date(o.created_at || o.submitted_at).toLocaleDateString()}</td>
-            <td style="text-align:right">₨ ${parseFloat(o.total_amount || 0).toFixed(2)}</td>
+            <td style="text-align:right">Rs  ${parseFloat(o.total_amount || 0).toFixed(2)}</td>
             <td>${o.movement_number || '-'}</td>
         `;
         tbody.appendChild(tr);
@@ -1772,7 +1895,7 @@ function renderSubmittedOrdersTable() {
     if (!window.submittedCashOrders || window.submittedCashOrders.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No submitted cash orders</td></tr>';
     }
-    if (totalEl) totalEl.textContent = `₨ ${total.toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `Rs  ${total.toFixed(2)}`;
 }
 
 function renderPendingOrdersTable() {
@@ -1794,12 +1917,12 @@ function renderPendingOrdersTable() {
             <td style="text-align: center;"><input type="checkbox" class="pending-order-cb" value="${o.id}" ${isSelected ? 'checked' : ''} onchange="togglePendingOrder(${o.id}, this.checked)" style="cursor: pointer;"></td>
             <td>${o.order_number}</td>
             <td>${new Date(o.created_at).toLocaleDateString()}</td>
-            <td style="text-align:right">₨ ${parseFloat(o.total_amount).toFixed(2)}</td>
+            <td style="text-align:right">Rs  ${parseFloat(o.total_amount).toFixed(2)}</td>
         `;
         tbody.appendChild(tr);
     });
 
-    if (totalEl) totalEl.textContent = `₨ ${totalSelected.toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `Rs  ${totalSelected.toFixed(2)}`;
     
     const amountInput = document.getElementById('riderCashAmountInput');
     // Only auto-fill amount if it's 0 or matches previous total (to allow manual override)
@@ -2959,7 +3082,7 @@ function viewReport(reportId) {
     if (data && data.type === 'rider_cash') {
         extraDetails = '<h3>Rider Cash Movements</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Order #</th><th>Rider</th><th>Date</th><th>Type</th><th>Amount</th></tr></thead><tbody>';
         data.movements.forEach(m => {
-            extraDetails += `<tr><td>${m.order_number || '-'}</td><td>${m.first_name} ${m.last_name}</td><td>${new Date(m.movement_date).toLocaleDateString()}</td><td>${m.movement_type}</td><td>₨ ${parseFloat(m.amount).toFixed(2)}</td></tr>`;
+            extraDetails += `<tr><td>${m.order_number || '-'}</td><td>${m.first_name} ${m.last_name}</td><td>${new Date(m.movement_date).toLocaleDateString()}</td><td>${m.movement_type}</td><td>Rs  ${parseFloat(m.amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
         if (data.kpis) {
@@ -3012,25 +3135,25 @@ function viewReport(reportId) {
     } else if (data && data.type === 'store_financials') {
         extraDetails = '<h3>Store Financials</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Store</th><th>Sales</th><th>Cost</th><th>Profit</th></tr></thead><tbody>';
         data.stores.forEach(s => {
-            extraDetails += `<tr><td>${s.store_name}</td><td>₨ ${parseFloat(s.total_sales).toFixed(2)}</td><td>₨ ${parseFloat(s.total_cost).toFixed(2)}</td><td>₨ ${parseFloat(s.estimated_profit).toFixed(2)}</td></tr>`;
+            extraDetails += `<tr><td>${s.store_name}</td><td>Rs  ${parseFloat(s.total_sales).toFixed(2)}</td><td>Rs  ${parseFloat(s.total_cost).toFixed(2)}</td><td>Rs  ${parseFloat(s.estimated_profit).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'general_voucher') {
         extraDetails = '<h3>Journal Vouchers</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Voucher #</th><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>';
         data.vouchers.forEach(v => {
-            extraDetails += `<tr><td>${v.voucher_number}</td><td>${new Date(v.voucher_date).toLocaleDateString()}</td><td>${v.description || '-'}</td><td>₨ ${parseFloat(v.total_amount).toFixed(2)}</td></tr>`;
+            extraDetails += `<tr><td>${v.voucher_number}</td><td>${new Date(v.voucher_date).toLocaleDateString()}</td><td>${v.description || '-'}</td><td>Rs  ${parseFloat(v.total_amount).toFixed(2)}</td></tr>`;
         });
         extraDetails += '</tbody></table></div>';
     } else if (data && (data.type === 'rider_fuel' || data.type === 'rider_petrol')) {
         extraDetails = '<h3>Rider Fuel History</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Distance</th><th>Cost</th></tr></thead><tbody>';
         if (data.entries) {
             data.entries.forEach(e => {
-                extraDetails += `<tr><td>${e.first_name} ${e.last_name || ''}</td><td>${new Date(e.entry_date).toLocaleDateString()}</td><td>${e.distance} km</td><td>₨ ${parseFloat(e.fuel_cost).toFixed(2)}</td></tr>`;
+                extraDetails += `<tr><td>${e.first_name} ${e.last_name || ''}</td><td>${new Date(e.entry_date).toLocaleDateString()}</td><td>${e.distance} km</td><td>Rs  ${parseFloat(e.fuel_cost).toFixed(2)}</td></tr>`;
             });
         }
         extraDetails += '</tbody></table></div>';
         if (data.summary) {
-            extraDetails += `<div style="margin-top: 10px;"><strong>Total Distance:</strong> ${data.summary.total_distance} km | <strong>Total Cost:</strong> ₨ ${parseFloat(data.summary.total_cost).toFixed(2)}</div>`;
+            extraDetails += `<div style="margin-top: 10px;"><strong>Total Distance:</strong> ${data.summary.total_distance} km | <strong>Total Cost:</strong> Rs  ${parseFloat(data.summary.total_cost).toFixed(2)}</div>`;
         }
     } else if (data && data.type === 'rider_daily_mileage') {
         extraDetails = '<h3>Rider Daily Mileage Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Date</th><th>Rider</th><th>Trips</th><th>Distance (km)</th><th>Fuel Cost</th></tr></thead><tbody>';
@@ -3129,8 +3252,8 @@ function viewReport(reportId) {
                     <td>${s.settlement_number}</td>
                     <td>${new Date(s.settlement_date).toLocaleDateString()}</td>
                     <td>${s.store_name}</td>
-                    <td>₨ ${parseFloat(s.net_amount).toFixed(2)}</td>
-                    <td>₨ ${parseFloat(s.commissions).toFixed(2)}</td>
+                    <td>Rs  ${parseFloat(s.net_amount).toFixed(2)}</td>
+                    <td>Rs  ${parseFloat(s.commissions).toFixed(2)}</td>
                     <td><span class="status-${s.status}">${s.status}</span></td>
                 </tr>`;
             });
@@ -3145,13 +3268,13 @@ function viewReport(reportId) {
                     <td>${new Date(o.order_date).toLocaleDateString()}</td>
                     <td>${o.rider_name}</td>
                     <td>${o.store_names}</td>
-                    <td>₨ ${parseFloat(o.delivery_fee).toFixed(2)}</td>
+                    <td>Rs  ${parseFloat(o.delivery_fee).toFixed(2)}</td>
                 </tr>`;
             });
         }
         extraDetails += '</tbody></table></div>';
         if (data.summary) {
-            extraDetails += `<div style="margin-top: 10px;"><strong>Total Orders:</strong> ${data.summary.total_orders} | <strong>Total Delivery Fees:</strong> ₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</div>`;
+            extraDetails += `<div style="margin-top: 10px;"><strong>Total Orders:</strong> ${data.summary.total_orders} | <strong>Total Delivery Fees:</strong> Rs  ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</div>`;
         }
     } else if (data && (data.type === 'store_payable_reconciliation' || data.type === 'unsettled_amounts_report')) {
         extraDetails = '<h3>Store Payable Reconciliation</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.85em"><thead><tr><th>Store</th><th>Generated (Period)</th><th>Settled (Paid, Period)</th><th>Period Flow</th><th>Current Outstanding</th></tr></thead><tbody>';
@@ -3192,8 +3315,8 @@ function viewReport(reportId) {
         extraDetails = '<h3>Comprehensive Transactions</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.8em"><thead><tr><th>Date</th><th>Ref #</th><th>Type</th><th>Entity</th><th>In</th><th>Out</th><th>Desc</th></tr></thead><tbody>';
         if (data.transactions) {
             data.transactions.forEach(t => {
-                const income = (t.transaction_type === 'income' || t.transaction_type === 'refund') ? `₨ ${parseFloat(t.amount).toFixed(2)}` : '-';
-                const expense = (t.transaction_type === 'expense' || t.transaction_type === 'settlement') ? `₨ ${parseFloat(t.amount).toFixed(2)}` : '-';
+                const income = (t.transaction_type === 'income' || t.transaction_type === 'refund') ? `Rs  ${parseFloat(t.amount).toFixed(2)}` : '-';
+                const expense = (t.transaction_type === 'expense' || t.transaction_type === 'settlement') ? `Rs  ${parseFloat(t.amount).toFixed(2)}` : '-';
                 const entity = t.entity_name || t.related_entity_type || '-';
                 const ref = t.reference_number_display || t.transaction_number || '-';
                 
@@ -3218,15 +3341,15 @@ function viewReport(reportId) {
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
                     <div>
                         <div style="font-size: 0.8em; color: #666;">Total In (Income)</div>
-                        <div style="font-size: 1.2em; font-weight: bold; color: green;">+ ₨ ${parseFloat(data.summary.total_income).toFixed(2)}</div>
+                        <div style="font-size: 1.2em; font-weight: bold; color: green;">+ Rs  ${parseFloat(data.summary.total_income).toFixed(2)}</div>
                     </div>
                     <div>
                         <div style="font-size: 0.8em; color: #666;">Total Out (Expense/Settlements/Refunds)</div>
-                        <div style="font-size: 1.2em; font-weight: bold; color: red;">- ₨ ${parseFloat(data.summary.total_expense + data.summary.total_settlements + data.summary.total_refunds).toFixed(2)}</div>
+                        <div style="font-size: 1.2em; font-weight: bold; color: red;">- Rs  ${parseFloat(data.summary.total_expense + data.summary.total_settlements + data.summary.total_refunds).toFixed(2)}</div>
                     </div>
                     <div style="border-left: 2px solid #ddd;">
                         <div style="font-size: 0.8em; color: #666;">Net Result (Balance)</div>
-                        <div style="font-size: 1.4em; font-weight: bold; color: ${flowColor};">₨ ${parseFloat(data.summary.net_flow).toFixed(2)}</div>
+                        <div style="font-size: 1.4em; font-weight: bold; color: ${flowColor};">Rs  ${parseFloat(data.summary.net_flow).toFixed(2)}</div>
                     </div>
                 </div>
                 ${(data.summary.total_delivery_fees !== undefined && data.summary.total_store_commission !== undefined) ? `
@@ -3236,29 +3359,29 @@ function viewReport(reportId) {
                         <!-- Cash In Column -->
                         <div style="background: #f9fafb; padding: 10px; border-radius: 6px;">
                             <div style="font-weight: bold; margin-bottom: 5px; color: #374151;">Cash Collected (In)</div>
-                            <div style="display: flex; justify-content: space-between;"><span>Delivery Fees:</span> <span>₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</span></div>
-                            <div style="display: flex; justify-content: space-between;"><span>Item Sales:</span> <span>₨ ${parseFloat(data.summary.total_item_sales_net).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Delivery Fees:</span> <span>Rs  ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Item Sales:</span> <span>Rs  ${parseFloat(data.summary.total_item_sales_net).toFixed(2)}</span></div>
                             <div style="border-top: 1px dashed #ccc; margin-top: 5px; padding-top: 5px; font-weight: bold; display: flex; justify-content: space-between;">
-                                <span>Total:</span> <span>₨ ${parseFloat(data.summary.total_delivery_fees + data.summary.total_item_sales_net).toFixed(2)}</span>
+                                <span>Total:</span> <span>Rs  ${parseFloat(data.summary.total_delivery_fees + data.summary.total_item_sales_net).toFixed(2)}</span>
                             </div>
                         </div>
 
                         <!-- Profit Column -->
                         <div style="background: #ecfdf5; padding: 10px; border-radius: 6px;">
                             <div style="font-weight: bold; margin-bottom: 5px; color: #065f46;">Platform Profit</div>
-                            <div style="display: flex; justify-content: space-between;"><span>Delivery Profit:</span> <span>₨ ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</span></div>
-                            <div style="display: flex; justify-content: space-between;"><span>Store Comm.:</span> <span>₨ ${parseFloat(data.summary.total_store_commission).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Delivery Profit:</span> <span>Rs  ${parseFloat(data.summary.total_delivery_fees).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Store Comm.:</span> <span>Rs  ${parseFloat(data.summary.total_store_commission).toFixed(2)}</span></div>
                             <div style="border-top: 1px dashed #ccc; margin-top: 5px; padding-top: 5px; font-weight: bold; color: #059669; display: flex; justify-content: space-between;">
-                                <span>Net Profit:</span> <span>₨ ${parseFloat(data.summary.estimated_gross_profit).toFixed(2)}</span>
+                                <span>Net Profit:</span> <span>Rs  ${parseFloat(data.summary.estimated_gross_profit).toFixed(2)}</span>
                             </div>
                         </div>
 
                         <!-- Payable Column -->
                         <div style="background: #fffbeb; padding: 10px; border-radius: 6px;">
                             <div style="font-weight: bold; margin-bottom: 5px; color: #92400e;">Payable to Stores</div>
-                            <div style="display: flex; justify-content: space-between;"><span>Item Sales:</span> <span>₨ ${parseFloat(data.summary.total_item_sales_net).toFixed(2)}</span></div>
-                            <div style="display: flex; justify-content: space-between;"><span>Less Comm.:</span> <span>-₨ ${parseFloat(data.summary.total_store_commission).toFixed(2)}</span></div>
-                            <div style="display: flex; justify-content: space-between;"><span>Settled Paid:</span> <span>-₨ ${parseFloat(data.summary.total_store_settlement_paid || 0).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Item Sales:</span> <span>Rs  ${parseFloat(data.summary.total_item_sales_net).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Less Comm.:</span> <span>-Rs  ${parseFloat(data.summary.total_store_commission).toFixed(2)}</span></div>
+                            <div style="display: flex; justify-content: space-between;"><span>Settled Paid:</span> <span>-Rs  ${parseFloat(data.summary.total_store_settlement_paid || 0).toFixed(2)}</span></div>
                             <div style="display: flex; justify-content: space-between;"><span>Period Store Flow:</span> <span>Rs ${parseFloat(data.summary.period_store_payable_flow || 0).toFixed(2)}</span></div>
                             <div style="border-top: 1px dashed #ccc; margin-top: 5px; padding-top: 5px; font-weight: bold; color: #b45309; display: flex; justify-content: space-between;">
                                 <span>Current Outstanding:</span> <span>Rs ${Math.max(0, parseFloat(data.summary.current_outstanding_store_payable || 0)).toFixed(2)}</span>
@@ -3283,8 +3406,8 @@ function viewReport(reportId) {
                     <td>${ref}</td>
                     <td><span class="badge badge-${t.transaction_type}">${t.transaction_type}</span></td>
                     <td>${entity}</td>
-                    <td style="color:green">${income > 0 ? '₨ ' + income.toFixed(2) : '-'}</td>
-                    <td style="color:red">${expense > 0 ? '₨ ' + expense.toFixed(2) : '-'}</td>
+                    <td style="color:green">${income > 0 ? 'Rs  ' + income.toFixed(2) : '-'}</td>
+                    <td style="color:red">${expense > 0 ? 'Rs  ' + expense.toFixed(2) : '-'}</td>
                     <td>${t.description || '-'}</td>
                 </tr>`;
             });
@@ -3295,12 +3418,12 @@ function viewReport(reportId) {
              extraDetails += `<div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px;">
                 <h4 style="margin: 0 0 10px 0;">Financial Summary</h4>
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                    <div><strong>Total Income:</strong> <span style="color:green">₨ ${parseFloat(data.summary.total_income).toFixed(2)}</span></div>
-                    <div><strong>Total Expense:</strong> <span style="color:red">₨ ${parseFloat(data.summary.total_expense).toFixed(2)}</span></div>
-                    <div><strong>Net Cash Flow:</strong> <span style="color:${flowColor}; font-weight:bold">₨ ${parseFloat(data.summary.net_cash_flow).toFixed(2)}</span></div>
-                    <div><strong>Settlements:</strong> ₨ ${parseFloat(data.summary.total_settlements).toFixed(2)}</div>
-                    <div><strong>Refunds:</strong> ₨ ${parseFloat(data.summary.total_refunds).toFixed(2)}</div>
-                    <div><strong>Adjustments:</strong> ₨ ${parseFloat(data.summary.total_adjustments).toFixed(2)}</div>
+                    <div><strong>Total Income:</strong> <span style="color:green">Rs  ${parseFloat(data.summary.total_income).toFixed(2)}</span></div>
+                    <div><strong>Total Expense:</strong> <span style="color:red">Rs  ${parseFloat(data.summary.total_expense).toFixed(2)}</span></div>
+                    <div><strong>Net Cash Flow:</strong> <span style="color:${flowColor}; font-weight:bold">Rs  ${parseFloat(data.summary.net_cash_flow).toFixed(2)}</span></div>
+                    <div><strong>Settlements:</strong> Rs  ${parseFloat(data.summary.total_settlements).toFixed(2)}</div>
+                    <div><strong>Refunds:</strong> Rs  ${parseFloat(data.summary.total_refunds).toFixed(2)}</div>
+                    <div><strong>Adjustments:</strong> Rs  ${parseFloat(data.summary.total_adjustments).toFixed(2)}</div>
                 </div>
              </div>`;
         }
@@ -3317,11 +3440,11 @@ function viewReport(reportId) {
                 extraDetails += `<tr>
                     <td>${o.order_number}<br><small>${new Date(o.created_at).toLocaleDateString()}</small></td>
                     <td>${itemsList}</td>
-                    <td>₨ ${parseFloat(o.item_sales_gross).toFixed(2)}</td>
-                    <td>₨ ${parseFloat(o.total_cost_price).toFixed(2)}</td>
-                    <td>₨ ${parseFloat(o.estimated_commission).toFixed(2)}</td>
-                    <td>₨ ${parseFloat(o.delivery_fee).toFixed(2)}</td>
-                    <td><strong>₨ ${parseFloat(o.total_amount).toFixed(2)}</strong></td>
+                    <td>Rs  ${parseFloat(o.item_sales_gross).toFixed(2)}</td>
+                    <td>Rs  ${parseFloat(o.total_cost_price).toFixed(2)}</td>
+                    <td>Rs  ${parseFloat(o.estimated_commission).toFixed(2)}</td>
+                    <td>Rs  ${parseFloat(o.delivery_fee).toFixed(2)}</td>
+                    <td><strong>Rs  ${parseFloat(o.total_amount).toFixed(2)}</strong></td>
                 </tr>`;
             });
         }
@@ -3330,11 +3453,11 @@ function viewReport(reportId) {
         if (data.summary) {
              extraDetails += `<div style="margin-top: 15px; font-size: 1.0em; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px;">
                 <strong>Totals:</strong><br>
-                Item Sales: ₨ ${parseFloat(data.summary.total_item_sales).toFixed(2)} | 
-                Cost: ₨ ${parseFloat(data.summary.total_cost).toFixed(2)} | 
-                Commission: ₨ ${parseFloat(data.summary.total_commission).toFixed(2)} | 
-                Delivery: ₨ ${parseFloat(data.summary.total_delivery).toFixed(2)} | 
-                <strong>Grand Total: ₨ ${parseFloat(data.summary.grand_total).toFixed(2)}</strong>
+                Item Sales: Rs  ${parseFloat(data.summary.total_item_sales).toFixed(2)} | 
+                Cost: Rs  ${parseFloat(data.summary.total_cost).toFixed(2)} | 
+                Commission: Rs  ${parseFloat(data.summary.total_commission).toFixed(2)} | 
+                Delivery: Rs  ${parseFloat(data.summary.total_delivery).toFixed(2)} | 
+                <strong>Grand Total: Rs  ${parseFloat(data.summary.grand_total).toFixed(2)}</strong>
             </div>`;
         }
     }
@@ -3345,10 +3468,10 @@ function viewReport(reportId) {
             <strong>Type:</strong> ${report.report_type.replace(/_/g, ' ')}<br>
             <strong>Period:</strong> ${report.period_from ? new Date(report.period_from).toLocaleDateString() : '-'} to ${report.period_to ? new Date(report.period_to).toLocaleDateString() : '-'}<br>
             <hr>
-            <strong>Total Income:</strong> ₨ ${parseFloat(report.total_income).toFixed(2)}<br>
-            <strong>Total Expense:</strong> ₨ ${parseFloat(report.total_expense).toFixed(2)}<br>
-            <strong>Total Settlements:</strong> ₨ ${parseFloat(report.total_commissions).toFixed(2)}<br>
-            <strong>Net Profit:</strong> ₨ ${parseFloat(report.net_profit).toFixed(2)}<br>
+            <strong>Total Income:</strong> Rs  ${parseFloat(report.total_income).toFixed(2)}<br>
+            <strong>Total Expense:</strong> Rs  ${parseFloat(report.total_expense).toFixed(2)}<br>
+            <strong>Total Settlements:</strong> Rs  ${parseFloat(report.total_commissions).toFixed(2)}<br>
+            <strong>Net Profit:</strong> Rs  ${parseFloat(report.net_profit).toFixed(2)}<br>
             <strong>Generated:</strong> ${new Date(report.created_at).toLocaleString()}
         </div>
         ${extraDetails}
@@ -3437,7 +3560,7 @@ function viewTransaction(id) {
         const details = `
             <strong>Number:</strong> ${transaction.transaction_number}<br>
             <strong>Type:</strong> ${transaction.transaction_type}<br>
-            <strong>Amount:</strong> ₨ ${parseFloat(transaction.amount).toFixed(2)}<br>
+            <strong>Amount:</strong> Rs  ${parseFloat(transaction.amount).toFixed(2)}<br>
             <strong>Method:</strong> ${transaction.payment_method}<br>
             <strong>Status:</strong> <span class="status-${transaction.status}">${transaction.status}</span><br>
             <strong>Description:</strong> ${transaction.description || '-'}<br>
@@ -3459,6 +3582,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const financialPeriodFilter = document.getElementById('financialPeriodFilter');
     const refreshFinancialDashboardBtn = document.getElementById('refreshFinancialDashboardBtn');
+    const fdStoreFilter = document.getElementById('fdStoreFilter');
+    const fdPaymentTermFilter = document.getElementById('fdPaymentTermFilter');
+    const fdPendingFilter = document.getElementById('fdPendingFilter');
+    const refreshStoreWiseFinancialBtn = document.getElementById('refreshStoreWiseFinancialBtn');
     const transactionTypeFilter = document.getElementById('transactionTypeFilter');
     const transactionStatusFilter = document.getElementById('transactionStatusFilter');
     const clearTransactionFiltersBtn = document.getElementById('clearTransactionFiltersBtn');
@@ -3495,6 +3622,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (financialPeriodFilter) financialPeriodFilter.addEventListener('change', loadFinancialDashboard);
     if (refreshFinancialDashboardBtn) refreshFinancialDashboardBtn.addEventListener('click', loadFinancialDashboard);
+    if (fdStoreFilter) fdStoreFilter.addEventListener('change', loadFinancialDashboardStoreWise);
+    if (fdPaymentTermFilter) fdPaymentTermFilter.addEventListener('change', loadFinancialDashboardStoreWise);
+    if (fdPendingFilter) fdPendingFilter.addEventListener('change', loadFinancialDashboardStoreWise);
+    if (refreshStoreWiseFinancialBtn) refreshStoreWiseFinancialBtn.addEventListener('click', loadFinancialDashboardStoreWise);
     if (transactionTypeFilter) transactionTypeFilter.addEventListener('change', loadTransactions);
     if (transactionStatusFilter) transactionStatusFilter.addEventListener('change', loadTransactions);
     if (clearTransactionFiltersBtn) clearTransactionFiltersBtn.addEventListener('click', () => {
@@ -3892,10 +4023,10 @@ function displayRiderReports(riders) {
             <td>${r.total_assigned}</td>
             <td>${r.total_delivered}</td>
             <td>${r.total_cancelled}</td>
-            <td>₨ ${feesEarned.toFixed(2)}</td>
-            <td>₨ ${cashCollection.toFixed(2)}</td>
-            <td>₨ ${cashSubmission.toFixed(2)}</td>
-            <td style="font-weight: bold; color: ${pendingCash > 0 ? 'red' : (pendingCash < 0 ? 'blue' : 'green')}">₨ ${pendingCash.toFixed(2)}</td>
+            <td>Rs  ${feesEarned.toFixed(2)}</td>
+            <td>Rs  ${cashCollection.toFixed(2)}</td>
+            <td>Rs  ${cashSubmission.toFixed(2)}</td>
+            <td style="font-weight: bold; color: ${pendingCash > 0 ? 'red' : (pendingCash < 0 ? 'blue' : 'green')}">Rs  ${pendingCash.toFixed(2)}</td>
         `;
         tbody.appendChild(row);
     });
@@ -3941,9 +4072,9 @@ function displayStoreReports(stores) {
             <td>${s.name}</td>
             <td>${s.email}<br>${s.phone || '-'}</td>
             <td>${s.total_orders}</td>
-            <td>₨ ${earnings.toFixed(2)}</td>
-            <td>₨ ${paid.toFixed(2)}</td>
-            <td style="color: ${pending > 0 ? 'orange' : 'inherit'}">₨ ${pending.toFixed(2)}</td>
+            <td>Rs  ${earnings.toFixed(2)}</td>
+            <td>Rs  ${paid.toFixed(2)}</td>
+            <td style="color: ${pending > 0 ? 'orange' : 'inherit'}">Rs  ${pending.toFixed(2)}</td>
         `;
         tbody.appendChild(row);
     });
@@ -4232,6 +4363,8 @@ if (typeof window !== 'undefined') {
     window.generateFinancialReport = generateFinancialReport;
     window.loadFinancialReports = loadFinancialReports;
 }
+
+
 
 
 
