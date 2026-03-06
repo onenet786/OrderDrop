@@ -10,6 +10,7 @@ import '../services/api_service.dart';
 import '../services/notifier.dart';
 import '../services/notification_service.dart';
 import '../widgets/notification_bell_widget.dart';
+import 'offer_campaigns_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -1172,6 +1173,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               icon: Icons.campaign,
               label: 'Status',
               onTap: _openStoreStatusMessageDialog,
+            ),
+            const SizedBox(width: 10),
+            _buildQuickMenuItem(
+              context: context,
+              icon: Icons.local_offer_outlined,
+              label: 'Offers',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => OfferCampaignsScreen(isAdmin: true),
+                ),
+              ),
             ),
             const SizedBox(width: 4),
           ],

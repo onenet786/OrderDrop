@@ -602,7 +602,10 @@ class _StoreScreenState extends State<StoreScreen> {
             );
           })()
         : null;
-    final displayPrice = selectedVariant?.price ?? product.price;
+    final displayPrice = selectedVariant?.effectivePrice ?? product.effectivePrice;
+    final displayOriginalPrice = selectedVariant?.price ?? product.price;
+    final hasPromo =
+        displayPrice >= 0 && displayPrice + 0.001 < displayOriginalPrice;
 
     if (crossAxisCount == 1) {
       return Card(
@@ -656,14 +659,37 @@ class _StoreScreenState extends State<StoreScreen> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        'PKR $displayPrice',
-                        style: TextStyle(
-                          color: Colors.green[700],
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                      if (hasPromo)
+                        Row(
+                          children: [
+                            Text(
+                              'PKR ${displayOriginalPrice.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'PKR ${displayPrice.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                color: Colors.red[700],
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Text(
+                          'PKR ${displayPrice.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            color: Colors.green[700],
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
                       if (variants.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         if (variants.length == 1)
@@ -818,14 +844,38 @@ class _StoreScreenState extends State<StoreScreen> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  'PKR ${displayPrice.toStringAsFixed(0)}',
-                  style: TextStyle(
-                    color: Colors.green[700],
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                if (hasPromo)
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 4,
+                    children: [
+                      Text(
+                        'PKR ${displayOriginalPrice.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 9,
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                      ),
+                      Text(
+                        'PKR ${displayPrice.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          color: Colors.red[700],
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  Text(
+                    'PKR ${displayPrice.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      color: Colors.green[700],
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
                 if (variants.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   RadioGroup<String>(

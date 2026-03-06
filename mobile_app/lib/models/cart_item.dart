@@ -11,7 +11,7 @@ class CartItem {
     this.quantity = 1,
   });
 
-  double get unitPrice => variant?.price ?? product.price;
+  double get unitPrice => variant?.effectivePrice ?? product.effectivePrice;
 
   String? get variantLabel => variant?.displayLabel;
 

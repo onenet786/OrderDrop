@@ -958,9 +958,14 @@ class ApiService {
   static Future<List<dynamic>> getStoresForAdmin(
     String token, {
     bool includeInactive = false,
+    bool lite = false,
   }) async {
+    final query = <String>[];
+    if (includeInactive) query.add('admin=1');
+    if (lite) query.add('lite=1');
+    final qs = query.isEmpty ? '' : '?${query.join('&')}';
     final uri = Uri.parse(
-      '$baseUrl/api/stores${includeInactive ? '?admin=1' : ''}',
+      '$baseUrl/api/stores$qs',
     );
     _logger.d('ApiService: GET $uri');
     final response = await http.get(
@@ -969,6 +974,69 @@ class ApiService {
     );
     final data = _handleResponse(response);
     return data['stores'] ?? [];
+  }
+
+  static Future<Map<String, dynamic>> getStoreOfferCampaigns(
+    String token, {
+    required int storeId,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/api/stores/offer-campaigns?store_id=$storeId',
+    );
+    _logger.d('ApiService: GET $uri');
+    final response = await http.get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> createStoreOfferCampaign(
+    String token, {
+    required Map<String, dynamic> payload,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/stores/offer-campaigns');
+    _logger.d('ApiService: POST $uri');
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> updateStoreOfferCampaign(
+    String token, {
+    required int campaignId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/stores/offer-campaigns/$campaignId');
+    _logger.d('ApiService: PUT $uri');
+    final response = await http.put(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(payload),
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> deleteStoreOfferCampaign(
+    String token, {
+    required int campaignId,
+  }) async {
+    final uri = Uri.parse('$baseUrl/api/stores/offer-campaigns/$campaignId');
+    _logger.d('ApiService: DELETE $uri');
+    final response = await http.delete(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return _handleResponse(response);
   }
 
   static Future<List<dynamic>> getProductsForAdmin(String token) async {

@@ -5,6 +5,10 @@ class ProductVariant {
   final String? unitName;
   final String? unitAbbreviation;
   final double price;
+  final double? originalPrice;
+  final double? promotionalPrice;
+  final bool hasActiveOffer;
+  final String? offerBadge;
   final double? costPrice;
 
   const ProductVariant({
@@ -14,6 +18,10 @@ class ProductVariant {
     this.unitName,
     this.unitAbbreviation,
     required this.price,
+    this.originalPrice,
+    this.promotionalPrice,
+    this.hasActiveOffer = false,
+    this.offerBadge,
     this.costPrice,
   });
 
@@ -39,6 +47,12 @@ class ProductVariant {
       price: (json['price'] is num)
           ? (json['price'] as num).toDouble()
           : double.tryParse(json['price'].toString()) ?? 0.0,
+      originalPrice: parseNullableDouble(json['original_price']),
+      promotionalPrice: parseNullableDouble(json['promotional_price']),
+      hasActiveOffer: json['has_active_offer'] == true ||
+          json['has_active_offer'] == 1 ||
+          json['has_active_offer']?.toString().toLowerCase() == 'true',
+      offerBadge: json['offer_badge']?.toString(),
       costPrice: parseNullableDouble(json['cost_price']),
     );
   }
@@ -51,8 +65,22 @@ class ProductVariant {
       'unit_name': unitName,
       'unit_abbreviation': unitAbbreviation,
       'price': price,
+      'original_price': originalPrice,
+      'promotional_price': promotionalPrice,
+      'has_active_offer': hasActiveOffer,
+      'offer_badge': offerBadge,
       'cost_price': costPrice,
     };
+  }
+
+  double get effectivePrice {
+    if (hasActiveOffer &&
+        promotionalPrice != null &&
+        promotionalPrice! >= 0 &&
+        promotionalPrice! < price) {
+      return promotionalPrice!;
+    }
+    return price;
   }
 
   String get displayLabel {
@@ -70,6 +98,10 @@ class Product {
   final String name;
   final String? description;
   final double price;
+  final double? originalPrice;
+  final double? promotionalPrice;
+  final bool hasActiveOffer;
+  final String? offerBadge;
   final String? imageUrl;
   final int? imageBgR;
   final int? imageBgG;
@@ -90,6 +122,10 @@ class Product {
     required this.name,
     this.description,
     required this.price,
+    this.originalPrice,
+    this.promotionalPrice,
+    this.hasActiveOffer = false,
+    this.offerBadge,
     this.imageUrl,
     this.imageBgR,
     this.imageBgG,
@@ -120,6 +156,13 @@ class Product {
       name: json['name'],
       description: json['description'],
       price: double.tryParse(json['price']?.toString() ?? '') ?? 0.0,
+      originalPrice: double.tryParse(json['original_price']?.toString() ?? ''),
+      promotionalPrice:
+          double.tryParse(json['promotional_price']?.toString() ?? ''),
+      hasActiveOffer: json['has_active_offer'] == true ||
+          json['has_active_offer'] == 1 ||
+          json['has_active_offer']?.toString().toLowerCase() == 'true',
+      offerBadge: json['offer_badge']?.toString(),
       imageUrl: json['image_url'],
       imageBgR: json['image_bg_r'],
       imageBgG: json['image_bg_g'],
@@ -149,6 +192,10 @@ class Product {
       'name': name,
       'description': description,
       'price': price,
+      'original_price': originalPrice,
+      'promotional_price': promotionalPrice,
+      'has_active_offer': hasActiveOffer,
+      'offer_badge': offerBadge,
       'image_url': imageUrl,
       'image_bg_r': imageBgR,
       'image_bg_g': imageBgG,
@@ -164,5 +211,15 @@ class Product {
       'category_id': categoryId,
       'size_variants': sizeVariants.map((v) => v.toJson()).toList(),
     };
+  }
+
+  double get effectivePrice {
+    if (hasActiveOffer &&
+        promotionalPrice != null &&
+        promotionalPrice! >= 0 &&
+        promotionalPrice! < price) {
+      return promotionalPrice!;
+    }
+    return price;
   }
 }

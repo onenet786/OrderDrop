@@ -1341,6 +1341,21 @@ async function loadProducts(category) {
           }
         }
 
+        const basePrice = Number(product.price || 0);
+        const promoPrice =
+          product.promotional_price !== undefined &&
+          product.promotional_price !== null
+            ? Number(product.promotional_price)
+            : null;
+        const effectivePrice =
+          Number.isFinite(promoPrice) && promoPrice >= 0
+            ? promoPrice
+            : basePrice;
+        const priceHtml =
+          Number.isFinite(promoPrice) && promoPrice < basePrice
+            ? `<p class="price"><span style="text-decoration:line-through;color:#94a3b8;margin-right:6px;">PKR ${basePrice.toFixed(2)}</span><strong style="color:#dc2626;">PKR ${promoPrice.toFixed(2)}</strong></p>`
+            : `<p class="price">PKR ${basePrice.toFixed(2)}</p>`;
+
         productCard.innerHTML = `
                     <div class="product-image">
                                 ${buildImgTag(
@@ -1360,10 +1375,10 @@ async function loadProducts(category) {
                     </div>
                     <div class="product-card-content">
                         <h4>${product.name}</h4>
-                        <p class="price">PKR ${product.price}</p>
+                        ${priceHtml}
                         <button class="add-to-cart" onclick="addToCart(${
                           product.id
-                        }, '${product.name}', ${product.price}, ${
+                        }, '${product.name}', ${effectivePrice}, ${
           Number.isFinite(parseInt(product.stock_quantity))
             ? parseInt(product.stock_quantity, 10)
             : "undefined"

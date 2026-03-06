@@ -10,6 +10,12 @@ const sharp = (() => {
     try { return require('sharp'); } catch (e) { console.warn('sharp not installed, image resizing disabled'); return null; }
 })();
 const upload = multer({ dest: path.join(__dirname, '..', 'uploads', 'tmp') });
+const {
+    ensureStoreOfferCampaignTables,
+    getActiveStoreCampaignsMap,
+    campaignsForProduct,
+    applyBestCampaignToPrice
+} = require('../utils/offerCampaigns');
 
 function roundMoney(val) {
     const n = Number(val);
@@ -375,6 +381,7 @@ async function downloadImageToUploads(remoteUrl) {
 router.get('/', optionalAuth, async (req, res) => {
     try {
         await ensureProductSizePricesTable(req.db);
+        await ensureStoreOfferCampaignTables(req.db);
         const { category, store, admin } = req.query;
         const isAdminUser = req.user && req.user.user_type === 'admin';
         const isAdminDataRequest = String(admin || '').toLowerCase() === '1'
@@ -431,35 +438,15 @@ router.get('/', optionalAuth, async (req, res) => {
         const variantsByProductId = includeVariants
             ? await loadProductSizeVariants(req.db, (products || []).map(p => p.id))
             : {};
+        const storeIds = Array.from(new Set((products || []).map((p) => Number(p.store_id)).filter((x) => Number.isInteger(x) && x > 0)));
+        const activeCampaignMap = await getActiveStoreCampaignsMap(req.db, storeIds);
 
         res.json({
             success: true,
-            products: products.map(product => ({
-                id: product.id,
-                name: product.name,
-                description: product.description,
-                cost_price: product.cost_price,
-                price: product.price,
-                image_url: product.image_url,
-                image_variants: includeImageVariants ? getImageVariants(product.image_url) : null,
-                image_bg_r: product.image_bg_r,
-                image_bg_g: product.image_bg_g,
-                image_bg_b: product.image_bg_b,
-                image_overlay_alpha: product.image_overlay_alpha,
-                image_contrast: product.image_contrast,
-                category_name: product.category_name,
-                store_name: product.store_name,
-                store_location: product.store_location,
-                stock_quantity: product.stock_quantity,
-                is_available: product.is_available,
-                store_id: product.store_id,
-                category_id: product.category_id,
-                unit_id: product.unit_id,
-                unit_name: product.unit_name,
-                size_id: product.size_id,
-                size_label: product.size_label,
-                manual_variant_cost_override: Number(product.manual_variant_cost_override || 0) === 1,
-                size_variants: includeVariants
+            products: products.map(product => {
+                const applicable = campaignsForProduct(activeCampaignMap[Number(product.store_id)] || [], product.id);
+                const offer = applyBestCampaignToPrice(Number(product.price), applicable);
+                const baseVariants = includeVariants
                     ? ((variantsByProductId[product.id] && variantsByProductId[product.id].length)
                         ? variantsByProductId[product.id]
                         : (product.size_id ? [{
@@ -471,8 +458,51 @@ router.get('/', optionalAuth, async (req, res) => {
                             price: Number(product.price),
                             cost_price: product.cost_price === null || product.cost_price === undefined ? null : Number(product.cost_price)
                         }] : []))
-                    : []
-            }))
+                    : [];
+                const enrichedVariants = baseVariants.map((v) => {
+                    const variantOffer = applyBestCampaignToPrice(Number(v.price), applicable);
+                    return {
+                        ...v,
+                        original_price: variantOffer.original_price,
+                        promotional_price: variantOffer.promotional_price,
+                        has_active_offer: variantOffer.has_active_offer,
+                        offer_badge: variantOffer.offer_badge,
+                        offer_meta: variantOffer.offer_meta
+                    };
+                });
+                return {
+                    id: product.id,
+                    name: product.name,
+                    description: product.description,
+                    cost_price: product.cost_price,
+                    price: product.price,
+                    original_price: offer.original_price,
+                    promotional_price: offer.promotional_price,
+                    has_active_offer: offer.has_active_offer,
+                    offer_badge: offer.offer_badge,
+                    offer_meta: offer.offer_meta,
+                    image_url: product.image_url,
+                    image_variants: includeImageVariants ? getImageVariants(product.image_url) : null,
+                    image_bg_r: product.image_bg_r,
+                    image_bg_g: product.image_bg_g,
+                    image_bg_b: product.image_bg_b,
+                    image_overlay_alpha: product.image_overlay_alpha,
+                    image_contrast: product.image_contrast,
+                    category_name: product.category_name,
+                    store_name: product.store_name,
+                    store_location: product.store_location,
+                    stock_quantity: product.stock_quantity,
+                    is_available: product.is_available,
+                    store_id: product.store_id,
+                    category_id: product.category_id,
+                    unit_id: product.unit_id,
+                    unit_name: product.unit_name,
+                    size_id: product.size_id,
+                    size_label: product.size_label,
+                    manual_variant_cost_override: Number(product.manual_variant_cost_override || 0) === 1,
+                    size_variants: enrichedVariants
+                };
+            })
         });
 
     } catch (error) {
@@ -558,6 +588,7 @@ router.post('/upload-image', authenticateToken, requireStaffAccess, upload.singl
 router.get('/:id', optionalAuth, async (req, res) => {
     try {
         await ensureProductSizePricesTable(req.db);
+        await ensureStoreOfferCampaignTables(req.db);
         const { id } = req.params;
         const { admin } = req.query;
         const isAdminUser = req.user && req.user.user_type === 'admin';
@@ -593,6 +624,9 @@ router.get('/:id', optionalAuth, async (req, res) => {
         const product = products[0];
         const variantsByProductId = await loadProductSizeVariants(req.db, [product.id]);
         const hasVariantPricing = !!(variantsByProductId[product.id] && variantsByProductId[product.id].length);
+        const activeCampaignMap = await getActiveStoreCampaignsMap(req.db, [Number(product.store_id)]);
+        const applicable = campaignsForProduct(activeCampaignMap[Number(product.store_id)] || [], product.id);
+        const productOffer = applyBestCampaignToPrice(Number(product.price), applicable);
 
         res.json({
             success: true,
@@ -602,6 +636,11 @@ router.get('/:id', optionalAuth, async (req, res) => {
                 description: product.description,
                 cost_price: product.cost_price,
                 price: product.price,
+                original_price: productOffer.original_price,
+                promotional_price: productOffer.promotional_price,
+                has_active_offer: productOffer.has_active_offer,
+                offer_badge: productOffer.offer_badge,
+                offer_meta: productOffer.offer_meta,
                 image_url: product.image_url,
                 image_variants: getImageVariants(product.image_url),
                 image_bg_r: product.image_bg_r,
@@ -626,7 +665,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
                 profit_value: product.profit_value,
                 manual_variant_cost_override: Number(product.manual_variant_cost_override || 0) === 1,
                 has_variant_pricing: hasVariantPricing,
-                size_variants: (variantsByProductId[product.id] && variantsByProductId[product.id].length)
+                size_variants: ((variantsByProductId[product.id] && variantsByProductId[product.id].length)
                     ? variantsByProductId[product.id]
                     : (product.size_id ? [{
                         size_id: product.size_id,
@@ -636,7 +675,18 @@ router.get('/:id', optionalAuth, async (req, res) => {
                         unit_abbreviation: null,
                         price: Number(product.price),
                         cost_price: product.cost_price === null || product.cost_price === undefined ? null : Number(product.cost_price)
-                    }] : [])
+                    }] : []))
+                    .map((v) => {
+                        const variantOffer = applyBestCampaignToPrice(Number(v.price), applicable);
+                        return {
+                            ...v,
+                            original_price: variantOffer.original_price,
+                            promotional_price: variantOffer.promotional_price,
+                            has_active_offer: variantOffer.has_active_offer,
+                            offer_badge: variantOffer.offer_badge,
+                            offer_meta: variantOffer.offer_meta
+                        };
+                    })
             }
         });
 

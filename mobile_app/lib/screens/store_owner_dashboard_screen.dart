@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
 import '../widgets/notification_bell_widget.dart';
+import 'offer_campaigns_screen.dart';
 import 'login_screen.dart';
 
 class StoreOwnerDashboardScreen extends StatefulWidget {
@@ -688,6 +689,20 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
             ),
             _buildBottomActionItem(
               icon: Icons.campaign_outlined,
+              label: 'Offers',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => OfferCampaignsScreen(
+                    isAdmin: false,
+                    initialStoreId: int.tryParse(
+                      (_stats['store_id'] ?? '').toString(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            _buildBottomActionItem(
+              icon: Icons.flag_outlined,
               label: 'Status',
               onTap: _openStoreStatusMessageDialog,
             ),

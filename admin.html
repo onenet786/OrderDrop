@@ -1466,6 +1466,105 @@
           <section class="global-delivery-admin-card">
             <div class="global-delivery-admin-head">
               <div>
+                <h3>Store Offer Campaigns (Custom)</h3>
+                <p>Create time-based, customizable offers per store: discount or Buy X Get Y (1+1, 2+1, 3+1, etc.).</p>
+              </div>
+              <span class="global-delivery-state state-available">Store-Level</span>
+            </div>
+            <div class="global-delivery-admin-grid">
+              <div class="form-group">
+                <label for="offerCampaignStoreId">Store</label>
+                <select id="offerCampaignStoreId" class="form-control"></select>
+              </div>
+              <div class="form-group">
+                <label for="offerCampaignName">Campaign Name</label>
+                <input type="text" id="offerCampaignName" class="form-control" maxlength="160" placeholder="Weekend Mega Offer" />
+              </div>
+              <div class="form-group">
+                <label for="offerCampaignType">Campaign Type</label>
+                <select id="offerCampaignType" class="form-control">
+                  <option value="discount">Discount</option>
+                  <option value="bxgy">Buy X Get Y</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="offerCampaignScope">Apply Scope</label>
+                <select id="offerCampaignScope" class="form-control">
+                  <option value="all_products">All Products</option>
+                  <option value="selected_products">Selected Products</option>
+                </select>
+              </div>
+              <label class="global-delivery-toggle">
+                <input type="checkbox" id="offerCampaignEnabled" checked />
+                <span>Enable campaign</span>
+              </label>
+              <div class="form-group">
+                <label for="offerCampaignDescription">Description</label>
+                <textarea id="offerCampaignDescription" class="form-control" rows="2" maxlength="500" placeholder="Offer details for customers"></textarea>
+              </div>
+              <div class="form-group" id="offerDiscountTypeWrap">
+                <label for="offerDiscountType">Discount Type</label>
+                <select id="offerDiscountType" class="form-control">
+                  <option value="percent">Percentage (%)</option>
+                  <option value="amount">Fixed Amount (PKR)</option>
+                </select>
+              </div>
+              <div class="form-group" id="offerDiscountValueWrap">
+                <label for="offerDiscountValue">Discount Value</label>
+                <input type="number" min="0" step="0.01" id="offerDiscountValue" class="form-control" placeholder="10" />
+              </div>
+              <div class="form-group" id="offerBuyQtyWrap" style="display:none;">
+                <label for="offerBuyQty">Buy Qty (X)</label>
+                <input type="number" min="1" step="1" id="offerBuyQty" class="form-control" placeholder="2" />
+              </div>
+              <div class="form-group" id="offerGetQtyWrap" style="display:none;">
+                <label for="offerGetQty">Get Qty (Y)</label>
+                <input type="number" min="1" step="1" id="offerGetQty" class="form-control" placeholder="1" />
+              </div>
+              <div class="form-group" id="offerSelectedProductsWrap" style="display:none;">
+                <label for="offerSelectedProducts">Select Products (when selected scope)</label>
+                <select id="offerSelectedProducts" class="form-control" multiple size="8"></select>
+                <small style="display:block;margin-top:6px;color:#64748b;">Tip: Hold Ctrl/Cmd for multiple.</small>
+              </div>
+              <div class="form-row global-delivery-time-row">
+                <div class="form-group">
+                  <label for="offerCampaignStartAt">From</label>
+                  <input type="datetime-local" id="offerCampaignStartAt" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label for="offerCampaignEndAt">To</label>
+                  <input type="datetime-local" id="offerCampaignEndAt" class="form-control" />
+                </div>
+              </div>
+            </div>
+            <div class="global-delivery-admin-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-primary" id="saveOfferCampaignBtn">
+                <i class="fas fa-tags"></i> Save Offer Campaign
+              </button>
+              <button class="btn btn-secondary" id="resetOfferCampaignBtn">
+                <i class="fas fa-undo"></i> Reset Form
+              </button>
+            </div>
+            <div class="table-container" style="margin-top:12px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Scope</th>
+                    <th>Window</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="offerCampaignsTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="global-delivery-admin-card">
+            <div class="global-delivery-admin-head">
+              <div>
                 <h3>Customer Flash Message (Launch Popup)</h3>
                 <p>Show animated image popup on customer app launch for birthdays, events, or custom announcements.</p>
               </div>
@@ -3918,7 +4017,7 @@
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
     <script src="js/financial.js?v=11" defer></script>
-    <script src="js/admin.js?v=22" defer></script>
+    <script src="js/admin.js?v=23" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");

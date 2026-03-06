@@ -9,6 +9,14 @@ const sharp = (() => {
     try { return require('sharp'); } catch (e) { console.warn('sharp not installed, image resizing disabled'); return null; }
 })();
 const upload = multer({ dest: path.join(__dirname, '..', 'uploads', 'tmp') });
+const {
+    ensureStoreOfferCampaignTables,
+    getActiveStoreCampaignsMap,
+    campaignsForProduct,
+    applyBestCampaignToPrice,
+    campaignBadge,
+    isCampaignActiveNow
+} = require('../utils/offerCampaigns');
 
 const router = express.Router();
 
@@ -1180,6 +1188,376 @@ router.get('/live-promotions', async (req, res) => {
     }
 });
 
+router.get('/offer-campaigns', authenticateToken, requireStoreOwner, async (req, res) => {
+    try {
+        await ensureStoreOfferCampaignTables(req.db);
+        const requestedStoreId = req.query.store_id === undefined
+            ? null
+            : parseInt(String(req.query.store_id), 10);
+
+        let storeId = null;
+        if (req.user.user_type === 'admin') {
+            if (!Number.isInteger(requestedStoreId) || requestedStoreId <= 0) {
+                return res.status(400).json({ success: false, message: 'store_id is required for admin users' });
+            }
+            storeId = requestedStoreId;
+        } else {
+            if (Number.isInteger(requestedStoreId) && requestedStoreId > 0) {
+                const [owned] = await req.db.execute(
+                    'SELECT id FROM stores WHERE id = ? AND owner_id = ? LIMIT 1',
+                    [requestedStoreId, req.user.id]
+                );
+                if (!owned.length) {
+                    return res.status(403).json({ success: false, message: 'You do not have permission for this store' });
+                }
+                storeId = requestedStoreId;
+            } else {
+                const [ownedStores] = await req.db.execute(
+                    'SELECT id FROM stores WHERE owner_id = ? ORDER BY id ASC LIMIT 1',
+                    [req.user.id]
+                );
+                if (!ownedStores.length) {
+                    return res.status(404).json({ success: false, message: 'No store found for this owner' });
+                }
+                storeId = Number(ownedStores[0].id);
+            }
+        }
+
+        const [rows] = await req.db.execute(
+            `
+            SELECT c.*
+            FROM store_offer_campaigns c
+            WHERE c.store_id = ?
+            ORDER BY c.id DESC
+            `,
+            [storeId]
+        );
+        const campaignIds = (rows || []).map((r) => Number(r.id)).filter((x) => Number.isInteger(x) && x > 0);
+        let linked = [];
+        if (campaignIds.length) {
+            const placeholders = campaignIds.map(() => '?').join(',');
+            const [linkedRows] = await req.db.execute(
+                `SELECT campaign_id, product_id FROM store_offer_campaign_products WHERE campaign_id IN (${placeholders})`,
+                campaignIds
+            );
+            linked = linkedRows || [];
+        }
+        const productIdsByCampaign = {};
+        for (const row of linked) {
+            const cid = Number(row.campaign_id);
+            const pid = Number(row.product_id);
+            if (!Number.isInteger(cid) || !Number.isInteger(pid)) continue;
+            if (!productIdsByCampaign[cid]) productIdsByCampaign[cid] = [];
+            productIdsByCampaign[cid].push(pid);
+        }
+
+        const campaigns = (rows || []).map((c) => {
+            const payload = {
+                id: Number(c.id),
+                store_id: Number(c.store_id),
+                name: c.name || '',
+                description: c.description || '',
+                campaign_type: c.campaign_type || 'discount',
+                discount_type: c.discount_type || null,
+                discount_value: c.discount_value === null || c.discount_value === undefined ? null : Number(c.discount_value),
+                buy_qty: c.buy_qty === null || c.buy_qty === undefined ? null : Number(c.buy_qty),
+                get_qty: c.get_qty === null || c.get_qty === undefined ? null : Number(c.get_qty),
+                apply_scope: c.apply_scope || 'all_products',
+                is_enabled: Number(c.is_enabled || 0) === 1,
+                start_at: c.start_at || null,
+                end_at: c.end_at || null,
+                created_at: c.created_at || null,
+                updated_at: c.updated_at || null,
+                product_ids: productIdsByCampaign[Number(c.id)] || []
+            };
+            payload.is_active_now = isCampaignActiveNow(payload);
+            payload.offer_badge = campaignBadge(payload);
+            return payload;
+        });
+
+        return res.json({
+            success: true,
+            store_id: storeId,
+            campaigns
+        });
+    } catch (error) {
+        console.error('Error fetching store offer campaigns:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch offer campaigns',
+            error: error.message
+        });
+    }
+});
+
+router.post('/offer-campaigns', authenticateToken, requireStoreOwner, async (req, res) => {
+    try {
+        await ensureStoreOfferCampaignTables(req.db);
+
+        const requestedStoreId = parseInt(String(req.body.store_id || ''), 10);
+        let storeId = null;
+        if (req.user.user_type === 'admin') {
+            if (!Number.isInteger(requestedStoreId) || requestedStoreId <= 0) {
+                return res.status(400).json({ success: false, message: 'store_id is required for admin users' });
+            }
+            storeId = requestedStoreId;
+        } else {
+            if (Number.isInteger(requestedStoreId) && requestedStoreId > 0) {
+                const [owned] = await req.db.execute(
+                    'SELECT id FROM stores WHERE id = ? AND owner_id = ? LIMIT 1',
+                    [requestedStoreId, req.user.id]
+                );
+                if (!owned.length) return res.status(403).json({ success: false, message: 'You do not have permission for this store' });
+                storeId = requestedStoreId;
+            } else {
+                const [ownedStores] = await req.db.execute(
+                    'SELECT id FROM stores WHERE owner_id = ? ORDER BY id ASC LIMIT 1',
+                    [req.user.id]
+                );
+                if (!ownedStores.length) return res.status(404).json({ success: false, message: 'No store found for this owner' });
+                storeId = Number(ownedStores[0].id);
+            }
+        }
+
+        const name = String(req.body.name || '').trim();
+        const description = String(req.body.description || '').trim();
+        const campaignType = String(req.body.campaign_type || 'discount').toLowerCase() === 'bxgy' ? 'bxgy' : 'discount';
+        const discountType = String(req.body.discount_type || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
+        const discountValue = req.body.discount_value === null || req.body.discount_value === undefined || String(req.body.discount_value).trim() === ''
+            ? null
+            : Number(req.body.discount_value);
+        const buyQty = req.body.buy_qty === null || req.body.buy_qty === undefined || String(req.body.buy_qty).trim() === ''
+            ? null
+            : parseInt(String(req.body.buy_qty), 10);
+        const getQty = req.body.get_qty === null || req.body.get_qty === undefined || String(req.body.get_qty).trim() === ''
+            ? null
+            : parseInt(String(req.body.get_qty), 10);
+        const applyScope = String(req.body.apply_scope || 'all_products').toLowerCase() === 'selected_products'
+            ? 'selected_products'
+            : 'all_products';
+        const isEnabled = req.body.is_enabled === undefined ? true : !!req.body.is_enabled;
+        const startAtRaw = String(req.body.start_at || '').trim();
+        const endAtRaw = String(req.body.end_at || '').trim();
+        const selectedProductIds = Array.isArray(req.body.product_ids)
+            ? req.body.product_ids.map((x) => parseInt(String(x), 10)).filter((x) => Number.isInteger(x) && x > 0)
+            : [];
+
+        if (!name || name.length > 160) {
+            return res.status(400).json({ success: false, message: 'Campaign name is required (max 160 chars)' });
+        }
+        if (!startAtRaw || !endAtRaw) {
+            return res.status(400).json({ success: false, message: 'Start and end time are required' });
+        }
+        const startAt = startAtRaw.replace('T', ' ');
+        const endAt = endAtRaw.replace('T', ' ');
+        if (new Date(startAt) >= new Date(endAt)) {
+            return res.status(400).json({ success: false, message: 'End time must be after start time' });
+        }
+        if (campaignType === 'discount') {
+            if (!Number.isFinite(discountValue) || discountValue <= 0) {
+                return res.status(400).json({ success: false, message: 'Discount value must be greater than 0' });
+            }
+        } else {
+            if (!Number.isInteger(buyQty) || !Number.isInteger(getQty) || buyQty <= 0 || getQty <= 0) {
+                return res.status(400).json({ success: false, message: 'Buy/Get quantity must be positive integers' });
+            }
+        }
+        if (applyScope === 'selected_products' && !selectedProductIds.length) {
+            return res.status(400).json({ success: false, message: 'Please select at least one product for selected-products scope' });
+        }
+
+        const [insertResult] = await req.db.execute(
+            `
+            INSERT INTO store_offer_campaigns
+            (store_id, name, description, campaign_type, discount_type, discount_value, buy_qty, get_qty, apply_scope, is_enabled, start_at, end_at, created_by, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+                storeId,
+                name,
+                description || null,
+                campaignType,
+                campaignType === 'discount' ? discountType : null,
+                campaignType === 'discount' ? Number(discountValue) : null,
+                campaignType === 'bxgy' ? buyQty : null,
+                campaignType === 'bxgy' ? getQty : null,
+                applyScope,
+                isEnabled ? 1 : 0,
+                startAt,
+                endAt,
+                req.user.id,
+                req.user.id
+            ]
+        );
+        const campaignId = Number(insertResult.insertId);
+
+        if (applyScope === 'selected_products' && selectedProductIds.length) {
+            const placeholders = selectedProductIds.map(() => '(?, ?)').join(',');
+            const params = [];
+            selectedProductIds.forEach((pid) => {
+                params.push(campaignId, pid);
+            });
+            await req.db.execute(
+                `INSERT IGNORE INTO store_offer_campaign_products (campaign_id, product_id) VALUES ${placeholders}`,
+                params
+            );
+        }
+
+        return res.json({
+            success: true,
+            message: 'Offer campaign created successfully',
+            campaign_id: campaignId
+        });
+    } catch (error) {
+        console.error('Error creating store offer campaign:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to create offer campaign',
+            error: error.message
+        });
+    }
+});
+
+router.put('/offer-campaigns/:id', authenticateToken, requireStoreOwner, async (req, res) => {
+    try {
+        await ensureStoreOfferCampaignTables(req.db);
+        const campaignId = parseInt(String(req.params.id), 10);
+        if (!Number.isInteger(campaignId) || campaignId <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid campaign id' });
+        }
+
+        const [rows] = await req.db.execute('SELECT * FROM store_offer_campaigns WHERE id = ? LIMIT 1', [campaignId]);
+        if (!rows.length) return res.status(404).json({ success: false, message: 'Campaign not found' });
+        const current = rows[0];
+
+        if (req.user.user_type !== 'admin') {
+            const [owned] = await req.db.execute(
+                'SELECT id FROM stores WHERE id = ? AND owner_id = ? LIMIT 1',
+                [current.store_id, req.user.id]
+            );
+            if (!owned.length) return res.status(403).json({ success: false, message: 'You do not have permission for this campaign' });
+        }
+
+        const name = String(req.body.name ?? current.name ?? '').trim();
+        const description = String(req.body.description ?? current.description ?? '').trim();
+        const campaignType = String(req.body.campaign_type || current.campaign_type || 'discount').toLowerCase() === 'bxgy' ? 'bxgy' : 'discount';
+        const discountType = String(req.body.discount_type || current.discount_type || 'amount').toLowerCase() === 'percent' ? 'percent' : 'amount';
+        const discountValue = req.body.discount_value === undefined
+            ? (current.discount_value === null || current.discount_value === undefined ? null : Number(current.discount_value))
+            : (String(req.body.discount_value).trim() === '' ? null : Number(req.body.discount_value));
+        const buyQty = req.body.buy_qty === undefined
+            ? (current.buy_qty === null || current.buy_qty === undefined ? null : Number(current.buy_qty))
+            : (String(req.body.buy_qty).trim() === '' ? null : parseInt(String(req.body.buy_qty), 10));
+        const getQty = req.body.get_qty === undefined
+            ? (current.get_qty === null || current.get_qty === undefined ? null : Number(current.get_qty))
+            : (String(req.body.get_qty).trim() === '' ? null : parseInt(String(req.body.get_qty), 10));
+        const applyScope = req.body.apply_scope === undefined
+            ? (current.apply_scope || 'all_products')
+            : (String(req.body.apply_scope).toLowerCase() === 'selected_products' ? 'selected_products' : 'all_products');
+        const isEnabled = req.body.is_enabled === undefined ? Number(current.is_enabled || 0) === 1 : !!req.body.is_enabled;
+        const startAt = req.body.start_at === undefined
+            ? current.start_at
+            : String(req.body.start_at || '').trim().replace('T', ' ');
+        const endAt = req.body.end_at === undefined
+            ? current.end_at
+            : String(req.body.end_at || '').trim().replace('T', ' ');
+        const selectedProductIds = Array.isArray(req.body.product_ids)
+            ? req.body.product_ids.map((x) => parseInt(String(x), 10)).filter((x) => Number.isInteger(x) && x > 0)
+            : null;
+
+        if (!name || name.length > 160) {
+            return res.status(400).json({ success: false, message: 'Campaign name is required (max 160 chars)' });
+        }
+        if (!startAt || !endAt || new Date(startAt) >= new Date(endAt)) {
+            return res.status(400).json({ success: false, message: 'Valid start/end time is required' });
+        }
+        if (campaignType === 'discount') {
+            if (!Number.isFinite(discountValue) || discountValue <= 0) {
+                return res.status(400).json({ success: false, message: 'Discount value must be greater than 0' });
+            }
+        } else if (!Number.isInteger(buyQty) || !Number.isInteger(getQty) || buyQty <= 0 || getQty <= 0) {
+            return res.status(400).json({ success: false, message: 'Buy/Get quantity must be positive integers' });
+        }
+
+        await req.db.execute(
+            `
+            UPDATE store_offer_campaigns
+            SET name = ?, description = ?, campaign_type = ?, discount_type = ?, discount_value = ?, buy_qty = ?, get_qty = ?,
+                apply_scope = ?, is_enabled = ?, start_at = ?, end_at = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            `,
+            [
+                name,
+                description || null,
+                campaignType,
+                campaignType === 'discount' ? discountType : null,
+                campaignType === 'discount' ? Number(discountValue) : null,
+                campaignType === 'bxgy' ? buyQty : null,
+                campaignType === 'bxgy' ? getQty : null,
+                applyScope,
+                isEnabled ? 1 : 0,
+                startAt,
+                endAt,
+                req.user.id,
+                campaignId
+            ]
+        );
+
+        if (selectedProductIds) {
+            await req.db.execute('DELETE FROM store_offer_campaign_products WHERE campaign_id = ?', [campaignId]);
+            if (applyScope === 'selected_products' && selectedProductIds.length) {
+                const placeholders = selectedProductIds.map(() => '(?, ?)').join(',');
+                const params = [];
+                selectedProductIds.forEach((pid) => params.push(campaignId, pid));
+                await req.db.execute(
+                    `INSERT IGNORE INTO store_offer_campaign_products (campaign_id, product_id) VALUES ${placeholders}`,
+                    params
+                );
+            }
+        }
+
+        return res.json({ success: true, message: 'Offer campaign updated successfully' });
+    } catch (error) {
+        console.error('Error updating store offer campaign:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to update offer campaign',
+            error: error.message
+        });
+    }
+});
+
+router.delete('/offer-campaigns/:id', authenticateToken, requireStoreOwner, async (req, res) => {
+    try {
+        await ensureStoreOfferCampaignTables(req.db);
+        const campaignId = parseInt(String(req.params.id), 10);
+        if (!Number.isInteger(campaignId) || campaignId <= 0) {
+            return res.status(400).json({ success: false, message: 'Invalid campaign id' });
+        }
+
+        const [rows] = await req.db.execute('SELECT id, store_id FROM store_offer_campaigns WHERE id = ? LIMIT 1', [campaignId]);
+        if (!rows.length) return res.status(404).json({ success: false, message: 'Campaign not found' });
+        const row = rows[0];
+        if (req.user.user_type !== 'admin') {
+            const [owned] = await req.db.execute(
+                'SELECT id FROM stores WHERE id = ? AND owner_id = ? LIMIT 1',
+                [row.store_id, req.user.id]
+            );
+            if (!owned.length) return res.status(403).json({ success: false, message: 'You do not have permission for this campaign' });
+        }
+
+        await req.db.execute('DELETE FROM store_offer_campaigns WHERE id = ?', [campaignId]);
+        return res.json({ success: true, message: 'Offer campaign deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting store offer campaign:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to delete offer campaign',
+            error: error.message
+        });
+    }
+});
+
 router.put('/live-promotions', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await ensureLivePromotionsTable(req.db);
@@ -1615,6 +1993,9 @@ router.get('/:id', async (req, res) => {
         `, [id]);
 
         const variantsByProductId = await loadProductSizeVariants(req.db, (products || []).map(p => p.id));
+        await ensureStoreOfferCampaignTables(req.db);
+        const campaignMap = await getActiveStoreCampaignsMap(req.db, [Number(id)]);
+        const activeStoreCampaigns = campaignMap[Number(id)] || [];
         const manuallyClosed = !!store.is_closed;
         const scheduleOpen = calculateIsOpen(store.opening_time, store.closing_time);
 
@@ -1651,23 +2032,23 @@ router.get('/:id', async (req, res) => {
                 owner_email: store.owner_email || null,
                 owner_name: store.owner_name || null
             },
-            products: products.map(product => ({
-                id: product.id,
-                name: product.name,
-                description: product.description,
-                price: product.price,
-                image_url: product.image_url,
-                category_name: product.category_name,
-                store_name: store.name,
-                store_id: product.store_id,
-                stock_quantity: product.stock_quantity,
-                is_available: product.is_available,
-                unit_id: product.unit_id,
-                unit_name: product.unit_name,
-                unit_abbreviation: product.unit_abbreviation,
-                size_id: product.size_id,
-                size_label: product.size_label,
-                size_variants: (variantsByProductId[product.id] && variantsByProductId[product.id].length)
+            active_store_campaigns: activeStoreCampaigns.map((c) => ({
+                id: c.id,
+                name: c.name,
+                description: c.description,
+                campaign_type: c.campaign_type,
+                discount_type: c.discount_type,
+                discount_value: c.discount_value,
+                buy_qty: c.buy_qty,
+                get_qty: c.get_qty,
+                apply_scope: c.apply_scope,
+                start_at: c.start_at,
+                end_at: c.end_at,
+                offer_badge: campaignBadge(c)
+            })),
+            products: products.map(product => {
+                const applicableCampaigns = campaignsForProduct(activeStoreCampaigns, product.id);
+                const baseVariants = (variantsByProductId[product.id] && variantsByProductId[product.id].length)
                     ? variantsByProductId[product.id]
                     : (product.size_id || product.unit_id ? [{
                         size_id: product.size_id || null,
@@ -1677,8 +2058,43 @@ router.get('/:id', async (req, res) => {
                         unit_abbreviation: product.unit_abbreviation || null,
                         price: Number(product.price),
                         cost_price: product.cost_price === null || product.cost_price === undefined ? null : Number(product.cost_price)
-                    }] : [])
-            }))
+                    }] : []);
+                const productOffer = applyBestCampaignToPrice(Number(product.price), applicableCampaigns);
+                const enrichedVariants = baseVariants.map((v) => {
+                    const offer = applyBestCampaignToPrice(Number(v.price), applicableCampaigns);
+                    return {
+                        ...v,
+                        original_price: offer.original_price,
+                        promotional_price: offer.promotional_price,
+                        has_active_offer: offer.has_active_offer,
+                        offer_badge: offer.offer_badge,
+                        offer_meta: offer.offer_meta
+                    };
+                });
+                return {
+                    id: product.id,
+                    name: product.name,
+                    description: product.description,
+                    price: product.price,
+                    original_price: productOffer.original_price,
+                    promotional_price: productOffer.promotional_price,
+                    has_active_offer: productOffer.has_active_offer,
+                    offer_badge: productOffer.offer_badge,
+                    offer_meta: productOffer.offer_meta,
+                    image_url: product.image_url,
+                    category_name: product.category_name,
+                    store_name: store.name,
+                    store_id: product.store_id,
+                    stock_quantity: product.stock_quantity,
+                    is_available: product.is_available,
+                    unit_id: product.unit_id,
+                    unit_name: product.unit_name,
+                    unit_abbreviation: product.unit_abbreviation,
+                    size_id: product.size_id,
+                    size_label: product.size_label,
+                    size_variants: enrichedVariants
+                };
+            })
         });
 
     } catch (error) {

@@ -18,6 +18,8 @@ const AppState = {
     sizes: [],
     globalDeliveryStatus: null,
     livePromotions: null,
+    storeOfferCampaigns: [],
+    editingOfferCampaignId: null,
     customerFlashMessage: null,
     notificationCustomers: [],
     productStoreTermsById: {},
@@ -1415,6 +1417,7 @@ function initializeAdmin() {
     updateGlobalDeliveryPushControls();
     updateBroadcastPushControls();
     bindLivePromotionControls();
+    bindStoreOfferCampaignControls();
     bindCustomerFlashControls();
     updateCustomerFlashControls();
     document.getElementById('runDiagnosticsBtn')?.addEventListener('click', () => runAllDiagnostics());
@@ -2442,6 +2445,7 @@ function switchTab(tabName) {
             renderGlobalDeliveryPreview();
             loadLivePromotions();
             renderLivePromotionPreview();
+            initializeStoreOfferCampaigns();
             loadCustomerFlashMessage();
             renderCustomerFlashPreview();
             break;
@@ -3734,6 +3738,353 @@ function toggleProductStatus(productId, currentStatus) {
 // Orders Management
 function getTodayDateString() {
     return new Date().toISOString().split('T')[0];
+}
+
+function parseOfferCampaignDateTime(value) {
+    const v = String(value || '').trim();
+    return v ? v : nowDateTimeLocalValue();
+}
+
+async function loadOfferCampaignStores() {
+    const storeEl = document.getElementById('offerCampaignStoreId');
+    if (!storeEl) return;
+    try {
+        const stores = await ApiServiceLike_getStoresLite();
+        storeEl.innerHTML = '';
+        stores.forEach((s) => {
+            const opt = document.createElement('option');
+            opt.value = String(s.id);
+            opt.textContent = `${s.name} (#${s.id})`;
+            storeEl.appendChild(opt);
+        });
+        if (!stores.length) {
+            storeEl.innerHTML = '<option value="">No stores found</option>';
+        }
+    } catch (e) {
+        console.error('Error loading campaign stores:', e);
+        storeEl.innerHTML = '<option value="">Failed to load stores</option>';
+    }
+}
+
+async function ApiServiceLike_getStoresLite() {
+    const response = await fetch(`${API_BASE}/api/stores?admin=1&lite=1`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) return [];
+    return Array.isArray(data.stores) ? data.stores : [];
+}
+
+async function loadOfferCampaignProducts(storeId) {
+    const productsEl = document.getElementById('offerSelectedProducts');
+    if (!productsEl) return;
+    const sid = parseInt(String(storeId || ''), 10);
+    if (!Number.isInteger(sid) || sid <= 0) {
+        productsEl.innerHTML = '';
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE}/api/products?admin=1&store=${sid}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            productsEl.innerHTML = '<option value="">Failed to load products</option>';
+            return;
+        }
+        const products = Array.isArray(data.products) ? data.products : [];
+        productsEl.innerHTML = '';
+        products.forEach((p) => {
+            const opt = document.createElement('option');
+            opt.value = String(p.id);
+            opt.textContent = `${p.name} (#${p.id})`;
+            productsEl.appendChild(opt);
+        });
+        if (!products.length) productsEl.innerHTML = '<option value="">No products found</option>';
+    } catch (e) {
+        console.error('Error loading campaign products:', e);
+        productsEl.innerHTML = '<option value="">Failed to load products</option>';
+    }
+}
+
+function updateOfferCampaignFieldVisibility() {
+    const type = (document.getElementById('offerCampaignType')?.value || 'discount').toLowerCase();
+    const scope = (document.getElementById('offerCampaignScope')?.value || 'all_products').toLowerCase();
+    const showDiscount = type === 'discount';
+    const showBxgy = type === 'bxgy';
+    const showSelected = scope === 'selected_products';
+    const show = (id, visible) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = visible ? '' : 'none';
+    };
+    show('offerDiscountTypeWrap', showDiscount);
+    show('offerDiscountValueWrap', showDiscount);
+    show('offerBuyQtyWrap', showBxgy);
+    show('offerGetQtyWrap', showBxgy);
+    show('offerSelectedProductsWrap', showSelected);
+}
+
+function resetOfferCampaignForm() {
+    AppState.editingOfferCampaignId = null;
+    const setVal = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    };
+    setVal('offerCampaignName', '');
+    setVal('offerCampaignDescription', '');
+    setVal('offerCampaignType', 'discount');
+    setVal('offerCampaignScope', 'all_products');
+    setVal('offerDiscountType', 'percent');
+    setVal('offerDiscountValue', '');
+    setVal('offerBuyQty', '1');
+    setVal('offerGetQty', '1');
+    setVal('offerCampaignStartAt', nowDateTimeLocalValue());
+    setVal('offerCampaignEndAt', nowDateTimeLocalValue());
+    const enabledEl = document.getElementById('offerCampaignEnabled');
+    if (enabledEl) enabledEl.checked = true;
+    const sel = document.getElementById('offerSelectedProducts');
+    if (sel) Array.from(sel.options || []).forEach((o) => { o.selected = false; });
+    updateOfferCampaignFieldVisibility();
+}
+
+async function loadStoreOfferCampaigns() {
+    const storeId = parseInt(String(document.getElementById('offerCampaignStoreId')?.value || ''), 10);
+    const tbody = document.getElementById('offerCampaignsTableBody');
+    if (!tbody) return;
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:10px;">Select a store first</td></tr>';
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE}/api/stores/offer-campaigns?store_id=${storeId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:10px;">Failed to load campaigns</td></tr>';
+            return;
+        }
+        const rows = Array.isArray(data.campaigns) ? data.campaigns : [];
+        AppState.storeOfferCampaigns = rows;
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:10px;">No campaigns found</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map((c) => `
+            <tr>
+                <td>${c.id}</td>
+                <td>${escapeHtml(c.name || '')}</td>
+                <td>${escapeHtml(c.offer_badge || c.campaign_type || '')}</td>
+                <td>${escapeHtml(c.apply_scope || '')}</td>
+                <td>${escapeHtml(String(c.start_at || ''))}<br/>${escapeHtml(String(c.end_at || ''))}</td>
+                <td><span class="status-${c.is_active_now ? 'active' : (c.is_enabled ? 'pending' : 'inactive')}">${c.is_active_now ? 'Active' : (c.is_enabled ? 'Scheduled' : 'Disabled')}</span></td>
+                <td>
+                    <button class="btn-small btn-info" onclick="editOfferCampaign(${c.id})">Edit</button>
+                    <button class="btn-small btn-danger" onclick="deleteOfferCampaign(${c.id})">Delete</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        console.error('Error loading offer campaigns:', e);
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:10px;">Failed to load campaigns</td></tr>';
+    }
+}
+
+function editOfferCampaign(campaignId) {
+    const campaign = (AppState.storeOfferCampaigns || []).find((x) => Number(x.id) === Number(campaignId));
+    if (!campaign) return;
+    AppState.editingOfferCampaignId = Number(campaign.id);
+    const setVal = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value == null ? '' : String(value);
+    };
+    setVal('offerCampaignName', campaign.name || '');
+    setVal('offerCampaignDescription', campaign.description || '');
+    setVal('offerCampaignType', campaign.campaign_type || 'discount');
+    setVal('offerCampaignScope', campaign.apply_scope || 'all_products');
+    setVal('offerDiscountType', campaign.discount_type || 'percent');
+    setVal('offerDiscountValue', campaign.discount_value ?? '');
+    setVal('offerBuyQty', campaign.buy_qty ?? '1');
+    setVal('offerGetQty', campaign.get_qty ?? '1');
+    setVal('offerCampaignStartAt', toDateTimeLocalValue(campaign.start_at) || nowDateTimeLocalValue());
+    setVal('offerCampaignEndAt', toDateTimeLocalValue(campaign.end_at) || nowDateTimeLocalValue());
+    const enabledEl = document.getElementById('offerCampaignEnabled');
+    if (enabledEl) enabledEl.checked = !!campaign.is_enabled;
+
+    updateOfferCampaignFieldVisibility();
+    const sel = document.getElementById('offerSelectedProducts');
+    if (sel) {
+        const wanted = new Set((Array.isArray(campaign.product_ids) ? campaign.product_ids : []).map((x) => String(x)));
+        Array.from(sel.options || []).forEach((o) => { o.selected = wanted.has(String(o.value || '')); });
+    }
+}
+
+async function saveOfferCampaign() {
+    const storeId = parseInt(String(document.getElementById('offerCampaignStoreId')?.value || ''), 10);
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+        showWarning('Missing Store', 'Please select a store');
+        return;
+    }
+    const name = String(document.getElementById('offerCampaignName')?.value || '').trim();
+    const description = String(document.getElementById('offerCampaignDescription')?.value || '').trim();
+    const campaignType = String(document.getElementById('offerCampaignType')?.value || 'discount').toLowerCase();
+    const applyScope = String(document.getElementById('offerCampaignScope')?.value || 'all_products').toLowerCase();
+    const discountType = String(document.getElementById('offerDiscountType')?.value || 'percent').toLowerCase();
+    const discountValue = Number(document.getElementById('offerDiscountValue')?.value || 0);
+    const buyQty = parseInt(String(document.getElementById('offerBuyQty')?.value || '0'), 10);
+    const getQty = parseInt(String(document.getElementById('offerGetQty')?.value || '0'), 10);
+    const isEnabled = !!document.getElementById('offerCampaignEnabled')?.checked;
+    const startAt = parseOfferCampaignDateTime(document.getElementById('offerCampaignStartAt')?.value || '');
+    const endAt = parseOfferCampaignDateTime(document.getElementById('offerCampaignEndAt')?.value || '');
+    const selectedProducts = Array.from(document.getElementById('offerSelectedProducts')?.selectedOptions || [])
+        .map((o) => parseInt(String(o.value || ''), 10))
+        .filter((x) => Number.isInteger(x) && x > 0);
+
+    if (!name) {
+        showWarning('Missing Name', 'Campaign name is required');
+        return;
+    }
+    if (!startAt || !endAt || new Date(startAt) >= new Date(endAt)) {
+        showWarning('Invalid Window', 'End time must be after start time');
+        return;
+    }
+    if (campaignType === 'discount' && !(discountValue > 0)) {
+        showWarning('Invalid Discount', 'Discount value must be greater than 0');
+        return;
+    }
+    if (campaignType === 'bxgy' && (!(buyQty > 0) || !(getQty > 0))) {
+        showWarning('Invalid BxGy', 'Buy/Get quantity must be greater than 0');
+        return;
+    }
+    if (applyScope === 'selected_products' && !selectedProducts.length) {
+        showWarning('Missing Products', 'Select at least one product');
+        return;
+    }
+
+    const payload = {
+        store_id: storeId,
+        name,
+        description,
+        campaign_type: campaignType,
+        apply_scope: applyScope,
+        is_enabled: isEnabled,
+        start_at: startAt,
+        end_at: endAt,
+        product_ids: applyScope === 'selected_products' ? selectedProducts : []
+    };
+    if (campaignType === 'discount') {
+        payload.discount_type = discountType;
+        payload.discount_value = discountValue;
+    } else {
+        payload.buy_qty = buyQty;
+        payload.get_qty = getQty;
+    }
+
+    const editingId = Number(AppState.editingOfferCampaignId || 0);
+    const isEdit = Number.isInteger(editingId) && editingId > 0;
+    const url = isEdit ? `${API_BASE}/api/stores/offer-campaigns/${editingId}` : `${API_BASE}/api/stores/offer-campaigns`;
+    const method = isEdit ? 'PUT' : 'POST';
+
+    const saveBtn = document.getElementById('saveOfferCampaignBtn');
+    try {
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+        const response = await fetch(url, {
+            method,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            showError('Save Failed', data.message || 'Failed to save campaign');
+            return;
+        }
+        showSuccess('Saved', isEdit ? 'Campaign updated successfully' : 'Campaign created successfully');
+        resetOfferCampaignForm();
+        await loadOfferCampaignProducts(storeId);
+        await loadStoreOfferCampaigns();
+    } catch (e) {
+        console.error('Error saving campaign:', e);
+        showError('Save Failed', 'Failed to save campaign');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-tags"></i> Save Offer Campaign';
+        }
+    }
+}
+
+async function deleteOfferCampaign(campaignId) {
+    if (!confirm('Delete this campaign?')) return;
+    try {
+        const response = await fetch(`${API_BASE}/api/stores/offer-campaigns/${campaignId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            showError('Delete Failed', data.message || 'Failed to delete campaign');
+            return;
+        }
+        showSuccess('Deleted', 'Campaign deleted successfully');
+        await loadStoreOfferCampaigns();
+    } catch (e) {
+        console.error('Error deleting campaign:', e);
+        showError('Delete Failed', 'Failed to delete campaign');
+    }
+}
+window.editOfferCampaign = editOfferCampaign;
+window.deleteOfferCampaign = deleteOfferCampaign;
+
+function bindStoreOfferCampaignControls() {
+    const storeEl = document.getElementById('offerCampaignStoreId');
+    if (!storeEl) return;
+    if (!storeEl.dataset.boundChange) {
+        storeEl.addEventListener('change', async () => {
+            const sid = parseInt(String(storeEl.value || ''), 10);
+            await loadOfferCampaignProducts(sid);
+            await loadStoreOfferCampaigns();
+        });
+        storeEl.dataset.boundChange = '1';
+    }
+    ['offerCampaignType', 'offerCampaignScope'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.boundChange) {
+            el.addEventListener('change', updateOfferCampaignFieldVisibility);
+            el.dataset.boundChange = '1';
+        }
+    });
+    const saveBtn = document.getElementById('saveOfferCampaignBtn');
+    if (saveBtn && !saveBtn.dataset.boundClick) {
+        saveBtn.addEventListener('click', saveOfferCampaign);
+        saveBtn.dataset.boundClick = '1';
+    }
+    const resetBtn = document.getElementById('resetOfferCampaignBtn');
+    if (resetBtn && !resetBtn.dataset.boundClick) {
+        resetBtn.addEventListener('click', resetOfferCampaignForm);
+        resetBtn.dataset.boundClick = '1';
+    }
+}
+
+async function initializeStoreOfferCampaigns() {
+    const storeEl = document.getElementById('offerCampaignStoreId');
+    if (!storeEl) return;
+    await loadOfferCampaignStores();
+    const sid = parseInt(String(storeEl.value || ''), 10);
+    await loadOfferCampaignProducts(sid);
+    await loadStoreOfferCampaigns();
+    updateOfferCampaignFieldVisibility();
+    if (!document.getElementById('offerCampaignStartAt')?.value) {
+        document.getElementById('offerCampaignStartAt').value = nowDateTimeLocalValue();
+    }
+    if (!document.getElementById('offerCampaignEndAt')?.value) {
+        document.getElementById('offerCampaignEndAt').value = nowDateTimeLocalValue();
+    }
 }
 
 function ensureOrderDateFiltersDefault(force = false) {

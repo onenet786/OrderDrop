@@ -15,6 +15,27 @@ function getVariantLabel(variant) {
     return parts.length > 0 ? parts.join(' ') : 'Default';
 }
 
+function getEffectiveDisplayPrice(source) {
+    const base = Number(source?.price || 0);
+    const promo = source?.promotional_price === null || source?.promotional_price === undefined
+        ? null
+        : Number(source.promotional_price);
+    const hasPromo = Number.isFinite(promo) && promo >= 0 && promo < base;
+    return {
+        basePrice: base,
+        promoPrice: hasPromo ? promo : null,
+        effectivePrice: hasPromo ? promo : base
+    };
+}
+
+function buildPriceHtml(source) {
+    const { basePrice, promoPrice } = getEffectiveDisplayPrice(source);
+    if (promoPrice !== null) {
+        return `<span style="text-decoration:line-through;color:#94a3b8;margin-right:6px;">PKR ${basePrice.toFixed(2)}</span><strong style="color:#dc2626;">PKR ${promoPrice.toFixed(2)}</strong>`;
+    }
+    return `PKR ${basePrice.toFixed(2)}`;
+}
+
 // Display store information
 function displayStoreInfo(store) {
     if (!store) {
@@ -97,7 +118,8 @@ function displayStoreProducts(storeProducts) {
         productVariantsMap[product.id] = sizeVariants;
         
         const defaultVariant = sizeVariants.length > 0 ? sizeVariants[0] : null;
-        const displayPrice = defaultVariant ? defaultVariant.price : product.price;
+        const displayPriceSource = defaultVariant || product;
+        const displayPrice = getEffectiveDisplayPrice(displayPriceSource).effectivePrice;
         const displayVariantLabel = getVariantLabel(defaultVariant);
         const uniqueId = `product-${product.id}-variant`;
 
@@ -115,11 +137,11 @@ function displayStoreProducts(storeProducts) {
                             </label>
                         `).join('')}
                     </div>
-                    <p class="variant-price" id="price-${product.id}" style="font-weight:bold;">PKR ${displayPrice.toFixed(2)}</p>
+                    <p class="variant-price" id="price-${product.id}" style="font-weight:bold;">${buildPriceHtml(displayPriceSource)}</p>
                 </div>
             `;
         } else if (sizeVariants.length === 1) {
-            variantsHtml = `<p class="variant-label" style="font-size:0.9rem;">${displayVariantLabel}</p><p class="price" id="price-${product.id}" style="font-weight:bold;">PKR ${displayPrice.toFixed(2)}</p>`;
+            variantsHtml = `<p class="variant-label" style="font-size:0.9rem;">${displayVariantLabel}</p><p class="price" id="price-${product.id}" style="font-weight:bold;">${buildPriceHtml(displayPriceSource)}</p>`;
         }
 
         productCard.innerHTML = `
@@ -132,7 +154,7 @@ function displayStoreProducts(storeProducts) {
             })}
             <div class="product-card-content">
                 <h4>${product.name}</h4>
-                ${variantsHtml ? variantsHtml : `<p class="price" id="price-${product.id}" style="font-weight:bold;">PKR ${displayPrice.toFixed(2)}</p>`}
+                ${variantsHtml ? variantsHtml : `<p class="price" id="price-${product.id}" style="font-weight:bold;">${buildPriceHtml(displayPriceSource)}</p>`}
                 <button class="add-to-cart btn btn-primary btn-small" id="add-btn-${product.id}" onclick="addProductToCart(${product.id}, '${product.name.replace(/'/g, "\\'")}', ${currentStoreId}, '${imageSrc.replace(/'/g, "\\'")}', ${product.stock_quantity || 0})" style="margin-top: auto; align-self: flex-start;">
                     <i class="fas fa-plus"></i> Add
                 </button>
@@ -223,7 +245,7 @@ function updateProductPrice(productId, variantIndex) {
     const variant = variants[variantIndex];
     const priceElement = document.getElementById(`price-${productId}`);
     if (priceElement) {
-        priceElement.textContent = `PKR ${variant.price.toFixed(2)}`;
+        priceElement.innerHTML = buildPriceHtml(variant);
     }
 }
 
@@ -236,7 +258,7 @@ function addProductToCart(productId, productName, storeId, imageSrc, stockQty) {
     const cartItem = {
         id: productId,
         name: productName,
-        price: selectedVariant ? selectedVariant.price : 0,
+        price: selectedVariant ? getEffectiveDisplayPrice(selectedVariant).effectivePrice : 0,
         quantity: 1,
         unit_id: selectedVariant ? selectedVariant.unit_id : null,
         unit_name: selectedVariant ? selectedVariant.unit_name : null,
