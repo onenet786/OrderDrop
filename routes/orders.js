@@ -1369,7 +1369,7 @@ router.post(
           qty,
           roundAmount(unitPrice),
           financialSnapshot.type || null,
-          financialSnapshot.value || null,
+          financialSnapshot.value ?? null,
         ],
       );
 

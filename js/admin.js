@@ -1567,6 +1567,8 @@ function initializeAdmin() {
     const storeGraceDaysEl = document.getElementById('storeGraceDays');
     const storeGraceStartDateEl = document.getElementById('storeGraceStartDate');
     const storeDiscountApplyEl = document.getElementById('storeDiscountApplyAllProducts');
+    const storeBankIdEl = document.getElementById('storeBankId');
+    const addStoreBankBtn = document.getElementById('addStoreBankBtn');
     if (storePaymentTermEl && !storePaymentTermEl.dataset.boundGraceControls) {
         storePaymentTermEl.addEventListener('change', updateStoreGraceControls);
         storePaymentTermEl.dataset.boundGraceControls = '1';
@@ -1582,6 +1584,23 @@ function initializeAdmin() {
     if (storeGraceStartDateEl && !storeGraceStartDateEl.dataset.boundGracePreview) {
         storeGraceStartDateEl.addEventListener('change', updateStoreGraceDuePreview);
         storeGraceStartDateEl.dataset.boundGracePreview = '1';
+    }
+    if (storeBankIdEl && !storeBankIdEl.dataset.boundStoreBankMeta) {
+        storeBankIdEl.addEventListener('change', renderStoreBankMeta);
+        storeBankIdEl.dataset.boundStoreBankMeta = '1';
+    }
+    if (addStoreBankBtn && !addStoreBankBtn.dataset.boundAddBank) {
+        addStoreBankBtn.addEventListener('click', () => {
+            showModal('addBankModal');
+        });
+        addStoreBankBtn.dataset.boundAddBank = '1';
+    }
+    if (!window.__storeBankAddedListenerBound) {
+        window.addEventListener('servenow:bank-added', async (event) => {
+            const selected = event?.detail?.id || document.getElementById('storeBankId')?.value || null;
+            await populateStoreBankSelect(selected);
+        });
+        window.__storeBankAddedListenerBound = true;
     }
     updateStoreGraceControls();
     startStoreGraceAlertsPolling();
@@ -1800,6 +1819,12 @@ function initializeAdmin() {
     }
     if (productStatusFilter) productStatusFilter.addEventListener('change', filterProducts);
     if (productClearFiltersBtn) productClearFiltersBtn.addEventListener('click', clearProductFilters);
+
+    // Upgrade filter selects to typeable filter inputs (Order-store-list style).
+    // Keeps original select + events intact by syncing values both ways.
+    setTimeout(() => {
+        try { enhanceFilterSelectsToTypeable(); } catch (e) { console.warn('enhanceFilterSelectsToTypeable failed', e); }
+    }, 0);
 
     // Categories filters
     const categorySearch = document.getElementById('categorySearch');
@@ -3738,6 +3763,116 @@ function toggleProductStatus(productId, currentStatus) {
 // Orders Management
 function getTodayDateString() {
     return new Date().toISOString().split('T')[0];
+}
+
+function enhanceFilterSelectsToTypeable() {
+    const selects = Array.from(document.querySelectorAll('select[id*="Filter"], select[id*="filter"]'))
+        .filter((sel) => sel && !sel.dataset.typeableEnhanced);
+
+    const makeLabel = (opt) => {
+        const text = String(opt?.textContent || '').trim();
+        return text;
+    };
+
+    const syncDatalist = (select, datalist) => {
+        const current = new Set();
+        datalist.innerHTML = '';
+        Array.from(select.options || []).forEach((opt) => {
+            const label = makeLabel(opt);
+            if (!label || current.has(label)) return;
+            current.add(label);
+            const o = document.createElement('option');
+            o.value = label;
+            datalist.appendChild(o);
+        });
+    };
+
+    selects.forEach((select) => {
+        // Skip if this select is inside a non-filter form group and explicitly opted out
+        if (select.dataset.noTypeable === '1') return;
+
+        const parent = select.parentElement;
+        if (!parent) return;
+
+        const input = document.createElement('input');
+        const datalist = document.createElement('datalist');
+
+        const inputId = `${select.id}Typeable`;
+        const datalistId = `${select.id}TypeableList`;
+
+        input.type = 'text';
+        input.id = inputId;
+        input.className = select.className || 'form-control';
+        input.setAttribute('list', datalistId);
+        input.placeholder = select.getAttribute('data-placeholder') || 'Type to filter...';
+        input.autocomplete = 'off';
+
+        datalist.id = datalistId;
+
+        // Initial value from selected option label.
+        const selectedOption = select.options[select.selectedIndex];
+        input.value = selectedOption ? makeLabel(selectedOption) : '';
+
+        syncDatalist(select, datalist);
+
+        const applyInputToSelect = () => {
+            const typed = String(input.value || '').trim().toLowerCase();
+            let matchedValue = '';
+
+            if (!typed) {
+                // Prefer first option when cleared (typically "All").
+                const first = select.options[0];
+                matchedValue = first ? first.value : '';
+            } else {
+                const exact = Array.from(select.options || []).find(
+                    (opt) => makeLabel(opt).toLowerCase() === typed
+                );
+                if (exact) matchedValue = exact.value;
+            }
+
+            if (select.value !== matchedValue) {
+                select.value = matchedValue;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                select.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        };
+
+        input.addEventListener('change', applyInputToSelect);
+        input.addEventListener('input', () => {
+            // For responsive filtering, keep existing logic updated as user types when exact match exists.
+            const typed = String(input.value || '').trim().toLowerCase();
+            const exact = Array.from(select.options || []).find(
+                (opt) => makeLabel(opt).toLowerCase() === typed
+            );
+            if (exact && select.value !== exact.value) {
+                select.value = exact.value;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                select.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+
+        select.addEventListener('change', () => {
+            const opt = select.options[select.selectedIndex];
+            input.value = opt ? makeLabel(opt) : '';
+        });
+
+        // Keep datalist fresh when options are reloaded dynamically.
+        const observer = new MutationObserver(() => {
+            syncDatalist(select, datalist);
+            const opt = select.options[select.selectedIndex];
+            input.value = opt ? makeLabel(opt) : '';
+        });
+        observer.observe(select, { childList: true, subtree: true, attributes: true });
+
+        // Hide original select but keep it in DOM for existing listeners/business logic.
+        select.style.display = 'none';
+
+        // Insert enhanced controls.
+        parent.insertBefore(input, select.nextSibling);
+        parent.insertBefore(datalist, input.nextSibling);
+
+        select.dataset.typeableEnhanced = '1';
+    });
 }
 
 function parseOfferCampaignDateTime(value) {
@@ -6436,6 +6571,7 @@ function hideModal(modalId) {
 async function showAddStoreModal() {
     try {
         await populateStoreCategorySelect();
+        await populateStoreBankSelect();
     } catch (error) {
         console.error('Error loading categories:', error);
     }
@@ -6455,6 +6591,9 @@ async function showAddStoreModal() {
             if (form.querySelector('#storeGraceDays')) form.querySelector('#storeGraceDays').value = '';
             if (form.querySelector('#storeGraceStartDate')) form.querySelector('#storeGraceStartDate').value = '';
             if (form.querySelector('#storePaymentTerm')) form.querySelector('#storePaymentTerm').value = '';
+            if (form.querySelector('#storeBankId')) form.querySelector('#storeBankId').value = '';
+            if (form.querySelector('#storeBankAccountTitle')) form.querySelector('#storeBankAccountTitle').value = '';
+            if (form.querySelector('#storeBankAccountNumber')) form.querySelector('#storeBankAccountNumber').value = '';
             if (form.querySelector('#storeDiscountApplyAllProducts')) form.querySelector('#storeDiscountApplyAllProducts').checked = false;
             if (form.querySelector('#storeDiscountPercent')) form.querySelector('#storeDiscountPercent').value = '';
         }
@@ -6529,6 +6668,14 @@ async function saveStore() {
         address: formData.get('address'),
         status: formData.get('status') || 'active',
         category_id: formData.get('category_id') || null,
+        bank_id: (() => {
+            const raw = String(formData.get('bank_id') || '').trim();
+            if (!raw) return null;
+            const n = parseInt(raw, 10);
+            return Number.isInteger(n) && n > 0 ? n : null;
+        })(),
+        store_bank_account_title: String(formData.get('store_bank_account_title') || '').trim() || null,
+        store_bank_account_number: String(formData.get('store_bank_account_number') || '').trim() || null,
         owner_name: (formData.get('owner_name') || '').trim() || undefined
     };
     if (storeData.store_discount_apply_all_products && (!Number.isFinite(Number(storeData.store_discount_percent)) || Number(storeData.store_discount_percent) < 0)) {
@@ -6629,6 +6776,7 @@ async function editStore(storeId) {
             return Number.isInteger(n) && n > 0 ? n : null;
         })();
         await populateStoreCategorySelect(selectedCategoryId);
+        await populateStoreBankSelect(s.bank_id || null);
         const form = document.getElementById('addStoreForm');
         form.querySelector('#storeName').value = s.name || '';
         form.querySelector('#storeOwner').value = s.owner_name || '';
@@ -6652,6 +6800,9 @@ async function editStore(storeId) {
         if (s.opening_time) form.querySelector('#storeOpeningTime').value = s.opening_time;
         if (s.closing_time) form.querySelector('#storeClosingTime').value = s.closing_time;
         if (form.querySelector('#storePaymentTerm')) form.querySelector('#storePaymentTerm').value = s.payment_term || '';
+        if (form.querySelector('#storeBankId')) form.querySelector('#storeBankId').value = s.bank_id ? String(s.bank_id) : '';
+        if (form.querySelector('#storeBankAccountTitle')) form.querySelector('#storeBankAccountTitle').value = s.store_bank_account_title || s.bank_info?.account_title || '';
+        if (form.querySelector('#storeBankAccountNumber')) form.querySelector('#storeBankAccountNumber').value = s.store_bank_account_number || s.bank_info?.account_number || '';
         if (form.querySelector('#storeDiscountApplyAllProducts')) form.querySelector('#storeDiscountApplyAllProducts').checked = Number(s.store_discount_apply_all_products || 0) === 1;
         if (form.querySelector('#storeDiscountPercent')) form.querySelector('#storeDiscountPercent').value = s.store_discount_percent ?? '';
         if (form.querySelector('#storeGraceDays')) form.querySelector('#storeGraceDays').value = (s.payment_grace_days ?? '').toString();
@@ -6784,6 +6935,52 @@ function updateStoreDiscountControls() {
     if (!discountTerm) {
         applyEl.checked = false;
         percentEl.value = '';
+    }
+}
+
+let storeBankOptions = [];
+
+function renderStoreBankMeta() {
+    const bankSelect = document.getElementById('storeBankId');
+    const titleEl = document.getElementById('storeBankAccountTitle');
+    const numberEl = document.getElementById('storeBankAccountNumber');
+    if (!bankSelect || !titleEl || !numberEl) return;
+    const selectedId = parseInt(String(bankSelect.value || ''), 10);
+    const bank = Number.isInteger(selectedId)
+        ? storeBankOptions.find((b) => Number(b.id) === selectedId)
+        : null;
+    titleEl.value = bank?.account_title || '';
+    numberEl.value = bank?.account_number || '';
+}
+
+async function populateStoreBankSelect(selectedId = null) {
+    const bankSelect = document.getElementById('storeBankId');
+    if (!bankSelect) return;
+    bankSelect.innerHTML = '<option value="">Select Bank (Optional)</option>';
+    try {
+        const resp = await fetch(`${API_BASE}/api/stores/bank-options`, {
+            headers: { 'Authorization': `Bearer ${authToken}` },
+            cache: 'no-store'
+        });
+        const data = await resp.json();
+        if (data && data.success && Array.isArray(data.banks)) {
+            storeBankOptions = data.banks;
+            data.banks.forEach((bank) => {
+                const opt = document.createElement('option');
+                opt.value = String(bank.id);
+                opt.textContent = bank.name || `Bank #${bank.id}`;
+                bankSelect.appendChild(opt);
+            });
+        } else {
+            storeBankOptions = [];
+        }
+        if (selectedId !== null && selectedId !== undefined && String(selectedId).trim() !== '') {
+            bankSelect.value = String(selectedId);
+        }
+        renderStoreBankMeta();
+    } catch (err) {
+        storeBankOptions = [];
+        console.error('Error loading bank options:', err);
     }
 }
 
@@ -10124,6 +10321,8 @@ async function runDiagnostics(type) {
 async function clearTransactionalData() {
     const tableSelect = document.getElementById('clearTableSelect');
     const table = tableSelect ? tableSelect.value : 'all';
+    const pEl = document.getElementById('utilPassword');
+    const password = pEl ? String(pEl.value || '') : '';
     
     let confirmMsg = 'Are you sure you want to clear ALL transactional data? This includes orders, payments, and history. Wallets will be reset to 0.';
     if (table === 'all_except_user_store') {
@@ -10144,6 +10343,10 @@ async function clearTransactionalData() {
         showInfo('Cancelled', 'Deletion cancelled.');
         return;
     }
+    if (!password) {
+        showError('Clear Data', 'Enter super admin passphrase in Utilities (same as restore).');
+        return;
+    }
     
     try {
         const btn = document.getElementById('clearDataBtn');
@@ -10158,7 +10361,7 @@ async function clearTransactionalData() {
                 'Authorization': `Bearer ${authToken}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ table })
+            body: JSON.stringify({ table, password })
         });
         
         const data = await response.json();

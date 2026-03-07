@@ -2444,7 +2444,7 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'rider_orders_report', 'rider_payments_report', 'rider_receivings_report', 'rider_petrol_report', 'rider_daily_mileage_report', 'rider_daily_activity_report', 'rider_day_closing_report', 'order_profit_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'store_payable_reconciliation', 'unsettled_amounts_report', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
+    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'rider_orders_report', 'rider_payments_report', 'rider_receivings_report', 'rider_petrol_report', 'rider_daily_mileage_report', 'rider_daily_activity_report', 'rider_day_closing_report', 'order_profit_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'store_payable_reconciliation', 'unsettled_amounts_report', 'cash_discrepancy_report', 'store_order_settlement_report', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
     body('period_from').optional({ checkFalsy: true }).isISO8601(),
     body('period_to').optional({ checkFalsy: true }).isISO8601(),
     body('rider_id').optional({ checkFalsy: true }).toInt(),
@@ -2494,6 +2494,8 @@ router.post('/reports/generate', [
                 'comprehensive_report': 'report_comprehensive_cash',
                 'store_payable_reconciliation': 'report_store_settlement',
                 'unsettled_amounts_report': 'report_store_settlement',
+                'store_order_settlement_report': 'report_store_settlement',
+                'cash_discrepancy_report': 'report_comprehensive_cash',
                 'transaction_summary': 'report_transactions_summary',
                 'general_voucher': 'report_general_voucher',
                 'expense_report': 'report_expense',
@@ -2540,6 +2542,8 @@ router.post('/reports/generate', [
             case 'comprehensive_report': prefix = 'CPR'; break;
             case 'store_payable_reconciliation': prefix = 'SPR'; break;
             case 'unsettled_amounts_report': prefix = 'UAR'; break;
+            case 'cash_discrepancy_report': prefix = 'CDR'; break;
+            case 'store_order_settlement_report': prefix = 'SOS'; break;
             case 'expense_report': prefix = 'EXR'; break;
             case 'delivery_charges_breakdown': prefix = 'DCB'; break;
             case 'general_voucher': prefix = 'GVR'; break;
@@ -2889,7 +2893,15 @@ router.post('/reports/generate', [
                     COALESCE((
                         SELECT SUM(
                             oi.quantity * (
-                                oi.price - COALESCE(psp.cost_price, p.cost_price, oi.price)
+                                oi.price - (
+                                    CASE
+                                        WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                                            THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                                        WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                                            THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                                        ELSE oi.price
+                                    END
+                                )
                             )
                         )
                         FROM order_items oi
@@ -3102,7 +3114,7 @@ router.post('/reports/generate', [
                                     THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
                                 WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
                                     THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
-                                ELSE COALESCE(psp.cost_price, p.cost_price, oi.price, 0)
+                                ELSE oi.price
                             END
                         )
                     ), 0) AS paid_to_store_expected,
@@ -3124,7 +3136,7 @@ router.post('/reports/generate', [
                                             THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
                                         WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
                                             THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
-                                        ELSE COALESCE(psp.cost_price, p.cost_price, oi.price, 0)
+                                        ELSE oi.price
                                     END
                                 )
                             )
@@ -3343,7 +3355,7 @@ router.post('/reports/generate', [
                             THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
                         WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
                             THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
-                        ELSE COALESCE(psp.cost_price, p.cost_price, oi.price, 0)
+                        ELSE oi.price
                     END as cost_price,
                     COALESCE(s.commission_rate, 10) as commission_rate
                 FROM orders o
@@ -3434,6 +3446,280 @@ router.post('/reports/generate', [
                 summary
             };
 
+        } else if (report_type === 'cash_discrepancy_report') {
+            const dateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
+            const dateParamsFull = period_from && period_to ? [period_from, `${period_to} 23:59:59`] : [];
+            const dateParamsDateOnly = period_from && period_to ? [period_from, period_to] : [];
+
+            const [detailRows] = await req.db.execute(
+                `SELECT
+                    o.id AS order_id,
+                    o.order_number,
+                    DATE(o.created_at) AS order_date,
+                    DATE_FORMAT(o.created_at, '%Y-%m') AS month_key,
+                    YEAR(o.created_at) AS year_key,
+                    o.payment_method,
+                    o.payment_status,
+                    ROUND(COALESCE(o.total_amount,0),2) AS order_total,
+                    COALESCE(r.id, 0) AS rider_id,
+                    CONCAT(COALESCE(r.first_name,''), ' ', COALESCE(r.last_name,'')) AS rider_name,
+                    s.id AS store_id,
+                    s.name AS store_name,
+                    COALESCE(s.payment_term,'') AS payment_term,
+                    ROUND(SUM(oi.quantity * oi.price),2) AS store_gross,
+                    ROUND(SUM(
+                        GREATEST(
+                            0,
+                            (oi.quantity * oi.price) -
+                            (
+                                oi.quantity * (
+                                    CASE
+                                        WHEN LOWER(TRIM(COALESCE(s.payment_term,''))) LIKE '%discount%'
+                                             AND COALESCE(s.store_discount_apply_all_products,0)=1
+                                             AND COALESCE(s.store_discount_percent,0) > 0
+                                            THEN oi.price * (COALESCE(s.store_discount_percent,0)/100)
+                                        WHEN oi.discount_type='percent' AND COALESCE(oi.discount_value,0) > 0
+                                            THEN oi.price * (COALESCE(oi.discount_value,0)/100)
+                                        WHEN oi.discount_type='amount' AND COALESCE(oi.discount_value,0) > 0
+                                            THEN COALESCE(oi.discount_value,0)
+                                        ELSE 0
+                                    END
+                                )
+                            )
+                        )
+                    ),2) AS store_payable
+                 FROM orders o
+                 JOIN order_items oi ON oi.order_id = o.id
+                 LEFT JOIN products p ON p.id = oi.product_id
+                 LEFT JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id, o.store_id)
+                 LEFT JOIN riders r ON r.id = o.rider_id
+                 WHERE o.status = 'delivered' ${dateFilter}
+                 GROUP BY o.id, o.order_number, DATE(o.created_at), DATE_FORMAT(o.created_at, '%Y-%m'), YEAR(o.created_at),
+                          o.payment_method, o.payment_status, o.total_amount, r.id, r.first_name, r.last_name, s.id, s.name, s.payment_term
+                 ORDER BY o.created_at DESC, o.id DESC`,
+                dateParamsFull
+            );
+
+            const [orderGrossRows] = await req.db.execute(
+                `SELECT oi.order_id, ROUND(SUM(oi.quantity * oi.price),2) AS order_gross
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 WHERE o.status = 'delivered' ${dateFilter}
+                 GROUP BY oi.order_id`,
+                dateParamsFull
+            );
+            const orderGrossMap = {};
+            (orderGrossRows || []).forEach((r) => { orderGrossMap[r.order_id] = Number(r.order_gross || 0); });
+
+            const [submissionRows] = await req.db.execute(
+                `SELECT rcso.order_id, ROUND(SUM(rcso.order_amount),2) AS submitted
+                 FROM rider_cash_submission_orders rcso
+                 JOIN orders o ON o.id = rcso.order_id
+                 WHERE o.status = 'delivered' ${dateFilter}
+                 GROUP BY rcso.order_id`,
+                dateParamsFull
+            );
+            const submissionMap = {};
+            (submissionRows || []).forEach((r) => { submissionMap[r.order_id] = Number(r.submitted || 0); });
+
+            const [fuelHistoryRows] = await req.db.execute(
+                `SELECT DATE(entry_date) AS d, ROUND(SUM(COALESCE(fuel_cost,0)),2) AS fuel_history
+                 FROM riders_fuel_history
+                 WHERE 1=1 ${period_from && period_to ? 'AND DATE(entry_date) BETWEEN ? AND ?' : ''}
+                 GROUP BY DATE(entry_date)`,
+                dateParamsDateOnly
+            );
+            const fuelHistoryMap = {};
+            (fuelHistoryRows || []).forEach((r) => { fuelHistoryMap[String(r.d)] = Number(r.fuel_history || 0); });
+
+            const [fuelPaidRows] = await req.db.execute(
+                `SELECT DATE(entry_date) AS d, ROUND(SUM(COALESCE(fuel_cost,0)),2) AS fuel_paid
+                 FROM rider_fuel_payment_entries
+                 WHERE 1=1 ${period_from && period_to ? 'AND DATE(entry_date) BETWEEN ? AND ?' : ''}
+                 GROUP BY DATE(entry_date)`,
+                dateParamsDateOnly
+            );
+            const fuelPaidMap = {};
+            (fuelPaidRows || []).forEach((r) => { fuelPaidMap[String(r.d)] = Number(r.fuel_paid || 0); });
+
+            const details = (detailRows || []).map((r) => {
+                const orderGross = Number(orderGrossMap[r.order_id] || 0);
+                const ratio = orderGross > 0 ? (Number(r.store_gross || 0) / orderGross) : 0;
+                const riderCollectedOrder = (
+                    String(r.payment_method || '').toLowerCase().trim() === 'cash' &&
+                    String(r.payment_status || '').toLowerCase().trim() === 'paid'
+                ) ? Number(r.order_total || 0) : 0;
+                const riderSubmittedOrder = Number(submissionMap[r.order_id] || 0);
+                const riderCollected = Number((riderCollectedOrder * ratio).toFixed(2));
+                const riderSubmitted = Number((riderSubmittedOrder * ratio).toFixed(2));
+                const storePayable = Number(r.store_payable || 0);
+                const storeGross = Number(r.store_gross || 0);
+                const share = Number((storeGross - storePayable).toFixed(2));
+                return {
+                    order_number: r.order_number,
+                    order_date: r.order_date,
+                    month_key: r.month_key,
+                    year_key: r.year_key,
+                    store_name: r.store_name || '-',
+                    payment_term: r.payment_term || '-',
+                    rider_name: r.rider_name || '-',
+                    store_gross: storeGross,
+                    store_payable: storePayable,
+                    servenow_share: share,
+                    rider_collected_cash: riderCollected,
+                    rider_submitted_cash: riderSubmitted,
+                    cash_gap: Number((riderCollected - riderSubmitted).toFixed(2)),
+                    software_cash_estimate: Number((riderSubmitted - storePayable).toFixed(2))
+                };
+            });
+
+            const dayMap = {};
+            details.forEach((d) => {
+                const key = String(d.order_date);
+                if (!dayMap[key]) {
+                    dayMap[key] = {
+                        period: key,
+                        total_orders: 0,
+                        store_gross: 0,
+                        store_payable: 0,
+                        servenow_share: 0,
+                        rider_collected_cash: 0,
+                        rider_submitted_cash: 0,
+                        fuel_history: Number(fuelHistoryMap[key] || 0),
+                        fuel_paid: Number(fuelPaidMap[key] || 0)
+                    };
+                }
+                dayMap[key].total_orders += 1;
+                dayMap[key].store_gross += Number(d.store_gross || 0);
+                dayMap[key].store_payable += Number(d.store_payable || 0);
+                dayMap[key].servenow_share += Number(d.servenow_share || 0);
+                dayMap[key].rider_collected_cash += Number(d.rider_collected_cash || 0);
+                dayMap[key].rider_submitted_cash += Number(d.rider_submitted_cash || 0);
+            });
+            const daily_totals = Object.values(dayMap)
+                .map((x) => ({
+                    ...x,
+                    store_gross: Number(x.store_gross.toFixed(2)),
+                    store_payable: Number(x.store_payable.toFixed(2)),
+                    servenow_share: Number(x.servenow_share.toFixed(2)),
+                    rider_collected_cash: Number(x.rider_collected_cash.toFixed(2)),
+                    rider_submitted_cash: Number(x.rider_submitted_cash.toFixed(2)),
+                    cash_gap: Number((x.rider_collected_cash - x.rider_submitted_cash).toFixed(2)),
+                    software_cash_estimate: Number((x.rider_submitted_cash - x.store_payable - x.fuel_paid).toFixed(2))
+                }))
+                .sort((a, b) => a.period.localeCompare(b.period));
+
+            const monthMap = {};
+            daily_totals.forEach((d) => {
+                const m = String(d.period).slice(0, 7);
+                if (!monthMap[m]) {
+                    monthMap[m] = {
+                        period: m,
+                        total_days: 0,
+                        total_orders: 0,
+                        store_gross: 0,
+                        store_payable: 0,
+                        servenow_share: 0,
+                        rider_collected_cash: 0,
+                        rider_submitted_cash: 0,
+                        fuel_history: 0,
+                        fuel_paid: 0
+                    };
+                }
+                monthMap[m].total_days += 1;
+                monthMap[m].total_orders += Number(d.total_orders || 0);
+                monthMap[m].store_gross += Number(d.store_gross || 0);
+                monthMap[m].store_payable += Number(d.store_payable || 0);
+                monthMap[m].servenow_share += Number(d.servenow_share || 0);
+                monthMap[m].rider_collected_cash += Number(d.rider_collected_cash || 0);
+                monthMap[m].rider_submitted_cash += Number(d.rider_submitted_cash || 0);
+                monthMap[m].fuel_history += Number(d.fuel_history || 0);
+                monthMap[m].fuel_paid += Number(d.fuel_paid || 0);
+            });
+            const monthly_totals = Object.values(monthMap).map((x) => ({
+                ...x,
+                store_gross: Number(x.store_gross.toFixed(2)),
+                store_payable: Number(x.store_payable.toFixed(2)),
+                servenow_share: Number(x.servenow_share.toFixed(2)),
+                rider_collected_cash: Number(x.rider_collected_cash.toFixed(2)),
+                rider_submitted_cash: Number(x.rider_submitted_cash.toFixed(2)),
+                fuel_history: Number(x.fuel_history.toFixed(2)),
+                fuel_paid: Number(x.fuel_paid.toFixed(2)),
+                cash_gap: Number((x.rider_collected_cash - x.rider_submitted_cash).toFixed(2)),
+                software_cash_estimate: Number((x.rider_submitted_cash - x.store_payable - x.fuel_paid).toFixed(2))
+            })).sort((a, b) => a.period.localeCompare(b.period));
+
+            const yearMap = {};
+            monthly_totals.forEach((m) => {
+                const y = String(m.period).slice(0, 4);
+                if (!yearMap[y]) {
+                    yearMap[y] = {
+                        period: y,
+                        total_months: 0,
+                        total_orders: 0,
+                        store_gross: 0,
+                        store_payable: 0,
+                        servenow_share: 0,
+                        rider_collected_cash: 0,
+                        rider_submitted_cash: 0,
+                        fuel_history: 0,
+                        fuel_paid: 0
+                    };
+                }
+                yearMap[y].total_months += 1;
+                yearMap[y].total_orders += Number(m.total_orders || 0);
+                yearMap[y].store_gross += Number(m.store_gross || 0);
+                yearMap[y].store_payable += Number(m.store_payable || 0);
+                yearMap[y].servenow_share += Number(m.servenow_share || 0);
+                yearMap[y].rider_collected_cash += Number(m.rider_collected_cash || 0);
+                yearMap[y].rider_submitted_cash += Number(m.rider_submitted_cash || 0);
+                yearMap[y].fuel_history += Number(m.fuel_history || 0);
+                yearMap[y].fuel_paid += Number(m.fuel_paid || 0);
+            });
+            const yearly_totals = Object.values(yearMap).map((x) => ({
+                ...x,
+                store_gross: Number(x.store_gross.toFixed(2)),
+                store_payable: Number(x.store_payable.toFixed(2)),
+                servenow_share: Number(x.servenow_share.toFixed(2)),
+                rider_collected_cash: Number(x.rider_collected_cash.toFixed(2)),
+                rider_submitted_cash: Number(x.rider_submitted_cash.toFixed(2)),
+                fuel_history: Number(x.fuel_history.toFixed(2)),
+                fuel_paid: Number(x.fuel_paid.toFixed(2)),
+                cash_gap: Number((x.rider_collected_cash - x.rider_submitted_cash).toFixed(2)),
+                software_cash_estimate: Number((x.rider_submitted_cash - x.store_payable - x.fuel_paid).toFixed(2))
+            })).sort((a, b) => a.period.localeCompare(b.period));
+
+            const summary = daily_totals.reduce((acc, d) => {
+                acc.total_days += 1;
+                acc.total_orders += Number(d.total_orders || 0);
+                acc.store_gross += Number(d.store_gross || 0);
+                acc.store_payable += Number(d.store_payable || 0);
+                acc.servenow_share += Number(d.servenow_share || 0);
+                acc.rider_collected_cash += Number(d.rider_collected_cash || 0);
+                acc.rider_submitted_cash += Number(d.rider_submitted_cash || 0);
+                acc.fuel_history += Number(d.fuel_history || 0);
+                acc.fuel_paid += Number(d.fuel_paid || 0);
+                return acc;
+            }, {
+                total_days: 0, total_orders: 0, store_gross: 0, store_payable: 0, servenow_share: 0,
+                rider_collected_cash: 0, rider_submitted_cash: 0, fuel_history: 0, fuel_paid: 0
+            });
+            summary.cash_gap = Number((summary.rider_collected_cash - summary.rider_submitted_cash).toFixed(2));
+            summary.software_cash_estimate = Number((summary.rider_submitted_cash - summary.store_payable - summary.fuel_paid).toFixed(2));
+            Object.keys(summary).forEach((k) => {
+                if (k !== 'total_days' && k !== 'total_orders') summary[k] = Number(Number(summary[k] || 0).toFixed(2));
+            });
+
+            total_income = Number(summary.rider_submitted_cash || 0);
+            total_expense = Number((summary.store_payable || 0) + (summary.fuel_paid || 0));
+            reportData = {
+                type: 'cash_discrepancy_report',
+                details,
+                daily_totals,
+                monthly_totals,
+                yearly_totals,
+                summary
+            };
         } else if (report_type === 'store_financials') {
             const orderDateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
             const storeFilter = store_id ? 'AND (oi.store_id = ? OR (oi.store_id IS NULL AND p.store_id = ?))' : '';
@@ -3451,8 +3737,26 @@ router.post('/reports/generate', [
                 `SELECT 
                     s.name as store_name,
                     SUM(oi.quantity * oi.price) as total_sales,
-                    SUM(oi.quantity * COALESCE(psp.cost_price, p.cost_price)) as total_cost,
-                    SUM(oi.quantity * (oi.price - COALESCE(psp.cost_price, p.cost_price))) as estimated_profit,
+                    SUM(oi.quantity * (
+                        CASE 
+                            WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                                THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                            WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                                THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                            ELSE oi.price
+                        END
+                    )) as total_cost,
+                    SUM(oi.quantity * (
+                        oi.price - (
+                            CASE 
+                                WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                                    THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                                WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                                    THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                                ELSE oi.price
+                            END
+                        )
+                    )) as estimated_profit,
                     SUM(CASE 
                         WHEN oi.discount_type = 'percent' THEN oi.quantity * oi.price * (oi.discount_value / 100)
                         WHEN oi.discount_type = 'amount' THEN oi.quantity * oi.discount_value
@@ -3480,8 +3784,26 @@ router.post('/reports/generate', [
                         COALESCE(oi.variant_label, p.name) as item_name,
                         SUM(oi.quantity) as total_qty,
                         SUM(oi.quantity * oi.price) as total_sales,
-                        SUM(oi.quantity * COALESCE(psp.cost_price, p.cost_price)) as total_cost,
-                        SUM(oi.quantity * (oi.price - COALESCE(psp.cost_price, p.cost_price))) as estimated_profit,
+                        SUM(oi.quantity * (
+                            CASE 
+                                WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                                    THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                                WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                                    THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                                ELSE oi.price
+                            END
+                        )) as total_cost,
+                        SUM(oi.quantity * (
+                            oi.price - (
+                                CASE 
+                                    WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                                        THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                                    WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                                        THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                                    ELSE oi.price
+                                END
+                            )
+                        )) as estimated_profit,
                         SUM(CASE 
                             WHEN oi.discount_type = 'percent' THEN oi.quantity * oi.price * (oi.discount_value / 100)
                             WHEN oi.discount_type = 'amount' THEN oi.quantity * oi.discount_value
@@ -3764,19 +4086,25 @@ router.post('/reports/generate', [
             // Correct Net Item Sales (Cash from items)
             const total_item_sales_net = total_item_sales_gross - total_item_discount;
 
-            // Calculate Item Profit (for P&L) if needed: (Price - Cost) * Qty
-            // Note: This relies on cost_price being accurate in DB
+            // Calculate Item Profit from historical order item adjustment model only.
+            // Do not fallback to live product cost to avoid retroactive profit distortion.
             const [profitData] = await req.db.execute(
                 `SELECT 
-                    SUM(oi.quantity * (oi.price - COALESCE(psp.cost_price, p.cost_price))) as total_item_profit
+                    SUM(
+                        oi.quantity * (
+                            oi.price - (
+                                CASE
+                                    WHEN oi.discount_type = 'percent' AND oi.discount_value IS NOT NULL
+                                        THEN GREATEST(0, ROUND(oi.price - (oi.price * oi.discount_value / 100), 2))
+                                    WHEN oi.discount_type = 'amount' AND oi.discount_value IS NOT NULL
+                                        THEN GREATEST(0, ROUND(oi.price - oi.discount_value, 2))
+                                    ELSE oi.price
+                                END
+                            )
+                        )
+                    ) as total_item_profit
                  FROM order_items oi
                  JOIN orders o ON oi.order_id = o.id
-                 JOIN products p ON oi.product_id = p.id
-                 LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id 
-                    AND (
-                        (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id) OR 
-                        (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
-                    )
                  WHERE o.status = 'delivered' ${orderDateFilter}`,
                 orderParams
             );
@@ -4007,6 +4335,197 @@ router.post('/reports/generate', [
                 },
                 rows,
                 order_rows: orderRows || [],
+                summary
+            };
+        } else if (report_type === 'store_order_settlement_report') {
+            const hasRange = Boolean(period_from && period_to);
+            const periodStart = hasRange ? `${period_from} 00:00:00` : null;
+            const periodEnd = hasRange ? `${period_to} 23:59:59` : null;
+            const hasStore = Boolean(store_id);
+
+            const [rows] = await req.db.execute(
+                `SELECT
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    s.name AS store_name,
+                    o.id AS order_id,
+                    o.order_number,
+                    o.created_at AS order_date,
+                    o.payment_method,
+                    o.payment_status,
+                    ROUND(SUM(oi.quantity * oi.price), 2) AS gross_sales,
+                    ROUND(SUM(
+                        GREATEST(
+                            0,
+                            (oi.quantity * oi.price) -
+                            (
+                                oi.quantity * (
+                                    CASE
+                                        WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                             AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                             AND COALESCE(s.store_discount_percent, 0) > 0
+                                            THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                        WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                        WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN COALESCE(oi.discount_value, 0)
+                                        ELSE 0
+                                    END
+                                )
+                            )
+                        )
+                    ), 2) AS expected_payable,
+                    ROUND(SUM(
+                        CASE
+                            WHEN oi.settlement_id IS NOT NULL AND ss.status = 'paid'
+                                THEN GREATEST(
+                                    0,
+                                    (oi.quantity * oi.price) -
+                                    (
+                                        oi.quantity * (
+                                            CASE
+                                                WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                                     AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                                     AND COALESCE(s.store_discount_percent, 0) > 0
+                                                    THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                                WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                                    THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                                WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                                    THEN COALESCE(oi.discount_value, 0)
+                                                ELSE 0
+                                            END
+                                        )
+                                    )
+                                )
+                            ELSE 0
+                        END
+                    ), 2) AS paid_settlement_amount,
+                    ROUND(SUM(
+                        CASE
+                            WHEN oi.settlement_id IS NULL
+                                THEN GREATEST(
+                                    0,
+                                    (oi.quantity * oi.price) -
+                                    (
+                                        oi.quantity * (
+                                            CASE
+                                                WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                                     AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                                     AND COALESCE(s.store_discount_percent, 0) > 0
+                                                    THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                                WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                                    THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                                WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                                    THEN COALESCE(oi.discount_value, 0)
+                                                ELSE 0
+                                            END
+                                        )
+                                    )
+                                )
+                            ELSE 0
+                        END
+                    ), 2) AS unsettled_amount,
+                    GROUP_CONCAT(DISTINCT CASE WHEN oi.settlement_id IS NOT NULL THEN ss.settlement_number END ORDER BY ss.id DESC SEPARATOR ', ') AS settlement_numbers,
+                    GROUP_CONCAT(DISTINCT CASE WHEN oi.settlement_id IS NOT NULL THEN ss.status END ORDER BY ss.id DESC SEPARATOR ', ') AS settlement_statuses
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 LEFT JOIN store_settlements ss ON ss.id = oi.settlement_id
+                 WHERE o.status = 'delivered'
+                   AND o.payment_status = 'paid'
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND s.id = ?' : ''}
+                 GROUP BY COALESCE(oi.store_id, p.store_id), s.name, o.id, o.order_number, o.created_at, o.payment_method, o.payment_status
+                 ORDER BY s.name ASC, o.created_at DESC, o.id DESC`,
+                [
+                    ...(hasRange ? [periodStart, periodEnd] : []),
+                    ...(hasStore ? [store_id] : [])
+                ]
+            );
+
+            const order_rows = (rows || []).map((r) => {
+                const expected = Number(r.expected_payable || 0);
+                const paid = Number(r.paid_settlement_amount || 0);
+                const unsettled = Number(r.unsettled_amount || 0);
+                return {
+                    ...r,
+                    expected_payable: expected,
+                    paid_settlement_amount: paid,
+                    unsettled_amount: unsettled,
+                    discrepancy: Number((expected - paid).toFixed(2))
+                };
+            });
+
+            const storeMap = new Map();
+            order_rows.forEach((r) => {
+                const sid = Number(r.store_id || 0);
+                if (!storeMap.has(sid)) {
+                    storeMap.set(sid, {
+                        store_id: sid,
+                        store_name: r.store_name || '-',
+                        total_orders: 0,
+                        gross_sales: 0,
+                        expected_payable: 0,
+                        paid_settlement_amount: 0,
+                        unsettled_amount: 0,
+                        discrepancy: 0
+                    });
+                }
+                const srow = storeMap.get(sid);
+                srow.total_orders += 1;
+                srow.gross_sales += Number(r.gross_sales || 0);
+                srow.expected_payable += Number(r.expected_payable || 0);
+                srow.paid_settlement_amount += Number(r.paid_settlement_amount || 0);
+                srow.unsettled_amount += Number(r.unsettled_amount || 0);
+                srow.discrepancy += Number(r.discrepancy || 0);
+            });
+
+            const store_rows = Array.from(storeMap.values())
+                .map((r) => ({
+                    ...r,
+                    gross_sales: Number(r.gross_sales.toFixed(2)),
+                    expected_payable: Number(r.expected_payable.toFixed(2)),
+                    paid_settlement_amount: Number(r.paid_settlement_amount.toFixed(2)),
+                    unsettled_amount: Number(r.unsettled_amount.toFixed(2)),
+                    discrepancy: Number(r.discrepancy.toFixed(2))
+                }))
+                .sort((a, b) => a.store_name.localeCompare(b.store_name));
+
+            const summary = store_rows.reduce((acc, r) => {
+                acc.total_stores += 1;
+                acc.total_orders += Number(r.total_orders || 0);
+                acc.gross_sales += Number(r.gross_sales || 0);
+                acc.expected_payable += Number(r.expected_payable || 0);
+                acc.paid_settlement_amount += Number(r.paid_settlement_amount || 0);
+                acc.unsettled_amount += Number(r.unsettled_amount || 0);
+                acc.discrepancy += Number(r.discrepancy || 0);
+                return acc;
+            }, {
+                total_stores: 0,
+                total_orders: 0,
+                gross_sales: 0,
+                expected_payable: 0,
+                paid_settlement_amount: 0,
+                unsettled_amount: 0,
+                discrepancy: 0
+            });
+            Object.keys(summary).forEach((k) => {
+                if (k !== 'total_stores' && k !== 'total_orders') {
+                    summary[k] = Number(Number(summary[k] || 0).toFixed(2));
+                }
+            });
+
+            total_income = Number(summary.expected_payable || 0);
+            total_expense = Number(summary.paid_settlement_amount || 0);
+            reportData = {
+                type: 'store_order_settlement_report',
+                filters: {
+                    period_from: period_from || null,
+                    period_to: period_to || null,
+                    store_id: store_id || null
+                },
+                store_rows,
+                order_rows,
                 summary
             };
         } else if (report_type === 'transaction_summary') {
@@ -4787,21 +5306,44 @@ router.get('/reports/stores-detailed', async (req, res) => {
                 s.payment_term,
                 COALESCE(earn.total_orders, 0) AS total_orders,
                 COALESCE(earn.total_earnings, 0) AS total_earnings,
+                COALESCE(earn.total_payable, 0) AS total_payable,
                 COALESCE(paid.total_paid, 0) AS total_paid,
                 CASE
                     WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) IN ('cash only', 'cash with discount')
                         THEN 0
-                    ELSE GREATEST(0, COALESCE(earn.total_earnings, 0) - COALESCE(paid.total_paid, 0))
+                    ELSE GREATEST(0, COALESCE(earn.total_payable, 0) - COALESCE(paid.total_paid, 0))
                 END AS pending_settlement
             FROM stores s
             LEFT JOIN (
                 SELECT
                     COALESCE(oi.store_id, p.store_id) AS store_id,
                     COUNT(DISTINCT o.id) AS total_orders,
-                    SUM(oi.price * oi.quantity) AS total_earnings
+                    SUM(oi.price * oi.quantity) AS total_earnings,
+                    SUM(
+                        GREATEST(
+                            0,
+                            (oi.price * oi.quantity) -
+                            (
+                                oi.quantity * (
+                                    CASE
+                                        WHEN LOWER(TRIM(COALESCE(s2.payment_term, ''))) LIKE '%discount%'
+                                             AND COALESCE(s2.store_discount_apply_all_products, 0) = 1
+                                             AND COALESCE(s2.store_discount_percent, 0) > 0
+                                            THEN oi.price * (COALESCE(s2.store_discount_percent, 0) / 100)
+                                        WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                        WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN COALESCE(oi.discount_value, 0)
+                                        ELSE 0
+                                    END
+                                )
+                            )
+                        )
+                    ) AS total_payable
                 FROM order_items oi
                 JOIN orders o ON oi.order_id = o.id
                 JOIN products p ON oi.product_id = p.id
+                JOIN stores s2 ON s2.id = COALESCE(oi.store_id, p.store_id)
                 WHERE o.status = 'delivered'
                 ${start_date && end_date ? 'AND o.created_at BETWEEN ? AND ?' : ''}
                 GROUP BY COALESCE(oi.store_id, p.store_id)

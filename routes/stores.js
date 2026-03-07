@@ -192,6 +192,55 @@ async function ensureStoreCustomerVisibilityColumn(db) {
     }
 }
 
+async function ensureStoreBankColumn(db) {
+    const [rows] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'bank_id'
+         LIMIT 1`
+    );
+    if (!rows || !rows.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN bank_id INT NULL`
+        );
+    }
+}
+
+async function ensureStoreBankDetailsColumns(db) {
+    const [titleRows] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'store_bank_account_title'
+         LIMIT 1`
+    );
+    if (!titleRows || !titleRows.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN store_bank_account_title VARCHAR(255) NULL`
+        );
+    }
+
+    const [numberRows] = await db.execute(
+        `SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'stores'
+           AND COLUMN_NAME = 'store_bank_account_number'
+         LIMIT 1`
+    );
+    if (!numberRows || !numberRows.length) {
+        await db.execute(
+            `ALTER TABLE stores
+             ADD COLUMN store_bank_account_number VARCHAR(120) NULL`
+        );
+    }
+}
+
 function normalizeDateOnlyInput(raw) {
     const value = String(raw || '').trim();
     if (!value) return null;
@@ -501,6 +550,8 @@ router.get('/', async (req, res) => {
         await ensureServiceGeoLimitsTable(req.db);
         await ensureStoreFinancialColumns(req.db);
         await ensureStoreCustomerVisibilityColumn(req.db);
+        await ensureStoreBankColumn(req.db);
+        await ensureStoreBankDetailsColumns(req.db);
         const { category, category_id, search, admin, lite, latitude, longitude, city } = req.query;
         const liteMode = String(lite || '').toLowerCase() === '1' || String(lite || '').toLowerCase() === 'true';
         const whereClauses = admin === '1' ? [] : ['s.is_active = true', 'COALESCE(s.is_customer_visible, 1) = 1'];
@@ -552,17 +603,20 @@ router.get('/', async (req, res) => {
                 ? `
             SELECT s.id, s.name, s.payment_term, s.is_active, s.is_customer_visible, sm.is_closed, sm.status_message
                  , s.payment_grace_days, s.payment_grace_start_date, s.grace_alert_muted_until
-                 , s.store_discount_apply_all_products, s.store_discount_percent
+                 , s.store_discount_apply_all_products, s.store_discount_percent, s.bank_id
             FROM stores s
             LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             ${whereClause}
             ORDER BY s.name ASC
         `
                 : `
-            SELECT s.*, sm.is_closed, sm.status_message, u.email as owner_email, CONCAT(u.first_name, ' ', u.last_name) as owner_name
+            SELECT s.*, sm.is_closed, sm.status_message, u.email as owner_email, CONCAT(u.first_name, ' ', u.last_name) as owner_name,
+                   b.name AS bank_name, b.account_number AS bank_account_number, b.bank_code AS bank_code,
+                   b.branch_name AS bank_branch_name, b.account_title AS bank_account_title
             FROM stores s
             LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             LEFT JOIN users u ON s.owner_id = u.id
+            LEFT JOIN banks b ON b.id = s.bank_id
             ${whereClause}
             ORDER BY s.is_active DESC, s.priority DESC, s.id DESC
         `,
@@ -657,6 +711,9 @@ router.get('/', async (req, res) => {
                     grace_alert_muted_until: store.grace_alert_muted_until || null,
                     store_discount_apply_all_products: Number(store.store_discount_apply_all_products || 0),
                     store_discount_percent: store.store_discount_percent === null || store.store_discount_percent === undefined ? null : Number(store.store_discount_percent),
+                    bank_id: store.bank_id === null || store.bank_id === undefined ? null : Number(store.bank_id),
+                    store_bank_account_title: store.store_bank_account_title || null,
+                    store_bank_account_number: store.store_bank_account_number || null,
                     is_active: !!store.is_active,
                     is_customer_visible: Number(store.is_customer_visible ?? 1) === 1,
                     is_closed: !!store.is_closed,
@@ -700,7 +757,18 @@ router.get('/', async (req, res) => {
                     priority: store.priority || null,
                     owner_id: store.owner_id || null,
                     owner_email: store.owner_email || null,
-                    owner_name: store.owner_name || null
+                    owner_name: store.owner_name || null,
+                    bank_id: store.bank_id === null || store.bank_id === undefined ? null : Number(store.bank_id),
+                    store_bank_account_title: store.store_bank_account_title || null,
+                    store_bank_account_number: store.store_bank_account_number || null,
+                    bank_info: store.bank_id ? {
+                        id: Number(store.bank_id),
+                        name: store.bank_name || null,
+                        account_number: store.bank_account_number || null,
+                        bank_code: store.bank_code || null,
+                        branch_name: store.bank_branch_name || null,
+                        account_title: store.bank_account_title || null
+                    } : null
                 };
             }).sort((a, b) => (b.is_open === true ? 1 : 0) - (a.is_open === true ? 1 : 0))
         });
@@ -710,6 +778,38 @@ router.get('/', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch stores',
+            error: error.message
+        });
+    }
+});
+
+router.get('/bank-options', authenticateToken, requireStoreOwner, async (req, res) => {
+    try {
+        const banksTableExists = await tableExists(req.db, 'banks');
+        if (!banksTableExists) {
+            return res.json({ success: true, banks: [] });
+        }
+        const [banks] = await req.db.execute(
+            `SELECT id, name, account_number, bank_code, branch_name, account_title
+             FROM banks
+             ORDER BY name ASC`
+        );
+        return res.json({
+            success: true,
+            banks: (banks || []).map((b) => ({
+                id: Number(b.id),
+                name: b.name || '',
+                account_number: b.account_number || null,
+                bank_code: b.bank_code || null,
+                branch_name: b.branch_name || null,
+                account_title: b.account_title || null
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching bank options:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch bank options',
             error: error.message
         });
     }
@@ -1961,13 +2061,18 @@ router.get('/:id', async (req, res) => {
         await ensureStoreStatusMessagesTable(req.db);
         await ensureStoreFinancialColumns(req.db);
         await ensureStoreCustomerVisibilityColumn(req.db);
+        await ensureStoreBankColumn(req.db);
+        await ensureStoreBankDetailsColumns(req.db);
         const { id } = req.params;
 
         const [stores] = await req.db.execute(`
-            SELECT s.*, sm.is_closed, sm.status_message, u.first_name as owner_first_name, u.last_name as owner_last_name, u.email as owner_email
+            SELECT s.*, sm.is_closed, sm.status_message, u.first_name as owner_first_name, u.last_name as owner_last_name, u.email as owner_email,
+                   b.name AS bank_name, b.account_number AS bank_account_number, b.bank_code AS bank_code,
+                   b.branch_name AS bank_branch_name, b.account_title AS bank_account_title
             FROM stores s
             LEFT JOIN store_status_messages sm ON sm.store_id = s.id
             LEFT JOIN users u ON s.owner_id = u.id
+            LEFT JOIN banks b ON b.id = s.bank_id
             WHERE s.id = ? AND s.is_active = true AND (? = '1' OR COALESCE(s.is_customer_visible, 1) = 1)
         `, [id, String(req.query?.admin || '0')]);
 
@@ -2024,6 +2129,17 @@ router.get('/:id', async (req, res) => {
                 description: store.description,
                 owner_id: store.owner_id,
                 category_id: store.category_id || null,
+                bank_id: store.bank_id === null || store.bank_id === undefined ? null : Number(store.bank_id),
+                store_bank_account_title: store.store_bank_account_title || null,
+                store_bank_account_number: store.store_bank_account_number || null,
+                bank_info: store.bank_id ? {
+                    id: Number(store.bank_id),
+                    name: store.bank_name || null,
+                    account_number: store.bank_account_number || null,
+                    bank_code: store.bank_code || null,
+                    branch_name: store.bank_branch_name || null,
+                    account_title: store.bank_account_title || null
+                } : null,
                 image_url: store.cover_image || null,
                 is_closed: manuallyClosed,
                 status_message: store.status_message || '',
@@ -2119,6 +2235,8 @@ router.post('/', authenticateToken, requireStoreOwner, [
     try {
         await ensureStoreFinancialColumns(req.db);
         await ensureStoreCustomerVisibilityColumn(req.db);
+        await ensureStoreBankColumn(req.db);
+        await ensureStoreBankDetailsColumns(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -2145,6 +2263,9 @@ router.post('/', authenticateToken, requireStoreOwner, [
             payment_grace_start_date,
             store_discount_apply_all_products,
             store_discount_percent,
+            bank_id,
+            store_bank_account_title,
+            store_bank_account_number,
             image_url,
             rating,
             is_customer_visible
@@ -2178,6 +2299,26 @@ router.post('/', authenticateToken, requireStoreOwner, [
         const graceApplicable = isGraceApplicablePaymentTerm(payment_term);
         const parsedGraceDays = graceApplicable ? parsedGraceDaysRaw : null;
         const parsedGraceStartDate = graceApplicable ? normalizeDateOnlyInput(payment_grace_start_date) : null;
+        const parsedStoreBankAccountTitle = String(store_bank_account_title || '').trim() || null;
+        const parsedStoreBankAccountNumber = String(store_bank_account_number || '').trim() || null;
+        const parsedBankId = bank_id === null || bank_id === undefined || String(bank_id).trim() === ''
+            ? null
+            : parseInt(String(bank_id), 10);
+        if (parsedBankId !== null) {
+            if (!Number.isInteger(parsedBankId) || parsedBankId <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid bank selection'
+                });
+            }
+            const [bankRows] = await req.db.execute('SELECT id FROM banks WHERE id = ? LIMIT 1', [parsedBankId]);
+            if (!bankRows.length) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Selected bank does not exist'
+                });
+            }
+        }
 
         if (rating !== undefined && req.user.user_type !== 'admin') {
             return res.status(403).json({
@@ -2210,6 +2351,9 @@ router.post('/', authenticateToken, requireStoreOwner, [
             'phone',
             'email',
             'address',
+            'bank_id',
+            'store_bank_account_title',
+            'store_bank_account_number',
             'owner_id',
             'cover_image'
             ,
@@ -2233,6 +2377,9 @@ router.post('/', authenticateToken, requireStoreOwner, [
             phone || null,
             email || null,
             address || null,
+            parsedBankId,
+            parsedStoreBankAccountTitle,
+            parsedStoreBankAccountNumber,
             ownerId,
             image_url || null,
             customerVisible ? 1 : 0
@@ -2260,6 +2407,9 @@ router.post('/', authenticateToken, requireStoreOwner, [
                 location,
                 owner_id: ownerId,
                 owner_name: owner_name || null,
+                bank_id: parsedBankId,
+                store_bank_account_title: parsedStoreBankAccountTitle,
+                store_bank_account_number: parsedStoreBankAccountNumber,
                 image_url: image_url || null,
                 payment_term: payment_term || null,
                 payment_grace_days: Number.isInteger(parsedGraceDays) ? parsedGraceDays : null,
@@ -2302,6 +2452,8 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
     try {
         await ensureStoreFinancialColumns(req.db);
         await ensureStoreCustomerVisibilityColumn(req.db);
+        await ensureStoreBankColumn(req.db);
+        await ensureStoreBankDetailsColumns(req.db);
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -2355,6 +2507,9 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
             payment_grace_start_date,
             store_discount_apply_all_products,
             store_discount_percent,
+            bank_id,
+            store_bank_account_title,
+            store_bank_account_number,
             image_url,
             rating,
             category_id,
@@ -2398,6 +2553,36 @@ router.put('/:id', authenticateToken, requireStoreOwner, [
 
         const updateFields = [];
         const updateValues = [];
+        if (bank_id !== undefined) {
+            const parsedBankId = bank_id === null || String(bank_id).trim() === ''
+                ? null
+                : parseInt(String(bank_id), 10);
+            if (parsedBankId !== null) {
+                if (!Number.isInteger(parsedBankId) || parsedBankId <= 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid bank selection'
+                    });
+                }
+                const [bankRows] = await req.db.execute('SELECT id FROM banks WHERE id = ? LIMIT 1', [parsedBankId]);
+                if (!bankRows.length) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Selected bank does not exist'
+                    });
+                }
+            }
+            updateFields.push('bank_id = ?');
+            updateValues.push(parsedBankId);
+        }
+        if (store_bank_account_title !== undefined) {
+            updateFields.push('store_bank_account_title = ?');
+            updateValues.push(String(store_bank_account_title || '').trim() || null);
+        }
+        if (store_bank_account_number !== undefined) {
+            updateFields.push('store_bank_account_number = ?');
+            updateValues.push(String(store_bank_account_number || '').trim() || null);
+        }
 
         if (name !== undefined) { updateFields.push('name = ?'); updateValues.push(name); }
         if (description !== undefined) { updateFields.push('description = ?'); updateValues.push(description); }

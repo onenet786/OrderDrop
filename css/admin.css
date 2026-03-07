@@ -241,6 +241,155 @@ html, body {
   opacity: 0.9;
 }
 
+/* Financial Dashboard: Store-wise styled block */
+#financial-dashboard .fd-storewise-card {
+  margin-top: 12px;
+  border: 1px solid #dbe7ff;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.08);
+}
+
+#financial-dashboard .fd-storewise-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 8px 16px;
+}
+
+#financial-dashboard .fd-storewise-head h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+#financial-dashboard .fd-storewise-head p {
+  margin: 3px 0 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+#financial-dashboard .fd-storewise-chip {
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+#financial-dashboard .fd-storewise-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 10px;
+  padding: 0 16px 10px 16px;
+}
+
+#financial-dashboard .fd-storewise-filters .filter-group label {
+  font-size: 0.79rem;
+  color: #475569;
+  margin-bottom: 5px;
+}
+
+#financial-dashboard .fd-storewise-filters .form-control {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  min-height: 42px;
+  height: auto;
+  padding: 0.55rem 0.75rem;
+  line-height: 1.35;
+  box-sizing: border-box;
+  font-size: 0.88rem;
+}
+
+#financial-dashboard .fd-storewise-refresh {
+  height: 40px;
+  border-radius: 10px;
+  font-weight: 600;
+  align-self: end;
+}
+
+#financial-dashboard .fd-storewise-stats {
+  margin: 0 16px 10px 16px;
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+#financial-dashboard .fd-storewise-stats .stat-card {
+  padding: 12px 12px;
+  border: 1px solid #e2e8f0;
+  border-left-width: 4px;
+}
+
+#financial-dashboard .fd-storewise-stats .stat-card h3 {
+  font-size: 1.05rem;
+  margin-bottom: 2px;
+}
+
+#financial-dashboard .fd-storewise-stats .stat-card p {
+  font-size: 0.78rem;
+}
+
+#financial-dashboard #financialStoreWiseTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+
+#financial-dashboard #financialStoreWiseTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+#financial-dashboard #financialStoreWiseTable tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+#financial-dashboard #financialStoreWiseTable tbody tr:hover {
+  background: #eff6ff;
+}
+
+#financial-dashboard #financialStoreWiseTable td,
+#financial-dashboard #financialStoreWiseTable th {
+  padding: 9px 10px;
+}
+
+@media (max-width: 1100px) {
+  #financial-dashboard .fd-storewise-filters {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+  #financial-dashboard .fd-storewise-stats {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  #financial-dashboard .fd-storewise-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  #financial-dashboard .fd-storewise-filters {
+    grid-template-columns: 1fr;
+  }
+  #financial-dashboard .fd-storewise-stats {
+    grid-template-columns: 1fr;
+    margin: 0 12px 10px 12px;
+  }
+}
+
 a {
   text-decoration: none;
   color: inherit;

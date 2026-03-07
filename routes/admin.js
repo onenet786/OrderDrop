@@ -1985,6 +1985,24 @@ router.post(
   requirePermission('menu_settings_database'),
   async (req, res) => {
     const { table } = req.body;
+    const providedPass =
+      req.body && req.body.password ? String(req.body.password) : "";
+    const requiredPass = process.env.RESTORE_PASSPHRASE;
+
+    if (!requiredPass) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Server restore passphrase not configured (RESTORE_PASSPHRASE)",
+      });
+    }
+    if (providedPass !== requiredPass) {
+      return res.status(403).json({
+        success: false,
+        message: "Invalid super admin passphrase",
+      });
+    }
+
     const specialModes = new Set([
       "all",
       "all_except_user_store",

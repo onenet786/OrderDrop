@@ -436,7 +436,14 @@ function initializeFinancialForms() {
 async function submitAddBank() {
     const form = document.getElementById('addBankForm');
     const formData = new FormData(form);
-    const payload = Object.fromEntries(formData.entries());
+    const raw = Object.fromEntries(formData.entries());
+    const payload = {
+        name: raw.name,
+        account_number: raw.account_number || raw.accountNumber || null,
+        bank_code: raw.bank_code || raw.bankCode || null,
+        branch_name: raw.branch_name || raw.branchName || null,
+        account_title: raw.account_title || raw.accountTitle || null
+    };
 
     try {
         const response = await fetch(`${API_BASE}/api/financial/banks`, {
@@ -451,8 +458,10 @@ async function submitAddBank() {
         const data = await response.json();
         if (data.success) {
             showSuccess('Success', 'Bank added successfully');
-            closeModal('addBankModal');
+            if (typeof hideModal === 'function') hideModal('addBankModal');
+            else closeModal('addBankModal');
             form.reset();
+            window.dispatchEvent(new CustomEvent('servenow:bank-added', { detail: { id: data.id || null } }));
             
             // Refresh lists if currently selected type is bank
             const payeeType = document.getElementById('payeeType');
@@ -619,6 +628,48 @@ function renderFinancialStoreWiseRows(rows) {
     `).join('');
 }
 
+function renderFinancialStoreWiseSummary(rows) {
+    const asNum = (v) => {
+        const n = parseFloat(v);
+        return Number.isFinite(n) ? n : 0;
+    };
+    const money = (v) => `Rs ${asNum(v).toFixed(2)}`;
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+    const setTile = (id, color, bg) => {
+        const el = document.getElementById(id);
+        const card = el?.closest('.stat-card');
+        if (!card) return;
+        card.style.setProperty('border-left', `4px solid ${color}`, 'important');
+        card.style.setProperty('background', bg, 'important');
+        el.style.setProperty('color', color, 'important');
+    };
+
+    const totalStores = rows.length;
+    const totalOrders = rows.reduce((sum, r) => sum + (parseInt(String(r.total_orders || 0), 10) || 0), 0);
+    const totalEarnings = rows.reduce((sum, r) => sum + asNum(r.total_earnings), 0);
+    const totalPaid = rows.reduce((sum, r) => sum + asNum(r.total_paid), 0);
+    const totalPending = rows.reduce((sum, r) => sum + asNum(r.pending_settlement), 0);
+
+    setText('fdStoreCountAmount', String(totalStores));
+    setText('fdStoreOrdersAmount', String(totalOrders));
+    setText('fdStoreEarningsAmount', money(totalEarnings));
+    setText('fdStorePaidAmount', money(totalPaid));
+    setText('fdStorePendingAmount', money(totalPending));
+
+    setTile('fdStoreCountAmount', '#1d4ed8', 'linear-gradient(135deg,#eff6ff,#dbeafe)');
+    setTile('fdStoreOrdersAmount', '#7c3aed', 'linear-gradient(135deg,#f5f3ff,#ede9fe)');
+    setTile('fdStoreEarningsAmount', '#15803d', 'linear-gradient(135deg,#f0fdf4,#dcfce7)');
+    setTile('fdStorePaidAmount', '#0f766e', 'linear-gradient(135deg,#f0fdfa,#ccfbf1)');
+    setTile(
+        'fdStorePendingAmount',
+        totalPending > 0 ? '#b45309' : '#059669',
+        totalPending > 0 ? 'linear-gradient(135deg,#fff7ed,#ffedd5)' : 'linear-gradient(135deg,#ecfdf5,#d1fae5)'
+    );
+}
+
 async function loadFinancialDashboardStoreWise() {
     const tbody = document.getElementById('financialStoreWiseBody');
     if (!tbody) return;
@@ -653,9 +704,11 @@ async function loadFinancialDashboardStoreWise() {
         } else if (pendingFilter === 'cleared_only') {
             rows = rows.filter((r) => parseFloat(r.pending_settlement || 0) <= 0);
         }
+        renderFinancialStoreWiseSummary(rows);
         renderFinancialStoreWiseRows(rows);
     } catch (error) {
         console.error('Error loading financial dashboard store-wise details:', error);
+        renderFinancialStoreWiseSummary([]);
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:14px;">Failed to load store-wise details</td></tr>';
         }
@@ -1037,6 +1090,9 @@ async function loadStoreSettlements() {
         const status = document.getElementById('storeSettlementStatusFilter')?.value || '';
         const params = new URLSearchParams();
         if (status) params.append('status', status);
+        // API default limit is 20; fetch broader set so older pending rows are visible.
+        params.append('limit', '500');
+        params.append('page', '1');
 
         const response = await fetch(`${API_BASE}/api/financial/store-settlements?${params.toString()}`, {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
@@ -2390,7 +2446,8 @@ function generateFinancialReport() {
 
 async function populateReportStoresDropdown() {
     try {
-        const response = await fetch(`${API_BASE}/api/stores`, {
+        // Use admin scope so manually-created hidden stores are available in reports.
+        const response = await fetch(`${API_BASE}/api/stores?admin=1&lite=1`, {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
         });
         const data = await response.json();
@@ -2795,6 +2852,147 @@ function generatePDF(reportId) {
                     ]),
                     theme: 'grid',
                     styles: { fontSize: 7 }
+                });
+            }
+        } else if (data.type === 'cash_discrepancy_report') {
+            doc.text('Cash Discrepancy Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Orders: ${parseInt(data.summary.total_orders || 0)} | Store Gross: Rs ${parseFloat(data.summary.store_gross || 0).toFixed(2)} | Store Payable: Rs ${parseFloat(data.summary.store_payable || 0).toFixed(2)} | Share: Rs ${parseFloat(data.summary.servenow_share || 0).toFixed(2)} | Collected: Rs ${parseFloat(data.summary.rider_collected_cash || 0).toFixed(2)} | Submitted: Rs ${parseFloat(data.summary.rider_submitted_cash || 0).toFixed(2)} | Gap: Rs ${parseFloat(data.summary.cash_gap || 0).toFixed(2)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 10;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Order #', 'Date', 'Store', 'Store Gross', 'Store Payable', 'ServeNow Share', 'Collected', 'Submitted', 'Gap']],
+                body: (data.details || []).map(d => [
+                    d.order_number || '-',
+                    d.order_date ? new Date(d.order_date).toLocaleDateString() : '-',
+                    d.store_name || '-',
+                    `Rs ${parseFloat(d.store_gross || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(d.store_payable || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(d.servenow_share || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(d.rider_collected_cash || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(d.rider_submitted_cash || 0).toFixed(2)}`,
+                    `Rs ${parseFloat(d.cash_gap || 0).toFixed(2)}`
+                ]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+
+            const riderCashMap = {};
+            (data.details || []).forEach((d) => {
+                const riderKey = (d.rider_name || '-').trim() || '-';
+                if (!riderCashMap[riderKey]) {
+                    riderCashMap[riderKey] = {
+                        rider_name: riderKey,
+                        orders: 0,
+                        collected: 0,
+                        submitted: 0
+                    };
+                }
+                riderCashMap[riderKey].orders += 1;
+                riderCashMap[riderKey].collected += parseFloat(d.rider_collected_cash || 0);
+                riderCashMap[riderKey].submitted += parseFloat(d.rider_submitted_cash || 0);
+            });
+            const riderRows = Object.values(riderCashMap).map((r) => ({
+                ...r,
+                gap: Number((r.collected - r.submitted).toFixed(2)),
+                collected: Number(r.collected.toFixed(2)),
+                submitted: Number(r.submitted.toFixed(2))
+            }));
+            if (riderRows.length) {
+                const riderY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : startY + 30;
+                doc.text('Rider Cash Summary', 14, riderY);
+                doc.autoTable({
+                    startY: riderY + 4,
+                    head: [['Rider', 'Orders', 'Collected', 'Submitted', 'Gap']],
+                    body: riderRows.map((r) => [
+                        r.rider_name,
+                        r.orders,
+                        `Rs ${parseFloat(r.collected || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.submitted || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.gap || 0).toFixed(2)}`
+                    ]),
+                    theme: 'grid',
+                    styles: { fontSize: 7 }
+                });
+            }
+
+            if (Array.isArray(data.daily_totals) && data.daily_totals.length) {
+                const afterY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : startY + 30;
+                doc.text('Daily Totals', 14, afterY);
+                doc.autoTable({
+                    startY: afterY + 4,
+                    head: [['Date', 'Orders', 'Store Gross', 'Store Payable', 'Share', 'Collected', 'Submitted', 'Fuel Paid', 'Software Cash']],
+                    body: data.daily_totals.map(d => [
+                        d.period || '-',
+                        parseInt(d.total_orders || 0),
+                        `Rs ${parseFloat(d.store_gross || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(d.store_payable || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(d.servenow_share || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(d.rider_collected_cash || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(d.rider_submitted_cash || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(d.fuel_paid || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(d.software_cash_estimate || 0).toFixed(2)}`
+                    ]),
+                    theme: 'grid',
+                    styles: { fontSize: 7 }
+                });
+            }
+        } else if (data.type === 'store_order_settlement_report') {
+            doc.text('Store Order Settlement Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Stores: ${parseInt(data.summary.total_stores || 0)} | Orders: ${parseInt(data.summary.total_orders || 0)} | Expected: Rs ${parseFloat(data.summary.expected_payable || 0).toFixed(2)} | Paid: Rs ${parseFloat(data.summary.paid_settlement_amount || 0).toFixed(2)} | Unsettled: Rs ${parseFloat(data.summary.unsettled_amount || 0).toFixed(2)} | Discrepancy: Rs ${parseFloat(data.summary.discrepancy || 0).toFixed(2)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 10;
+            }
+
+            if (Array.isArray(data.store_rows) && data.store_rows.length) {
+                doc.autoTable({
+                    startY: startY + 5,
+                    head: [['Store', 'Orders', 'Gross Sales', 'Expected Payable', 'Paid', 'Unsettled', 'Discrepancy']],
+                    body: data.store_rows.map((r) => [
+                        r.store_name || '-',
+                        parseInt(r.total_orders || 0),
+                        `Rs ${parseFloat(r.gross_sales || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.expected_payable || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.paid_settlement_amount || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.unsettled_amount || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.discrepancy || 0).toFixed(2)}`
+                    ]),
+                    theme: 'grid',
+                    styles: { fontSize: 7 }
+                });
+            }
+
+            if (Array.isArray(data.order_rows) && data.order_rows.length) {
+                const afterY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : startY + 30;
+                doc.text('Order-wise Settlement Details', 14, afterY);
+                doc.autoTable({
+                    startY: afterY + 4,
+                    head: [['Order #', 'Date', 'Store', 'Gross', 'Expected', 'Paid', 'Unsettled', 'Discrepancy', 'Settlement #', 'Status']],
+                    body: data.order_rows.map((r) => [
+                        r.order_number || '-',
+                        r.order_date ? new Date(r.order_date).toLocaleDateString() : '-',
+                        r.store_name || '-',
+                        `Rs ${parseFloat(r.gross_sales || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.expected_payable || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.paid_settlement_amount || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.unsettled_amount || 0).toFixed(2)}`,
+                        `Rs ${parseFloat(r.discrepancy || 0).toFixed(2)}`,
+                        r.settlement_numbers || '-',
+                        r.settlement_statuses || '-'
+                    ]),
+                    theme: 'grid',
+                    styles: { fontSize: 6.5 }
                 });
             }
         } else if (data.type === 'general_voucher') {
@@ -3311,6 +3509,159 @@ function viewReport(reportId) {
             });
             extraDetails += '</tbody></table></div>';
         }
+    } else if (data && data.type === 'cash_discrepancy_report') {
+        extraDetails = '<h3>Cash Discrepancy Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.82em"><thead><tr><th>Order #</th><th>Date</th><th>Store</th><th>Payment Term</th><th>Rider</th><th>Store Gross</th><th>Store Payable</th><th>ServeNow Share</th><th>Collected</th><th>Submitted</th><th>Gap</th><th>Software Cash</th></tr></thead><tbody>';
+        (data.details || []).forEach(d => {
+            extraDetails += `<tr>
+                <td>${d.order_number || '-'}</td>
+                <td>${d.order_date ? new Date(d.order_date).toLocaleDateString() : '-'}</td>
+                <td>${d.store_name || '-'}</td>
+                <td>${d.payment_term || '-'}</td>
+                <td>${d.rider_name || '-'}</td>
+                <td>Rs ${parseFloat(d.store_gross || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(d.store_payable || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(d.servenow_share || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(d.rider_collected_cash || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(d.rider_submitted_cash || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(d.cash_gap || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(d.software_cash_estimate || 0).toFixed(2)}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 10px;">
+                <strong>Summary:</strong>
+                Orders: ${parseInt(data.summary.total_orders || 0)} |
+                Store Gross: Rs ${parseFloat(data.summary.store_gross || 0).toFixed(2)} |
+                Store Payable: Rs ${parseFloat(data.summary.store_payable || 0).toFixed(2)} |
+                ServeNow Share: Rs ${parseFloat(data.summary.servenow_share || 0).toFixed(2)} |
+                Collected: Rs ${parseFloat(data.summary.rider_collected_cash || 0).toFixed(2)} |
+                Submitted: Rs ${parseFloat(data.summary.rider_submitted_cash || 0).toFixed(2)} |
+                Fuel Paid: Rs ${parseFloat(data.summary.fuel_paid || 0).toFixed(2)} |
+                Cash Gap: Rs ${parseFloat(data.summary.cash_gap || 0).toFixed(2)} |
+                <strong>Software Cash: Rs ${parseFloat(data.summary.software_cash_estimate || 0).toFixed(2)}</strong>
+            </div>`;
+        }
+        const riderCashMap = {};
+        (data.details || []).forEach((d) => {
+            const riderKey = (d.rider_name || '-').trim() || '-';
+            if (!riderCashMap[riderKey]) {
+                riderCashMap[riderKey] = { rider_name: riderKey, orders: 0, collected: 0, submitted: 0 };
+            }
+            riderCashMap[riderKey].orders += 1;
+            riderCashMap[riderKey].collected += parseFloat(d.rider_collected_cash || 0);
+            riderCashMap[riderKey].submitted += parseFloat(d.rider_submitted_cash || 0);
+        });
+        const riderRows = Object.values(riderCashMap);
+        if (riderRows.length) {
+            extraDetails += '<h3 style="margin-top:14px;">Rider Cash Summary</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.82em"><thead><tr><th>Rider</th><th>Orders</th><th>Collected</th><th>Submitted</th><th>Gap</th></tr></thead><tbody>';
+            riderRows.forEach((r) => {
+                const gap = (parseFloat(r.collected || 0) - parseFloat(r.submitted || 0));
+                extraDetails += `<tr>
+                    <td>${r.rider_name}</td>
+                    <td>${parseInt(r.orders || 0)}</td>
+                    <td>Rs ${parseFloat(r.collected || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(r.submitted || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(gap || 0).toFixed(2)}</td>
+                </tr>`;
+            });
+            extraDetails += '</tbody></table></div>';
+        }
+        if (Array.isArray(data.daily_totals) && data.daily_totals.length) {
+            extraDetails += '<h3 style="margin-top:14px;">Daily Totals</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.82em"><thead><tr><th>Date</th><th>Orders</th><th>Store Gross</th><th>Store Payable</th><th>Share</th><th>Collected</th><th>Submitted</th><th>Fuel Paid</th><th>Gap</th><th>Software Cash</th></tr></thead><tbody>';
+            data.daily_totals.forEach(d => {
+                extraDetails += `<tr>
+                    <td>${d.period || '-'}</td>
+                    <td>${parseInt(d.total_orders || 0)}</td>
+                    <td>Rs ${parseFloat(d.store_gross || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(d.store_payable || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(d.servenow_share || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(d.rider_collected_cash || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(d.rider_submitted_cash || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(d.fuel_paid || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(d.cash_gap || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(d.software_cash_estimate || 0).toFixed(2)}</td>
+                </tr>`;
+            });
+            extraDetails += '</tbody></table></div>';
+        }
+        if (Array.isArray(data.monthly_totals) && data.monthly_totals.length) {
+            extraDetails += '<h3 style="margin-top:14px;">Monthly Totals</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.82em"><thead><tr><th>Month</th><th>Orders</th><th>Store Gross</th><th>Store Payable</th><th>Share</th><th>Collected</th><th>Submitted</th><th>Fuel Paid</th><th>Software Cash</th></tr></thead><tbody>';
+            data.monthly_totals.forEach(m => {
+                extraDetails += `<tr>
+                    <td>${m.period || '-'}</td>
+                    <td>${parseInt(m.total_orders || 0)}</td>
+                    <td>Rs ${parseFloat(m.store_gross || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(m.store_payable || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(m.servenow_share || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(m.rider_collected_cash || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(m.rider_submitted_cash || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(m.fuel_paid || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(m.software_cash_estimate || 0).toFixed(2)}</td>
+                </tr>`;
+            });
+            extraDetails += '</tbody></table></div>';
+        }
+        if (Array.isArray(data.yearly_totals) && data.yearly_totals.length) {
+            extraDetails += '<h3 style="margin-top:14px;">Yearly Totals</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.82em"><thead><tr><th>Year</th><th>Orders</th><th>Store Gross</th><th>Store Payable</th><th>Share</th><th>Collected</th><th>Submitted</th><th>Fuel Paid</th><th>Software Cash</th></tr></thead><tbody>';
+            data.yearly_totals.forEach(y => {
+                extraDetails += `<tr>
+                    <td>${y.period || '-'}</td>
+                    <td>${parseInt(y.total_orders || 0)}</td>
+                    <td>Rs ${parseFloat(y.store_gross || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(y.store_payable || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(y.servenow_share || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(y.rider_collected_cash || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(y.rider_submitted_cash || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(y.fuel_paid || 0).toFixed(2)}</td>
+                    <td>Rs ${parseFloat(y.software_cash_estimate || 0).toFixed(2)}</td>
+                </tr>`;
+            });
+            extraDetails += '</tbody></table></div>';
+        }
+    } else if (data && data.type === 'store_order_settlement_report') {
+        extraDetails = '<h3>Store Order Settlement Report</h3>';
+        if (data.summary) {
+            extraDetails += `<div style="margin-top: 8px; margin-bottom: 8px;">
+                <strong>Stores:</strong> ${parseInt(data.summary.total_stores || 0)} |
+                <strong>Orders:</strong> ${parseInt(data.summary.total_orders || 0)} |
+                <strong>Expected Payable:</strong> Rs ${parseFloat(data.summary.expected_payable || 0).toFixed(2)} |
+                <strong>Paid:</strong> Rs ${parseFloat(data.summary.paid_settlement_amount || 0).toFixed(2)} |
+                <strong>Unsettled:</strong> Rs ${parseFloat(data.summary.unsettled_amount || 0).toFixed(2)} |
+                <strong>Discrepancy:</strong> Rs ${parseFloat(data.summary.discrepancy || 0).toFixed(2)}
+            </div>`;
+        }
+
+        extraDetails += '<h3 style="margin-top:10px;">Store-wise Summary</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.84em"><thead><tr><th>Store</th><th>Total Orders</th><th>Gross Sales</th><th>Expected Payable</th><th>Paid</th><th>Unsettled</th><th>Discrepancy</th></tr></thead><tbody>';
+        (data.store_rows || []).forEach((r) => {
+            extraDetails += `<tr>
+                <td>${r.store_name || '-'}</td>
+                <td>${parseInt(r.total_orders || 0)}</td>
+                <td>Rs ${parseFloat(r.gross_sales || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.expected_payable || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.paid_settlement_amount || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.unsettled_amount || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.discrepancy || 0).toFixed(2)}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
+
+        extraDetails += '<h3 style="margin-top:14px;">Order-wise Settlement Details</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.80em"><thead><tr><th>Order #</th><th>Date</th><th>Store</th><th>Gross</th><th>Expected</th><th>Paid</th><th>Unsettled</th><th>Discrepancy</th><th>Settlement #</th><th>Status</th></tr></thead><tbody>';
+        (data.order_rows || []).forEach((r) => {
+            extraDetails += `<tr>
+                <td>${r.order_number || '-'}</td>
+                <td>${r.order_date ? new Date(r.order_date).toLocaleDateString() : '-'}</td>
+                <td>${r.store_name || '-'}</td>
+                <td>Rs ${parseFloat(r.gross_sales || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.expected_payable || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.paid_settlement_amount || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.unsettled_amount || 0).toFixed(2)}</td>
+                <td>Rs ${parseFloat(r.discrepancy || 0).toFixed(2)}</td>
+                <td>${r.settlement_numbers || '-'}</td>
+                <td>${r.settlement_statuses || '-'}</td>
+            </tr>`;
+        });
+        extraDetails += '</tbody></table></div>';
     } else if (data && data.type === 'comprehensive_report') {
         extraDetails = '<h3>Comprehensive Transactions</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.8em"><thead><tr><th>Date</th><th>Ref #</th><th>Type</th><th>Entity</th><th>In</th><th>Out</th><th>Desc</th></tr></thead><tbody>';
         if (data.transactions) {
@@ -3723,7 +4074,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 storeGroup.style.display = (
                     this.value === 'order_wise_sale_summary' ||
                     this.value === 'store_payable_reconciliation' ||
-                    this.value === 'unsettled_amounts_report'
+                    this.value === 'unsettled_amounts_report' ||
+                    this.value === 'store_order_settlement_report'
                 ) ? 'block' : 'none';
             }
         });

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Dashboard - ServeNow</title>
     <link rel="stylesheet" href="css/style.css?v=4" />
-    <link rel="stylesheet" href="css/admin.css?v=6" />
+    <link rel="stylesheet" href="css/admin.css?v=9" />
     <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
     <link
       rel="stylesheet"
@@ -922,6 +922,8 @@
                     <option value="store_financials">Store Financials</option>
                     <option value="store_payable_reconciliation">Store Payable Reconciliation</option>
                     <option value="unsettled_amounts_report">Unsettled Amounts Report</option>
+                    <option value="cash_discrepancy_report">Cash Discrepancy Report</option>
+                    <option value="store_order_settlement_report">Store Order Settlement Report</option>
                     <option value="rider_cash_report">Rider Cash Report</option>
                     <option value="rider_fuel_report">Rider Fuel Report</option>
                     <option value="rider_orders_report">Rider Orders Report</option>
@@ -1913,15 +1915,15 @@
             </div>
           </div>
 
-          <section class="global-delivery-admin-card" style="margin-top: 10px;">
-            <div class="global-delivery-admin-head">
+          <section class="global-delivery-admin-card fd-storewise-card">
+            <div class="global-delivery-admin-head fd-storewise-head">
               <div>
                 <h3>Store Wise Financial Details</h3>
                 <p>Filter store-level earnings, paid settlements, and pending balance by period and store options.</p>
               </div>
-              <span class="global-delivery-state state-available">Store Summary</span>
+              <span class="fd-storewise-chip">Store Summary</span>
             </div>
-            <div class="filter-controls" style="margin-bottom: 8px;">
+            <div class="filter-controls fd-storewise-filters">
               <div class="filter-group">
                 <label for="fdStoreFilter">Store</label>
                 <select id="fdStoreFilter" class="form-control">
@@ -1946,10 +1948,34 @@
                   <option value="cleared_only">Cleared Only</option>
                 </select>
               </div>
-              <button class="btn btn-primary" id="refreshStoreWiseFinancialBtn" style="align-self: flex-end; margin-bottom: 2px;">
+              <button class="btn btn-primary fd-storewise-refresh" id="refreshStoreWiseFinancialBtn">
                 <i class="fas fa-sync"></i> Refresh Store Details
               </button>
             </div>
+
+            <div class="stats-grid fd-storewise-stats">
+              <div class="stat-card">
+                <h3 id="fdStoreCountAmount">-</h3>
+                <p><i class="fas fa-store"></i> Total Stores</p>
+              </div>
+              <div class="stat-card">
+                <h3 id="fdStoreOrdersAmount">-</h3>
+                <p><i class="fas fa-shopping-basket"></i> Total Orders</p>
+              </div>
+              <div class="stat-card">
+                <h3 id="fdStoreEarningsAmount">-</h3>
+                <p><i class="fas fa-sack-dollar"></i> Total Earnings</p>
+              </div>
+              <div class="stat-card">
+                <h3 id="fdStorePaidAmount">-</h3>
+                <p><i class="fas fa-hand-holding-dollar"></i> Total Paid</p>
+              </div>
+              <div class="stat-card">
+                <h3 id="fdStorePendingAmount">-</h3>
+                <p><i class="fas fa-hourglass-half"></i> Total Pending</p>
+              </div>
+            </div>
+
             <div class="table-container">
               <table id="financialStoreWiseTable">
                 <thead>
@@ -3193,6 +3219,26 @@
                   <option value="Credit with Discount">Credit with Discount</option>
                 </select>
               </div>
+              <div class="form-group" style="grid-column: span 2;">
+                <label for="storeBankId">Settlement Bank:</label>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                  <select id="storeBankId" name="bank_id" style="width: 100%;">
+                    <option value="">Select Bank (Optional)</option>
+                  </select>
+                  <button type="button" class="btn btn-primary" id="addStoreBankBtn" title="Add New Bank" style="padding: 0.55rem 0.8rem; white-space: nowrap;">
+                    <i class="fas fa-plus"></i> Add New Bank
+                  </button>
+                </div>
+                <small style="display:block;margin-top:6px;color:#475569;">Uses existing banks from BPV/BRV setup.</small>
+              </div>
+              <div class="form-group">
+                <label for="storeBankAccountTitle">Bank Account Title:</label>
+                <input type="text" id="storeBankAccountTitle" name="store_bank_account_title" placeholder="Store account title" style="width: 100%;" />
+              </div>
+              <div class="form-group">
+                <label for="storeBankAccountNumber">Bank Account Number:</label>
+                <input type="text" id="storeBankAccountNumber" name="store_bank_account_number" placeholder="Store account number" style="width: 100%;" />
+              </div>
               <div class="form-group" id="storeDiscountApplyGroup" style="display: none;">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                   <input type="checkbox" id="storeDiscountApplyAllProducts" name="store_discount_apply_all_products" />
@@ -4072,8 +4118,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
-    <script src="js/financial.js?v=14" defer></script>
-    <script src="js/admin.js?v=23" defer></script>
+    <script src="js/financial.js?v=17" defer></script>
+    <script src="js/admin.js?v=26" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");
@@ -4571,7 +4617,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h2>Add New Bank</h2>
-          <button class="close-btn" onclick="closeModal('addBankModal')">
+          <button class="close-btn" onclick="hideModal('addBankModal')">
             &times;
           </button>
         </div>
@@ -4600,7 +4646,7 @@
             <button
               type="button"
               class="btn btn-secondary"
-              onclick="closeModal('addBankModal')"
+              onclick="hideModal('addBankModal')"
             >
               Cancel
             </button>
@@ -4745,6 +4791,8 @@
               <option value="comprehensive_report">Comprehensive Cash Report</option>
               <option value="store_payable_reconciliation">Store Payable Reconciliation</option>
               <option value="unsettled_amounts_report">Unsettled Amounts Report</option>
+              <option value="cash_discrepancy_report">Cash Discrepancy Report</option>
+              <option value="store_order_settlement_report">Store Order Settlement Report</option>
               <option value="transaction_summary">Transaction Summary</option>
               <option value="general_voucher">General Voucher (JNV)</option>
               <option value="expense_report">Expense Report</option>
