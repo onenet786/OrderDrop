@@ -1,5 +1,7 @@
 let currentInventoryData = null;
 let currentManualSalesRows = [];
+let currentStoreProductSalesRows = [];
+let currentCombinedProductSalesRows = [];
 
 function inventoryMoney(value) {
     const n = Number(value);
@@ -100,6 +102,20 @@ function buildInventorySalesQuery() {
     return query ? `?${query}` : "";
 }
 
+function inventoryTodayDateValue() {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+}
+
+function ensureInventoryDateDefaults() {
+    const today = inventoryTodayDateValue();
+    const startDateEl = document.getElementById("inventoryStartDate");
+    const endDateEl = document.getElementById("inventoryEndDate");
+    if (startDateEl && !startDateEl.value) startDateEl.value = today;
+    if (endDateEl && !endDateEl.value) endDateEl.value = today;
+}
+
 function loadInventoryReport() {
     const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
     const token = localStorage.getItem("serveNowToken");
@@ -174,6 +190,56 @@ function loadManualOrderSalesReport() {
         .catch((err) => {
             console.error("Error loading manual order product sales report:", err);
             showError("Manual Order Product Sales Report", "Error loading manual order product sales report");
+        });
+}
+
+function loadStoreProductSalesReport() {
+    const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
+    const token = localStorage.getItem("serveNowToken");
+    const query = buildInventorySalesQuery();
+
+    fetch(`${apiBase}/api/admin/store-product-sales-report${query}`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                displayStoreProductSalesReport(data);
+            } else {
+                showError("Store Product Sales Report", data.message || "Failed to load store product sales report");
+            }
+        })
+        .catch((err) => {
+            console.error("Error loading store product sales report:", err);
+            showError("Store Product Sales Report", "Error loading store product sales report");
+        });
+}
+
+function loadCombinedProductSalesReport() {
+    const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
+    const token = localStorage.getItem("serveNowToken");
+    const query = buildInventorySalesQuery();
+
+    fetch(`${apiBase}/api/admin/combined-product-sales-report${query}`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                displayCombinedProductSalesReport(data);
+            } else {
+                showError("Combined Product Sales Report", data.message || "Failed to load combined product sales report");
+            }
+        })
+        .catch((err) => {
+            console.error("Error loading combined product sales report:", err);
+            showError("Combined Product Sales Report", "Error loading combined product sales report");
         });
 }
 
@@ -325,7 +391,7 @@ function displayManualOrderSalesReport(data) {
     currentManualSalesRows = rows;
     if (!rows.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="12" style="text-align:center;">No manual-order product sales found for the selected scope.</td>`;
+        row.innerHTML = `<td colspan="13" style="text-align:center;">No manual-order product sales found for the selected scope.</td>`;
         tbody.appendChild(row);
         return;
     }
@@ -344,6 +410,7 @@ function displayManualOrderSalesReport(data) {
             <td>${inventoryMoney(item.cost_price ?? item.average_cost_price)}</td>
             <td>${inventoryMoney(item.sale_price ?? item.average_sale_price)}</td>
             <td>${inventoryNumber(item.total_quantity)}</td>
+            <td>${inventoryMoney(item.total_cost)}</td>
             <td>${inventoryMoney(item.gross_sales)}</td>
             <td>${inventoryMoney(item.net_sales)}</td>
             <td>${inventoryMoney(item.estimated_profit)}</td>
@@ -360,6 +427,7 @@ function displayManualOrderSalesReport(data) {
             acc.costPrice += Number(item.cost_price ?? item.average_cost_price ?? 0) || 0;
             acc.salePrice += Number(item.sale_price ?? item.average_sale_price ?? 0) || 0;
             acc.qty += Number(item.total_quantity || 0) || 0;
+            acc.totalCost += Number(item.total_cost || 0) || 0;
             acc.grossSales += Number(item.gross_sales || 0) || 0;
             acc.netSales += Number(item.net_sales || 0) || 0;
             acc.profit += Number(item.estimated_profit || 0) || 0;
@@ -368,6 +436,7 @@ function displayManualOrderSalesReport(data) {
             costPrice: 0,
             salePrice: 0,
             qty: 0,
+            totalCost: 0,
             grossSales: 0,
             netSales: 0,
             profit: 0,
@@ -379,6 +448,7 @@ function displayManualOrderSalesReport(data) {
                 <td>${inventoryMoney(totals.costPrice)}</td>
                 <td>${inventoryMoney(totals.salePrice)}</td>
                 <td>${inventoryNumber(totals.qty)}</td>
+                <td>${inventoryMoney(totals.totalCost)}</td>
                 <td>${inventoryMoney(totals.grossSales)}</td>
                 <td>${inventoryMoney(totals.netSales)}</td>
                 <td>${inventoryMoney(totals.profit)}</td>
@@ -388,18 +458,174 @@ function displayManualOrderSalesReport(data) {
     }
 }
 
-function openManualSalesEditModal(orderItemId) {
-    const row = currentManualSalesRows.find((item) => Number(item.order_item_id) === Number(orderItemId));
-    if (!row) {
-        showError("Manual Order Product Sales Report", "Could not find the selected order line.");
+function displayStoreProductSalesReport(data) {
+    const tbody = document.getElementById("storeProductSalesBody");
+    const footer = document.getElementById("storeProductSalesFooter");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    if (footer) footer.innerHTML = "";
+
+    const rows = data.store_product_sales || [];
+    currentStoreProductSalesRows = rows;
+    if (!rows.length) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="13" style="text-align:center;">No store product sales found for the selected scope.</td>`;
+        tbody.appendChild(row);
         return;
     }
 
+    rows.forEach((item) => {
+        const row = document.createElement("tr");
+        row.dataset.orderItemId = String(item.order_item_id || "");
+        row.style.cursor = "pointer";
+        row.title = "Double-click to edit sale price and cost price";
+        row.innerHTML = `
+            <td>${item.store_name}</td>
+            <td>${item.category_name || "-"}</td>
+            <td>${item.product_name}</td>
+            <td>${item.order_number || item.order_numbers || "-"}</td>
+            <td>${inventoryTitleCase(item.order_status || "-")}</td>
+            <td>${inventoryMoney(item.cost_price ?? item.average_cost_price)}</td>
+            <td>${inventoryMoney(item.sale_price ?? item.average_sale_price)}</td>
+            <td>${inventoryNumber(item.total_quantity)}</td>
+            <td>${inventoryMoney(item.total_cost)}</td>
+            <td>${inventoryMoney(item.gross_sales)}</td>
+            <td>${inventoryMoney(item.net_sales)}</td>
+            <td>${inventoryMoney(item.estimated_profit)}</td>
+            <td>${inventoryDateTime(item.last_sold_at)}</td>
+        `;
+        row.addEventListener("dblclick", () => {
+            openStoreProductSalesEditModal(item.order_item_id);
+        });
+        tbody.appendChild(row);
+    });
+
+    if (footer) {
+        const totals = rows.reduce((acc, item) => {
+            acc.costPrice += Number(item.cost_price ?? item.average_cost_price ?? 0) || 0;
+            acc.salePrice += Number(item.sale_price ?? item.average_sale_price ?? 0) || 0;
+            acc.qty += Number(item.total_quantity || 0) || 0;
+            acc.totalCost += Number(item.total_cost || 0) || 0;
+            acc.grossSales += Number(item.gross_sales || 0) || 0;
+            acc.netSales += Number(item.net_sales || 0) || 0;
+            acc.profit += Number(item.estimated_profit || 0) || 0;
+            return acc;
+        }, {
+            costPrice: 0,
+            salePrice: 0,
+            qty: 0,
+            totalCost: 0,
+            grossSales: 0,
+            netSales: 0,
+            profit: 0,
+        });
+
+        footer.innerHTML = `
+            <tr style="background:#f8fafc; font-weight:700; border-top:2px solid #cbd5e1;">
+                <td colspan="5">Totals</td>
+                <td>${inventoryMoney(totals.costPrice)}</td>
+                <td>${inventoryMoney(totals.salePrice)}</td>
+                <td>${inventoryNumber(totals.qty)}</td>
+                <td>${inventoryMoney(totals.totalCost)}</td>
+                <td>${inventoryMoney(totals.grossSales)}</td>
+                <td>${inventoryMoney(totals.netSales)}</td>
+                <td>${inventoryMoney(totals.profit)}</td>
+                <td>-</td>
+            </tr>
+        `;
+    }
+}
+
+function displayCombinedProductSalesReport(data) {
+    const tbody = document.getElementById("combinedProductSalesBody");
+    const footer = document.getElementById("combinedProductSalesFooter");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    if (footer) footer.innerHTML = "";
+
+    const rows = data.combined_product_sales || [];
+    currentCombinedProductSalesRows = rows;
+    if (!rows.length) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="14" style="text-align:center;">No product sales found for the selected scope.</td>`;
+        tbody.appendChild(row);
+        return;
+    }
+
+    rows.forEach((item) => {
+        const row = document.createElement("tr");
+        row.dataset.orderItemId = String(item.order_item_id || "");
+        row.style.cursor = "pointer";
+        row.title = "Double-click to edit sale price and cost price";
+        row.innerHTML = `
+            <td>${inventoryTitleCase(item.sale_type || "-")}</td>
+            <td>${item.store_name}</td>
+            <td>${item.category_name || "-"}</td>
+            <td>${item.product_name}</td>
+            <td>${item.order_number || item.order_numbers || "-"}</td>
+            <td>${inventoryTitleCase(item.order_status || "-")}</td>
+            <td>${inventoryMoney(item.cost_price ?? item.average_cost_price)}</td>
+            <td>${inventoryMoney(item.sale_price ?? item.average_sale_price)}</td>
+            <td>${inventoryNumber(item.total_quantity)}</td>
+            <td>${inventoryMoney(item.total_cost)}</td>
+            <td>${inventoryMoney(item.gross_sales)}</td>
+            <td>${inventoryMoney(item.net_sales)}</td>
+            <td>${inventoryMoney(item.estimated_profit)}</td>
+            <td>${inventoryDateTime(item.last_sold_at)}</td>
+        `;
+        row.addEventListener("dblclick", () => {
+            openCombinedProductSalesEditModal(item.order_item_id);
+        });
+        tbody.appendChild(row);
+    });
+
+    if (footer) {
+        const totals = rows.reduce((acc, item) => {
+            acc.costPrice += Number(item.cost_price ?? item.average_cost_price ?? 0) || 0;
+            acc.salePrice += Number(item.sale_price ?? item.average_sale_price ?? 0) || 0;
+            acc.qty += Number(item.total_quantity || 0) || 0;
+            acc.totalCost += Number(item.total_cost || 0) || 0;
+            acc.grossSales += Number(item.gross_sales || 0) || 0;
+            acc.netSales += Number(item.net_sales || 0) || 0;
+            acc.profit += Number(item.estimated_profit || 0) || 0;
+            return acc;
+        }, {
+            costPrice: 0,
+            salePrice: 0,
+            qty: 0,
+            totalCost: 0,
+            grossSales: 0,
+            netSales: 0,
+            profit: 0,
+        });
+
+        footer.innerHTML = `
+            <tr style="background:#f8fafc; font-weight:700; border-top:2px solid #cbd5e1;">
+                <td colspan="6">Totals</td>
+                <td>${inventoryMoney(totals.costPrice)}</td>
+                <td>${inventoryMoney(totals.salePrice)}</td>
+                <td>${inventoryNumber(totals.qty)}</td>
+                <td>${inventoryMoney(totals.totalCost)}</td>
+                <td>${inventoryMoney(totals.grossSales)}</td>
+                <td>${inventoryMoney(totals.netSales)}</td>
+                <td>${inventoryMoney(totals.profit)}</td>
+                <td>-</td>
+            </tr>
+        `;
+    }
+}
+
+function fillSalesEditModal(row, options) {
     const setValue = (id, value) => {
         const el = document.getElementById(id);
         if (el) el.value = value ?? "";
     };
+    const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value ?? "";
+    };
 
+    setValue("manualSalesEditMode", options.mode || "manual");
     setValue("manualSalesEditOrderItemId", row.order_item_id);
     setValue("manualSalesEditOrderNumber", row.order_number || row.order_numbers || "");
     setValue("manualSalesEditStatus", inventoryTitleCase(row.order_status || ""));
@@ -409,32 +635,88 @@ function openManualSalesEditModal(orderItemId) {
     setValue("manualSalesEditSoldAt", inventoryDateTime(row.last_sold_at));
     setValue("manualSalesEditCostPrice", Number(row.cost_price ?? row.average_cost_price ?? 0).toFixed(2));
     setValue("manualSalesEditSalePrice", Number(row.sale_price ?? row.average_sale_price ?? 0).toFixed(2));
+    setText("manualSalesEditModalTitle", options.title || "Edit Pricing");
+    setText(
+        "manualSalesEditHelpText",
+        options.helpText || "Saving updates only this order line and recalculates the order total."
+    );
+}
 
+function openManualSalesEditModal(orderItemId) {
+    const row = currentManualSalesRows.find((item) => Number(item.order_item_id) === Number(orderItemId));
+    if (!row) {
+        showError("Manual Order Product Sales Report", "Could not find the selected order line.");
+        return;
+    }
+
+    fillSalesEditModal(row, {
+        mode: "manual",
+        title: "Edit Manual Order Pricing",
+        helpText: "Saving updates only this manual-order line and recalculates the order total.",
+    });
+    openInventoryModal("manualSalesEditModal");
+}
+
+function openStoreProductSalesEditModal(orderItemId) {
+    const row = currentStoreProductSalesRows.find((item) => Number(item.order_item_id) === Number(orderItemId));
+    if (!row) {
+        showError("Store Product Sales Report", "Could not find the selected order line.");
+        return;
+    }
+
+    fillSalesEditModal(row, {
+        mode: "store",
+        title: "Edit Store Sale Pricing",
+        helpText: "Saving updates only this store-sale line and recalculates the order total.",
+    });
+    openInventoryModal("manualSalesEditModal");
+}
+
+function openCombinedProductSalesEditModal(orderItemId) {
+    const row = currentCombinedProductSalesRows.find((item) => Number(item.order_item_id) === Number(orderItemId));
+    if (!row) {
+        showError("Combined Product Sales Report", "Could not find the selected order line.");
+        return;
+    }
+
+    const isManual = String(row.sale_type || "").trim().toLowerCase() === "manual";
+    fillSalesEditModal(row, {
+        mode: isManual ? "manual" : "store",
+        title: isManual ? "Edit Manual Order Pricing" : "Edit Store Sale Pricing",
+        helpText: isManual
+            ? "Saving updates only this manual-order line and recalculates the order total."
+            : "Saving updates only this store-sale line and recalculates the order total.",
+    });
     openInventoryModal("manualSalesEditModal");
 }
 
 async function saveManualSalesEdit() {
     const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
     const token = localStorage.getItem("serveNowToken");
+    const mode = String(document.getElementById("manualSalesEditMode")?.value || "manual").trim().toLowerCase();
     const orderItemId = Number(document.getElementById("manualSalesEditOrderItemId")?.value || 0);
     const costPrice = Number(document.getElementById("manualSalesEditCostPrice")?.value || 0);
     const salePrice = Number(document.getElementById("manualSalesEditSalePrice")?.value || 0);
+    const reportTitle = mode === "store" ? "Store Product Sales Report" : "Manual Order Product Sales Report";
+    const endpoint = mode === "store"
+        ? `${apiBase}/api/admin/store-product-sales-report/${orderItemId}`
+        : `${apiBase}/api/admin/manual-order-sales-report/${orderItemId}`;
 
     if (!Number.isInteger(orderItemId) || orderItemId <= 0) {
-        showError("Manual Order Product Sales Report", "Invalid order line selected.");
+        showError(reportTitle, "Invalid order line selected.");
         return;
     }
     if (!Number.isFinite(costPrice) || costPrice < 0) {
-        showWarning("Manual Order Product Sales Report", "Cost price must be a non-negative number.");
+        showWarning(reportTitle, "Cost price must be a non-negative number.");
         return;
     }
     if (!Number.isFinite(salePrice) || salePrice <= 0) {
-        showWarning("Manual Order Product Sales Report", "Sale price must be greater than zero.");
+        showWarning(reportTitle, "Sale price must be greater than zero.");
         return;
     }
 
     try {
-        const response = await fetch(`${apiBase}/api/admin/manual-order-sales-report/${orderItemId}`, {
+        const response = await fetch(endpoint, {
             method: "PUT",
             headers: {
                 "Content-Type": "application/json",
@@ -448,16 +730,16 @@ async function saveManualSalesEdit() {
         const data = await response.json();
 
         if (!data.success) {
-            showError("Manual Order Product Sales Report", data.message || "Failed to update manual order pricing.");
+            showError(reportTitle, data.message || "Failed to update pricing.");
             return;
         }
 
         closeInventoryModal("manualSalesEditModal");
-        showSuccess("Manual Order Product Sales Report", data.message || "Pricing updated successfully.");
-        loadManualOrderSalesReport();
+        showSuccess(reportTitle, data.message || "Pricing updated successfully.");
+        loadSelectedInventoryReport();
     } catch (err) {
-        console.error("Error updating manual order pricing:", err);
-        showError("Manual Order Product Sales Report", "Failed to update manual order pricing.");
+        console.error("Error updating sales pricing:", err);
+        showError(reportTitle, "Failed to update pricing.");
     }
 }
 
@@ -468,6 +750,8 @@ function switchInventoryReport(reportType) {
         "breakdownReportSection",
         "salesReportSection",
         "manualSalesReportSection",
+        "storeProductSalesReportSection",
+        "combinedProductSalesReportSection",
         "productDetailReportSection",
     ];
     sections.forEach((id) => {
@@ -492,6 +776,14 @@ function switchInventoryReport(reportType) {
         case "manual-sales":
             document.getElementById("manualSalesReportSection").style.display = "block";
             loadManualOrderSalesReport();
+            break;
+        case "store-product-sales":
+            document.getElementById("storeProductSalesReportSection").style.display = "block";
+            loadStoreProductSalesReport();
+            break;
+        case "combined-product-sales":
+            document.getElementById("combinedProductSalesReportSection").style.display = "block";
+            loadCombinedProductSalesReport();
             break;
         case "product-detail":
             document.getElementById("productDetailReportSection").style.display = "block";
@@ -584,7 +876,7 @@ function exportInventoryReportPdf() {
             inventoryMonetaryValue(r.financial_type, r.financial_value),
             r.is_available ? "Active" : "Inactive",
         ]);
-    } else if (activeType === "sales" || activeType === "manual-sales") {
+    } else if (activeType === "sales" || activeType === "manual-sales" || activeType === "store-product-sales" || activeType === "combined-product-sales") {
         showWarning("Inventory Report", "Sales report PDF export is not part of inventory PDF. Switch to an inventory view.");
         return;
     } else {
@@ -619,6 +911,8 @@ function exportInventoryReportPdf() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    ensureInventoryDateDefaults();
+
     const tabLinks = document.querySelectorAll(".tab-link");
     tabLinks.forEach((link) => {
         if (link.getAttribute("data-tab") === "inventory-report") {
@@ -648,8 +942,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (storeFilter) storeFilter.value = "";
             const startDateEl = document.getElementById("inventoryStartDate");
             const endDateEl = document.getElementById("inventoryEndDate");
-            if (startDateEl) startDateEl.value = "";
-            if (endDateEl) endDateEl.value = "";
+            const today = inventoryTodayDateValue();
+            if (startDateEl) startDateEl.value = today;
+            if (endDateEl) endDateEl.value = today;
             loadSelectedInventoryReport();
         });
     }

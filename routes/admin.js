@@ -957,6 +957,341 @@ router.get(
 );
 
 router.get(
+  "/store-product-sales-report",
+  authenticateToken,
+  requireStaffAccess,
+  async (req, res) => {
+    try {
+      await ensureManualOrderItemCostColumn(req.db);
+
+      if (!(await hasPermission(req, "report_sales"))) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message: "Permission denied: report_sales required",
+          });
+      }
+
+      const parsedStoreId = Number.parseInt(String(req.query.store_id || ""), 10);
+      const hasStoreFilter = Number.isInteger(parsedStoreId) && parsedStoreId > 0;
+      const startDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.start_date || "").trim())
+        ? String(req.query.start_date).trim()
+        : "";
+      const endDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.end_date || "").trim())
+        ? String(req.query.end_date).trim()
+        : "";
+      const manualProductDescription = "created from admin manual order";
+      const queryParams = [manualProductDescription];
+
+      if (hasStoreFilter) queryParams.push(parsedStoreId);
+      if (startDate) queryParams.push(startDate);
+      if (endDate) queryParams.push(endDate);
+
+      const [rows] = await req.db.execute(
+        `
+          SELECT
+              oi.id as order_item_id,
+              o.id as order_id,
+              o.order_number,
+              o.status as order_status,
+              o.created_at as sold_at,
+              s.id as store_id,
+              s.name as store_name,
+              c.name as category_name,
+              p.id as product_id,
+              p.name as product_name,
+              oi.quantity as total_quantity,
+              oi.price as sale_price,
+              COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0) as cost_price,
+              CASE
+                  WHEN oi.discount_type = 'percent'
+                       AND COALESCE(oi.discount_value, 0) > 0
+                    THEN oi.price * (oi.discount_value / 100)
+                  WHEN oi.discount_type = 'amount'
+                       AND COALESCE(oi.discount_value, 0) > 0
+                    THEN oi.discount_value
+                  ELSE 0
+              END as unit_discount,
+              oi.quantity * oi.price as gross_sales,
+              oi.quantity * (
+                  CASE
+                      WHEN oi.discount_type = 'percent'
+                           AND COALESCE(oi.discount_value, 0) > 0
+                        THEN oi.price * (oi.discount_value / 100)
+                      WHEN oi.discount_type = 'amount'
+                           AND COALESCE(oi.discount_value, 0) > 0
+                        THEN oi.discount_value
+                      ELSE 0
+                  END
+              ) as total_discount,
+              oi.quantity * (
+                  oi.price - (
+                      CASE
+                          WHEN oi.discount_type = 'percent'
+                               AND COALESCE(oi.discount_value, 0) > 0
+                            THEN oi.price * (oi.discount_value / 100)
+                          WHEN oi.discount_type = 'amount'
+                               AND COALESCE(oi.discount_value, 0) > 0
+                            THEN oi.discount_value
+                          ELSE 0
+                      END
+                  )
+              ) as net_sales,
+              oi.quantity * COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0) as total_cost,
+              oi.quantity * (
+                  oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+              ) as estimated_profit,
+              1 as total_orders,
+              1 as unique_customers
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          JOIN products p ON p.id = oi.product_id
+          JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+          LEFT JOIN categories c ON c.id = p.category_id
+          LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id
+              AND (
+                  (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id)
+                  OR
+                  (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+              )
+          WHERE LOWER(TRIM(COALESCE(p.description, ''))) != ?
+          AND o.status != 'cancelled'
+          ${hasStoreFilter ? "AND COALESCE(oi.store_id, p.store_id) = ?" : ""}
+          ${startDate ? "AND DATE(o.created_at) >= ?" : ""}
+          ${endDate ? "AND DATE(o.created_at) <= ?" : ""}
+          ORDER BY o.created_at DESC, o.order_number DESC, oi.id DESC
+        `,
+        queryParams
+      );
+
+      return res.json({
+        success: true,
+        store_product_sales: rows.map((row) => {
+          const totalQuantity = Number(row.total_quantity) || 0;
+          const grossSales = parseFloat(row.gross_sales) || 0;
+          const netSales = parseFloat(row.net_sales) || 0;
+          const costPrice = parseFloat(row.cost_price) || 0;
+          const salePrice = parseFloat(row.sale_price) || 0;
+          return {
+            order_item_id: Number(row.order_item_id) || null,
+            order_id: Number(row.order_id) || null,
+            order_number: row.order_number,
+            order_status: String(row.order_status || "").toLowerCase(),
+            store_id: Number(row.store_id) || null,
+            store_name: row.store_name,
+            category_name: row.category_name || "Uncategorized",
+            product_id: Number(row.product_id) || null,
+            product_name: row.product_name,
+            total_orders: 1,
+            total_quantity: totalQuantity,
+            sale_price: salePrice,
+            cost_price: costPrice,
+            gross_sales: grossSales,
+            total_discount: parseFloat(row.total_discount) || 0,
+            net_sales: netSales,
+            total_cost: parseFloat(row.total_cost) || 0,
+            estimated_profit: parseFloat(row.estimated_profit) || 0,
+            average_cost_price: costPrice,
+            average_unit_price: totalQuantity > 0 ? netSales / totalQuantity : 0,
+            average_sale_price: salePrice,
+            unique_customers: 1,
+            last_sold_at: row.sold_at || null,
+            order_numbers: String(row.order_number || "").trim(),
+          };
+        }),
+      });
+    } catch (err) {
+      console.error("Store product sales report error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch store product sales report",
+        error: err.message,
+      });
+    }
+  }
+);
+
+router.get(
+  "/combined-product-sales-report",
+  authenticateToken,
+  requireStaffAccess,
+  async (req, res) => {
+    try {
+      await ensureManualOrderItemCostColumn(req.db);
+
+      if (!(await hasPermission(req, "report_sales"))) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message: "Permission denied: report_sales required",
+          });
+      }
+
+      const parsedStoreId = Number.parseInt(String(req.query.store_id || ""), 10);
+      const hasStoreFilter = Number.isInteger(parsedStoreId) && parsedStoreId > 0;
+      const startDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.start_date || "").trim())
+        ? String(req.query.start_date).trim()
+        : "";
+      const endDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.end_date || "").trim())
+        ? String(req.query.end_date).trim()
+        : "";
+      const manualProductDescription = "created from admin manual order";
+      const queryParams = [manualProductDescription, manualProductDescription];
+
+      if (hasStoreFilter) queryParams.push(parsedStoreId);
+      if (startDate) queryParams.push(startDate);
+      if (endDate) queryParams.push(endDate);
+
+      const [rows] = await req.db.execute(
+        `
+          SELECT
+              oi.id as order_item_id,
+              o.id as order_id,
+              o.order_number,
+              o.status as order_status,
+              o.created_at as sold_at,
+              s.id as store_id,
+              s.name as store_name,
+              c.name as category_name,
+              p.id as product_id,
+              p.name as product_name,
+              CASE
+                  WHEN LOWER(TRIM(COALESCE(p.description, ''))) = ? THEN 'manual'
+                  ELSE 'store'
+              END as sale_type,
+              oi.quantity as total_quantity,
+              oi.price as sale_price,
+              COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0) as cost_price,
+              CASE
+                  WHEN oi.discount_type = 'percent'
+                       AND COALESCE(oi.discount_value, 0) > 0
+                    THEN oi.price * (oi.discount_value / 100)
+                  WHEN oi.discount_type = 'amount'
+                       AND COALESCE(oi.discount_value, 0) > 0
+                    THEN oi.discount_value
+                  ELSE 0
+              END as unit_discount,
+              oi.quantity * oi.price as gross_sales,
+              oi.quantity * (
+                  CASE
+                      WHEN oi.discount_type = 'percent'
+                           AND COALESCE(oi.discount_value, 0) > 0
+                        THEN oi.price * (oi.discount_value / 100)
+                      WHEN oi.discount_type = 'amount'
+                           AND COALESCE(oi.discount_value, 0) > 0
+                        THEN oi.discount_value
+                      ELSE 0
+                  END
+              ) as total_discount,
+              oi.quantity * (
+                  oi.price - (
+                      CASE
+                          WHEN oi.discount_type = 'percent'
+                               AND COALESCE(oi.discount_value, 0) > 0
+                            THEN oi.price * (oi.discount_value / 100)
+                          WHEN oi.discount_type = 'amount'
+                               AND COALESCE(oi.discount_value, 0) > 0
+                            THEN oi.discount_value
+                          ELSE 0
+                      END
+                  )
+              ) as net_sales,
+              oi.quantity * COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0) as total_cost,
+              CASE
+                  WHEN LOWER(TRIM(COALESCE(p.description, ''))) = ? THEN
+                      oi.quantity * (
+                          (
+                              oi.price - (
+                                  CASE
+                                      WHEN oi.discount_type = 'percent'
+                                           AND COALESCE(oi.discount_value, 0) > 0
+                                        THEN oi.price * (oi.discount_value / 100)
+                                      WHEN oi.discount_type = 'amount'
+                                           AND COALESCE(oi.discount_value, 0) > 0
+                                        THEN oi.discount_value
+                                      ELSE 0
+                                  END
+                              )
+                          ) - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                      )
+                  ELSE
+                      oi.quantity * (
+                          oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                      )
+              END as estimated_profit,
+              1 as total_orders,
+              1 as unique_customers
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          JOIN products p ON p.id = oi.product_id
+          JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+          LEFT JOIN categories c ON c.id = p.category_id
+          LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id
+              AND (
+                  (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id)
+                  OR
+                  (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+              )
+          WHERE o.status != 'cancelled'
+          ${hasStoreFilter ? "AND COALESCE(oi.store_id, p.store_id) = ?" : ""}
+          ${startDate ? "AND DATE(o.created_at) >= ?" : ""}
+          ${endDate ? "AND DATE(o.created_at) <= ?" : ""}
+          ORDER BY o.created_at DESC, o.order_number DESC, oi.id DESC
+        `,
+        queryParams
+      );
+
+      return res.json({
+        success: true,
+        combined_product_sales: rows.map((row) => {
+          const totalQuantity = Number(row.total_quantity) || 0;
+          const grossSales = parseFloat(row.gross_sales) || 0;
+          const netSales = parseFloat(row.net_sales) || 0;
+          const costPrice = parseFloat(row.cost_price) || 0;
+          const salePrice = parseFloat(row.sale_price) || 0;
+          return {
+            order_item_id: Number(row.order_item_id) || null,
+            order_id: Number(row.order_id) || null,
+            order_number: row.order_number,
+            order_status: String(row.order_status || "").toLowerCase(),
+            sale_type: String(row.sale_type || "").toLowerCase(),
+            store_id: Number(row.store_id) || null,
+            store_name: row.store_name,
+            category_name: row.category_name || "Uncategorized",
+            product_id: Number(row.product_id) || null,
+            product_name: row.product_name,
+            total_orders: 1,
+            total_quantity: totalQuantity,
+            sale_price: salePrice,
+            cost_price: costPrice,
+            gross_sales: grossSales,
+            total_discount: parseFloat(row.total_discount) || 0,
+            net_sales: netSales,
+            total_cost: parseFloat(row.total_cost) || 0,
+            estimated_profit: parseFloat(row.estimated_profit) || 0,
+            average_cost_price: costPrice,
+            average_unit_price: totalQuantity > 0 ? netSales / totalQuantity : 0,
+            average_sale_price: salePrice,
+            unique_customers: 1,
+            last_sold_at: row.sold_at || null,
+            order_numbers: String(row.order_number || "").trim(),
+          };
+        }),
+      });
+    } catch (err) {
+      console.error("Combined product sales report error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch combined product sales report",
+        error: err.message,
+      });
+    }
+  }
+);
+
+router.get(
   "/manual-order-sales-report",
   authenticateToken,
   requireStaffAccess,
@@ -1118,6 +1453,122 @@ router.get(
       return res.status(500).json({
         success: false,
         message: "Failed to fetch manual order sales report",
+        error: err.message,
+      });
+    }
+  }
+);
+
+router.put(
+  "/store-product-sales-report/:orderItemId",
+  authenticateToken,
+  requireStaffAccess,
+  async (req, res) => {
+    try {
+      await ensureManualOrderItemCostColumn(req.db);
+
+      if (!(await hasPermission(req, "action_edit_order"))) {
+        return res.status(403).json({
+          success: false,
+          message: "Permission denied: action_edit_order required",
+        });
+      }
+
+      const orderItemId = Number.parseInt(String(req.params.orderItemId || ""), 10);
+      const salePrice = Number(req.body?.sale_price);
+      const costPrice = Number(req.body?.cost_price);
+      const manualProductDescription = "created from admin manual order";
+
+      if (!Number.isInteger(orderItemId) || orderItemId <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid order item is required",
+        });
+      }
+      if (!Number.isFinite(salePrice) || salePrice <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Sale price must be greater than zero",
+        });
+      }
+      if (!Number.isFinite(costPrice) || costPrice < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Cost price must be a non-negative number",
+        });
+      }
+
+      const [rows] = await req.db.execute(
+        `
+          SELECT
+              oi.id as order_item_id,
+              oi.order_id,
+              oi.quantity,
+              oi.product_id,
+              o.order_number,
+              o.delivery_fee,
+              p.name as product_name,
+              LOWER(TRIM(COALESCE(p.description, ''))) as product_description
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          JOIN products p ON p.id = oi.product_id
+          WHERE oi.id = ?
+          LIMIT 1
+        `,
+        [orderItemId]
+      );
+
+      if (!rows.length) {
+        return res.status(404).json({
+          success: false,
+          message: "Order item not found",
+        });
+      }
+
+      const item = rows[0];
+      if (item.product_description === manualProductDescription) {
+        return res.status(400).json({
+          success: false,
+          message: "Manual-order product rows must be edited from the manual-order report",
+        });
+      }
+
+      await req.db.execute(
+        "UPDATE order_items SET price = ?, cost_price = ? WHERE id = ?",
+        [salePrice, costPrice, orderItemId]
+      );
+
+      const [subtotalRows] = await req.db.execute(
+        "SELECT COALESCE(SUM(quantity * price), 0) as subtotal FROM order_items WHERE order_id = ?",
+        [item.order_id]
+      );
+      const subtotal = parseFloat(subtotalRows?.[0]?.subtotal || 0) || 0;
+      const deliveryFee = parseFloat(item.delivery_fee || 0) || 0;
+      const totalAmount = Math.round((subtotal + deliveryFee) * 100) / 100;
+
+      await req.db.execute(
+        "UPDATE orders SET total_amount = ? WHERE id = ?",
+        [totalAmount, item.order_id]
+      );
+
+      return res.json({
+        success: true,
+        message: `Pricing updated for order ${item.order_number}`,
+        order_item_id: orderItemId,
+        order_id: Number(item.order_id) || null,
+        order_number: item.order_number,
+        product_id: Number(item.product_id) || null,
+        product_name: item.product_name,
+        quantity: Number(item.quantity) || 0,
+        sale_price: Math.round(salePrice * 100) / 100,
+        cost_price: Math.round(costPrice * 100) / 100,
+        total_amount: totalAmount,
+      });
+    } catch (err) {
+      console.error("Store product sales report update error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update store sale pricing",
         error: err.message,
       });
     }

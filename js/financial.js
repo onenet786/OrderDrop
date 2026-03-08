@@ -4582,6 +4582,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const generateStoreReportBtn = document.getElementById('generateStoreReportBtn');
     if (generateStoreReportBtn) generateStoreReportBtn.addEventListener('click', loadStoreReports);
 
+    const refreshStorePaymentTermReportBtn = document.getElementById('refreshStorePaymentTermReportBtn');
+    if (refreshStorePaymentTermReportBtn) refreshStorePaymentTermReportBtn.addEventListener('click', loadStorePaymentTermReport);
+
     const exportRiderReportBtn = document.getElementById('exportRiderReportBtn');
     if (exportRiderReportBtn) exportRiderReportBtn.addEventListener('click', exportRiderReport);
 
@@ -4906,13 +4909,14 @@ function displayStoreReports(stores) {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    stores.forEach(s => {
+    (stores || []).forEach(s => {
         const earnings = parseFloat(s.total_earnings || 0);
         const paid = parseFloat(s.total_paid || 0);
         const pending = parseFloat(s.pending_settlement || 0);
 
         const row = document.createElement('tr');
         row.innerHTML = `
+            <td>${s.payment_term || 'No Payment Term'}</td>
             <td>${s.name}</td>
             <td>${s.email}<br>${s.phone || '-'}</td>
             <td>${s.total_orders}</td>
@@ -4921,6 +4925,94 @@ function displayStoreReports(stores) {
             <td style="color: ${pending > 0 ? 'orange' : 'inherit'}">Rs  ${pending.toFixed(2)}</td>
         `;
         tbody.appendChild(row);
+    });
+}
+
+function getStorePaymentTermGroup(term) {
+    const normalized = String(term || '').toLowerCase().trim();
+    if (normalized === 'cash only') {
+        return 'Cash Only';
+    }
+    if (normalized === 'cash with discount') {
+        return 'Cash With Discount';
+    }
+    if (normalized === 'credit') {
+        return 'Credit';
+    }
+    if (normalized === 'credit with discount') {
+        return 'Credit With Discount';
+    }
+    return 'Other / Unassigned';
+}
+
+async function loadStorePaymentTermReport() {
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/reports/stores-detailed?store_id=all`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        if (data.success) {
+            displayStorePaymentTermGroups(data.stores || []);
+        }
+    } catch (error) {
+        console.error('Error loading store payment term report:', error);
+    }
+}
+
+function displayStorePaymentTermGroups(stores) {
+    const tbody = document.getElementById('storePaymentTermGroupsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const groupedStores = new Map();
+    (stores || []).forEach((store) => {
+        const groupName = getStorePaymentTermGroup(store.payment_term);
+        if (!groupedStores.has(groupName)) {
+            groupedStores.set(groupName, []);
+        }
+        groupedStores.get(groupName).push(store);
+    });
+
+    const orderedGroups = [
+        'Cash Only',
+        'Cash With Discount',
+        'Credit',
+        'Credit With Discount',
+        'Other / Unassigned'
+    ];
+
+    orderedGroups.forEach((groupName) => {
+        const storesInGroup = (groupedStores.get(groupName) || [])
+            .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+        if (!storesInGroup.length) return;
+
+        const totalPayable = storesInGroup.reduce(
+            (sum, store) => sum + Number(store.pending_settlement || 0),
+            0
+        );
+
+        const groupRow = document.createElement('tr');
+        groupRow.innerHTML = `
+            <td colspan="5" style="background:#f8fafc; font-weight:700;">
+                ${groupName} (${storesInGroup.length} store${storesInGroup.length === 1 ? '' : 's'}) |
+                Total Payable: Rs ${totalPayable.toFixed(2)}
+            </td>
+        `;
+        tbody.appendChild(groupRow);
+
+        storesInGroup.forEach((store) => {
+            const payable = Number(store.pending_settlement || 0);
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${groupName}</td>
+                <td>${store.payment_term || 'No Payment Term'}</td>
+                <td>${store.name}</td>
+                <td>${store.email}<br>${store.phone || '-'}</td>
+                <td style="color: ${payable > 0 ? 'orange' : 'inherit'}">Rs ${payable.toFixed(2)}</td>
+            `;
+            tbody.appendChild(row);
+        });
     });
 }
 
@@ -4957,8 +5049,9 @@ function exportStoreReport() {
         return;
     }
 
-    const headers = ['Store Name', 'Email', 'Phone', 'Total Orders', 'Total Earnings', 'Total Paid', 'Pending Settlement'];
+    const headers = ['Payment Term', 'Store Name', 'Email', 'Phone', 'Total Orders', 'Total Earnings', 'Total Paid', 'Pending Settlement'];
     const rows = lastStoreData.map(s => [
+        s.payment_term || 'No Payment Term',
         s.name,
         s.email,
         s.phone || '',

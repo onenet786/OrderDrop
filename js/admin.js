@@ -2562,6 +2562,9 @@ function switchTab(tabName) {
             if (typeof populateReportFilters === 'function') populateReportFilters();
             if (typeof loadStoreReports === 'function') loadStoreReports();
             break;
+        case 'store-payment-term-reports':
+            if (typeof loadStorePaymentTermReport === 'function') loadStorePaymentTermReport();
+            break;
         case 'settings':
             if (typeof loadDeliveryFeeSettings === 'function') loadDeliveryFeeSettings();
             break;

@@ -228,6 +228,14 @@
                 </li>
                 <li>
                   <a
+                    href="admin.html#store-payment-term-reports"
+                    class="tab-link"
+                    data-tab="store-payment-term-reports"
+                    ><i class="fas fa-layer-group"></i> Store Payment Term Report</a
+                  >
+                </li>
+                <li>
+                  <a
                     href="admin.html#financial-reports"
                     class="tab-link"
                     data-tab="financial-reports"
@@ -2325,6 +2333,8 @@
                   <option value="breakdown">Store-wise Category Breakdown</option>
                   <option value="sales">Store Sale-wise</option>
                   <option value="manual-sales">Manual Order Product Sales</option>
+                  <option value="store-product-sales">Store Product Sales</option>
+                  <option value="combined-product-sales">Combined Product Sales</option>
                   <option value="product-detail">Product Cost/Sale Detail</option>
                 </select>
             </div>
@@ -2452,6 +2462,7 @@
                     <th>Cost Price</th>
                     <th>Sale Price</th>
                     <th>Qty Sold</th>
+                    <th>Cost x Qty</th>
                     <th>Gross Sales</th>
                     <th>Net Sales</th>
                     <th>Profit</th>
@@ -2463,6 +2474,75 @@
                 </tbody>
                 <tfoot id="manualSalesFooter">
                   <!-- Manual order product sales totals will be loaded here -->
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div id="storeProductSalesReportSection" style="display: none">
+            <h3 style="margin-bottom: 1rem">Store Product Sales Report</h3>
+            <p style="margin: 0 0 0.75rem 0; color: #64748b; font-size: 0.9rem;">
+              Double-click any row to edit the sale price or cost price for that order line.
+            </p>
+            <div class="table-container">
+              <table id="storeProductSalesTable">
+                <thead>
+                  <tr>
+                    <th>Store</th>
+                    <th>Category</th>
+                    <th>Product</th>
+                    <th>Order Number</th>
+                    <th>Status</th>
+                    <th>Cost Price</th>
+                    <th>Sale Price</th>
+                    <th>Qty Sold</th>
+                    <th>Cost x Qty</th>
+                    <th>Gross Sales</th>
+                    <th>Net Sales</th>
+                    <th>Profit</th>
+                    <th>Last Sold</th>
+                  </tr>
+                </thead>
+                <tbody id="storeProductSalesBody">
+                  <!-- Store product sales data will be loaded here -->
+                </tbody>
+                <tfoot id="storeProductSalesFooter">
+                  <!-- Store product sales totals will be loaded here -->
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div id="combinedProductSalesReportSection" style="display: none">
+            <h3 style="margin-bottom: 1rem">Combined Product Sales Report</h3>
+            <p style="margin: 0 0 0.75rem 0; color: #64748b; font-size: 0.9rem;">
+              This combines store-sale and manual-order product rows. Double-click any row to edit the sale price or cost price for that order line.
+            </p>
+            <div class="table-container">
+              <table id="combinedProductSalesTable">
+                <thead>
+                  <tr>
+                    <th>Sale Type</th>
+                    <th>Store</th>
+                    <th>Category</th>
+                    <th>Product</th>
+                    <th>Order Number</th>
+                    <th>Status</th>
+                    <th>Cost Price</th>
+                    <th>Sale Price</th>
+                    <th>Qty Sold</th>
+                    <th>Cost x Qty</th>
+                    <th>Gross Sales</th>
+                    <th>Net Sales</th>
+                    <th>Profit</th>
+                    <th>Last Sold</th>
+                  </tr>
+                </thead>
+                <tbody id="combinedProductSalesBody">
+                  <!-- Combined product sales data will be loaded here -->
+                </tbody>
+                <tfoot id="combinedProductSalesFooter">
+                  <!-- Combined product sales totals will be loaded here -->
                 </tfoot>
               </table>
             </div>
@@ -2592,6 +2672,7 @@
             <table id="storeReportsTable">
               <thead>
                 <tr>
+                  <th>Payment Term</th>
                   <th>Store Name</th>
                   <th>Email / Phone</th>
                   <th>Total Orders</th>
@@ -2602,6 +2683,32 @@
               </thead>
               <tbody id="storeReportsTableBody">
                 <!-- Store report data will be loaded here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="store-payment-term-reports" class="tab-content">
+          <h2>Store Payment Term Report</h2>
+          <div class="filter-controls">
+            <button class="btn btn-primary" id="refreshStorePaymentTermReportBtn">
+              <i class="fas fa-sync"></i> Refresh Report
+            </button>
+          </div>
+
+          <div class="table-container" style="margin-top: 1rem">
+            <table id="storePaymentTermGroupsTable">
+              <thead>
+                <tr>
+                  <th>Payment Term Group</th>
+                  <th>Payment Term</th>
+                  <th>Store Name</th>
+                  <th>Email / Phone</th>
+                  <th>Payable Amount</th>
+                </tr>
+              </thead>
+              <tbody id="storePaymentTermGroupsTableBody">
+                <!-- Store payment-term group data will be loaded here -->
               </tbody>
             </table>
           </div>
@@ -4194,11 +4301,12 @@
     <div id="manualSalesEditModal" class="modal">
       <div class="modal-content" style="max-width: 640px;">
         <div class="modal-header">
-          <h2>Edit Manual Order Pricing</h2>
+          <h2 id="manualSalesEditModalTitle">Edit Manual Order Pricing</h2>
           <span class="close" data-modal="manualSalesEditModal">&times;</span>
         </div>
         <div class="modal-body" style="padding: 0;">
           <form id="manualSalesEditForm">
+            <input type="hidden" id="manualSalesEditMode" value="manual" />
             <input type="hidden" id="manualSalesEditOrderItemId" />
             <div class="stats-grid" style="grid-template-columns: 1fr 1fr; gap: 1rem;">
               <div class="form-group">
@@ -4234,7 +4342,7 @@
                 <input type="number" min="0.01" step="0.01" id="manualSalesEditSalePrice" required />
               </div>
             </div>
-            <p style="margin-top: 0.75rem; color: #64748b; font-size: 0.9rem;">
+            <p id="manualSalesEditHelpText" style="margin-top: 0.75rem; color: #64748b; font-size: 0.9rem;">
               Saving updates only this order line and recalculates the order total.
             </p>
           </form>
