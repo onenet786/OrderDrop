@@ -1309,6 +1309,8 @@ function initializeAdmin() {
     tabLinks.forEach(link => {
         link.addEventListener('click', function(e) {
             e.preventDefault();
+            const targetTab = this.dataset.tab;
+            const targetSection = this.dataset.statusSection;
             
             // Close any open dropdowns
             document.querySelectorAll('.nav-menu .dropdown.open').forEach(d => {
@@ -1324,7 +1326,10 @@ function initializeAdmin() {
                 }
             });
 
-            switchTab(this.dataset.tab);
+            if (targetTab === 'store-status' && targetSection) {
+                pendingStoreStatusSectionId = targetSection;
+            }
+            switchTab(targetTab);
         });
     });
 
@@ -2426,6 +2431,8 @@ function printOrderReport() {
     };
 }
 
+let pendingStoreStatusSectionId = null;
+
 function switchTab(tabName) {
     // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
@@ -2473,6 +2480,12 @@ function switchTab(tabName) {
             initializeStoreOfferCampaigns();
             loadCustomerFlashMessage();
             renderCustomerFlashPreview();
+            if (pendingStoreStatusSectionId) {
+                setTimeout(() => {
+                    scrollToStoreStatusSection(pendingStoreStatusSectionId);
+                    pendingStoreStatusSectionId = null;
+                }, 120);
+            }
             break;
         case 'products':
             loadProducts();
@@ -2806,11 +2819,23 @@ function humanFileSize(bytes) {
 }
 
 async function createBackup() {
+    const filenameInput = document.getElementById('backupFilename');
+    const requestedName = (filenameInput?.value || '').trim();
+    if (!requestedName) {
+        showError('Backup', 'Please enter a backup file name');
+        if (filenameInput) filenameInput.focus();
+        return;
+    }
+
     showInfo('Backup', 'Creating database backup...');
     try {
         const resp = await fetch(`${API_BASE}/api/admin/backup-db`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${authToken}` }
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ filename: requestedName })
         });
         const data = await resp.json();
         if (data.success) {
@@ -3763,6 +3788,13 @@ function toggleProductStatus(productId, currentStatus) {
 // Orders Management
 function getTodayDateString() {
     return new Date().toISOString().split('T')[0];
+}
+
+function scrollToStoreStatusSection(sectionId) {
+    if (!sectionId) return;
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function enhanceFilterSelectsToTypeable() {

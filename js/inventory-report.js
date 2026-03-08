@@ -1,4 +1,5 @@
 let currentInventoryData = null;
+let currentManualSalesRows = [];
 
 function inventoryMoney(value) {
     const n = Number(value);
@@ -9,6 +10,39 @@ function inventoryMoney(value) {
 function inventoryNumber(value) {
     const n = Number(value);
     return Number.isFinite(n) ? n.toLocaleString() : "0";
+}
+
+function inventoryDateTime(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
+}
+
+function inventoryTitleCase(value) {
+    return String(value || "")
+        .split("_")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+}
+
+function openInventoryModal(modalId) {
+    if (typeof showModal === "function") {
+        showModal(modalId);
+        return;
+    }
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.add("show");
+}
+
+function closeInventoryModal(modalId) {
+    if (typeof hideModal === "function") {
+        hideModal(modalId);
+        return;
+    }
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.remove("show");
 }
 
 function inventoryMonetaryType(value) {
@@ -44,6 +78,28 @@ function getSelectedInventoryStoreId() {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+function getSelectedInventoryDateRange() {
+    const startDate = (document.getElementById("inventoryStartDate")?.value || "").trim();
+    const endDate = (document.getElementById("inventoryEndDate")?.value || "").trim();
+    return {
+        startDate,
+        endDate,
+    };
+}
+
+function buildInventorySalesQuery() {
+    const params = new URLSearchParams();
+    const storeId = getSelectedInventoryStoreId();
+    const { startDate, endDate } = getSelectedInventoryDateRange();
+
+    if (storeId) params.set("store_id", String(storeId));
+    if (startDate) params.set("start_date", startDate);
+    if (endDate) params.set("end_date", endDate);
+
+    const query = params.toString();
+    return query ? `?${query}` : "";
+}
+
 function loadInventoryReport() {
     const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
     const token = localStorage.getItem("serveNowToken");
@@ -74,8 +130,9 @@ function loadInventoryReport() {
 function loadStoreSalesReport() {
     const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
     const token = localStorage.getItem("serveNowToken");
+    const query = buildInventorySalesQuery();
 
-    fetch(`${apiBase}/api/admin/store-sales-report`, {
+    fetch(`${apiBase}/api/admin/store-sales-report${query}`, {
         method: "GET",
         headers: {
             Authorization: `Bearer ${token}`,
@@ -92,6 +149,31 @@ function loadStoreSalesReport() {
         .catch((err) => {
             console.error("Error loading store sales report:", err);
             showError("Store Sales Report", "Error loading store sales report");
+        });
+}
+
+function loadManualOrderSalesReport() {
+    const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
+    const token = localStorage.getItem("serveNowToken");
+    const query = buildInventorySalesQuery();
+
+    fetch(`${apiBase}/api/admin/manual-order-sales-report${query}`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                displayManualOrderSalesReport(data);
+            } else {
+                showError("Manual Order Product Sales Report", data.message || "Failed to load manual order product sales report");
+            }
+        })
+        .catch((err) => {
+            console.error("Error loading manual order product sales report:", err);
+            showError("Manual Order Product Sales Report", "Error loading manual order product sales report");
         });
 }
 
@@ -224,12 +306,159 @@ function displayStoreSalesReport(data) {
         row.innerHTML = `
             <td>${store.store_name}</td>
             <td>${inventoryNumber(store.total_orders)}</td>
-            <td>${inventoryMoney(store.total_sales)}</td>
+            <td>${inventoryMoney(store.total_sales_net)}</td>
             <td>${inventoryMoney(store.average_order_value)}</td>
             <td>${inventoryNumber(store.unique_customers)}</td>
         `;
         tbody.appendChild(row);
     });
+}
+
+function displayManualOrderSalesReport(data) {
+    const tbody = document.getElementById("manualSalesBody");
+    const footer = document.getElementById("manualSalesFooter");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    if (footer) footer.innerHTML = "";
+
+    const rows = data.manual_product_sales || [];
+    currentManualSalesRows = rows;
+    if (!rows.length) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="12" style="text-align:center;">No manual-order product sales found for the selected scope.</td>`;
+        tbody.appendChild(row);
+        return;
+    }
+
+    rows.forEach((item) => {
+        const row = document.createElement("tr");
+        row.dataset.orderItemId = String(item.order_item_id || "");
+        row.style.cursor = "pointer";
+        row.title = "Double-click to edit sale price and cost price";
+        row.innerHTML = `
+            <td>${item.store_name}</td>
+            <td>${item.category_name || "-"}</td>
+            <td>${item.product_name}</td>
+            <td>${item.order_number || item.order_numbers || "-"}</td>
+            <td>${inventoryTitleCase(item.order_status || "-")}</td>
+            <td>${inventoryMoney(item.cost_price ?? item.average_cost_price)}</td>
+            <td>${inventoryMoney(item.sale_price ?? item.average_sale_price)}</td>
+            <td>${inventoryNumber(item.total_quantity)}</td>
+            <td>${inventoryMoney(item.gross_sales)}</td>
+            <td>${inventoryMoney(item.net_sales)}</td>
+            <td>${inventoryMoney(item.estimated_profit)}</td>
+            <td>${inventoryDateTime(item.last_sold_at)}</td>
+        `;
+        row.addEventListener("dblclick", () => {
+            openManualSalesEditModal(item.order_item_id);
+        });
+        tbody.appendChild(row);
+    });
+
+    if (footer) {
+        const totals = rows.reduce((acc, item) => {
+            acc.costPrice += Number(item.cost_price ?? item.average_cost_price ?? 0) || 0;
+            acc.salePrice += Number(item.sale_price ?? item.average_sale_price ?? 0) || 0;
+            acc.qty += Number(item.total_quantity || 0) || 0;
+            acc.grossSales += Number(item.gross_sales || 0) || 0;
+            acc.netSales += Number(item.net_sales || 0) || 0;
+            acc.profit += Number(item.estimated_profit || 0) || 0;
+            return acc;
+        }, {
+            costPrice: 0,
+            salePrice: 0,
+            qty: 0,
+            grossSales: 0,
+            netSales: 0,
+            profit: 0,
+        });
+
+        footer.innerHTML = `
+            <tr style="background:#f8fafc; font-weight:700; border-top:2px solid #cbd5e1;">
+                <td colspan="5">Totals</td>
+                <td>${inventoryMoney(totals.costPrice)}</td>
+                <td>${inventoryMoney(totals.salePrice)}</td>
+                <td>${inventoryNumber(totals.qty)}</td>
+                <td>${inventoryMoney(totals.grossSales)}</td>
+                <td>${inventoryMoney(totals.netSales)}</td>
+                <td>${inventoryMoney(totals.profit)}</td>
+                <td>-</td>
+            </tr>
+        `;
+    }
+}
+
+function openManualSalesEditModal(orderItemId) {
+    const row = currentManualSalesRows.find((item) => Number(item.order_item_id) === Number(orderItemId));
+    if (!row) {
+        showError("Manual Order Product Sales Report", "Could not find the selected order line.");
+        return;
+    }
+
+    const setValue = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value ?? "";
+    };
+
+    setValue("manualSalesEditOrderItemId", row.order_item_id);
+    setValue("manualSalesEditOrderNumber", row.order_number || row.order_numbers || "");
+    setValue("manualSalesEditStatus", inventoryTitleCase(row.order_status || ""));
+    setValue("manualSalesEditStore", row.store_name || "");
+    setValue("manualSalesEditProduct", row.product_name || "");
+    setValue("manualSalesEditQty", row.total_quantity || 0);
+    setValue("manualSalesEditSoldAt", inventoryDateTime(row.last_sold_at));
+    setValue("manualSalesEditCostPrice", Number(row.cost_price ?? row.average_cost_price ?? 0).toFixed(2));
+    setValue("manualSalesEditSalePrice", Number(row.sale_price ?? row.average_sale_price ?? 0).toFixed(2));
+
+    openInventoryModal("manualSalesEditModal");
+}
+
+async function saveManualSalesEdit() {
+    const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
+    const token = localStorage.getItem("serveNowToken");
+    const orderItemId = Number(document.getElementById("manualSalesEditOrderItemId")?.value || 0);
+    const costPrice = Number(document.getElementById("manualSalesEditCostPrice")?.value || 0);
+    const salePrice = Number(document.getElementById("manualSalesEditSalePrice")?.value || 0);
+
+    if (!Number.isInteger(orderItemId) || orderItemId <= 0) {
+        showError("Manual Order Product Sales Report", "Invalid order line selected.");
+        return;
+    }
+    if (!Number.isFinite(costPrice) || costPrice < 0) {
+        showWarning("Manual Order Product Sales Report", "Cost price must be a non-negative number.");
+        return;
+    }
+    if (!Number.isFinite(salePrice) || salePrice <= 0) {
+        showWarning("Manual Order Product Sales Report", "Sale price must be greater than zero.");
+        return;
+    }
+
+    try {
+        const response = await fetch(`${apiBase}/api/admin/manual-order-sales-report/${orderItemId}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                cost_price: costPrice,
+                sale_price: salePrice,
+            }),
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+            showError("Manual Order Product Sales Report", data.message || "Failed to update manual order pricing.");
+            return;
+        }
+
+        closeInventoryModal("manualSalesEditModal");
+        showSuccess("Manual Order Product Sales Report", data.message || "Pricing updated successfully.");
+        loadManualOrderSalesReport();
+    } catch (err) {
+        console.error("Error updating manual order pricing:", err);
+        showError("Manual Order Product Sales Report", "Failed to update manual order pricing.");
+    }
 }
 
 function switchInventoryReport(reportType) {
@@ -238,6 +467,7 @@ function switchInventoryReport(reportType) {
         "categoryReportSection",
         "breakdownReportSection",
         "salesReportSection",
+        "manualSalesReportSection",
         "productDetailReportSection",
     ];
     sections.forEach((id) => {
@@ -259,6 +489,10 @@ function switchInventoryReport(reportType) {
             document.getElementById("salesReportSection").style.display = "block";
             loadStoreSalesReport();
             break;
+        case "manual-sales":
+            document.getElementById("manualSalesReportSection").style.display = "block";
+            loadManualOrderSalesReport();
+            break;
         case "product-detail":
             document.getElementById("productDetailReportSection").style.display = "block";
             break;
@@ -266,6 +500,11 @@ function switchInventoryReport(reportType) {
             document.getElementById("storeReportSection").style.display = "block";
             break;
     }
+}
+
+function loadSelectedInventoryReport() {
+    const activeType = (document.getElementById("inventoryReportSelect") || {}).value || "store";
+    switchInventoryReport(activeType);
 }
 
 function exportInventoryReportPdf() {
@@ -345,7 +584,7 @@ function exportInventoryReportPdf() {
             inventoryMonetaryValue(r.financial_type, r.financial_value),
             r.is_available ? "Active" : "Inactive",
         ]);
-    } else if (activeType === "sales") {
+    } else if (activeType === "sales" || activeType === "manual-sales") {
         showWarning("Inventory Report", "Sales report PDF export is not part of inventory PDF. Switch to an inventory view.");
         return;
     } else {
@@ -400,17 +639,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const applyBtn = document.getElementById("inventoryApplyFilterBtn");
-    if (applyBtn) applyBtn.addEventListener("click", loadInventoryReport);
+    if (applyBtn) applyBtn.addEventListener("click", loadSelectedInventoryReport);
 
     const clearBtn = document.getElementById("inventoryClearFilterBtn");
     if (clearBtn) {
         clearBtn.addEventListener("click", () => {
             const storeFilter = document.getElementById("inventoryStoreFilter");
             if (storeFilter) storeFilter.value = "";
-            loadInventoryReport();
+            const startDateEl = document.getElementById("inventoryStartDate");
+            const endDateEl = document.getElementById("inventoryEndDate");
+            if (startDateEl) startDateEl.value = "";
+            if (endDateEl) endDateEl.value = "";
+            loadSelectedInventoryReport();
         });
     }
 
     const pdfBtn = document.getElementById("inventoryExportPdfBtn");
     if (pdfBtn) pdfBtn.addEventListener("click", exportInventoryReportPdf);
+
+    const saveManualSalesEditBtn = document.getElementById("saveManualSalesEditBtn");
+    if (saveManualSalesEditBtn) {
+        saveManualSalesEditBtn.addEventListener("click", saveManualSalesEdit);
+    }
+
+    const manualSalesEditForm = document.getElementById("manualSalesEditForm");
+    if (manualSalesEditForm) {
+        manualSalesEditForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            saveManualSalesEdit();
+        });
+    }
 });

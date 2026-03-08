@@ -424,6 +424,25 @@ function initializeFinancialForms() {
                 if (riderGroup) riderGroup.style.display = 'none';
                 if (riderSelect) riderSelect.value = '';
             }
+
+            const storeGroup = document.getElementById('reportStoreSelectGroup');
+            const storeSelect = document.getElementById('reportStoreSelect');
+            if (storeGroup) {
+                storeGroup.style.display = (
+                    this.value === 'order_wise_sale_summary' ||
+                    this.value === 'store_payable_reconciliation' ||
+                    this.value === 'unsettled_amounts_report' ||
+                    this.value === 'store_order_settlement_report' ||
+                    this.value === 'periodic_sales_report'
+                ) ? 'block' : 'none';
+            }
+            if (storeSelect && (!storeGroup || storeGroup.style.display === 'none')) {
+                storeSelect.value = '';
+            }
+
+            if (this.value === 'periodic_credit_cash_report') {
+                setDatesForPeriod('today', 'reportPeriodFrom', 'reportPeriodTo');
+            }
         });
     }
 
@@ -2426,11 +2445,15 @@ async function payExpense(id) {
 
 function generateFinancialReport() {
     document.getElementById('generateReportForm').reset();
+    const reportType = document.getElementById('reportTypeFilter')?.value || 'monthly_summary';
     
     // Set default dates for the report period
-    setDatesForPeriod('month', 'reportPeriodFrom', 'reportPeriodTo');
+    setDatesForPeriod(
+        reportType === 'periodic_credit_cash_report' ? 'today' : 'month',
+        'reportPeriodFrom',
+        'reportPeriodTo'
+    );
 
-    const reportType = document.getElementById('reportTypeFilter')?.value || 'monthly_summary';
     document.getElementById('reportTypeModal').value = reportType;
     populateReportRidersDropdown(); // Populate riders when modal opens
     populateReportStoresDropdown(); // Populate stores when modal opens
@@ -2520,7 +2543,7 @@ async function submitGenerateReport() {
     )) {
         payload.rider_id = riderId;
     }
-    if (storeId && reportType === 'order_wise_sale_summary') {
+    if (storeId && (reportType === 'order_wise_sale_summary' || reportType === 'periodic_sales_report')) {
         payload.store_id = storeId;
     }
     if (storeId && (reportType === 'store_payable_reconciliation' || reportType === 'unsettled_amounts_report')) {
@@ -2624,6 +2647,250 @@ async function saveGeneratedReport(payload) {
     }
 }
 
+function formatFinancialReportCurrency(value) {
+    return `Rs ${parseFloat(value || 0).toFixed(2)}`;
+}
+
+function formatFinancialReportDate(value) {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString();
+}
+
+function getFinancialReportSortTime(value) {
+    if (!value) return 0;
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+    const asNumber = Date.parse(String(value));
+    return Number.isNaN(asNumber) ? 0 : asNumber;
+}
+
+function renderFinancialReportTable(title, headers, rows, footerRow = null) {
+    let html = `<h4 style="margin:16px 0 8px 0;">${title}</h4>`;
+    html += '<div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.84em"><thead><tr>';
+    headers.forEach((header) => {
+        html += `<th>${header}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+
+    if (rows.length === 0) {
+        html += `<tr><td colspan="${headers.length}" style="text-align:center; color:#64748b;">No records found</td></tr>`;
+    } else {
+        rows.forEach((cells) => {
+            html += '<tr>';
+            cells.forEach((cell) => {
+                html += `<td>${cell}</td>`;
+            });
+            html += '</tr>';
+        });
+    }
+
+    if (footerRow) {
+        html += '<tr style="font-weight:bold; background:#f8fafc;">';
+        footerRow.forEach((cell) => {
+            if (cell && typeof cell === 'object' && Object.prototype.hasOwnProperty.call(cell, 'colspan')) {
+                html += `<td colspan="${cell.colspan}">${cell.value || ''}</td>`;
+            } else {
+                html += `<td>${cell || ''}</td>`;
+            }
+        });
+        html += '</tr>';
+    }
+
+    html += '</tbody></table></div>';
+    return html;
+}
+
+function groupRiderFuelEntries(entries) {
+    const groups = new Map();
+    (entries || []).forEach((entry) => {
+        const riderName = `${entry.first_name || ''} ${entry.last_name || ''}`.trim() || 'Unknown Rider';
+        if (!groups.has(riderName)) {
+            groups.set(riderName, {
+                rider_name: riderName,
+                entries: [],
+                total_distance: 0,
+                total_cost: 0
+            });
+        }
+        const group = groups.get(riderName);
+        group.entries.push(entry);
+        group.total_distance += parseFloat(entry.distance || 0);
+        group.total_cost += parseFloat(entry.fuel_cost || 0);
+    });
+
+    return Array.from(groups.values()).map((group) => ({
+        ...group,
+        total_distance: Number(group.total_distance.toFixed(2)),
+        total_cost: Number(group.total_cost.toFixed(2))
+    }));
+}
+
+function renderPeriodicSalesReportHtml(data) {
+    const summary = data.summary || {};
+    const closing = data.closing_summary || {};
+    let html = '<h3>Periodic Sales Report</h3>';
+
+    html += renderFinancialReportTable(
+        'Sales By Store / Product',
+        ['Type', 'Store', 'Product', 'Cost Price', 'Sale Price', 'Qty Sold', 'Gross Sales', 'Net Sales', 'Profit'],
+        (data.rows || []).map((r) => [
+            String(r.sale_type || 'store').toUpperCase(),
+            r.store_name || '-',
+            r.product_name || '-',
+            formatFinancialReportCurrency(r.cost_price || 0),
+            formatFinancialReportCurrency(r.sale_price || 0),
+            parseInt(r.qty_sold || 0),
+            formatFinancialReportCurrency(r.gross_sales || 0),
+            formatFinancialReportCurrency(r.net_sales || 0),
+            formatFinancialReportCurrency(r.profit || 0)
+        ]),
+        [
+            'TOTAL',
+            { colspan: 2, value: '' },
+            formatFinancialReportCurrency(summary.average_cost_price || 0),
+            formatFinancialReportCurrency(summary.average_sale_price || 0),
+            parseInt(summary.total_qty_sold || 0),
+            formatFinancialReportCurrency(summary.gross_sales || 0),
+            formatFinancialReportCurrency(summary.net_sales || 0),
+            formatFinancialReportCurrency(summary.profit || 0)
+        ]
+    );
+
+    html += renderFinancialReportTable(
+        'Delivery Charges',
+        ['Order #', 'Date', 'Rider', 'Stores', 'Fee'],
+        (data.delivery_rows || []).map((row) => [
+            row.order_number || '-',
+            formatFinancialReportDate(row.order_date),
+            row.rider_name || '-',
+            row.store_names || '-',
+            formatFinancialReportCurrency(row.delivery_fee || 0)
+        ]),
+        [
+            'TOTAL',
+            { colspan: 3, value: '' },
+            formatFinancialReportCurrency(data.delivery_summary?.total_delivery_charges || 0)
+        ]
+    );
+
+    html += renderFinancialReportTable(
+        'Store Settlement Payments',
+        ['Settlement #', 'Date', 'Store', 'Orders Amount', 'Commissions', 'Deductions', 'Net Paid'],
+        (data.settlement_rows || []).map((row) => [
+            row.settlement_number || '-',
+            formatFinancialReportDate(row.settlement_date),
+            row.store_name || '-',
+            formatFinancialReportCurrency(row.total_orders_amount || 0),
+            formatFinancialReportCurrency(row.commissions || 0),
+            formatFinancialReportCurrency(row.deductions || 0),
+            formatFinancialReportCurrency(row.net_amount || 0)
+        ]),
+        [
+            'TOTAL',
+            { colspan: 2, value: '' },
+            formatFinancialReportCurrency(data.settlement_summary?.total_orders_amount || 0),
+            formatFinancialReportCurrency(data.settlement_summary?.total_commissions || 0),
+            formatFinancialReportCurrency(data.settlement_summary?.total_deductions || 0),
+            formatFinancialReportCurrency(data.settlement_summary?.total_paid_settlements || 0)
+        ]
+    );
+
+    html += renderFinancialReportTable(
+        'Fuel Payments',
+        ['Movement #', 'Date', 'Rider', 'Amount', 'Description'],
+        (data.fuel_rows || []).map((row) => [
+            row.movement_number || '-',
+            formatFinancialReportDate(row.movement_date),
+            row.rider_name || '-',
+            formatFinancialReportCurrency(row.amount || 0),
+            row.description || '-'
+        ]),
+        [
+            'TOTAL',
+            { colspan: 2, value: '' },
+            formatFinancialReportCurrency(data.fuel_summary?.total_fuel_payments || 0),
+            ''
+        ]
+    );
+
+    html += renderFinancialReportTable(
+        'Expenses',
+        ['Expense #', 'Date', 'Category', 'Vendor', 'Amount', 'Description'],
+        (data.expense_rows || []).map((row) => [
+            row.expense_number || '-',
+            formatFinancialReportDate(row.expense_date),
+            row.category || '-',
+            row.vendor_name || '-',
+            formatFinancialReportCurrency(row.amount || 0),
+            row.description || '-'
+        ]),
+        [
+            'TOTAL',
+            { colspan: 3, value: '' },
+            formatFinancialReportCurrency(data.expense_summary?.total_paid_expenses || 0),
+            ''
+        ]
+    );
+
+    html += renderFinancialReportTable(
+        'Closing Summary',
+        ['Cost Price', 'Sale Price', 'Qty Sold', 'Gross Sales', 'Net Sales', 'Profit', 'Delivery Charges', 'Store Settlements', 'Fuel Payments', 'Expenses', 'Net Closing'],
+        [[
+            formatFinancialReportCurrency(closing.cost_price || 0),
+            formatFinancialReportCurrency(closing.sale_price || 0),
+            parseInt(closing.qty_sold || 0),
+            formatFinancialReportCurrency(closing.gross_sales || 0),
+            formatFinancialReportCurrency(closing.net_sales || 0),
+            formatFinancialReportCurrency(closing.profit || 0),
+            formatFinancialReportCurrency(closing.delivery_charges || 0),
+            formatFinancialReportCurrency(closing.store_settlement_payments || 0),
+            formatFinancialReportCurrency(closing.fuel_payments || 0),
+            formatFinancialReportCurrency(closing.expenses || 0),
+            formatFinancialReportCurrency(closing.net_closing || 0)
+        ]]
+    );
+
+    return html;
+}
+
+function renderPeriodicCreditCashReportHtml(data) {
+    const summary = data.summary || {};
+    const sortedRows = [...(data.rows || [])].sort((a, b) => getFinancialReportSortTime(b.report_date) - getFinancialReportSortTime(a.report_date));
+    let html = '<h3>Periodic Credit Cash Report</h3>';
+
+    html += renderFinancialReportTable(
+        'Date Wise Credit / Cash Summary',
+        ['Date', 'Credit Sale', 'Cash Sale', 'Profit', 'Delivery Charges', 'Total'],
+        sortedRows.map((row) => [
+            formatFinancialReportDate(row.report_date),
+            formatFinancialReportCurrency(row.credit_sale || 0),
+            formatFinancialReportCurrency(row.cash_sale || 0),
+            formatFinancialReportCurrency(row.profit || 0),
+            formatFinancialReportCurrency(row.delivery_charges || 0),
+            formatFinancialReportCurrency(row.total || 0)
+        ]),
+        [
+            'TOTAL',
+            formatFinancialReportCurrency(summary.total_credit_sale || 0),
+            formatFinancialReportCurrency(summary.total_cash_sale || 0),
+            formatFinancialReportCurrency(summary.total_profit || 0),
+            formatFinancialReportCurrency(summary.total_delivery_charges || 0),
+            formatFinancialReportCurrency(summary.grand_total || 0)
+        ]
+    );
+
+    html += `<div style="margin-top: 15px; font-size: 1.0em; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px;">
+        <strong>Total Credit:</strong> ${formatFinancialReportCurrency(summary.total_credit_sale || 0)} |
+        <strong>Total Cash Sale:</strong> ${formatFinancialReportCurrency(summary.total_cash_sale || 0)} |
+        <strong>Total Profit:</strong> ${formatFinancialReportCurrency(summary.total_profit || 0)} |
+        <strong>Total Delivery Charges:</strong> ${formatFinancialReportCurrency(summary.total_delivery_charges || 0)} |
+        <strong>Grand Total:</strong> ${formatFinancialReportCurrency(summary.grand_total || 0)}
+    </div>`;
+
+    return html;
+}
+
 function generatePDF(reportId) {
     const report = currentReports.find(r => r.id === reportId);
     if (!report) return;
@@ -2651,33 +2918,35 @@ function generatePDF(reportId) {
         doc.text(`Period: ${new Date(report.period_from).toLocaleDateString()} - ${report.period_to ? new Date(report.period_to).toLocaleDateString() : 'Now'}`, 14, 47);
     }
 
-    // Financial Summary
-    doc.setFontSize(12);
-    doc.setTextColor(0);
-    doc.text('Financial Summary', 14, 58);
-    
-    doc.autoTable({
-        startY: 62,
-        head: [['Category', 'Amount']],
-        body: [
-            ['Total Income', `Rs ${parseFloat(report.total_income).toFixed(2)}`],
-            ['Total Expense', `Rs ${parseFloat(report.total_expense).toFixed(2)}`],
-            ['Total Settlements', `Rs ${parseFloat(report.total_commissions).toFixed(2)}`],
-            ['Net Profit', `Rs ${parseFloat(report.net_profit).toFixed(2)}`]
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [41, 128, 185] },
-        styles: { fontSize: 10, cellPadding: 3 }
-    });
-
-    // Detailed Data
     let data;
     try {
         data = typeof report.data === 'string' ? JSON.parse(report.data) : report.data;
     } catch (e) { data = null; }
 
+    const hideFinancialSummary = data && (data.type === 'rider_fuel' || data.type === 'rider_petrol');
+
+    if (!hideFinancialSummary) {
+        doc.setFontSize(12);
+        doc.setTextColor(0);
+        doc.text('Financial Summary', 14, 58);
+        
+        doc.autoTable({
+            startY: 62,
+            head: [['Category', 'Amount']],
+            body: [
+                ['Total Income', `Rs ${parseFloat(report.total_income).toFixed(2)}`],
+                ['Total Expense', `Rs ${parseFloat(report.total_expense).toFixed(2)}`],
+                ['Total Settlements', `Rs ${parseFloat(report.total_commissions).toFixed(2)}`],
+                ['Net Profit', `Rs ${parseFloat(report.net_profit).toFixed(2)}`]
+            ],
+            theme: 'striped',
+            headStyles: { fillColor: [41, 128, 185] },
+            styles: { fontSize: 10, cellPadding: 3 }
+        });
+    }
+
     if (data) {
-        let startY = doc.lastAutoTable.finalY + 15;
+        let startY = hideFinancialSummary ? 58 : doc.lastAutoTable.finalY + 15;
         doc.setFontSize(12);
         
         if (data.type === 'rider_cash') {
@@ -2811,6 +3080,197 @@ function generatePDF(reportId) {
                     o.store_names,
                     `Rs ${parseFloat(o.delivery_fee).toFixed(2)}`
                 ]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'periodic_sales_report') {
+            doc.text('Periodic Sales Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Rows: ${parseInt(data.summary.total_rows || 0)} | Qty: ${parseInt(data.summary.total_qty_sold || 0)} | Cost: ${formatFinancialReportCurrency(data.summary.total_cost || 0)} | Gross: ${formatFinancialReportCurrency(data.summary.gross_sales || 0)} | Net: ${formatFinancialReportCurrency(data.summary.net_sales || 0)} | Profit: ${formatFinancialReportCurrency(data.summary.profit || 0)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 10;
+            }
+            const periodicSalesBody = (data.rows || []).map((r) => [
+                String(r.sale_type || 'store').toUpperCase(),
+                r.store_name || '-',
+                r.product_name || '-',
+                formatFinancialReportCurrency(r.cost_price || 0),
+                formatFinancialReportCurrency(r.sale_price || 0),
+                parseInt(r.qty_sold || 0),
+                formatFinancialReportCurrency(r.gross_sales || 0),
+                formatFinancialReportCurrency(r.net_sales || 0),
+                formatFinancialReportCurrency(r.profit || 0)
+            ]);
+            if (data.summary) {
+                periodicSalesBody.push([
+                    'TOTAL',
+                    '',
+                    '',
+                    formatFinancialReportCurrency(data.summary.average_cost_price || 0),
+                    formatFinancialReportCurrency(data.summary.average_sale_price || 0),
+                    parseInt(data.summary.total_qty_sold || 0),
+                    formatFinancialReportCurrency(data.summary.gross_sales || 0),
+                    formatFinancialReportCurrency(data.summary.net_sales || 0),
+                    formatFinancialReportCurrency(data.summary.profit || 0)
+                ]);
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Type', 'Store', 'Product', 'Cost Price', 'Sale Price', 'Qty Sold', 'Gross Sales', 'Net Sales', 'Profit']],
+                body: periodicSalesBody,
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+
+            let periodicY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : startY + 30;
+            doc.text('Delivery Charges', 14, periodicY);
+            doc.autoTable({
+                startY: periodicY + 4,
+                head: [['Order #', 'Date', 'Rider', 'Stores', 'Fee']],
+                body: (data.delivery_rows && data.delivery_rows.length ? data.delivery_rows : [{ order_number: 'No records found' }]).map((row) => [
+                    row.order_number || 'No records found',
+                    row.order_number ? formatFinancialReportDate(row.order_date) : '',
+                    row.order_number ? (row.rider_name || '-') : '',
+                    row.order_number ? (row.store_names || '-') : '',
+                    row.order_number ? formatFinancialReportCurrency(row.delivery_fee || 0) : ''
+                ]).concat([[
+                    'TOTAL',
+                    '',
+                    '',
+                    '',
+                    formatFinancialReportCurrency(data.delivery_summary?.total_delivery_charges || 0)
+                ]]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+
+            periodicY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : periodicY + 30;
+            doc.text('Store Settlement Payments', 14, periodicY);
+            doc.autoTable({
+                startY: periodicY + 4,
+                head: [['Settlement #', 'Date', 'Store', 'Orders Amount', 'Commissions', 'Deductions', 'Net Paid']],
+                body: (data.settlement_rows && data.settlement_rows.length ? data.settlement_rows : [{ settlement_number: 'No records found' }]).map((row) => [
+                    row.settlement_number || 'No records found',
+                    row.settlement_number ? formatFinancialReportDate(row.settlement_date) : '',
+                    row.settlement_number ? (row.store_name || '-') : '',
+                    row.settlement_number ? formatFinancialReportCurrency(row.total_orders_amount || 0) : '',
+                    row.settlement_number ? formatFinancialReportCurrency(row.commissions || 0) : '',
+                    row.settlement_number ? formatFinancialReportCurrency(row.deductions || 0) : '',
+                    row.settlement_number ? formatFinancialReportCurrency(row.net_amount || 0) : ''
+                ]).concat([[
+                    'TOTAL',
+                    '',
+                    '',
+                    formatFinancialReportCurrency(data.settlement_summary?.total_orders_amount || 0),
+                    formatFinancialReportCurrency(data.settlement_summary?.total_commissions || 0),
+                    formatFinancialReportCurrency(data.settlement_summary?.total_deductions || 0),
+                    formatFinancialReportCurrency(data.settlement_summary?.total_paid_settlements || 0)
+                ]]),
+                theme: 'grid',
+                styles: { fontSize: 6.7 }
+            });
+
+            periodicY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : periodicY + 30;
+            doc.text('Fuel Payments', 14, periodicY);
+            doc.autoTable({
+                startY: periodicY + 4,
+                head: [['Movement #', 'Date', 'Rider', 'Amount', 'Description']],
+                body: (data.fuel_rows && data.fuel_rows.length ? data.fuel_rows : [{ movement_number: 'No records found' }]).map((row) => [
+                    row.movement_number || 'No records found',
+                    row.movement_number ? formatFinancialReportDate(row.movement_date) : '',
+                    row.movement_number ? (row.rider_name || '-') : '',
+                    row.movement_number ? formatFinancialReportCurrency(row.amount || 0) : '',
+                    row.movement_number ? (row.description || '-') : ''
+                ]).concat([[
+                    'TOTAL',
+                    '',
+                    '',
+                    formatFinancialReportCurrency(data.fuel_summary?.total_fuel_payments || 0),
+                    ''
+                ]]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+
+            periodicY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : periodicY + 30;
+            doc.text('Expenses', 14, periodicY);
+            doc.autoTable({
+                startY: periodicY + 4,
+                head: [['Expense #', 'Date', 'Category', 'Vendor', 'Amount', 'Description']],
+                body: (data.expense_rows && data.expense_rows.length ? data.expense_rows : [{ expense_number: 'No records found' }]).map((row) => [
+                    row.expense_number || 'No records found',
+                    row.expense_number ? formatFinancialReportDate(row.expense_date) : '',
+                    row.expense_number ? (row.category || '-') : '',
+                    row.expense_number ? (row.vendor_name || '-') : '',
+                    row.expense_number ? formatFinancialReportCurrency(row.amount || 0) : '',
+                    row.expense_number ? (row.description || '-') : ''
+                ]).concat([[
+                    'TOTAL',
+                    '',
+                    '',
+                    '',
+                    formatFinancialReportCurrency(data.expense_summary?.total_paid_expenses || 0),
+                    ''
+                ]]),
+                theme: 'grid',
+                styles: { fontSize: 7 }
+            });
+
+            periodicY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : periodicY + 30;
+            doc.text('Closing Summary', 14, periodicY);
+            doc.autoTable({
+                startY: periodicY + 4,
+                head: [['Cost Price', 'Sale Price', 'Qty Sold', 'Gross Sales', 'Net Sales', 'Profit', 'Delivery', 'Settlements', 'Fuel', 'Expenses', 'Net Closing']],
+                body: [[
+                    formatFinancialReportCurrency(data.closing_summary?.cost_price || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.sale_price || 0),
+                    parseInt(data.closing_summary?.qty_sold || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.gross_sales || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.net_sales || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.profit || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.delivery_charges || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.store_settlement_payments || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.fuel_payments || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.expenses || 0),
+                    formatFinancialReportCurrency(data.closing_summary?.net_closing || 0)
+                ]],
+                theme: 'grid',
+                styles: { fontSize: 6 }
+            });
+        } else if (data.type === 'periodic_credit_cash_report') {
+            const sortedRows = [...(data.rows || [])].sort((a, b) => getFinancialReportSortTime(b.report_date) - getFinancialReportSortTime(a.report_date));
+            doc.text('Periodic Credit Cash Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Credit: ${formatFinancialReportCurrency(data.summary.total_credit_sale || 0)} | Cash Sale: ${formatFinancialReportCurrency(data.summary.total_cash_sale || 0)} | Profit: ${formatFinancialReportCurrency(data.summary.total_profit || 0)} | Delivery: ${formatFinancialReportCurrency(data.summary.total_delivery_charges || 0)} | Grand Total: ${formatFinancialReportCurrency(data.summary.grand_total || 0)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 10;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Date', 'Credit Sale', 'Cash Sale', 'Profit', 'Delivery Charges', 'Total']],
+                body: sortedRows.map((row) => [
+                    formatFinancialReportDate(row.report_date),
+                    formatFinancialReportCurrency(row.credit_sale || 0),
+                    formatFinancialReportCurrency(row.cash_sale || 0),
+                    formatFinancialReportCurrency(row.profit || 0),
+                    formatFinancialReportCurrency(row.delivery_charges || 0),
+                    formatFinancialReportCurrency(row.total || 0)
+                ]).concat([[
+                    'TOTAL',
+                    formatFinancialReportCurrency(data.summary?.total_credit_sale || 0),
+                    formatFinancialReportCurrency(data.summary?.total_cash_sale || 0),
+                    formatFinancialReportCurrency(data.summary?.total_profit || 0),
+                    formatFinancialReportCurrency(data.summary?.total_delivery_charges || 0),
+                    formatFinancialReportCurrency(data.summary?.grand_total || 0)
+                ]]),
                 theme: 'grid',
                 styles: { fontSize: 8 }
             });
@@ -3020,22 +3480,34 @@ function generatePDF(reportId) {
                 startY += 10;
             }
 
-            if (data.entries) {
-                doc.autoTable({
-                    startY: startY + 5,
-                    head: [['Rider', 'Date', 'Start', 'End', 'Dist', 'Rate', 'Cost', 'Notes']],
-                    body: data.entries.map(e => [
-                        `${e.first_name} ${e.last_name || ''}`,
-                        new Date(e.entry_date).toLocaleDateString(),
-                        e.start_meter || '-',
-                        e.end_meter || '-',
-                        e.distance || '0',
-                        e.petrol_rate || '-',
-                        `Rs ${e.fuel_cost}`,
-                        e.notes || ''
-                    ]),
-                    theme: 'grid',
-                    styles: { fontSize: 8 }
+            const riderFuelGroups = groupRiderFuelEntries(data.entries || []);
+            if (riderFuelGroups.length) {
+                let fuelY = startY + 5;
+                riderFuelGroups.forEach((group, index) => {
+                    if (index > 0) {
+                        fuelY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : fuelY + 30;
+                    }
+                    doc.setFontSize(10);
+                    doc.text(
+                        `${group.rider_name} | Distance: ${group.total_distance.toFixed(2)} km | Cost: ${formatFinancialReportCurrency(group.total_cost)}`,
+                        14,
+                        fuelY
+                    );
+                    doc.autoTable({
+                        startY: fuelY + 4,
+                        head: [['Date', 'Start', 'End', 'Dist', 'Rate', 'Cost', 'Notes']],
+                        body: group.entries.map(e => [
+                            formatFinancialReportDate(e.entry_date),
+                            e.start_meter || '-',
+                            e.end_meter || '-',
+                            e.distance || '0',
+                            e.petrol_rate || '-',
+                            formatFinancialReportCurrency(e.fuel_cost || 0),
+                            e.notes || ''
+                        ]),
+                        theme: 'grid',
+                        styles: { fontSize: 8 }
+                    });
                 });
             }
         } else if (data.type === 'rider_daily_mileage') {
@@ -3343,13 +3815,23 @@ function viewReport(reportId) {
         });
         extraDetails += '</tbody></table></div>';
     } else if (data && (data.type === 'rider_fuel' || data.type === 'rider_petrol')) {
-        extraDetails = '<h3>Rider Fuel History</h3><div class="report-detail-table-wrapper"><table class="report-detail-table"><thead><tr><th>Rider</th><th>Date</th><th>Distance</th><th>Cost</th></tr></thead><tbody>';
-        if (data.entries) {
-            data.entries.forEach(e => {
-                extraDetails += `<tr><td>${e.first_name} ${e.last_name || ''}</td><td>${new Date(e.entry_date).toLocaleDateString()}</td><td>${e.distance} km</td><td>Rs  ${parseFloat(e.fuel_cost).toFixed(2)}</td></tr>`;
-            });
-        }
-        extraDetails += '</tbody></table></div>';
+        extraDetails = '<h3>Rider Fuel History</h3>';
+        const riderFuelGroups = groupRiderFuelEntries(data.entries || []);
+        riderFuelGroups.forEach((group) => {
+            extraDetails += renderFinancialReportTable(
+                `${group.rider_name} | Distance: ${group.total_distance.toFixed(2)} km | Cost: ${formatFinancialReportCurrency(group.total_cost)}`,
+                ['Date', 'Start', 'End', 'Distance', 'Rate', 'Cost', 'Notes'],
+                group.entries.map((e) => [
+                    formatFinancialReportDate(e.entry_date),
+                    e.start_meter || '-',
+                    e.end_meter || '-',
+                    `${parseFloat(e.distance || 0).toFixed(2)} km`,
+                    e.petrol_rate || '-',
+                    formatFinancialReportCurrency(e.fuel_cost || 0),
+                    e.notes || '-'
+                ])
+            );
+        });
         if (data.summary) {
             extraDetails += `<div style="margin-top: 10px;"><strong>Total Distance:</strong> ${data.summary.total_distance} km | <strong>Total Cost:</strong> Rs  ${parseFloat(data.summary.total_cost).toFixed(2)}</div>`;
         }
@@ -3778,6 +4260,10 @@ function viewReport(reportId) {
                 </div>
              </div>`;
         }
+    } else if (data && data.type === 'periodic_sales_report') {
+        extraDetails = renderPeriodicSalesReportHtml(data);
+    } else if (data && data.type === 'periodic_credit_cash_report') {
+        extraDetails = renderPeriodicCreditCashReportHtml(data);
     } else if (data && data.type === 'order_wise_sale_summary') {
         extraDetails = '<h3>Order Wise Sale Summary</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.85em"><thead><tr><th>Order #</th><th>Items</th><th>Item Sales</th><th>Total Cost</th><th>Comm.</th><th>Del. Charges</th><th>Total Amount</th></tr></thead><tbody>';
         
@@ -3813,17 +4299,19 @@ function viewReport(reportId) {
         }
     }
 
+    const hideFinancialSummary = data && (data.type === 'rider_fuel' || data.type === 'rider_petrol');
     const details = `
         <div class="report-summary">
             <strong>Number:</strong> ${report.report_number}<br>
             <strong>Type:</strong> ${report.report_type.replace(/_/g, ' ')}<br>
             <strong>Period:</strong> ${report.period_from ? new Date(report.period_from).toLocaleDateString() : '-'} to ${report.period_to ? new Date(report.period_to).toLocaleDateString() : '-'}<br>
             <hr>
+            <strong>Generated:</strong> ${new Date(report.created_at).toLocaleString()}
+            ${hideFinancialSummary ? '' : `<br>
             <strong>Total Income:</strong> Rs  ${parseFloat(report.total_income).toFixed(2)}<br>
             <strong>Total Expense:</strong> Rs  ${parseFloat(report.total_expense).toFixed(2)}<br>
             <strong>Total Settlements:</strong> Rs  ${parseFloat(report.total_commissions).toFixed(2)}<br>
-            <strong>Net Profit:</strong> Rs  ${parseFloat(report.net_profit).toFixed(2)}<br>
-            <strong>Generated:</strong> ${new Date(report.created_at).toLocaleString()}
+            <strong>Net Profit:</strong> Rs  ${parseFloat(report.net_profit).toFixed(2)}`}
         </div>
         ${extraDetails}
     `;
@@ -4073,10 +4561,14 @@ document.addEventListener('DOMContentLoaded', function() {
             if (storeGroup) {
                 storeGroup.style.display = (
                     this.value === 'order_wise_sale_summary' ||
+                    this.value === 'periodic_sales_report' ||
                     this.value === 'store_payable_reconciliation' ||
                     this.value === 'unsettled_amounts_report' ||
                     this.value === 'store_order_settlement_report'
                 ) ? 'block' : 'none';
+            }
+            if (this.value === 'periodic_credit_cash_report') {
+                setDatesForPeriod('today', 'reportPeriodFrom', 'reportPeriodTo');
             }
         });
     }

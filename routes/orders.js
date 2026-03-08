@@ -247,6 +247,7 @@ async function ensureOrderItemsSchema(db) {
     { name: "size_id", definition: "INT NULL" },
     { name: "unit_id", definition: "INT NULL" },
     { name: "variant_label", definition: "VARCHAR(255) NULL" },
+    { name: "cost_price", definition: "DECIMAL(10, 2) NULL" },
     {
       name: "store_id",
       definition: "INT NULL",
@@ -1360,14 +1361,15 @@ router.post(
 
       await req.db.execute(
         `INSERT INTO order_items (
-          order_id, product_id, store_id, quantity, price, discount_type, discount_value
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          order_id, product_id, store_id, quantity, price, cost_price, discount_type, discount_value
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderId,
           productId,
           storeId,
           qty,
           roundAmount(unitPrice),
+          roundAmount(costPrice !== null ? costPrice : product.cost_price),
           financialSnapshot.type || null,
           financialSnapshot.value ?? null,
         ],
@@ -2882,16 +2884,30 @@ router.put(
 
         const targetStoreRows = targetItemIds.length
           ? await req.db.execute(
-              `SELECT DISTINCT oi.store_id, s.name as store_name, s.payment_term
+              `SELECT
+                 oi.store_id,
+                 s.name as store_name,
+                 s.payment_term,
+                 MAX(
+                   CASE
+                     WHEN LOWER(TRIM(COALESCE(p.description, ''))) = 'created from admin manual order'
+                       THEN 1
+                     ELSE 0
+                   END
+                 ) AS has_manual_order_item
                FROM order_items oi
+               JOIN products p ON p.id = oi.product_id
                JOIN stores s ON s.id = oi.store_id
-               WHERE oi.id IN (${targetItemIds.map(() => "?").join(",")})`,
+               WHERE oi.id IN (${targetItemIds.map(() => "?").join(",")})
+               GROUP BY oi.store_id, s.name, s.payment_term`,
               targetItemIds
             )
           : [[], []];
         const storesToSettle = (targetStoreRows[0] || []).filter(
           (r) =>
-            String(r.payment_term || "").toLowerCase().trim() === "cash only"
+            ["cash only", "cash with discount"].includes(
+              String(r.payment_term || "").toLowerCase().trim()
+            ) || Number(r.has_manual_order_item || 0) === 1
         );
 
         if (storesToSettle.length) {
@@ -2909,7 +2925,7 @@ router.put(
             const [payableRows] = await req.db.execute(
               `SELECT
                  COALESCE(SUM(
-                   COALESCE(psp.cost_price, p.cost_price, oi.price) * oi.quantity
+                   COALESCE(oi.cost_price, psp.cost_price, p.cost_price, oi.price) * oi.quantity
                  ), 0) AS payable_to_store
                FROM order_items oi
                JOIN products p ON p.id = oi.product_id
@@ -2938,7 +2954,7 @@ router.put(
               [
                 walletInfo.walletId,
                 payable,
-                `Paid to cash-only store ${s.store_name || s.store_id} for order #${order.order_number}`,
+                `Paid to pickup-paid store ${s.store_name || s.store_id} for order #${order.order_number}`,
                 id,
                 runningBalance,
               ]
@@ -2964,7 +2980,7 @@ router.put(
             await recordFinancialTransaction(req.db, {
               transaction_type: "adjustment",
               category: "rider_store_payment",
-              description: `Rider paid cash-only store (${s.store_name || s.store_id}) for order #${order.order_number}`,
+              description: `Rider paid pickup-paid store (${s.store_name || s.store_id}) for order #${order.order_number}`,
               amount: payable,
               payment_method: "cash",
               related_entity_type: "rider",

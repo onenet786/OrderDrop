@@ -111,6 +111,31 @@
                     ><i class="fas fa-bullhorn"></i> Store Status</a
                   >
                 </li>
+                <li>
+                  <a href="admin.html#store-status" class="tab-link" data-tab="store-status" data-status-section="store-status-delivery"
+                    ><i class="fas fa-truck"></i> Delivery Notice</a
+                  >
+                </li>
+                <li>
+                  <a href="admin.html#store-status" class="tab-link" data-tab="store-status" data-status-section="store-status-broadcast"
+                    ><i class="fas fa-paper-plane"></i> Push Broadcast</a
+                  >
+                </li>
+                <li>
+                  <a href="admin.html#store-status" class="tab-link" data-tab="store-status" data-status-section="store-status-live-promotions"
+                    ><i class="fas fa-images"></i> Promotions / Events</a
+                  >
+                </li>
+                <li>
+                  <a href="admin.html#store-status" class="tab-link" data-tab="store-status" data-status-section="store-status-offer-campaigns"
+                    ><i class="fas fa-tags"></i> Offer Campaigns</a
+                  >
+                </li>
+                <li>
+                  <a href="admin.html#store-status" class="tab-link" data-tab="store-status" data-status-section="store-status-flash-message"
+                    ><i class="fas fa-bolt"></i> Flash Message</a
+                  >
+                </li>
               </ul>
             </li>
             <li>
@@ -924,6 +949,8 @@
                     <option value="unsettled_amounts_report">Unsettled Amounts Report</option>
                     <option value="cash_discrepancy_report">Cash Discrepancy Report</option>
                     <option value="store_order_settlement_report">Store Order Settlement Report</option>
+                    <option value="periodic_sales_report">Periodic Sales Report</option>
+                    <option value="periodic_credit_cash_report">Periodic Credit Cash Report</option>
                     <option value="rider_cash_report">Rider Cash Report</option>
                     <option value="rider_fuel_report">Rider Fuel Report</option>
                     <option value="rider_orders_report">Rider Orders Report</option>
@@ -1088,6 +1115,16 @@
           </div>
 
           <div class="filter-controls">
+            <div class="filter-group" style="min-width: 260px;">
+              <label for="backupFilename">Backup File Name</label>
+              <input
+                type="text"
+                id="backupFilename"
+                class="form-control"
+                placeholder="Enter backup file name"
+                autocomplete="off"
+              />
+            </div>
             <button class="btn btn-primary" id="createBackupBtn" style="align-self: flex-end; margin-bottom: 2px;">
               Create Backup
             </button>
@@ -1272,7 +1309,7 @@
 
         <div id="store-status" class="tab-content">
           <h2>Store Status</h2>
-          <section class="global-delivery-admin-card">
+          <section id="store-status-delivery" class="global-delivery-admin-card">
             <div class="global-delivery-admin-head">
               <div>
                 <h3>Live Delivery Widget (Website-Wide)</h3>
@@ -1343,7 +1380,7 @@
               </button>
             </div>
           </section>
-          <section class="global-delivery-admin-card">
+          <section id="store-status-broadcast" class="global-delivery-admin-card">
             <div class="global-delivery-admin-head">
               <div>
                 <h3>Customer Push Broadcast</h3>
@@ -1388,7 +1425,7 @@
               </button>
             </div>
           </section>
-          <section class="global-delivery-admin-card promo-live-admin-card">
+          <section id="store-status-live-promotions" class="global-delivery-admin-card promo-live-admin-card">
             <div class="global-delivery-admin-head">
               <div>
                 <h3>Promotions / Events Live Widgets</h3>
@@ -1465,7 +1502,7 @@
               </button>
             </div>
           </section>
-          <section class="global-delivery-admin-card">
+          <section id="store-status-offer-campaigns" class="global-delivery-admin-card">
             <div class="global-delivery-admin-head">
               <div>
                 <h3>Store Offer Campaigns (Custom)</h3>
@@ -1564,7 +1601,7 @@
               </table>
             </div>
           </section>
-          <section class="global-delivery-admin-card">
+          <section id="store-status-flash-message" class="global-delivery-admin-card">
             <div class="global-delivery-admin-head">
               <div>
                 <h3>Customer Flash Message (Launch Popup)</h3>
@@ -2287,6 +2324,7 @@
                   <option value="category">Category-wise Inventory</option>
                   <option value="breakdown">Store-wise Category Breakdown</option>
                   <option value="sales">Store Sale-wise</option>
+                  <option value="manual-sales">Manual Order Product Sales</option>
                   <option value="product-detail">Product Cost/Sale Detail</option>
                 </select>
             </div>
@@ -2295,6 +2333,14 @@
                 <select id="inventoryStoreFilter" class="form-control">
                   <option value="">All Stores</option>
                 </select>
+            </div>
+            <div class="filter-group">
+                <label for="inventoryStartDate">From Date</label>
+                <input type="date" id="inventoryStartDate" class="form-control">
+            </div>
+            <div class="filter-group">
+                <label for="inventoryEndDate">To Date</label>
+                <input type="date" id="inventoryEndDate" class="form-control">
             </div>
             <button class="btn btn-primary" id="inventoryApplyFilterBtn" style="align-self:flex-end; margin-bottom:2px;">
               <i class="fas fa-filter"></i> Apply
@@ -2385,6 +2431,39 @@
                 <tbody id="storeSalesBody">
                   <!-- Store sales data will be loaded here -->
                 </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="manualSalesReportSection" style="display: none">
+            <h3 style="margin-bottom: 1rem">Manual Order Product Sales Report</h3>
+            <p style="margin: 0 0 0.75rem 0; color: #64748b; font-size: 0.9rem;">
+              Double-click any row to edit the sale price or cost price for that order line.
+            </p>
+            <div class="table-container">
+              <table id="manualSalesTable">
+                <thead>
+                  <tr>
+                    <th>Store</th>
+                    <th>Category</th>
+                    <th>Product</th>
+                    <th>Order Number</th>
+                    <th>Status</th>
+                    <th>Cost Price</th>
+                    <th>Sale Price</th>
+                    <th>Qty Sold</th>
+                    <th>Gross Sales</th>
+                    <th>Net Sales</th>
+                    <th>Profit</th>
+                    <th>Last Sold</th>
+                  </tr>
+                </thead>
+                <tbody id="manualSalesBody">
+                  <!-- Manual order product sales data will be loaded here -->
+                </tbody>
+                <tfoot id="manualSalesFooter">
+                  <!-- Manual order product sales totals will be loaded here -->
+                </tfoot>
               </table>
             </div>
           </div>
@@ -4112,6 +4191,61 @@
       </div>
     </div>
 
+    <div id="manualSalesEditModal" class="modal">
+      <div class="modal-content" style="max-width: 640px;">
+        <div class="modal-header">
+          <h2>Edit Manual Order Pricing</h2>
+          <span class="close" data-modal="manualSalesEditModal">&times;</span>
+        </div>
+        <div class="modal-body" style="padding: 0;">
+          <form id="manualSalesEditForm">
+            <input type="hidden" id="manualSalesEditOrderItemId" />
+            <div class="stats-grid" style="grid-template-columns: 1fr 1fr; gap: 1rem;">
+              <div class="form-group">
+                <label for="manualSalesEditOrderNumber">Order Number</label>
+                <input type="text" id="manualSalesEditOrderNumber" readonly />
+              </div>
+              <div class="form-group">
+                <label for="manualSalesEditStatus">Status</label>
+                <input type="text" id="manualSalesEditStatus" readonly />
+              </div>
+              <div class="form-group">
+                <label for="manualSalesEditStore">Store</label>
+                <input type="text" id="manualSalesEditStore" readonly />
+              </div>
+              <div class="form-group">
+                <label for="manualSalesEditProduct">Product</label>
+                <input type="text" id="manualSalesEditProduct" readonly />
+              </div>
+              <div class="form-group">
+                <label for="manualSalesEditQty">Quantity</label>
+                <input type="number" id="manualSalesEditQty" readonly />
+              </div>
+              <div class="form-group">
+                <label for="manualSalesEditSoldAt">Sold At</label>
+                <input type="text" id="manualSalesEditSoldAt" readonly />
+              </div>
+              <div class="form-group">
+                <label for="manualSalesEditCostPrice">Cost Price</label>
+                <input type="number" min="0" step="0.01" id="manualSalesEditCostPrice" required />
+              </div>
+              <div class="form-group">
+                <label for="manualSalesEditSalePrice">Sale Price</label>
+                <input type="number" min="0.01" step="0.01" id="manualSalesEditSalePrice" required />
+              </div>
+            </div>
+            <p style="margin-top: 0.75rem; color: #64748b; font-size: 0.9rem;">
+              Saving updates only this order line and recalculates the order total.
+            </p>
+          </form>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" class="btn btn-secondary" data-modal="manualSalesEditModal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="saveManualSalesEditBtn">Save Changes</button>
+        </div>
+      </div>
+    </div>
+
     <script src="js/app.js?v=7" defer></script>
     <script src="/socket.io/socket.io.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -4793,6 +4927,8 @@
               <option value="unsettled_amounts_report">Unsettled Amounts Report</option>
               <option value="cash_discrepancy_report">Cash Discrepancy Report</option>
               <option value="store_order_settlement_report">Store Order Settlement Report</option>
+              <option value="periodic_sales_report">Periodic Sales Report</option>
+              <option value="periodic_credit_cash_report">Periodic Credit Cash Report</option>
               <option value="transaction_summary">Transaction Summary</option>
               <option value="general_voucher">General Voucher (JNV)</option>
               <option value="expense_report">Expense Report</option>

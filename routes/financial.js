@@ -8,6 +8,37 @@ const path = require('path');
 const router = express.Router();
 let _legacyCpvBackfillDone = false;
 
+const SUPPORTED_FINANCIAL_REPORT_TYPES = [
+    'daily_summary',
+    'weekly_summary',
+    'monthly_summary',
+    'store_settlement',
+    'rider_cash_report',
+    'rider_orders_report',
+    'rider_payments_report',
+    'rider_receivings_report',
+    'rider_petrol_report',
+    'rider_daily_mileage_report',
+    'rider_daily_activity_report',
+    'rider_day_closing_report',
+    'order_profit_report',
+    'expense_report',
+    'general_voucher',
+    'store_financials',
+    'rider_fuel_report',
+    'comprehensive_report',
+    'store_payable_reconciliation',
+    'unsettled_amounts_report',
+    'cash_discrepancy_report',
+    'store_order_settlement_report',
+    'delivery_charges_breakdown',
+    'order_wise_sale_summary',
+    'periodic_sales_report',
+    'periodic_credit_cash_report',
+    'transaction_summary',
+    'custom'
+];
+
 // Helper to log errors to file
 const logDebugError = (error) => {
     const logPath = path.join(__dirname, '..', 'debug_error.log');
@@ -25,6 +56,42 @@ function generateVoucherNumber(prefix, date = new Date()) {
 
 function isDiscountPaymentTerm(term) {
     return String(term || '').toLowerCase().includes('discount');
+}
+
+async function hasColumn(db, tableName, columnName) {
+    const [rows] = await db.execute(
+        `SELECT COUNT(*) AS cnt
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = ?
+           AND COLUMN_NAME = ?`,
+        [tableName, columnName]
+    );
+    return Number(rows?.[0]?.cnt || 0) > 0;
+}
+
+async function ensureOrderItemsCostPriceColumn(db) {
+    try {
+        const exists = await hasColumn(db, 'order_items', 'cost_price');
+        if (!exists) {
+            await db.execute(
+                'ALTER TABLE order_items ADD COLUMN cost_price DECIMAL(10, 2) NULL AFTER price'
+            );
+        }
+    } catch (error) {
+        console.error('Failed to ensure order_items.cost_price column:', error);
+    }
+}
+
+async function ensureFinancialReportsReportTypeEnum(db) {
+    try {
+        const enumList = SUPPORTED_FINANCIAL_REPORT_TYPES.map((type) => `'${type}'`).join(', ');
+        await db.execute(
+            `ALTER TABLE financial_reports MODIFY COLUMN report_type ENUM(${enumList}) NOT NULL`
+        );
+    } catch (error) {
+        console.error('Failed to ensure financial_reports.report_type enum:', error);
+    }
 }
 
 function getSettlementUnitAdjustment(item, unitPrice) {
@@ -1818,6 +1885,14 @@ router.get('/store-settlements/unsettled-items', async (req, res) => {
             AND o.status = 'delivered'
             AND o.payment_status = 'paid'
             AND oi.settlement_id IS NULL
+            AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+            AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+            AND NOT EXISTS (
+                SELECT 1
+                FROM rider_store_payments rsp
+                WHERE rsp.order_id = oi.order_id
+                  AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+            )
             ORDER BY o.created_at ASC
         `, [store_id]);
 
@@ -1970,6 +2045,14 @@ router.post('/store-settlements', [
                 AND o.status = 'delivered'
                 AND o.payment_status = 'paid'
                 AND oi.settlement_id IS NULL
+                AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+                AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM rider_store_payments rsp
+                    WHERE rsp.order_id = oi.order_id
+                      AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+                )
             `, [store_id]);
 
             if (items.length === 0) {
@@ -2444,13 +2527,16 @@ router.get('/reports', async (req, res) => {
 });
 
 router.post('/reports/generate', [
-    body('report_type').isIn(['daily_summary', 'weekly_summary', 'monthly_summary', 'store_settlement', 'rider_cash_report', 'rider_orders_report', 'rider_payments_report', 'rider_receivings_report', 'rider_petrol_report', 'rider_daily_mileage_report', 'rider_daily_activity_report', 'rider_day_closing_report', 'order_profit_report', 'expense_report', 'general_voucher', 'store_financials', 'rider_fuel_report', 'comprehensive_report', 'store_payable_reconciliation', 'unsettled_amounts_report', 'cash_discrepancy_report', 'store_order_settlement_report', 'delivery_charges_breakdown', 'order_wise_sale_summary', 'transaction_summary', 'custom']),
+    body('report_type').isIn(SUPPORTED_FINANCIAL_REPORT_TYPES),
     body('period_from').optional({ checkFalsy: true }).isISO8601(),
     body('period_to').optional({ checkFalsy: true }).isISO8601(),
     body('rider_id').optional({ checkFalsy: true }).toInt(),
     body('store_id').optional({ checkFalsy: true }).toInt()
 ], async (req, res) => {
     try {
+        await ensureOrderItemsCostPriceColumn(req.db);
+        await ensureFinancialReportsReportTypeEnum(req.db);
+
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({
@@ -2501,6 +2587,8 @@ router.post('/reports/generate', [
                 'expense_report': 'report_expense',
                 'delivery_charges_breakdown': 'report_delivery_charges',
                 'order_wise_sale_summary': 'report_order_summary',
+                'periodic_sales_report': 'report_sales',
+                'periodic_credit_cash_report': 'report_sales',
                 'custom': 'report_custom'
             };
 
@@ -2549,6 +2637,8 @@ router.post('/reports/generate', [
             case 'general_voucher': prefix = 'GVR'; break;
             case 'store_settlement': prefix = 'SSR'; break;
             case 'order_wise_sale_summary': prefix = 'OWS'; break;
+            case 'periodic_sales_report': prefix = 'PSR'; break;
+            case 'periodic_credit_cash_report': prefix = 'PCC'; break;
             case 'custom': prefix = 'CUS'; break;
         }
 
@@ -3446,6 +3536,546 @@ router.post('/reports/generate', [
                 summary
             };
 
+        } else if (report_type === 'periodic_sales_report') {
+            const hasRange = !!(period_from && period_to);
+            const hasStore = !!store_id;
+            const rangeFrom = hasRange ? `${period_from} 00:00:00` : null;
+            const rangeTo = hasRange ? `${period_to} 23:59:59` : null;
+            const params = [
+                ...(hasRange ? [rangeFrom, rangeTo] : []),
+                ...(hasStore ? [store_id] : [])
+            ];
+
+            const [rows] = await req.db.execute(
+                `SELECT
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    s.name AS store_name,
+                    c.name AS category_name,
+                    p.id AS product_id,
+                    p.name AS product_name,
+                    CASE
+                        WHEN LOWER(TRIM(COALESCE(p.description, ''))) = 'created from admin manual order'
+                            THEN 'manual'
+                        ELSE 'store'
+                    END AS sale_type,
+                    ROUND(
+                        SUM(oi.quantity * COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0))
+                        / NULLIF(SUM(oi.quantity), 0),
+                        2
+                    ) AS avg_cost_price,
+                    ROUND(
+                        SUM(oi.quantity * oi.price) / NULLIF(SUM(oi.quantity), 0),
+                        2
+                    ) AS avg_sale_price,
+                    SUM(oi.quantity) AS qty_sold,
+                    ROUND(SUM(oi.quantity * oi.price), 2) AS gross_sales,
+                    ROUND(SUM(
+                        oi.quantity * (
+                            CASE
+                                WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                     AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                     AND COALESCE(s.store_discount_percent, 0) > 0
+                                    THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                    THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                    THEN COALESCE(oi.discount_value, 0)
+                                ELSE 0
+                            END
+                        )
+                    ), 2) AS total_discount,
+                    ROUND(SUM(
+                        oi.quantity * (
+                            oi.price - (
+                                CASE
+                                    WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                         AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                         AND COALESCE(s.store_discount_percent, 0) > 0
+                                        THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                    WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                        THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                    WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                        THEN COALESCE(oi.discount_value, 0)
+                                    ELSE 0
+                                END
+                            )
+                        )
+                    ), 2) AS net_sales,
+                    ROUND(SUM(
+                        oi.quantity * COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                    ), 2) AS total_cost,
+                    ROUND(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(p.description, ''))) = 'created from admin manual order'
+                                THEN oi.quantity * (
+                                    (
+                                        oi.price - (
+                                            CASE
+                                                WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                                     AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                                     AND COALESCE(s.store_discount_percent, 0) > 0
+                                                    THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                                WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                                    THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                                WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                                    THEN COALESCE(oi.discount_value, 0)
+                                                ELSE 0
+                                            END
+                                        )
+                                    ) - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                                )
+                            ELSE oi.quantity * (
+                                oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                            )
+                        END
+                    ), 2) AS profit
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 LEFT JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 LEFT JOIN categories c ON c.id = p.category_id
+                 LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id
+                    AND (
+                        (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id)
+                        OR
+                        (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                    )
+                 WHERE o.status = 'delivered'
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND COALESCE(oi.store_id, p.store_id) = ?' : ''}
+                 GROUP BY COALESCE(oi.store_id, p.store_id), s.name, c.name, p.id, p.name, sale_type
+                 ORDER BY s.name ASC, sale_type DESC, p.name ASC`,
+                params
+            );
+
+            const summary = (rows || []).reduce((acc, row) => {
+                acc.total_rows += 1;
+                acc.total_qty_sold += Number(row.qty_sold || 0);
+                acc.total_cost += Number(row.total_cost || 0);
+                acc.gross_sales += Number(row.gross_sales || 0);
+                acc.net_sales += Number(row.net_sales || 0);
+                acc.profit += Number(row.profit || 0);
+                return acc;
+            }, {
+                total_rows: 0,
+                total_qty_sold: 0,
+                total_cost: 0,
+                gross_sales: 0,
+                net_sales: 0,
+                profit: 0
+            });
+
+            summary.average_cost_price = summary.total_qty_sold > 0
+                ? Number((summary.total_cost / summary.total_qty_sold).toFixed(2))
+                : 0;
+            summary.average_sale_price = summary.total_qty_sold > 0
+                ? Number((summary.gross_sales / summary.total_qty_sold).toFixed(2))
+                : 0;
+            summary.total_cost = Number(summary.total_cost.toFixed(2));
+            summary.gross_sales = Number(summary.gross_sales.toFixed(2));
+            summary.net_sales = Number(summary.net_sales.toFixed(2));
+            summary.profit = Number(summary.profit.toFixed(2));
+
+            const deliveryParams = [
+                ...(hasRange ? [rangeFrom, rangeTo] : []),
+                ...(hasStore ? [store_id] : [])
+            ];
+            const [deliveryRowsRaw] = await req.db.execute(
+                `SELECT
+                    o.id AS order_id,
+                    o.order_number,
+                    o.created_at AS order_date,
+                    ROUND(COALESCE(o.delivery_fee, 0), 2) AS delivery_fee,
+                    CONCAT(COALESCE(r.first_name, ''), ' ', COALESCE(r.last_name, '')) AS rider_name,
+                    GROUP_CONCAT(DISTINCT s.name ORDER BY s.name SEPARATOR ', ') AS store_names
+                 FROM orders o
+                 LEFT JOIN riders r ON r.id = o.rider_id
+                 LEFT JOIN order_items oi ON oi.order_id = o.id
+                 LEFT JOIN products p ON p.id = oi.product_id
+                 LEFT JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 WHERE o.status = 'delivered'
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? `AND EXISTS (
+                        SELECT 1
+                        FROM order_items doi
+                        JOIN products dp ON dp.id = doi.product_id
+                        WHERE doi.order_id = o.id
+                          AND COALESCE(doi.store_id, dp.store_id) = ?
+                   )` : ''}
+                 GROUP BY o.id, o.order_number, o.created_at, o.delivery_fee, rider_name
+                 ORDER BY o.created_at DESC, o.id DESC`,
+                deliveryParams
+            );
+            const deliveryRows = (deliveryRowsRaw || []).map((row) => ({
+                order_id: Number(row.order_id || 0) || null,
+                order_number: row.order_number || '-',
+                order_date: row.order_date || null,
+                rider_name: (row.rider_name || '').trim() || '-',
+                store_names: row.store_names || '-',
+                delivery_fee: Number(parseFloat(row.delivery_fee || 0).toFixed(2))
+            }));
+            const deliverySummary = deliveryRows.reduce((acc, row) => {
+                acc.total_orders += 1;
+                acc.total_delivery_charges += Number(row.delivery_fee || 0);
+                return acc;
+            }, { total_orders: 0, total_delivery_charges: 0 });
+            deliverySummary.total_delivery_charges = Number(deliverySummary.total_delivery_charges.toFixed(2));
+
+            const settlementParams = [
+                ...(hasRange ? [period_from, `${period_to} 23:59:59`] : []),
+                ...(hasStore ? [store_id] : [])
+            ];
+            const [settlementRowsRaw] = await req.db.execute(
+                `SELECT
+                    ss.id,
+                    ss.settlement_number,
+                    ss.settlement_date,
+                    s.name AS store_name,
+                    ROUND(COALESCE(ss.total_orders_amount, 0), 2) AS total_orders_amount,
+                    ROUND(COALESCE(ss.commissions, 0), 2) AS commissions,
+                    ROUND(COALESCE(ss.deductions, 0), 2) AS deductions,
+                    ROUND(COALESCE(ss.net_amount, 0), 2) AS net_amount,
+                    ss.payment_method,
+                    ss.status,
+                    ss.notes
+                 FROM store_settlements ss
+                 JOIN stores s ON s.id = ss.store_id
+                 WHERE ss.status = 'paid'
+                   ${hasRange ? 'AND ss.settlement_date BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND ss.store_id = ?' : ''}
+                 ORDER BY ss.settlement_date DESC, ss.id DESC`,
+                settlementParams
+            );
+            const settlementRows = (settlementRowsRaw || []).map((row) => ({
+                id: Number(row.id || 0) || null,
+                settlement_number: row.settlement_number || '-',
+                settlement_date: row.settlement_date || null,
+                store_name: row.store_name || '-',
+                total_orders_amount: Number(parseFloat(row.total_orders_amount || 0).toFixed(2)),
+                commissions: Number(parseFloat(row.commissions || 0).toFixed(2)),
+                deductions: Number(parseFloat(row.deductions || 0).toFixed(2)),
+                net_amount: Number(parseFloat(row.net_amount || 0).toFixed(2)),
+                payment_method: row.payment_method || '-',
+                status: row.status || 'paid',
+                notes: row.notes || ''
+            }));
+            const settlementSummary = settlementRows.reduce((acc, row) => {
+                acc.total_records += 1;
+                acc.total_orders_amount += Number(row.total_orders_amount || 0);
+                acc.total_commissions += Number(row.commissions || 0);
+                acc.total_deductions += Number(row.deductions || 0);
+                acc.total_paid_settlements += Number(row.net_amount || 0);
+                return acc;
+            }, {
+                total_records: 0,
+                total_orders_amount: 0,
+                total_commissions: 0,
+                total_deductions: 0,
+                total_paid_settlements: 0
+            });
+            settlementSummary.total_orders_amount = Number(settlementSummary.total_orders_amount.toFixed(2));
+            settlementSummary.total_commissions = Number(settlementSummary.total_commissions.toFixed(2));
+            settlementSummary.total_deductions = Number(settlementSummary.total_deductions.toFixed(2));
+            settlementSummary.total_paid_settlements = Number(settlementSummary.total_paid_settlements.toFixed(2));
+
+            const fuelParams = hasRange ? [period_from, period_to] : [];
+            const [fuelRowsRaw] = await req.db.execute(
+                `SELECT
+                    rcm.id,
+                    rcm.movement_number,
+                    rcm.movement_date,
+                    CONCAT(COALESCE(r.first_name, ''), ' ', COALESCE(r.last_name, '')) AS rider_name,
+                    ROUND(COALESCE(rcm.amount, 0), 2) AS amount,
+                    rcm.status,
+                    rcm.description
+                 FROM rider_cash_movements rcm
+                 JOIN riders r ON r.id = rcm.rider_id
+                 WHERE rcm.movement_type = 'fuel_payment'
+                   AND rcm.status IN ('approved', 'completed')
+                   ${hasRange ? 'AND rcm.movement_date BETWEEN ? AND ?' : ''}
+                 ORDER BY rcm.movement_date DESC, rcm.id DESC`,
+                fuelParams
+            );
+            const fuelRows = (fuelRowsRaw || []).map((row) => ({
+                id: Number(row.id || 0) || null,
+                movement_number: row.movement_number || '-',
+                movement_date: row.movement_date || null,
+                rider_name: (row.rider_name || '').trim() || '-',
+                amount: Number(parseFloat(row.amount || 0).toFixed(2)),
+                status: row.status || '-',
+                description: row.description || ''
+            }));
+            const fuelSummary = fuelRows.reduce((acc, row) => {
+                acc.total_records += 1;
+                acc.total_fuel_payments += Number(row.amount || 0);
+                return acc;
+            }, { total_records: 0, total_fuel_payments: 0 });
+            fuelSummary.total_fuel_payments = Number(fuelSummary.total_fuel_payments.toFixed(2));
+
+            const expenseParams = hasRange ? [period_from, period_to] : [];
+            const [expenseRowsRaw] = await req.db.execute(
+                `SELECT
+                    ae.id,
+                    ae.expense_number,
+                    ae.expense_date,
+                    ae.category,
+                    ae.description,
+                    ROUND(COALESCE(ae.amount, 0), 2) AS amount,
+                    ae.payment_method,
+                    ae.vendor_name,
+                    ae.status
+                 FROM admin_expenses ae
+                 WHERE ae.status = 'paid'
+                   ${hasRange ? 'AND ae.expense_date BETWEEN ? AND ?' : ''}
+                 ORDER BY ae.expense_date DESC, ae.id DESC`,
+                expenseParams
+            );
+            const expenseRows = (expenseRowsRaw || []).map((row) => ({
+                id: Number(row.id || 0) || null,
+                expense_number: row.expense_number || '-',
+                expense_date: row.expense_date || null,
+                category: row.category || '-',
+                description: row.description || '',
+                amount: Number(parseFloat(row.amount || 0).toFixed(2)),
+                payment_method: row.payment_method || '-',
+                vendor_name: row.vendor_name || '-',
+                status: row.status || 'paid'
+            }));
+            const expenseSummary = expenseRows.reduce((acc, row) => {
+                acc.total_records += 1;
+                acc.total_paid_expenses += Number(row.amount || 0);
+                return acc;
+            }, { total_records: 0, total_paid_expenses: 0 });
+            expenseSummary.total_paid_expenses = Number(expenseSummary.total_paid_expenses.toFixed(2));
+
+            total_income = Number((summary.net_sales + deliverySummary.total_delivery_charges).toFixed(2));
+            total_expense = Number((summary.total_cost + fuelSummary.total_fuel_payments + expenseSummary.total_paid_expenses).toFixed(2));
+            total_settlements = Number(settlementSummary.total_paid_settlements.toFixed(2));
+
+            const closingSummary = {
+                cost_price: Number(summary.average_cost_price || 0),
+                sale_price: Number(summary.average_sale_price || 0),
+                qty_sold: Number(summary.total_qty_sold || 0),
+                gross_sales: Number(summary.gross_sales || 0),
+                net_sales: Number(summary.net_sales || 0),
+                profit: Number(summary.profit || 0),
+                delivery_charges: Number(deliverySummary.total_delivery_charges || 0),
+                store_settlement_payments: Number(settlementSummary.total_paid_settlements || 0),
+                fuel_payments: Number(fuelSummary.total_fuel_payments || 0),
+                expenses: Number(expenseSummary.total_paid_expenses || 0),
+                net_closing: Number((total_income - total_expense - total_settlements).toFixed(2))
+            };
+
+            reportData = {
+                type: 'periodic_sales_report',
+                filters: {
+                    period_from: period_from || null,
+                    period_to: period_to || null,
+                    store_id: store_id || null
+                },
+                rows: (rows || []).map((row) => ({
+                    store_id: Number(row.store_id || 0) || null,
+                    store_name: row.store_name || '-',
+                    category_name: row.category_name || 'Uncategorized',
+                    product_id: Number(row.product_id || 0) || null,
+                    product_name: row.product_name || '-',
+                    sale_type: row.sale_type || 'store',
+                    cost_price: Number(parseFloat(row.avg_cost_price || 0).toFixed(2)),
+                    sale_price: Number(parseFloat(row.avg_sale_price || 0).toFixed(2)),
+                    qty_sold: Number(row.qty_sold || 0),
+                    gross_sales: Number(parseFloat(row.gross_sales || 0).toFixed(2)),
+                    net_sales: Number(parseFloat(row.net_sales || 0).toFixed(2)),
+                    profit: Number(parseFloat(row.profit || 0).toFixed(2))
+                })),
+                summary,
+                delivery_rows: deliveryRows,
+                delivery_summary: deliverySummary,
+                settlement_rows: settlementRows,
+                settlement_summary: settlementSummary,
+                fuel_rows: fuelRows,
+                fuel_summary: fuelSummary,
+                expense_rows: expenseRows,
+                expense_summary: expenseSummary,
+                closing_summary: closingSummary
+            };
+        } else if (report_type === 'periodic_credit_cash_report') {
+            const hasRange = Boolean(period_from && period_to);
+            const rangeFrom = hasRange ? `${period_from} 00:00:00` : null;
+            const rangeTo = hasRange ? `${period_to} 23:59:59` : null;
+            const params = hasRange ? [rangeFrom, rangeTo] : [];
+
+            const [salesRows] = await req.db.execute(
+                `SELECT
+                    DATE(o.created_at) AS report_date,
+                    ROUND(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%'
+                                THEN oi.quantity * (
+                                    oi.price - (
+                                        CASE
+                                            WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                                 AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                                 AND COALESCE(s.store_discount_percent, 0) > 0
+                                                THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                            WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                                THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                            WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                                THEN COALESCE(oi.discount_value, 0)
+                                            ELSE 0
+                                        END
+                                    )
+                                )
+                            ELSE 0
+                        END
+                    ), 2) AS credit_sale,
+                    ROUND(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%'
+                                THEN 0
+                            ELSE oi.quantity * (
+                                oi.price - (
+                                    CASE
+                                        WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                             AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                             AND COALESCE(s.store_discount_percent, 0) > 0
+                                            THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                        WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                        WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN COALESCE(oi.discount_value, 0)
+                                        ELSE 0
+                                    END
+                                )
+                            )
+                        END
+                    ), 2) AS cash_sale,
+                    ROUND(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(p.description, ''))) = 'created from admin manual order'
+                                THEN oi.quantity * (
+                                    (
+                                        oi.price - (
+                                            CASE
+                                                WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                                     AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                                     AND COALESCE(s.store_discount_percent, 0) > 0
+                                                    THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                                WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                                    THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                                WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                                    THEN COALESCE(oi.discount_value, 0)
+                                                ELSE 0
+                                            END
+                                        )
+                                    ) - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                                )
+                            ELSE oi.quantity * (
+                                oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                            )
+                        END
+                    ), 2) AS profit
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 LEFT JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id
+                    AND (
+                        (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id)
+                        OR
+                        (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+                    )
+                 WHERE o.status = 'delivered'
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                 GROUP BY DATE(o.created_at)
+                 ORDER BY DATE(o.created_at) DESC`,
+                params
+            );
+
+            const [deliveryRows] = await req.db.execute(
+                `SELECT
+                    DATE(o.created_at) AS report_date,
+                    ROUND(SUM(COALESCE(o.delivery_fee, 0)), 2) AS delivery_charges
+                 FROM orders o
+                 WHERE o.status = 'delivered'
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                 GROUP BY DATE(o.created_at)
+                 ORDER BY DATE(o.created_at) DESC`,
+                params
+            );
+
+            const deliveryMap = new Map();
+            (deliveryRows || []).forEach((row) => {
+                deliveryMap.set(String(row.report_date), Number(parseFloat(row.delivery_charges || 0).toFixed(2)));
+            });
+
+            const rowMap = new Map();
+            (salesRows || []).forEach((row) => {
+                const key = String(row.report_date);
+                rowMap.set(key, {
+                    report_date: key,
+                    credit_sale: Number(parseFloat(row.credit_sale || 0).toFixed(2)),
+                    cash_sale: Number(parseFloat(row.cash_sale || 0).toFixed(2)),
+                    profit: Number(parseFloat(row.profit || 0).toFixed(2)),
+                    delivery_charges: Number(parseFloat(deliveryMap.get(key) || 0).toFixed(2))
+                });
+            });
+            deliveryMap.forEach((deliveryCharges, key) => {
+                if (!rowMap.has(key)) {
+                    rowMap.set(key, {
+                        report_date: key,
+                        credit_sale: 0,
+                        cash_sale: 0,
+                        profit: 0,
+                        delivery_charges: Number(parseFloat(deliveryCharges || 0).toFixed(2))
+                    });
+                }
+            });
+
+            const rows = Array.from(rowMap.values())
+                .sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)))
+                .map((row) => ({
+                    ...row,
+                    total: Number((
+                        Number(row.credit_sale || 0) +
+                        Number(row.cash_sale || 0) +
+                        Number(row.profit || 0) +
+                        Number(row.delivery_charges || 0)
+                    ).toFixed(2))
+                }));
+
+            const summary = rows.reduce((acc, row) => {
+                acc.total_credit_sale += Number(row.credit_sale || 0);
+                acc.total_cash_sale += Number(row.cash_sale || 0);
+                acc.total_profit += Number(row.profit || 0);
+                acc.total_delivery_charges += Number(row.delivery_charges || 0);
+                acc.grand_total += Number(row.total || 0);
+                return acc;
+            }, {
+                total_credit_sale: 0,
+                total_cash_sale: 0,
+                total_profit: 0,
+                total_delivery_charges: 0,
+                grand_total: 0
+            });
+
+            summary.total_credit_sale = Number(summary.total_credit_sale.toFixed(2));
+            summary.total_cash_sale = Number(summary.total_cash_sale.toFixed(2));
+            summary.total_profit = Number(summary.total_profit.toFixed(2));
+            summary.total_delivery_charges = Number(summary.total_delivery_charges.toFixed(2));
+            summary.grand_total = Number(summary.grand_total.toFixed(2));
+
+            total_income = summary.grand_total;
+
+            reportData = {
+                type: 'periodic_credit_cash_report',
+                filters: {
+                    period_from: period_from || null,
+                    period_to: period_to || null
+                },
+                rows,
+                summary
+            };
+
         } else if (report_type === 'cash_discrepancy_report') {
             const dateFilter = period_from && period_to ? 'AND o.created_at BETWEEN ? AND ?' : '';
             const dateParamsFull = period_from && period_to ? [period_from, `${period_to} 23:59:59`] : [];
@@ -4150,7 +4780,15 @@ router.post('/reports/generate', [
                  JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
                  WHERE o.status = 'delivered'
                    AND o.payment_status = 'paid'
-                   AND oi.settlement_id IS NULL`
+                   AND oi.settlement_id IS NULL
+                   AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+                   AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM rider_store_payments rsp
+                       WHERE rsp.order_id = oi.order_id
+                         AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+                   )`
             );
             const current_outstanding_store_payable = Math.max(
                 0,
@@ -4210,6 +4848,14 @@ router.post('/reports/generate', [
                  JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
                  WHERE o.status = 'delivered'
                    AND o.payment_status = 'paid'
+                   AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+                   AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM rider_store_payments rsp
+                       WHERE rsp.order_id = oi.order_id
+                         AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+                   )
                    ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
                    ${hasStore ? 'AND s.id = ?' : ''}
                  GROUP BY COALESCE(oi.store_id, p.store_id)`,
@@ -4248,6 +4894,14 @@ router.post('/reports/generate', [
                  WHERE o.status = 'delivered'
                    AND o.payment_status = 'paid'
                    AND oi.settlement_id IS NULL
+                   AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+                   AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM rider_store_payments rsp
+                       WHERE rsp.order_id = oi.order_id
+                         AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+                   )
                    ${hasStore ? 'AND s.id = ?' : ''}
                  GROUP BY COALESCE(oi.store_id, p.store_id)`,
                 hasStore ? [store_id] : []
@@ -4271,6 +4925,14 @@ router.post('/reports/generate', [
                  WHERE o.status = 'delivered'
                    AND o.payment_status = 'paid'
                    AND oi.settlement_id IS NULL
+                   AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+                   AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM rider_store_payments rsp
+                       WHERE rsp.order_id = oi.order_id
+                         AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+                   )
                    ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
                    ${hasStore ? 'AND s.id = ?' : ''}
                  GROUP BY o.id, o.order_number, o.created_at, COALESCE(oi.store_id, p.store_id), s.name
@@ -4433,6 +5095,14 @@ router.post('/reports/generate', [
                  LEFT JOIN store_settlements ss ON ss.id = oi.settlement_id
                  WHERE o.status = 'delivered'
                    AND o.payment_status = 'paid'
+                   AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+                   AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM rider_store_payments rsp
+                       WHERE rsp.order_id = oi.order_id
+                         AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+                   )
                    ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
                    ${hasStore ? 'AND s.id = ?' : ''}
                  GROUP BY COALESCE(oi.store_id, p.store_id), s.name, o.id, o.order_number, o.created_at, o.payment_method, o.payment_status
@@ -4610,6 +5280,17 @@ router.post('/reports/generate', [
             } else {
                 description = 'Store Financials - All Stores';
             }
+        } else if (report_type === 'periodic_sales_report') {
+            if (store_id) {
+                const [stores] = await req.db.execute('SELECT name FROM stores WHERE id = ?', [store_id]);
+                if (stores.length > 0) {
+                    description = `Periodic Sales Report - ${stores[0].name}`;
+                }
+            } else {
+                description = 'Periodic Sales Report - All Stores';
+            }
+        } else if (report_type === 'periodic_credit_cash_report') {
+            description = 'Periodic Credit Cash Report';
         }
 
         if (req.body.preview) {
