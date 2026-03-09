@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireStoreOwner } = require('../middleware/auth');
-const { sendPushToUser } = require('../services/pushNotifications');
+const { sendPushToUser, ensurePushDeviceTokensTable } = require('../services/pushNotifications');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -100,6 +100,79 @@ async function ensureCustomerFlashMessagesTable(db) {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
     `);
+}
+
+async function ensureSystemSettingsTable(db) {
+    await db.execute(`
+        CREATE TABLE IF NOT EXISTS system_settings (
+            setting_key VARCHAR(120) PRIMARY KEY,
+            setting_value VARCHAR(255) NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    `);
+}
+
+async function saveAppUpdateSettings(db, {
+    version,
+    title,
+    message,
+    playStoreUrl,
+    minimumSupportedVersion,
+    forceUpdate,
+    reminderHour
+}) {
+    await ensureSystemSettingsTable(db);
+    const entries = [
+        ['app_update_latest_version', version || ''],
+        ['app_update_title', title || 'App Update Available'],
+        ['app_update_message', message || 'A new version of ServeNow is available on Play Store.'],
+        ['app_update_play_store_url', playStoreUrl || 'https://play.google.com/store/apps/details?id=com.onenetsol.servenow'],
+        ['app_update_minimum_supported_version', minimumSupportedVersion || ''],
+        ['app_update_force_update', forceUpdate ? '1' : '0'],
+        ['app_update_customer_reminder_hour', String(Number.isFinite(Number(reminderHour)) ? Number(reminderHour) : 12)]
+    ];
+
+    for (const [key, value] of entries) {
+        await db.execute(
+            `INSERT INTO system_settings (setting_key, setting_value)
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+            [key, value]
+        );
+    }
+}
+
+async function getAppUpdateSettings(db) {
+    await ensureSystemSettingsTable(db);
+    const [rows] = await db.execute(
+        `SELECT setting_key, setting_value
+         FROM system_settings
+         WHERE setting_key IN (
+            'app_update_latest_version',
+            'app_update_title',
+            'app_update_message',
+            'app_update_play_store_url',
+            'app_update_minimum_supported_version',
+            'app_update_force_update',
+            'app_update_customer_reminder_hour'
+         )`
+    );
+
+    const settings = new Map((rows || []).map((row) => [row.setting_key, row.setting_value]));
+    const reminderHourRaw = Number.parseInt(String(settings.get('app_update_customer_reminder_hour') || '12'), 10);
+    const reminderHour = Number.isFinite(reminderHourRaw) && reminderHourRaw >= 0 && reminderHourRaw <= 23
+        ? reminderHourRaw
+        : 12;
+
+    return {
+        latest_version: String(settings.get('app_update_latest_version') || '').trim(),
+        title: String(settings.get('app_update_title') || 'App Update Available').trim(),
+        message: String(settings.get('app_update_message') || 'A new version of ServeNow is available on Play Store.').trim(),
+        play_store_url: String(settings.get('app_update_play_store_url') || 'https://play.google.com/store/apps/details?id=com.onenetsol.servenow').trim(),
+        minimum_supported_version: String(settings.get('app_update_minimum_supported_version') || '').trim(),
+        force_update: String(settings.get('app_update_force_update') || '0').trim() === '1',
+        reminder_hour: reminderHour
+    };
 }
 
 async function ensureStoreFinancialColumns(db) {
@@ -312,6 +385,40 @@ async function getTargetCustomers(db, target, customIds) {
         id: Number(r.id),
         user_type: (r.user_type || 'standard_user').toString().toLowerCase()
     }));
+}
+
+async function getTargetAppUsers(db, audience) {
+    await ensurePushDeviceTokensTable(db);
+    const normalizedAudience = String(audience || 'all').toLowerCase().trim();
+    const allowedAudiences = new Set(['all', 'customers', 'riders', 'store_owners', 'admins']);
+    const finalAudience = allowedAudiences.has(normalizedAudience) ? normalizedAudience : 'all';
+    const params = [];
+
+    let where = `WHERE pdt.is_active = 1 AND LOWER(COALESCE(pdt.platform, 'unknown')) IN ('android', 'ios')`;
+    if (finalAudience === 'customers') {
+        where += ` AND LOWER(COALESCE(pdt.user_type, '')) IN ('customer', 'standard_user')`;
+    } else if (finalAudience === 'riders') {
+        where += ` AND LOWER(COALESCE(pdt.user_type, '')) = 'rider'`;
+    } else if (finalAudience === 'store_owners') {
+        where += ` AND LOWER(COALESCE(pdt.user_type, '')) = 'store_owner'`;
+    } else if (finalAudience === 'admins') {
+        where += ` AND LOWER(COALESCE(pdt.user_type, '')) IN ('admin', 'staff')`;
+    }
+
+    const [rows] = await db.execute(
+        `SELECT DISTINCT pdt.user_id, LOWER(COALESCE(pdt.user_type, '')) AS user_type
+         FROM push_device_tokens pdt
+         ${where}
+         ORDER BY pdt.user_id ASC`,
+        params
+    );
+
+    return (rows || [])
+        .map((row) => ({
+            id: Number(row.user_id || 0),
+            user_type: String(row.user_type || '').trim().toLowerCase()
+        }))
+        .filter((row) => row.id > 0 && row.user_type);
 }
 
 function normalizeDateTimeInput(raw) {
@@ -1127,6 +1234,113 @@ router.post('/customer-push-notification', authenticateToken, requireAdmin, asyn
         return res.status(500).json({
             success: false,
             message: 'Failed to send customer push notification',
+            error: error.message
+        });
+    }
+});
+
+router.get('/app-update-status', authenticateToken, async (req, res) => {
+    try {
+        const settings = await getAppUpdateSettings(req.db);
+        return res.json({
+            success: true,
+            app_update: settings
+        });
+    } catch (error) {
+        console.error('Error fetching app update status:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch app update status',
+            error: error.message
+        });
+    }
+});
+
+router.post('/app-update-notification', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const audience = (req.body.audience || 'all').toString().trim().toLowerCase();
+        const version = (req.body.version || '').toString().trim();
+        const title = (req.body.title || '').toString().trim() || 'App Update Available';
+        const message = (req.body.message || '').toString().trim();
+        const playStoreUrl = (req.body.play_store_url || '').toString().trim() ||
+            'https://play.google.com/store/apps/details?id=com.onenetsol.servenow';
+        const minimumSupportedVersion = (req.body.minimum_supported_version || '').toString().trim();
+        const forceUpdate = !!req.body.force_update;
+
+        if (title.length > 120) {
+            return res.status(400).json({
+                success: false,
+                message: 'Title must be 120 characters or less'
+            });
+        }
+        if (!message || message.length > 500) {
+            return res.status(400).json({
+                success: false,
+                message: 'Message is required and must be 500 characters or less'
+            });
+        }
+        if (version && version.length > 40) {
+            return res.status(400).json({
+                success: false,
+                message: 'Version must be 40 characters or less'
+            });
+        }
+        if (minimumSupportedVersion && minimumSupportedVersion.length > 40) {
+            return res.status(400).json({
+                success: false,
+                message: 'Minimum supported version must be 40 characters or less'
+            });
+        }
+
+        if (version) {
+            await saveAppUpdateSettings(req.db, {
+                version,
+                title,
+                message,
+                playStoreUrl,
+                minimumSupportedVersion,
+                forceUpdate,
+                reminderHour: 12
+            });
+        }
+
+        const recipients = await getTargetAppUsers(req.db, audience);
+        let pushed = 0;
+        for (const recipient of recipients) {
+            await sendPushToUser(req.db, {
+                userId: recipient.id,
+                userType: recipient.user_type,
+                title,
+                message,
+                data: {
+                    type: 'app_update_available',
+                    version,
+                    play_store_url: playStoreUrl,
+                    android_package: 'com.onenetsol.servenow',
+                    minimum_supported_version: minimumSupportedVersion,
+                    force_update: forceUpdate ? '1' : '0',
+                    reminder_hour: '12'
+                },
+                collapseKey: version ? `app_update_${version}` : 'app_update_available'
+            });
+            pushed++;
+        }
+
+        return res.json({
+            success: true,
+            message: 'App update notification sent successfully',
+            push_notification: {
+                audience,
+                version: version || null,
+                recipient_count: recipients.length,
+                pushed_count: pushed
+            }
+        });
+    } catch (error) {
+        console.error('Error sending app update push notification:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to send app update notification',
             error: error.message
         });
     }

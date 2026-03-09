@@ -82,6 +82,49 @@ function calculateDeliveryFeeByStoreCount(storeCount, feeConfig) {
   );
 }
 
+async function getCustomerSupportContact(db) {
+  await ensureSystemSettingsTable(db);
+  const [settingRows] = await db.execute(
+    `SELECT setting_key, setting_value
+     FROM system_settings
+     WHERE setting_key IN ('support_phone', 'support_whatsapp', 'support_email', 'support_name')`
+  );
+
+  const settings = new Map(settingRows.map((row) => [row.setting_key, row.setting_value]));
+  let phone = String(settings.get("support_phone") || "").trim();
+  let whatsapp = String(settings.get("support_whatsapp") || "").trim();
+  let email = String(settings.get("support_email") || "").trim();
+  let name = String(settings.get("support_name") || "").trim();
+
+  if (!phone || !email || !name) {
+    const [adminRows] = await db.execute(
+      `SELECT first_name, last_name, email, phone
+       FROM users
+       WHERE user_type = 'admin'
+       ORDER BY id ASC
+       LIMIT 1`
+    );
+    if (adminRows.length) {
+      const admin = adminRows[0];
+      if (!phone) phone = String(admin.phone || "").trim();
+      if (!email) email = String(admin.email || "").trim();
+      if (!name) {
+        name = `${String(admin.first_name || "").trim()} ${String(admin.last_name || "").trim()}`.trim();
+      }
+    }
+  }
+
+  if (!whatsapp) whatsapp = phone;
+  if (!name) name = "ServeNow Support";
+
+  return {
+    name,
+    phone,
+    whatsapp,
+    email,
+  };
+}
+
 function isProfitPaymentTerm(term) {
   const t = String(term || "").toLowerCase().trim();
   return t === "cash only" || t === "credit";
@@ -498,7 +541,7 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
 
     const { status } = req.query;
     let query = `
-            SELECT o.*, s.name as store_name, s.location as store_location, s.phone as store_phone,
+            SELECT o.*, s.name as store_name, s.location as store_location, s.phone as store_phone, s.email as store_email,
                    r.first_name as rider_first_name, r.last_name as rider_last_name, r.phone as rider_phone
             FROM orders o
             LEFT JOIN stores s ON o.store_id = s.id
@@ -536,7 +579,11 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
       if (hasVariantsTable) {
         itemsQuery = `
                 SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name,
-                       s.phone as item_store_phone,
+                       s.phone as item_store_phone, s.email as item_store_email,
+                       CASE
+                         WHEN LOWER(TRIM(COALESCE(p.description, ''))) = 'created from admin manual order' THEN 1
+                         ELSE 0
+                       END as is_manual_order_item,
                        v.label as variant_label
                 FROM order_items oi
                 JOIN products p ON oi.product_id = p.id
@@ -547,7 +594,11 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
       } else {
          itemsQuery = `
                 SELECT oi.*, p.name as product_name, p.image_url, p.store_id, s.name as item_store_name,
-                       s.phone as item_store_phone,
+                       s.phone as item_store_phone, s.email as item_store_email,
+                       CASE
+                         WHEN LOWER(TRIM(COALESCE(p.description, ''))) = 'created from admin manual order' THEN 1
+                         ELSE 0
+                       END as is_manual_order_item,
                        NULL as variant_label
                 FROM order_items oi
                 JOIN products p ON oi.product_id = p.id
@@ -558,6 +609,9 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
 
       const [items] = await req.db.execute(itemsQuery, [order.id]);
       order.items = items;
+      order.has_manual_order_item = items.some(
+        (item) => Number(item.is_manual_order_item || 0) === 1,
+      );
 
       // If store_id is NULL (multi-store order), set display name
       // Note: In some schemas, store_id might be 0 or null.
@@ -577,12 +631,17 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
               store_id: sId,
               store_name: item.item_store_name || 'Unknown Store',
               store_phone: item.item_store_phone || "",
+              store_email: item.item_store_email || "",
               status: item.item_status || 'pending', // Use item-specific status!
+              has_manual_order_item: false,
               items: [],
               rider_first_name: order.rider_first_name,
               rider_last_name: order.rider_last_name,
               rider_phone: order.rider_phone
             };
+          }
+          if (Number(item.is_manual_order_item || 0) === 1) {
+            storeGroups[sId].has_manual_order_item = true;
           }
           storeGroups[sId].items.push(item);
         });
@@ -599,6 +658,23 @@ router.get("/my-orders", authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch orders",
+      error: error.message,
+    });
+  }
+});
+
+router.get("/customer-support-contact", authenticateToken, async (req, res) => {
+  try {
+    const support = await getCustomerSupportContact(req.db);
+    res.json({
+      success: true,
+      support,
+    });
+  } catch (error) {
+    console.error("Error fetching customer support contact:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch customer support contact",
       error: error.message,
     });
   }
@@ -732,11 +808,15 @@ router.post("/", authenticateToken, async (req, res) => {
       const product = products[0];
       storeIds.add(product.store_id);
       let unitPrice = Number(product.price);
+      const parsedBaseCost = Number(product.cost_price);
+      let unitCostPrice = Number.isFinite(parsedBaseCost)
+        ? parsedBaseCost
+        : null;
       let variantLabel = providedVariantLabel;
 
       if (sizeId || unitId) {
         let query = `
-                    SELECT psp.price, sz.label as size_label, u.name as unit_name, u.abbreviation as unit_abbreviation
+                    SELECT psp.price, psp.cost_price, sz.label as size_label, u.name as unit_name, u.abbreviation as unit_abbreviation
                     FROM product_size_prices psp
                     LEFT JOIN sizes sz ON psp.size_id = sz.id
                     LEFT JOIN units u ON psp.unit_id = u.id
@@ -761,6 +841,10 @@ router.post("/", authenticateToken, async (req, res) => {
 
         if (rows && rows.length > 0) {
           unitPrice = Number(rows[0].price);
+          const parsedVariantCost = Number(rows[0].cost_price);
+          if (Number.isFinite(parsedVariantCost)) {
+            unitCostPrice = parsedVariantCost;
+          }
           if (!variantLabel) {
             const sizeLabel = rows[0].size_label
               ? String(rows[0].size_label)
@@ -801,7 +885,7 @@ router.post("/", authenticateToken, async (req, res) => {
       const financialSnapshot = deriveOrderItemAdjustmentSnapshot({
         paymentTerm: product.payment_term,
         unitPrice,
-        productCostPrice: product.cost_price,
+        productCostPrice: unitCostPrice,
         discountType: product.discount_type,
         discountValue: product.discount_value,
         profitType: product.profit_type,
@@ -812,6 +896,7 @@ router.post("/", authenticateToken, async (req, res) => {
         productId,
         quantity,
         unitPrice,
+        costPrice: unitCostPrice,
         sizeId,
         unitId,
         variantLabel,
@@ -954,13 +1039,14 @@ router.post("/", authenticateToken, async (req, res) => {
 
     for (let item of preparedItems) {
       await req.db.execute(
-        "INSERT INTO order_items (order_id, product_id, store_id, quantity, price, size_id, unit_id, variant_label, discount_type, discount_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO order_items (order_id, product_id, store_id, quantity, price, cost_price, size_id, unit_id, variant_label, discount_type, discount_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           orderId,
           item.productId,
           item.storeId,
           item.quantity,
           item.unitPrice,
+          item.costPrice,
           item.sizeId,
           item.unitId,
           item.variantLabel,
@@ -2249,25 +2335,26 @@ router.get(
           WHERE oi.store_id IN (${placeholders})
       `, [...storeIds]);
 
-      // 2. Sales breakdown (gross, discount/share, net) for delivered orders.
+      // 2. Delivered sales total kept only for legacy compatibility on the stats payload.
       const [revenueRows] = await req.db.execute(
           `SELECT
-              COALESCE(SUM(oi.quantity * oi.price), 0) AS gross_sales,
               COALESCE(SUM(
                 oi.quantity * (
-                  CASE
-                    WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
-                         AND COALESCE(s.store_discount_apply_all_products, 0) = 1
-                         AND COALESCE(s.store_discount_percent, 0) > 0
-                      THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
-                    WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
-                      THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
-                    WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
-                      THEN COALESCE(oi.discount_value, 0)
-                    ELSE 0
-                  END
+                  oi.price - (
+                    CASE
+                      WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                           AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                           AND COALESCE(s.store_discount_percent, 0) > 0
+                        THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                      WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                        THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                      WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                        THEN COALESCE(oi.discount_value, 0)
+                      ELSE 0
+                    END
+                  )
                 )
-              ), 0) AS discount_share
+              ), 0) AS total_amount
            FROM order_items oi
            JOIN orders o ON oi.order_id = o.id
            JOIN stores s ON s.id = oi.store_id
@@ -2275,9 +2362,7 @@ router.get(
              AND o.status = 'delivered'`,
           [...storeIds]
       );
-      const grossSales = roundAmount(Number(revenueRows?.[0]?.gross_sales || 0));
-      const discountShare = roundAmount(Number(revenueRows?.[0]?.discount_share || 0));
-      const netSales = roundAmount(Math.max(0, grossSales - discountShare));
+      const totalAmount = roundAmount(Number(revenueRows?.[0]?.total_amount || 0));
 
       // 3. Store wallet ledger balance (kept for diagnostics/display if needed)
       const [walletLedgerRows] = await req.db.execute(
@@ -2394,10 +2479,7 @@ router.get(
           delivered: countRows[0].delivered,
           preparing: countRows[0].preparing,
           ready: countRows[0].ready,
-          total_amount: netSales, // Keep old key for compatibility
-          gross_sales: grossSales,
-          discount_share: discountShare,
-          net_sales: netSales,
+          total_amount: totalAmount,
           // Business-facing balance for store dashboard
           received_balance: pendingSettlement,
           // Diagnostics: underlying wallet ledger balance

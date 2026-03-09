@@ -35,6 +35,8 @@ const SUPPORTED_FINANCIAL_REPORT_TYPES = [
     'order_wise_sale_summary',
     'periodic_sales_report',
     'periodic_credit_cash_report',
+    'periodic_comprehensive_summary_report',
+    'periodic_store_payments_balance_report',
     'transaction_summary',
     'custom'
 ];
@@ -113,6 +115,29 @@ function getSettlementUnitAdjustment(item, unitPrice) {
     return 0;
 }
 
+function getStorePayableSqlExpression(storeAlias = 's') {
+    return `
+        GREATEST(
+            0,
+            (oi.quantity * oi.price) -
+            (
+                oi.quantity * (
+                    CASE
+                        WHEN LOWER(TRIM(COALESCE(${storeAlias}.payment_term, ''))) LIKE '%discount%'
+                             AND COALESCE(${storeAlias}.store_discount_apply_all_products, 0) = 1
+                             AND COALESCE(${storeAlias}.store_discount_percent, 0) > 0
+                            THEN oi.price * (COALESCE(${storeAlias}.store_discount_percent, 0) / 100)
+                        WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                            THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                        WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                            THEN COALESCE(oi.discount_value, 0)
+                        ELSE 0
+                    END
+                )
+            )
+        )`;
+}
+
 async function backfillLegacyPaymentVouchersToFinancialTransactions(db) {
     if (_legacyCpvBackfillDone) return 0;
     const [pendingRows] = await db.execute(
@@ -189,6 +214,150 @@ async function ensureRiderCashSubmissionOrdersTable(db) {
             KEY idx_rcso_movement (movement_id)
         )
     `);
+}
+
+async function backfillLegacyRiderCashSubmissionLinks(db) {
+    await ensureRiderCashSubmissionOrdersTable(db);
+
+    const [existingLinks] = await db.execute(
+        `SELECT movement_id, order_id
+         FROM rider_cash_submission_orders`
+    );
+    const linkedMovementIds = new Set(existingLinks.map((row) => Number(row.movement_id)));
+    const linkedOrderIds = new Set(existingLinks.map((row) => Number(row.order_id)));
+
+    const [walletRows] = await db.execute(
+        `SELECT
+            w.rider_id,
+            wt.id AS wallet_tx_id,
+            wt.type,
+            wt.amount,
+            wt.reference_type,
+            wt.reference_id,
+            o.id AS order_id,
+            o.order_number,
+            o.total_amount AS order_amount,
+            rcm.id AS movement_id,
+            rcm.movement_type,
+            rcm.status AS movement_status,
+            COALESCE(rcm.reference_type, '') AS movement_reference_type
+         FROM wallet_transactions wt
+         JOIN wallets w ON w.id = wt.wallet_id
+         LEFT JOIN orders o
+           ON wt.type = 'credit'
+          AND wt.reference_type = 'order'
+          AND CAST(wt.reference_id AS UNSIGNED) = o.id
+         LEFT JOIN rider_cash_movements rcm
+           ON wt.type = 'debit'
+          AND wt.reference_type = 'rider_cash_movement'
+          AND CAST(wt.reference_id AS UNSIGNED) = rcm.id
+         WHERE w.rider_id IS NOT NULL
+         ORDER BY w.rider_id ASC, wt.id ASC`
+    );
+
+    if (!walletRows.length) {
+        return { linkedMovements: 0, linkedOrders: 0 };
+    }
+
+    const stagedLinks = [];
+    let currentRiderId = null;
+    let pendingOrders = [];
+
+    for (const row of walletRows) {
+        const riderId = Number(row.rider_id || 0);
+        if (currentRiderId !== riderId) {
+            currentRiderId = riderId;
+            pendingOrders = [];
+        }
+
+        const rowType = String(row.type || '').toLowerCase().trim();
+        const refType = String(row.reference_type || '').toLowerCase().trim();
+
+        if (rowType === 'credit' && refType === 'order') {
+            const orderId = Number(row.order_id || 0);
+            if (orderId > 0 && !linkedOrderIds.has(orderId)) {
+                pendingOrders.push({
+                    order_id: orderId,
+                    order_number: row.order_number || null,
+                    order_amount: Number(row.order_amount || row.amount || 0)
+                });
+            }
+            continue;
+        }
+
+        if (rowType !== 'debit' || refType !== 'rider_cash_movement') {
+            continue;
+        }
+
+        const movementId = Number(row.movement_id || row.reference_id || 0);
+        if (!movementId || linkedMovementIds.has(movementId)) {
+            continue;
+        }
+
+        const movementType = String(row.movement_type || '').toLowerCase().trim();
+        const movementStatus = String(row.movement_status || '').toLowerCase().trim();
+        const movementRefType = String(row.movement_reference_type || '').toLowerCase().trim();
+        const isSubmissionLike =
+            movementType === 'cash_submission' ||
+            (movementType === 'cash_collection' && movementRefType !== 'order');
+
+        if (!isSubmissionLike || !['approved', 'completed'].includes(movementStatus)) {
+            continue;
+        }
+
+        const targetAmount = Number(row.amount || 0);
+        if (targetAmount <= 0 || pendingOrders.length === 0) {
+            continue;
+        }
+
+        let runningTotal = 0;
+        const matchedOrders = [];
+        for (const order of pendingOrders) {
+            matchedOrders.push(order);
+            runningTotal += Number(order.order_amount || 0);
+            if (Math.abs(runningTotal - targetAmount) < 0.01) {
+                break;
+            }
+            if (runningTotal > targetAmount + 0.01) {
+                matchedOrders.length = 0;
+                break;
+            }
+        }
+
+        if (!matchedOrders.length || Math.abs(runningTotal - targetAmount) > 0.01) {
+            continue;
+        }
+
+        matchedOrders.forEach((order) => {
+            stagedLinks.push([
+                movementId,
+                order.order_id,
+                riderId,
+                order.order_number,
+                Number(order.order_amount || 0)
+            ]);
+            linkedOrderIds.add(order.order_id);
+        });
+        linkedMovementIds.add(movementId);
+        pendingOrders = pendingOrders.slice(matchedOrders.length);
+    }
+
+    if (!stagedLinks.length) {
+        return { linkedMovements: 0, linkedOrders: 0 };
+    }
+
+    const valuesSql = stagedLinks.map(() => '(?, ?, ?, ?, ?)').join(', ');
+    await db.execute(
+        `INSERT IGNORE INTO rider_cash_submission_orders
+         (movement_id, order_id, rider_id, order_number, order_amount)
+         VALUES ${valuesSql}`,
+        stagedLinks.flat()
+    );
+
+    return {
+        linkedMovements: new Set(stagedLinks.map((row) => row[0])).size,
+        linkedOrders: stagedLinks.length
+    };
 }
 
 async function ensureRiderFuelPaymentEntriesTable(db) {
@@ -332,12 +501,33 @@ router.get('/dashboard', async (req, res) => {
             "o.status = 'delivered'",
             "o.payment_status = 'paid'",
             "oi.settlement_id IS NULL",
+            "LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')",
+            "LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'",
+            `NOT EXISTS (
+                SELECT 1
+                FROM rider_store_payments rsp
+                WHERE rsp.order_id = oi.order_id
+                  AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+            )`,
             unsettledPeriod.clause || null
         ].filter(Boolean);
         const [unsettledRows] = await req.db.execute(
             `SELECT COALESCE(SUM(
-                (oi.quantity * oi.price)
-                - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
+                oi.quantity * (
+                    oi.price - (
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                 AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                 AND COALESCE(s.store_discount_percent, 0) > 0
+                                THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                            WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                            WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                THEN COALESCE(oi.discount_value, 0)
+                            ELSE 0
+                        END
+                    )
+                )
             ), 0) AS total_unsettled_amount
              FROM order_items oi
              JOIN orders o ON o.id = oi.order_id
@@ -345,6 +535,71 @@ router.get('/dashboard', async (req, res) => {
              JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
              WHERE ${unsettledWhere.join(' AND ')}`,
             unsettledPeriod.params
+        );
+
+        const deliveryPeriod = buildPeriodFilter('o.created_at');
+        const deliveryWhere = [
+            "o.status = 'delivered'",
+            deliveryPeriod.clause || null
+        ].filter(Boolean);
+        const [deliveryChargesRows] = await req.db.execute(
+            `SELECT COALESCE(SUM(COALESCE(o.delivery_fee, 0)), 0) AS total_delivery_charges
+             FROM orders o
+             WHERE ${deliveryWhere.join(' AND ')}`,
+            deliveryPeriod.params
+        );
+
+        const storeEarnPeriod = buildPeriodFilter('o.created_at');
+        const storePaidPeriod = buildPeriodFilter('ss.settlement_date');
+        const [storeBalanceRows] = await req.db.execute(
+            `SELECT COALESCE(SUM(
+                CASE
+                    WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) IN ('cash only', 'cash with discount')
+                        THEN 0
+                    ELSE GREATEST(COALESCE(earn.total_payable, 0) - COALESCE(paid.total_paid, 0), 0)
+                END
+            ), 0) AS total_store_balances
+             FROM stores s
+             LEFT JOIN (
+                SELECT
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    SUM(
+                        GREATEST(
+                            0,
+                            (oi.price * oi.quantity) -
+                            (
+                                oi.quantity * (
+                                    CASE
+                                        WHEN LOWER(TRIM(COALESCE(s2.payment_term, ''))) LIKE '%discount%'
+                                             AND COALESCE(s2.store_discount_apply_all_products, 0) = 1
+                                             AND COALESCE(s2.store_discount_percent, 0) > 0
+                                            THEN oi.price * (COALESCE(s2.store_discount_percent, 0) / 100)
+                                        WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                        WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN COALESCE(oi.discount_value, 0)
+                                        ELSE 0
+                                    END
+                                )
+                            )
+                        )
+                    ) AS total_payable
+                FROM order_items oi
+                JOIN orders o ON oi.order_id = o.id
+                JOIN products p ON oi.product_id = p.id
+                JOIN stores s2 ON s2.id = COALESCE(oi.store_id, p.store_id)
+                WHERE o.status = 'delivered'
+                  ${storeEarnPeriod.clause ? `AND ${storeEarnPeriod.clause}` : ''}
+                GROUP BY COALESCE(oi.store_id, p.store_id)
+             ) earn ON earn.store_id = s.id
+             LEFT JOIN (
+                SELECT ss.store_id, SUM(ss.net_amount) AS total_paid
+                FROM store_settlements ss
+                WHERE ss.status = 'paid'
+                  ${storePaidPeriod.clause ? `AND ${storePaidPeriod.clause}` : ''}
+                GROUP BY ss.store_id
+             ) paid ON paid.store_id = s.id`,
+            [...storeEarnPeriod.params, ...storePaidPeriod.params]
         );
 
         // Cash in hand should represent current office cash position (all-time net),
@@ -377,6 +632,8 @@ router.get('/dashboard', async (req, res) => {
             riderCashSubmitted: 0,
             riderCashAdvance: 0,
             cashInHand: parseFloat(cashInHandResult[0]?.total || 0),
+            deliveryCharges: parseFloat(deliveryChargesRows?.[0]?.total_delivery_charges || 0),
+            storeBalances: parseFloat(storeBalanceRows?.[0]?.total_store_balances || 0),
             totalUnsettledAmount: parseFloat(unsettledRows?.[0]?.total_unsettled_amount || 0),
             netProfitIfSettled: 0
         };
@@ -1480,6 +1737,14 @@ router.post('/rider-cash', [
         }
 
         const { rider_id, movement_type, amount, description, reference_type, reference_id, notes } = req.body;
+
+        if (movement_type === 'cash_collection') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cash collection is auto-created from delivered cash orders. Use cash submission when rider hands cash to office.'
+            });
+        }
+
         const linkedOrderIds = Array.from(
             new Set(
                 (Array.isArray(req.body.linked_orders) ? req.body.linked_orders : [])
@@ -2589,6 +2854,8 @@ router.post('/reports/generate', [
                 'order_wise_sale_summary': 'report_order_summary',
                 'periodic_sales_report': 'report_sales',
                 'periodic_credit_cash_report': 'report_sales',
+                'periodic_comprehensive_summary_report': 'report_sales',
+                'periodic_store_payments_balance_report': 'report_store_settlement',
                 'custom': 'report_custom'
             };
 
@@ -2639,6 +2906,8 @@ router.post('/reports/generate', [
             case 'order_wise_sale_summary': prefix = 'OWS'; break;
             case 'periodic_sales_report': prefix = 'PSR'; break;
             case 'periodic_credit_cash_report': prefix = 'PCC'; break;
+            case 'periodic_comprehensive_summary_report': prefix = 'PCS'; break;
+            case 'periodic_store_payments_balance_report': prefix = 'SPB'; break;
             case 'custom': prefix = 'CUS'; break;
         }
 
@@ -3584,50 +3853,14 @@ router.post('/reports/generate', [
                             END
                         )
                     ), 2) AS total_discount,
-                    ROUND(SUM(
-                        oi.quantity * (
-                            oi.price - (
-                                CASE
-                                    WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
-                                         AND COALESCE(s.store_discount_apply_all_products, 0) = 1
-                                         AND COALESCE(s.store_discount_percent, 0) > 0
-                                        THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
-                                    WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
-                                        THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
-                                    WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
-                                        THEN COALESCE(oi.discount_value, 0)
-                                    ELSE 0
-                                END
-                            )
-                        )
-                    ), 2) AS net_sales,
+                    ROUND(SUM(oi.quantity * oi.price), 2) AS net_sales,
                     ROUND(SUM(
                         oi.quantity * COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
                     ), 2) AS total_cost,
                     ROUND(SUM(
-                        CASE
-                            WHEN LOWER(TRIM(COALESCE(p.description, ''))) = 'created from admin manual order'
-                                THEN oi.quantity * (
-                                    (
-                                        oi.price - (
-                                            CASE
-                                                WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
-                                                     AND COALESCE(s.store_discount_apply_all_products, 0) = 1
-                                                     AND COALESCE(s.store_discount_percent, 0) > 0
-                                                    THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
-                                                WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
-                                                    THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
-                                                WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
-                                                    THEN COALESCE(oi.discount_value, 0)
-                                                ELSE 0
-                                            END
-                                        )
-                                    ) - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
-                                )
-                            ELSE oi.quantity * (
-                                oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
-                            )
-                        END
+                        oi.quantity * (
+                            oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                        )
                     ), 2) AS profit
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
@@ -3902,7 +4135,11 @@ router.post('/reports/generate', [
             const hasRange = Boolean(period_from && period_to);
             const rangeFrom = hasRange ? `${period_from} 00:00:00` : null;
             const rangeTo = hasRange ? `${period_to} 23:59:59` : null;
-            const params = hasRange ? [rangeFrom, rangeTo] : [];
+            const hasStore = Boolean(store_id);
+            const params = [
+                ...(hasRange ? [rangeFrom, rangeTo] : []),
+                ...(hasStore ? [store_id] : [])
+            ];
 
             const [salesRows] = await req.db.execute(
                 `SELECT
@@ -3910,21 +4147,7 @@ router.post('/reports/generate', [
                     ROUND(SUM(
                         CASE
                             WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%'
-                                THEN oi.quantity * (
-                                    oi.price - (
-                                        CASE
-                                            WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
-                                                 AND COALESCE(s.store_discount_apply_all_products, 0) = 1
-                                                 AND COALESCE(s.store_discount_percent, 0) > 0
-                                                THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
-                                            WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
-                                                THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
-                                            WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
-                                                THEN COALESCE(oi.discount_value, 0)
-                                            ELSE 0
-                                        END
-                                    )
-                                )
+                                THEN oi.quantity * oi.price
                             ELSE 0
                         END
                     ), 2) AS credit_sale,
@@ -3932,47 +4155,13 @@ router.post('/reports/generate', [
                         CASE
                             WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%'
                                 THEN 0
-                            ELSE oi.quantity * (
-                                oi.price - (
-                                    CASE
-                                        WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
-                                             AND COALESCE(s.store_discount_apply_all_products, 0) = 1
-                                             AND COALESCE(s.store_discount_percent, 0) > 0
-                                            THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
-                                        WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
-                                            THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
-                                        WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
-                                            THEN COALESCE(oi.discount_value, 0)
-                                        ELSE 0
-                                    END
-                                )
-                            )
+                            ELSE oi.quantity * oi.price
                         END
                     ), 2) AS cash_sale,
                     ROUND(SUM(
-                        CASE
-                            WHEN LOWER(TRIM(COALESCE(p.description, ''))) = 'created from admin manual order'
-                                THEN oi.quantity * (
-                                    (
-                                        oi.price - (
-                                            CASE
-                                                WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
-                                                     AND COALESCE(s.store_discount_apply_all_products, 0) = 1
-                                                     AND COALESCE(s.store_discount_percent, 0) > 0
-                                                    THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
-                                                WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
-                                                    THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
-                                                WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
-                                                    THEN COALESCE(oi.discount_value, 0)
-                                                ELSE 0
-                                            END
-                                        )
-                                    ) - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
-                                )
-                            ELSE oi.quantity * (
-                                oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
-                            )
-                        END
+                        oi.quantity * (
+                            oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                        )
                     ), 2) AS profit
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
@@ -3986,6 +4175,7 @@ router.post('/reports/generate', [
                     )
                  WHERE o.status = 'delivered'
                    ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND COALESCE(oi.store_id, p.store_id) = ?' : ''}
                  GROUP BY DATE(o.created_at)
                  ORDER BY DATE(o.created_at) DESC`,
                 params
@@ -3996,8 +4186,17 @@ router.post('/reports/generate', [
                     DATE(o.created_at) AS report_date,
                     ROUND(SUM(COALESCE(o.delivery_fee, 0)), 2) AS delivery_charges
                  FROM orders o
+                 LEFT JOIN order_items oi ON oi.order_id = o.id
+                 LEFT JOIN products p ON p.id = oi.product_id
                  WHERE o.status = 'delivered'
                    ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? `AND EXISTS (
+                        SELECT 1
+                        FROM order_items doi
+                        JOIN products dp ON dp.id = doi.product_id
+                        WHERE doi.order_id = o.id
+                          AND COALESCE(doi.store_id, dp.store_id) = ?
+                   )` : ''}
                  GROUP BY DATE(o.created_at)
                  ORDER BY DATE(o.created_at) DESC`,
                 params
@@ -4038,7 +4237,6 @@ router.post('/reports/generate', [
                     total: Number((
                         Number(row.credit_sale || 0) +
                         Number(row.cash_sale || 0) +
-                        Number(row.profit || 0) +
                         Number(row.delivery_charges || 0)
                     ).toFixed(2))
                 }));
@@ -4064,13 +4262,307 @@ router.post('/reports/generate', [
             summary.total_delivery_charges = Number(summary.total_delivery_charges.toFixed(2));
             summary.grand_total = Number(summary.grand_total.toFixed(2));
 
-            total_income = summary.grand_total;
+            total_income = Number((
+                summary.total_credit_sale +
+                summary.total_cash_sale +
+                summary.total_delivery_charges
+            ).toFixed(2));
 
             reportData = {
                 type: 'periodic_credit_cash_report',
                 filters: {
                     period_from: period_from || null,
-                    period_to: period_to || null
+                    period_to: period_to || null,
+                    store_id: store_id || null
+                },
+                rows,
+                summary
+            };
+
+        } else if (report_type === 'periodic_comprehensive_summary_report') {
+            const hasRange = Boolean(period_from && period_to);
+            const rangeFrom = hasRange ? `${period_from} 00:00:00` : null;
+            const rangeTo = hasRange ? `${period_to} 23:59:59` : null;
+            const hasStore = Boolean(store_id);
+            const params = [
+                ...(hasRange ? [rangeFrom, rangeTo] : []),
+                ...(hasStore ? [store_id] : [])
+            ];
+
+            const [salesRows] = await req.db.execute(
+                `SELECT
+                    DATE(o.created_at) AS report_date,
+                    ROUND(SUM(oi.quantity * oi.price), 2) AS total_sale,
+                    ROUND(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%'
+                                THEN oi.quantity * oi.price
+                            ELSE 0
+                        END
+                    ), 2) AS credit_sale,
+                    ROUND(SUM(
+                        CASE
+                            WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%'
+                                THEN 0
+                            ELSE oi.quantity * oi.price
+                        END
+                    ), 2) AS cash_sale
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 LEFT JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 WHERE o.status = 'delivered'
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND COALESCE(oi.store_id, p.store_id) = ?' : ''}
+                 GROUP BY DATE(o.created_at)
+                 ORDER BY DATE(o.created_at) DESC`,
+                params
+            );
+
+            const [deliveryRows] = await req.db.execute(
+                `SELECT
+                    DATE(o.created_at) AS report_date,
+                    ROUND(SUM(COALESCE(o.delivery_fee, 0)), 2) AS delivery_charges
+                 FROM orders o
+                 WHERE o.status = 'delivered'
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? `AND EXISTS (
+                        SELECT 1
+                        FROM order_items doi
+                        JOIN products dp ON dp.id = doi.product_id
+                        WHERE doi.order_id = o.id
+                          AND COALESCE(doi.store_id, dp.store_id) = ?
+                   )` : ''}
+                 GROUP BY DATE(o.created_at)
+                 ORDER BY DATE(o.created_at) DESC`,
+                params
+            );
+
+            const expenseParams = [
+                ...(period_from && period_to ? [period_from, period_to] : [])
+            ];
+            const [expenseRows] = await req.db.execute(
+                `SELECT
+                    DATE(ae.expense_date) AS report_date,
+                    ROUND(SUM(COALESCE(ae.amount, 0)), 2) AS expense_amount
+                 FROM admin_expenses ae
+                 WHERE ae.status = 'paid'
+                   ${period_from && period_to ? 'AND ae.expense_date BETWEEN ? AND ?' : ''}
+                 GROUP BY DATE(ae.expense_date)
+                 ORDER BY DATE(ae.expense_date) DESC`,
+                expenseParams
+            );
+
+            const fuelParams = [
+                ...(period_from && period_to ? [period_from, period_to] : [])
+            ];
+            const [fuelRows] = await req.db.execute(
+                `SELECT
+                    DATE(rcm.movement_date) AS report_date,
+                    ROUND(SUM(COALESCE(rcm.amount, 0)), 2) AS fuel_amount
+                 FROM rider_cash_movements rcm
+                 WHERE rcm.movement_type = 'fuel_payment'
+                   AND rcm.status IN ('approved', 'completed')
+                   ${period_from && period_to ? 'AND rcm.movement_date BETWEEN ? AND ?' : ''}
+                 GROUP BY DATE(rcm.movement_date)
+                 ORDER BY DATE(rcm.movement_date) DESC`,
+                fuelParams
+            );
+
+            const rowMap = new Map();
+            const ensureRow = (key) => {
+                if (!rowMap.has(key)) {
+                    rowMap.set(key, {
+                        report_date: key,
+                        total_sale: 0,
+                        credit_sale: 0,
+                        cash_sale: 0,
+                        delivery_charges: 0,
+                        expense: 0,
+                        fuel: 0
+                    });
+                }
+                return rowMap.get(key);
+            };
+
+            (salesRows || []).forEach((row) => {
+                const key = String(row.report_date);
+                const target = ensureRow(key);
+                target.total_sale = Number(parseFloat(row.total_sale || 0).toFixed(2));
+                target.credit_sale = Number(parseFloat(row.credit_sale || 0).toFixed(2));
+                target.cash_sale = Number(parseFloat(row.cash_sale || 0).toFixed(2));
+            });
+            (deliveryRows || []).forEach((row) => {
+                const key = String(row.report_date);
+                ensureRow(key).delivery_charges = Number(parseFloat(row.delivery_charges || 0).toFixed(2));
+            });
+            (expenseRows || []).forEach((row) => {
+                const key = String(row.report_date);
+                ensureRow(key).expense = Number(parseFloat(row.expense_amount || 0).toFixed(2));
+            });
+            (fuelRows || []).forEach((row) => {
+                const key = String(row.report_date);
+                ensureRow(key).fuel = Number(parseFloat(row.fuel_amount || 0).toFixed(2));
+            });
+
+            const rows = Array.from(rowMap.values())
+                .sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)));
+
+            const summary = rows.reduce((acc, row) => {
+                acc.total_sale += Number(row.total_sale || 0);
+                acc.total_credit_sale += Number(row.credit_sale || 0);
+                acc.total_cash_sale += Number(row.cash_sale || 0);
+                acc.total_delivery_charges += Number(row.delivery_charges || 0);
+                acc.total_expense += Number(row.expense || 0);
+                acc.total_fuel += Number(row.fuel || 0);
+                return acc;
+            }, {
+                total_sale: 0,
+                total_credit_sale: 0,
+                total_cash_sale: 0,
+                total_delivery_charges: 0,
+                total_expense: 0,
+                total_fuel: 0
+            });
+            Object.keys(summary).forEach((key) => {
+                summary[key] = Number(summary[key].toFixed(2));
+            });
+
+            total_income = Number((summary.total_sale + summary.total_delivery_charges).toFixed(2));
+            total_expense = Number((summary.total_expense + summary.total_fuel).toFixed(2));
+
+            reportData = {
+                type: 'periodic_comprehensive_summary_report',
+                filters: {
+                    period_from: period_from || null,
+                    period_to: period_to || null,
+                    store_id: store_id || null
+                },
+                rows,
+                summary
+            };
+
+        } else if (report_type === 'periodic_store_payments_balance_report') {
+            const hasRange = Boolean(period_from && period_to);
+            const periodStart = hasRange ? `${period_from} 00:00:00` : null;
+            const periodEnd = hasRange ? `${period_to} 23:59:59` : null;
+            const hasStore = Boolean(store_id);
+            const payableSql = getStorePayableSqlExpression('s');
+
+            const [stores] = await req.db.execute(
+                `SELECT id, name, payment_term
+                 FROM stores
+                 ${hasStore ? 'WHERE id = ?' : ''}
+                 ORDER BY name ASC`,
+                hasStore ? [store_id] : []
+            );
+
+            const [generatedRows] = await req.db.execute(
+                `SELECT
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    SUM(${payableSql}) AS generated_payable
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 WHERE o.status = 'delivered'
+                   AND o.payment_status = 'paid'
+                   AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+                   AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM rider_store_payments rsp
+                       WHERE rsp.order_id = oi.order_id
+                         AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+                   )
+                   ${hasRange ? 'AND o.created_at BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND s.id = ?' : ''}
+                 GROUP BY COALESCE(oi.store_id, p.store_id)`,
+                [
+                    ...(hasRange ? [periodStart, periodEnd] : []),
+                    ...(hasStore ? [store_id] : [])
+                ]
+            );
+
+            const [paidRows] = await req.db.execute(
+                `SELECT
+                    ss.store_id,
+                    SUM(ss.net_amount) AS paid_amount
+                 FROM store_settlements ss
+                 WHERE ss.status = 'paid'
+                   ${hasRange ? 'AND ss.settlement_date BETWEEN ? AND ?' : ''}
+                   ${hasStore ? 'AND ss.store_id = ?' : ''}
+                 GROUP BY ss.store_id`,
+                [
+                    ...(hasRange ? [period_from, `${period_to} 23:59:59`] : []),
+                    ...(hasStore ? [store_id] : [])
+                ]
+            );
+
+            const [outstandingRows] = await req.db.execute(
+                `SELECT
+                    COALESCE(oi.store_id, p.store_id) AS store_id,
+                    SUM(${payableSql}) AS balance_amount
+                 FROM order_items oi
+                 JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+                 WHERE o.status = 'delivered'
+                   AND o.payment_status = 'paid'
+                   AND oi.settlement_id IS NULL
+                   AND LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT IN ('cash only', 'cash with discount')
+                   AND LOWER(TRIM(COALESCE(p.description, ''))) <> 'created from admin manual order'
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM rider_store_payments rsp
+                       WHERE rsp.order_id = oi.order_id
+                         AND rsp.store_id = COALESCE(oi.store_id, p.store_id)
+                   )
+                   ${hasStore ? 'AND s.id = ?' : ''}
+                 GROUP BY COALESCE(oi.store_id, p.store_id)`,
+                hasStore ? [store_id] : []
+            );
+
+            const generatedMap = new Map((generatedRows || []).map((r) => [Number(r.store_id), Number(r.generated_payable || 0)]));
+            const paidMap = new Map((paidRows || []).map((r) => [Number(r.store_id), Number(r.paid_amount || 0)]));
+            const balanceMap = new Map((outstandingRows || []).map((r) => [Number(r.store_id), Number(r.balance_amount || 0)]));
+
+            const rows = (stores || []).map((store) => ({
+                store_id: Number(store.id) || null,
+                store_name: store.name || '-',
+                payment_term: store.payment_term || '-',
+                generated_payable: Number((generatedMap.get(Number(store.id)) || 0).toFixed(2)),
+                paid_amount: Number((paidMap.get(Number(store.id)) || 0).toFixed(2)),
+                balance_amount: Number((balanceMap.get(Number(store.id)) || 0).toFixed(2))
+            })).filter((row) =>
+                row.generated_payable !== 0 ||
+                row.paid_amount !== 0 ||
+                row.balance_amount !== 0
+            );
+
+            const summary = rows.reduce((acc, row) => {
+                acc.total_generated_payable += Number(row.generated_payable || 0);
+                acc.total_paid_amount += Number(row.paid_amount || 0);
+                acc.total_balance_amount += Number(row.balance_amount || 0);
+                return acc;
+            }, {
+                total_generated_payable: 0,
+                total_paid_amount: 0,
+                total_balance_amount: 0
+            });
+            Object.keys(summary).forEach((key) => {
+                summary[key] = Number(summary[key].toFixed(2));
+            });
+
+            total_income = summary.total_generated_payable;
+            total_expense = summary.total_paid_amount;
+
+            reportData = {
+                type: 'periodic_store_payments_balance_report',
+                filters: {
+                    period_from: period_from || null,
+                    period_to: period_to || null,
+                    store_id: store_id || null
                 },
                 rows,
                 summary
@@ -4826,6 +5318,7 @@ router.post('/reports/generate', [
             const periodStart = hasRange ? `${period_from} 00:00:00` : null;
             const periodEnd = hasRange ? `${period_to} 23:59:59` : null;
             const hasStore = Boolean(store_id);
+            const payableSql = getStorePayableSqlExpression('s');
 
             const [stores] = await req.db.execute(
                 `SELECT id, name
@@ -4838,10 +5331,7 @@ router.post('/reports/generate', [
             const [generatedRows] = await req.db.execute(
                 `SELECT
                     COALESCE(oi.store_id, p.store_id) AS store_id,
-                    SUM(
-                        (oi.quantity * oi.price)
-                        - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
-                    ) AS period_generated_payable
+                    SUM(${payableSql}) AS period_generated_payable
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  JOIN products p ON p.id = oi.product_id
@@ -4883,10 +5373,7 @@ router.post('/reports/generate', [
             const [outstandingRows] = await req.db.execute(
                 `SELECT
                     COALESCE(oi.store_id, p.store_id) AS store_id,
-                    SUM(
-                        (oi.quantity * oi.price)
-                        - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
-                    ) AS current_outstanding
+                    SUM(${payableSql}) AS current_outstanding
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  JOIN products p ON p.id = oi.product_id
@@ -4914,10 +5401,7 @@ router.post('/reports/generate', [
                     o.created_at AS order_date,
                     COALESCE(oi.store_id, p.store_id) AS store_id,
                     s.name AS store_name,
-                    SUM(
-                        (oi.quantity * oi.price)
-                        - (oi.quantity * oi.price * (COALESCE(s.commission_rate, 0) / 100))
-                    ) AS unsettled_amount
+                    SUM(${payableSql}) AS unsettled_amount
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
                  JOIN products p ON p.id = oi.product_id
@@ -5291,6 +5775,24 @@ router.post('/reports/generate', [
             }
         } else if (report_type === 'periodic_credit_cash_report') {
             description = 'Periodic Credit Cash Report';
+        } else if (report_type === 'periodic_comprehensive_summary_report') {
+            if (store_id) {
+                const [stores] = await req.db.execute('SELECT name FROM stores WHERE id = ?', [store_id]);
+                if (stores.length > 0) {
+                    description = `Periodic Comprehensive Summary Report - ${stores[0].name}`;
+                }
+            } else {
+                description = 'Periodic Comprehensive Summary Report - All Stores';
+            }
+        } else if (report_type === 'periodic_store_payments_balance_report') {
+            if (store_id) {
+                const [stores] = await req.db.execute('SELECT name FROM stores WHERE id = ?', [store_id]);
+                if (stores.length > 0) {
+                    description = `Periodic Store Payments & Balance Report - ${stores[0].name}`;
+                }
+            } else {
+                description = 'Periodic Store Payments & Balance Report - All Stores';
+            }
         }
 
         if (req.body.preview) {
@@ -5358,6 +5860,7 @@ router.post('/reports/generate', [
 router.get('/riders/:id/pending-cash-orders', async (req, res) => {
     try {
         await ensureRiderCashSubmissionOrdersTable(req.db);
+        await backfillLegacyRiderCashSubmissionLinks(req.db);
         const { id } = req.params;
 
         const [pendingOrders] = await req.db.execute(
@@ -5366,12 +5869,13 @@ router.get('/riders/:id/pending-cash-orders', async (req, res) => {
              WHERE o.rider_id = ?
                AND o.status = 'delivered'
                AND LOWER(TRIM(COALESCE(o.payment_method, ''))) = 'cash'
+               AND LOWER(TRIM(COALESCE(o.payment_status, ''))) = 'paid'
                AND NOT EXISTS (
                    SELECT 1
                    FROM rider_cash_submission_orders rcso
                    JOIN rider_cash_movements rcm ON rcm.id = rcso.movement_id
                    WHERE rcso.order_id = o.id
-                     AND rcm.movement_type = 'cash_submission'
+                     AND rcm.movement_type IN ('cash_submission', 'cash_collection')
                      AND rcm.status IN ('pending', 'approved', 'completed')
                )
              ORDER BY o.created_at DESC`,
@@ -5446,6 +5950,7 @@ router.get('/riders/:id/submitted-fuel-entries', async (req, res) => {
 router.get('/riders/:id/submitted-cash-orders', async (req, res) => {
     try {
         await ensureRiderCashSubmissionOrdersTable(req.db);
+        await backfillLegacyRiderCashSubmissionLinks(req.db);
         const { id } = req.params;
         const [rows] = await req.db.execute(
             `SELECT 
@@ -5454,13 +5959,14 @@ router.get('/riders/:id/submitted-cash-orders', async (req, res) => {
                 COALESCE(o.total_amount, rcso.order_amount, 0) AS total_amount,
                 COALESCE(o.created_at, rcso.created_at) AS created_at,
                 rcm.movement_number,
+                rcm.movement_type,
                 rcm.status AS submission_status,
                 rcm.movement_date AS submitted_at
              FROM rider_cash_submission_orders rcso
              JOIN rider_cash_movements rcm ON rcm.id = rcso.movement_id
              LEFT JOIN orders o ON o.id = rcso.order_id
              WHERE rcso.rider_id = ?
-               AND rcm.movement_type = 'cash_submission'
+               AND rcm.movement_type IN ('cash_submission', 'cash_collection')
                AND rcm.status IN ('pending', 'approved', 'completed')
              ORDER BY rcm.movement_date DESC, rcso.id DESC`,
             [id]

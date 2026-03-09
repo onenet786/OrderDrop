@@ -4,10 +4,13 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'providers/auth_provider.dart';
 import 'providers/cart_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/notification_provider.dart';
+import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
@@ -88,15 +91,17 @@ class MyApp extends StatelessWidget {
             left: false,
             right: false,
             bottom: true,
-            child: Stack(
-              children: [
-                if (child != null) child,
-                const Positioned(
-                  right: 6,
-                  bottom: 4,
-                  child: _VersionBadge(),
-                ),
-              ],
+            child: _AppUpdateOverlay(
+              child: Stack(
+                children: [
+                  if (child != null) child,
+                  const Positioned(
+                    right: 6,
+                    bottom: 4,
+                    child: _VersionBadge(),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -283,6 +288,307 @@ class _VersionBadgeState extends State<_VersionBadge> {
           fontWeight: FontWeight.w500,
         ),
       ),
+    );
+  }
+}
+
+class _AppUpdateOverlay extends StatefulWidget {
+  final Widget child;
+
+  const _AppUpdateOverlay({required this.child});
+
+  @override
+  State<_AppUpdateOverlay> createState() => _AppUpdateOverlayState();
+}
+
+class _AppUpdateOverlayState extends State<_AppUpdateOverlay>
+    with WidgetsBindingObserver {
+  Map<String, dynamic>? _appUpdateStatus;
+  String? _authToken;
+  String? _dismissedVersion;
+  bool _dialogOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshUpdateStatusIfNeeded(force: true);
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final token = Provider.of<AuthProvider>(context).token;
+    if (token != _authToken) {
+      _authToken = token;
+      _dismissedVersion = null;
+      _refreshUpdateStatusIfNeeded(force: true);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshUpdateStatusIfNeeded(force: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  int _compareVersionStrings(String current, String target) {
+    List<int> parseParts(String value) {
+      final cleaned = value.split('+').first.trim();
+      if (cleaned.isEmpty) return const <int>[0];
+      return cleaned
+          .split('.')
+          .map((part) => int.tryParse(part.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+          .toList();
+    }
+
+    final currentParts = parseParts(current);
+    final targetParts = parseParts(target);
+    final maxLen =
+        currentParts.length > targetParts.length ? currentParts.length : targetParts.length;
+    for (int i = 0; i < maxLen; i++) {
+      final a = i < currentParts.length ? currentParts[i] : 0;
+      final b = i < targetParts.length ? targetParts[i] : 0;
+      if (a < b) return -1;
+      if (a > b) return 1;
+    }
+    return 0;
+  }
+
+  Future<Map<String, dynamic>?> _loadStatus(String token) async {
+    final status = await ApiService.getAppUpdateStatus(token);
+    String installedVersion = '';
+    String installedBuild = '';
+    try {
+      final info = await PackageInfo.fromPlatform();
+      installedVersion = info.version.trim();
+      installedBuild = info.buildNumber.trim();
+    } catch (_) {}
+
+    final latestVersion = (status['latest_version'] ?? '').toString().trim();
+    if (latestVersion.isEmpty) return null;
+
+    final minimumSupportedVersion =
+        (status['minimum_supported_version'] ?? '').toString().trim();
+    final updateAvailable =
+        _compareVersionStrings(installedVersion, latestVersion) < 0;
+    if (!updateAvailable) return null;
+
+    final forcedByVersion = minimumSupportedVersion.isNotEmpty &&
+        _compareVersionStrings(installedVersion, minimumSupportedVersion) < 0;
+    final reminderHour =
+        int.tryParse((status['reminder_hour'] ?? '12').toString()) ?? 12;
+
+    return {
+      ...status,
+      'installed_version': installedVersion,
+      'installed_build': installedBuild,
+      'latest_version': latestVersion,
+      'update_available': true,
+      'force_update_active':
+          (status['force_update'] == true || status['force_update'] == 1) || forcedByVersion,
+      'reminder_hour': reminderHour.clamp(0, 23),
+    };
+  }
+
+  Future<void> _refreshUpdateStatusIfNeeded({bool force = false}) async {
+    final token = _authToken;
+    if (token == null || token.trim().isEmpty) {
+      if (_appUpdateStatus != null && mounted) {
+        setState(() {
+          _appUpdateStatus = null;
+        });
+      }
+      return;
+    }
+
+    try {
+      final status = await _loadStatus(token);
+      if (!mounted) return;
+      setState(() {
+        _appUpdateStatus = status;
+        if (status == null) _dismissedVersion = null;
+      });
+      if (status != null) {
+        await _maybeShowDailyReminder(status, force: force);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _openAppUpdateLink() async {
+    final status = _appUpdateStatus;
+    if (status == null) return;
+    final url = (status['play_store_url'] ??
+            'https://play.google.com/store/apps/details?id=com.onenetsol.servenow')
+        .toString()
+        .trim();
+    if (url.isEmpty) return;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _maybeShowDailyReminder(
+    Map<String, dynamic> status, {
+    bool force = false,
+  }) async {
+    final now = DateTime.now();
+    final reminderHour = int.tryParse('${status['reminder_hour'] ?? 12}') ?? 12;
+    if (!force && now.hour < reminderHour) return;
+
+    final latestVersion = (status['latest_version'] ?? '').toString().trim();
+    if (latestVersion.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final today =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final key = 'global_update_reminder_$latestVersion';
+    if (prefs.getString(key) == today) return;
+    await prefs.setString(key, today);
+
+    if (!mounted || _dialogOpen) return;
+    _dialogOpen = true;
+    final forceUpdate = status['force_update_active'] == true;
+    final message = (status['message'] ?? 'A new version of ServeNow is available.')
+        .toString()
+        .trim();
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !forceUpdate,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(forceUpdate ? 'Update Required' : 'Update Available'),
+          content: Text(message.isNotEmpty ? message : 'Please update the app.'),
+          actions: [
+            if (!forceUpdate)
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Later'),
+              ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _openAppUpdateLink();
+              },
+              child: const Text('Update Now'),
+            ),
+          ],
+        );
+      },
+    );
+    _dialogOpen = false;
+  }
+
+  bool get _showBanner {
+    final status = _appUpdateStatus;
+    if (status == null) return false;
+    final latestVersion = (status['latest_version'] ?? '').toString().trim();
+    if (latestVersion.isEmpty) return false;
+    final forceUpdate = status['force_update_active'] == true;
+    return forceUpdate || _dismissedVersion != latestVersion;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _appUpdateStatus;
+    final topInset = MediaQuery.of(context).padding.top;
+
+    return Stack(
+      children: [
+        widget.child,
+        if (status != null && _showBanner)
+          Positioned(
+            left: 12,
+            right: 12,
+            top: topInset + 10,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4E8),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFFFD5A8)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.12),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.system_update_alt, color: Color(0xFFB45309)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            status['force_update_active'] == true
+                                ? 'Update Required'
+                                : 'Update Available',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                        if (status['force_update_active'] != true)
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () {
+                              setState(() {
+                                _dismissedVersion =
+                                    (status['latest_version'] ?? '').toString().trim();
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      (status['message'] ?? 'A newer version of ServeNow is available.')
+                          .toString(),
+                      style: const TextStyle(
+                        fontSize: 12.8,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Installed: ${(status['installed_version'] ?? 'Unknown').toString()}'
+                      '   Latest: ${(status['latest_version'] ?? '').toString()}',
+                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: FilledButton.icon(
+                        onPressed: _openAppUpdateLink,
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        label: const Text('Update Now'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

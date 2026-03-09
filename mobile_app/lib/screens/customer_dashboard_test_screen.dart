@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
@@ -31,6 +33,8 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   Map<String, dynamic>? _globalStatus;
   Map<String, dynamic>? _livePromotions;
   Map<String, dynamic>? _customerFlashMessage;
+  Map<String, dynamic>? _supportContact;
+  Map<String, dynamic>? _appUpdateStatus;
   final TextEditingController _searchController = TextEditingController();
   double? _userLat;
   double? _userLng;
@@ -136,9 +140,17 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             : promotions;
       } catch (_) {}
       Map<String, dynamic>? customerFlash;
+      Map<String, dynamic>? supportContact;
+      Map<String, dynamic>? appUpdateStatus;
       if (token != null) {
         try {
           customerFlash = await ApiService.getCustomerFlashMessage(token);
+        } catch (_) {}
+        try {
+          supportContact = await ApiService.getCustomerSupportContact(token);
+        } catch (_) {}
+        try {
+          appUpdateStatus = await _resolveAppUpdateStatus(token);
         } catch (_) {}
       }
       final storesResp = await ApiService.getStores(
@@ -157,6 +169,8 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         _globalStatus = globalStatus;
         _livePromotions = livePromotions;
         _customerFlashMessage = customerFlash;
+        _supportContact = supportContact;
+        _appUpdateStatus = appUpdateStatus;
         _scheduleGlobalStatusRefresh(globalStatus);
         _scheduleLivePromotionsRefresh(livePromotions);
         _serviceLimitedMessage = limited
@@ -166,6 +180,9 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             : null;
         _isLoading = false;
       });
+      if (appUpdateStatus != null) {
+        await _maybeShowDailyUpdateReminder(appUpdateStatus);
+      }
       _tryShowLaunchFlash();
     } catch (e) {
       if (mounted) {
@@ -221,6 +238,292 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         return name.contains(q) || location.contains(q);
       }).toList();
     });
+  }
+
+  Future<void> _makeCall(String phoneNumber) async {
+    final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
+    if (cleaned.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: cleaned);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _openWhatsApp(String phoneNumber) async {
+    final cleanPhone = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleanPhone.isEmpty) return;
+    final uri = Uri.parse('https://wa.me/$cleanPhone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _sendEmail(String emailAddress) async {
+    final cleaned = emailAddress.trim();
+    if (cleaned.isEmpty) return;
+    final uri = Uri(
+      scheme: 'mailto',
+      path: cleaned,
+      queryParameters: const {'subject': 'ServeNow Support'},
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _showSupportOptions() async {
+    Map<String, dynamic> contact = _supportContact ?? const <String, dynamic>{};
+    final token = Provider.of<AuthProvider>(context, listen: false).token;
+    if ((contact['phone'] ?? '').toString().trim().isEmpty &&
+        (contact['whatsapp'] ?? '').toString().trim().isEmpty &&
+        (contact['email'] ?? '').toString().trim().isEmpty &&
+        token != null) {
+      try {
+        contact = await ApiService.getCustomerSupportContact(token);
+        if (!mounted) return;
+        setState(() {
+          _supportContact = contact;
+        });
+      } catch (_) {}
+    }
+
+    final name = (contact['name'] ?? 'Contact Us').toString().trim();
+    final phone = (contact['phone'] ?? '').toString().trim();
+    final whatsapp = (contact['whatsapp'] ?? phone).toString().trim();
+    final email = (contact['email'] ?? '').toString().trim();
+
+    if (phone.isEmpty && whatsapp.isEmpty && email.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Support contact is not configured yet.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.isEmpty ? 'Contact Us' : name,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Choose how you want to contact us.',
+                  style: TextStyle(fontSize: 12.5, color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                if (phone.isNotEmpty)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFE8F1FF),
+                      child: Icon(Icons.call_outlined, color: Colors.blue),
+                    ),
+                    title: const Text('Call'),
+                    subtitle: Text(phone),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _makeCall(phone);
+                    },
+                  ),
+                if (whatsapp.isNotEmpty)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFEAF9EF),
+                      child: Icon(Icons.chat_outlined, color: Colors.green),
+                    ),
+                    title: const Text('WhatsApp'),
+                    subtitle: Text(whatsapp),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _openWhatsApp(whatsapp);
+                    },
+                  ),
+                if (email.isNotEmpty)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFEFF3FF),
+                      child: Icon(Icons.email_outlined, color: CustomerPalette.primary),
+                    ),
+                    title: const Text('Email'),
+                    subtitle: Text(email),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _sendEmail(email);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  int _compareVersionStrings(String current, String target) {
+    List<int> parseParts(String value) {
+      final cleaned = value.split('+').first.trim();
+      if (cleaned.isEmpty) return const <int>[0];
+      return cleaned
+          .split('.')
+          .map((part) => int.tryParse(part.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+          .toList();
+    }
+
+    final currentParts = parseParts(current);
+    final targetParts = parseParts(target);
+    final maxLen =
+        currentParts.length > targetParts.length ? currentParts.length : targetParts.length;
+    for (int i = 0; i < maxLen; i++) {
+      final a = i < currentParts.length ? currentParts[i] : 0;
+      final b = i < targetParts.length ? targetParts[i] : 0;
+      if (a < b) return -1;
+      if (a > b) return 1;
+    }
+    return 0;
+  }
+
+  Future<Map<String, dynamic>> _resolveAppUpdateStatus(String token) async {
+    final status = await ApiService.getAppUpdateStatus(token);
+    String installedVersion = '';
+    String installedBuild = '';
+    try {
+      final info = await PackageInfo.fromPlatform();
+      installedVersion = info.version.trim();
+      installedBuild = info.buildNumber.trim();
+    } catch (_) {}
+
+    final latestVersion = (status['latest_version'] ?? '').toString().trim();
+    final minimumSupportedVersion =
+        (status['minimum_supported_version'] ?? '').toString().trim();
+    final updateAvailable =
+        latestVersion.isNotEmpty && _compareVersionStrings(installedVersion, latestVersion) < 0;
+    final forcedByVersion = minimumSupportedVersion.isNotEmpty &&
+        _compareVersionStrings(installedVersion, minimumSupportedVersion) < 0;
+    final reminderHour =
+        int.tryParse((status['reminder_hour'] ?? '12').toString()) ?? 12;
+
+    return {
+      ...status,
+      'installed_version': installedVersion,
+      'installed_build': installedBuild,
+      'update_available': updateAvailable,
+      'force_update_active':
+          (status['force_update'] == true || status['force_update'] == 1) || forcedByVersion,
+      'reminder_hour': reminderHour.clamp(0, 23),
+    };
+  }
+
+  Future<void> _openAppUpdateLink([Map<String, dynamic>? status]) async {
+    final update = status ?? _appUpdateStatus ?? const <String, dynamic>{};
+    final url = (update['play_store_url'] ??
+            'https://play.google.com/store/apps/details?id=com.onenetsol.servenow')
+        .toString()
+        .trim();
+    if (url.isEmpty) return;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _maybeShowDailyUpdateReminder(Map<String, dynamic> status) async {
+    return;
+  }
+
+  bool _showAppUpdateBanner() {
+    return false;
+  }
+
+  Widget _buildAppUpdateBanner() {
+    final status = _appUpdateStatus ?? const <String, dynamic>{};
+    final latestVersion = (status['latest_version'] ?? '').toString().trim();
+    final installedVersion = (status['installed_version'] ?? '').toString().trim();
+    final forceUpdate = status['force_update_active'] == true;
+    final message = (status['message'] ?? 'A new version of ServeNow is available.')
+        .toString()
+        .trim();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFD5A8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.system_update_alt, color: Color(0xFFB45309)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  forceUpdate ? 'Update Required' : 'Update Available',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message.isNotEmpty ? message : 'A newer version of ServeNow is available.',
+            style: const TextStyle(fontSize: 12.8, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Installed: ${installedVersion.isNotEmpty ? installedVersion : 'Unknown'}'
+            '${latestVersion.isNotEmpty ? '   Latest: $latestVersion' : ''}',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => _openAppUpdateLink(status),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('Update Now'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CustomerPalette.primary,
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ),
+              if (!forceUpdate) ...[
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _appUpdateStatus = {
+                        ...status,
+                        'update_available': false,
+                      };
+                    });
+                  },
+                  child: const Text('Hide'),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   bool _toBool(dynamic value) {
@@ -282,10 +585,18 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       Map<String, dynamic>? status;
       Map<String, dynamic>? customerFlash;
+      Map<String, dynamic>? supportContact;
+      Map<String, dynamic>? appUpdateStatus;
       if (token != null) {
         status = await ApiService.getGlobalDeliveryStatus(token);
         try {
           customerFlash = await ApiService.getCustomerFlashMessage(token);
+        } catch (_) {}
+        try {
+          supportContact = await ApiService.getCustomerSupportContact(token);
+        } catch (_) {}
+        try {
+          appUpdateStatus = await _resolveAppUpdateStatus(token);
         } catch (_) {}
       }
       final promotions = await ApiService.getLivePromotions(token);
@@ -294,7 +605,12 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         _globalStatus = status;
         _livePromotions = promotions;
         _customerFlashMessage = customerFlash;
+        _supportContact = supportContact;
+        _appUpdateStatus = appUpdateStatus ?? _appUpdateStatus;
       });
+      if (appUpdateStatus != null) {
+        await _maybeShowDailyUpdateReminder(appUpdateStatus);
+      }
       _scheduleGlobalStatusRefresh(status);
       _scheduleLivePromotionsRefresh(promotions);
       _tryShowLaunchFlash();
@@ -655,6 +971,14 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.support_agent_outlined),
+                title: const Text('Contact Us'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _showSupportOptions();
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
                 title: const Text('Logout', style: TextStyle(color: Colors.red)),
                 onTap: () {
@@ -690,6 +1014,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 _buildTopBar(),
                 if (user != null) _buildWelcomeText(user),
                 if (user != null) _buildHeroCard(user),
+                if (_showAppUpdateBanner()) _buildAppUpdateBanner(),
                 _buildBannerSection(),
                 _buildSearchField(),
                 if (_showGlobalStatusBanner()) _buildGlobalStatusBanner(),
@@ -822,15 +1147,34 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                   ),
                 ),
                 const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: () => Navigator.of(context).pushNamed('/orders'),
-                  icon: const Icon(Icons.shopping_bag, size: 16),
-                  label: const Text('My Orders'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: CustomerPalette.accent,
-                    foregroundColor: Colors.white,
-                    visualDensity: VisualDensity.compact,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(context).pushNamed('/orders'),
+                        icon: const Icon(Icons.shopping_bag, size: 16),
+                        label: const Text('My Orders'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: CustomerPalette.accent,
+                          foregroundColor: Colors.white,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _showSupportOptions,
+                        icon: const Icon(Icons.support_agent, size: 16),
+                        label: const Text('Contact Us'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white70),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

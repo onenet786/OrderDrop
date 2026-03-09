@@ -1,11 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Dashboard - ServeNow</title>
     <link rel="stylesheet" href="css/style.css?v=4" />
-    <link rel="stylesheet" href="css/admin.css?v=9" />
+    <link rel="stylesheet" href="css/admin.css?v=10" />
     <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
     <link
       rel="stylesheet"
@@ -208,6 +208,14 @@
                     class="tab-link"
                     data-tab="inventory-report"
                     ><i class="fas fa-boxes"></i> Inventory Report</a
+                  >
+                </li>
+                <li>
+                  <a
+                    href="admin.html#sale-reports"
+                    class="tab-link"
+                    data-tab="sale-reports"
+                    ><i class="fas fa-coins"></i> Sale Reports</a
                   >
                 </li>
                 <li>
@@ -959,6 +967,8 @@
                     <option value="store_order_settlement_report">Store Order Settlement Report</option>
                     <option value="periodic_sales_report">Periodic Sales Report</option>
                     <option value="periodic_credit_cash_report">Periodic Credit Cash Report</option>
+                    <option value="periodic_comprehensive_summary_report">Periodic Comprehensive Summary Report</option>
+                    <option value="periodic_store_payments_balance_report">Periodic Store Payments &amp; Balance Report</option>
                     <option value="rider_cash_report">Rider Cash Report</option>
                     <option value="rider_fuel_report">Rider Fuel Report</option>
                     <option value="rider_orders_report">Rider Orders Report</option>
@@ -1433,6 +1443,48 @@
               </button>
             </div>
           </section>
+          <section id="app-update-broadcast" class="global-delivery-admin-card">
+            <div class="global-delivery-admin-head">
+              <div>
+                <h3>App Update Push</h3>
+                <p>Notify installed mobile app users when a new Play Store version is available.</p>
+              </div>
+              <span class="global-delivery-state state-available">Mobile Users</span>
+            </div>
+            <div class="global-delivery-admin-grid">
+              <div class="form-group">
+                <label for="appUpdateAudience">Audience</label>
+                <select id="appUpdateAudience" class="form-control">
+                  <option value="all">All Installed App Users</option>
+                  <option value="customers">Customers Only</option>
+                  <option value="riders">Riders Only</option>
+                  <option value="store_owners">Store Owners Only</option>
+                  <option value="admins">Admins Only</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="appUpdateVersion">Version</label>
+                <input type="text" id="appUpdateVersion" class="form-control" placeholder="e.g. 1.0.2" maxlength="40" />
+              </div>
+              <div class="form-group">
+                <label for="appUpdateTitle">Push Title</label>
+                <input type="text" id="appUpdateTitle" class="form-control" placeholder="App Update Available" maxlength="120" />
+              </div>
+              <div class="form-group">
+                <label for="appUpdateMessage">Push Message</label>
+                <textarea id="appUpdateMessage" class="form-control" rows="3" maxlength="500" placeholder="A new version of ServeNow is available on Play Store. Tap to update now."></textarea>
+              </div>
+              <div class="form-group">
+                <label for="appUpdatePlayStoreUrl">Play Store URL</label>
+                <input type="text" id="appUpdatePlayStoreUrl" class="form-control" placeholder="https://play.google.com/store/apps/details?id=com.onenetsol.servenow" />
+              </div>
+            </div>
+            <div class="global-delivery-admin-actions">
+              <button class="btn btn-primary" id="sendAppUpdatePushBtn">
+                <i class="fas fa-download"></i> Send App Update Push
+              </button>
+            </div>
+          </section>
           <section id="store-status-live-promotions" class="global-delivery-admin-card promo-live-admin-card">
             <div class="global-delivery-admin-head">
               <div>
@@ -1896,6 +1948,8 @@
             #totalRiderCashAmount { color: #2563eb !important; }
             #paymentVouchersAmount { color: #7c3aed !important; }
             #receiptVouchersAmount { color: #4f46e5 !important; }
+            #deliveryChargesAmount { color: #0891b2 !important; }
+            #storeBalancesAmount { color: #b45309 !important; }
             #totalUnsettledAmount { color: #ea580c !important; }
             #netProfitIfSettledAmount { color: #059669 !important; }
           </style>
@@ -1949,6 +2003,14 @@
             <div class="stat-card">
               <h3 id="receiptVouchersAmount">-</h3>
               <p><i class="fas fa-receipt"></i> Receipt Vouchers (CRV)</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="deliveryChargesAmount">-</h3>
+              <p><i class="fas fa-shipping-fast"></i> Delivery Charges</p>
+            </div>
+            <div class="stat-card">
+              <h3 id="storeBalancesAmount">-</h3>
+              <p><i class="fas fa-store"></i> Store Balances</p>
             </div>
             <div class="stat-card">
               <h3 id="totalUnsettledAmount">-</h3>
@@ -2283,10 +2345,10 @@
 
         <!-- Inventory Report Tab -->
         <div id="inventory-report" class="tab-content">
-          <h2>Inventory Report</h2>
+          <h2 id="inventoryReportHeading">Inventory Report</h2>
 
           <!-- Summary Cards -->
-          <div class="stats-grid">
+          <div class="stats-grid" id="inventorySummaryCards">
             <div class="stat-card">
               <h3 id="inventoryTotalStoresCount">-</h3>
               <p>Total Stores</p>
@@ -2335,6 +2397,7 @@
                   <option value="manual-sales">Manual Order Product Sales</option>
                   <option value="store-product-sales">Store Product Sales</option>
                   <option value="combined-product-sales">Combined Product Sales</option>
+                  <option value="sales-with-delivery">Sales With Delivery Charges</option>
                   <option value="product-detail">Product Cost/Sale Detail</option>
                 </select>
             </div>
@@ -2466,7 +2529,7 @@
                     <th>Gross Sales</th>
                     <th>Net Sales</th>
                     <th>Profit</th>
-                    <th>Last Sold</th>
+                    <th>Order Total</th>
                   </tr>
                 </thead>
                 <tbody id="manualSalesBody">
@@ -2500,7 +2563,7 @@
                     <th>Gross Sales</th>
                     <th>Net Sales</th>
                     <th>Profit</th>
-                    <th>Last Sold</th>
+                    <th>Order Total</th>
                   </tr>
                 </thead>
                 <tbody id="storeProductSalesBody">
@@ -2535,7 +2598,7 @@
                     <th>Gross Sales</th>
                     <th>Net Sales</th>
                     <th>Profit</th>
-                    <th>Last Sold</th>
+                    <th>Order Total</th>
                   </tr>
                 </thead>
                 <tbody id="combinedProductSalesBody">
@@ -2543,6 +2606,39 @@
                 </tbody>
                 <tfoot id="combinedProductSalesFooter">
                   <!-- Combined product sales totals will be loaded here -->
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div id="salesWithDeliveryReportSection" style="display: none">
+            <h3 style="margin-bottom: 1rem">Sales With Delivery Charges Report</h3>
+            <p style="margin: 0 0 0.75rem 0; color: #64748b; font-size: 0.9rem;">
+              This report is order-wise so delivery charges are shown once per order and totals remain correct.
+            </p>
+            <div class="table-container">
+              <table id="salesWithDeliveryTable">
+                <thead>
+                  <tr>
+                    <th>Sale Type</th>
+                    <th>Store</th>
+                    <th>Order Number</th>
+                    <th>Status</th>
+                    <th>Qty Sold</th>
+                    <th>Cost x Qty</th>
+                    <th>Gross Sales</th>
+                    <th>Net Sales</th>
+                    <th>Delivery Charges</th>
+                    <th>Total With Delivery</th>
+                    <th>Profit</th>
+                    <th>Order Total</th>
+                  </tr>
+                </thead>
+                <tbody id="salesWithDeliveryBody">
+                  <!-- Order-wise sales with delivery data will be loaded here -->
+                </tbody>
+                <tfoot id="salesWithDeliveryFooter">
+                  <!-- Order-wise sales with delivery totals will be loaded here -->
                 </tfoot>
               </table>
             </div>
@@ -3199,7 +3295,7 @@
           </div>
         </div>
         <footer class="app-footer">
-          <p>Â© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
+          <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
         </footer>
 
       </main>
@@ -4354,14 +4450,14 @@
       </div>
     </div>
 
-    <script src="js/app.js?v=7" defer></script>
+    <script src="js/app.js?v=20" defer></script>
     <script src="/socket.io/socket.io.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script src="js/notifications.js" defer></script>
     <script src="js/financial_helpers.js" defer></script>
-    <script src="js/financial.js?v=17" defer></script>
-    <script src="js/admin.js?v=26" defer></script>
+    <script src="js/financial.js?v=19" defer></script>
+    <script src="js/admin.js?v=27" defer></script>
     <script src="js/inventory-report.js" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");
@@ -4683,8 +4779,8 @@
           <div class="form-group">
             <label>Movement Type</label>
             <select id="movementType" name="movementType" required>
-              <option value="cash_collection">Cash Collection</option>
               <option value="cash_submission">Cash Submission</option>
+              <option value="cash_collection">Cash Collection (Auto)</option>
               <option value="advance">Advance</option>
               <option value="settlement">Settlement</option>
               <option value="adjustment">Adjustment</option>
@@ -5037,6 +5133,8 @@
               <option value="store_order_settlement_report">Store Order Settlement Report</option>
               <option value="periodic_sales_report">Periodic Sales Report</option>
               <option value="periodic_credit_cash_report">Periodic Credit Cash Report</option>
+              <option value="periodic_comprehensive_summary_report">Periodic Comprehensive Summary Report</option>
+              <option value="periodic_store_payments_balance_report">Periodic Store Payments &amp; Balance Report</option>
               <option value="transaction_summary">Transaction Summary</option>
               <option value="general_voucher">General Voucher (JNV)</option>
               <option value="expense_report">Expense Report</option>
@@ -5351,6 +5449,7 @@
     </style>
   </body>
 </html>
+
 
 
 

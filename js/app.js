@@ -1,5 +1,50 @@
 // API Base URL - dynamically determine based on current location
 const API_BASE = window.location.protocol + "//" + window.location.host;
+const SERVICE_UNAVAILABLE_MESSAGE =
+  "ServeNow is temporarily unavailable. The site is under maintenance. Please try again shortly.";
+
+function getServiceUnavailableMessage() {
+  return SERVICE_UNAVAILABLE_MESSAGE;
+}
+
+function sanitizeUserFacingErrorMessage(message, fallback = SERVICE_UNAVAILABLE_MESSAGE) {
+  const raw = String(message || "").trim();
+  if (!raw) return fallback;
+
+  const lower = raw.toLowerCase();
+  const connectivityHints = [
+    "failed to fetch",
+    "networkerror",
+    "network request failed",
+    "fetch failed",
+    "load failed",
+    "socketexception",
+    "clientexception",
+    "connection refused",
+    "connection reset",
+    "connection aborted",
+    "timed out",
+    "timeout",
+    "err_connection",
+    "err_name_not_resolved",
+    "err_internet_disconnected",
+    "xhr failed",
+    "xmlhttprequest",
+  ];
+
+  if (connectivityHints.some((hint) => lower.includes(hint))) {
+    return fallback;
+  }
+
+  if (/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/.test(raw)) {
+    return fallback;
+  }
+
+  return raw;
+}
+
+window.getServiceUnavailableMessage = getServiceUnavailableMessage;
+window.sanitizeUserFacingErrorMessage = sanitizeUserFacingErrorMessage;
 
 // Enforce session-only auth persistence (no browser relaunch auto-login).
 (() => {
@@ -102,6 +147,17 @@ const API_BASE = window.location.protocol + "//" + window.location.host;
             console.warn(`[fetch] 404 Not Found: ${input.url || input}`);
         }
         return response;
+    }).catch((error) => {
+        if (error && error.name === "AbortError") {
+          throw error;
+        }
+        const safeMessage = sanitizeUserFacingErrorMessage(
+          error && error.message ? error.message : String(error)
+        );
+        const wrapped = new Error(safeMessage);
+        wrapped.isServiceUnavailable = safeMessage === SERVICE_UNAVAILABLE_MESSAGE;
+        wrapped.originalError = error;
+        throw wrapped;
     });
   };
 })();
@@ -174,7 +230,7 @@ function showSuccess(title, message, duration = 2000) {
 }
 
 function showError(title, message, duration = 2000) {
-  showToast(title, message, "error", duration);
+  showToast(title, sanitizeUserFacingErrorMessage(message), "error", duration);
 }
 
 function showWarning(title, message, duration = 2000) {

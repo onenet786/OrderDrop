@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
@@ -29,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _globalStatus;
   Map<String, dynamic>? _livePromotions;
   Map<String, dynamic>? _customerFlashMessage;
+  Map<String, dynamic>? _supportContact;
   Timer? _globalStatusRefreshTimer;
   Timer? _livePromotionsRefreshTimer;
   Timer? _globalStatusPollTimer;
@@ -92,9 +94,13 @@ class _HomeScreenState extends State<HomeScreen> {
             : promotions;
       } catch (_) {}
       Map<String, dynamic>? customerFlash;
+      Map<String, dynamic>? supportContact;
       if (token != null) {
         try {
           customerFlash = await ApiService.getCustomerFlashMessage(token);
+        } catch (_) {}
+        try {
+          supportContact = await ApiService.getCustomerSupportContact(token);
         } catch (_) {}
       }
       final storesResp = await ApiService.getStores(
@@ -113,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _globalStatus = globalStatus;
           _livePromotions = livePromotions;
           _customerFlashMessage = customerFlash;
+          _supportContact = supportContact;
           _scheduleGlobalStatusRefresh(globalStatus);
           _scheduleLivePromotionsRefresh(livePromotions);
           _serviceLimitedMessage = limited
@@ -244,10 +251,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       Map<String, dynamic>? status;
       Map<String, dynamic>? customerFlash;
+      Map<String, dynamic>? supportContact;
       if (token != null) {
         status = await ApiService.getGlobalDeliveryStatus(token);
         try {
           customerFlash = await ApiService.getCustomerFlashMessage(token);
+        } catch (_) {}
+        try {
+          supportContact = await ApiService.getCustomerSupportContact(token);
         } catch (_) {}
       }
       final promotions = await ApiService.getLivePromotions(token);
@@ -256,11 +267,265 @@ class _HomeScreenState extends State<HomeScreen> {
         _globalStatus = status;
         _livePromotions = promotions;
         _customerFlashMessage = customerFlash;
+        _supportContact = supportContact;
       });
       _scheduleGlobalStatusRefresh(status);
       _scheduleLivePromotionsRefresh(promotions);
       _tryShowLaunchFlash();
     } catch (_) {}
+  }
+
+  Future<void> _makeCall(String phoneNumber) async {
+    final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
+    if (cleaned.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: cleaned);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+  }
+
+  Future<void> _openWhatsApp(String phoneNumber) async {
+    final cleanPhone = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleanPhone.isEmpty) return;
+    final uri = Uri.parse('https://wa.me/$cleanPhone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+  }
+
+  Future<void> _sendEmail(String emailAddress) async {
+    final cleaned = emailAddress.trim();
+    if (cleaned.isEmpty) return;
+    final uri = Uri(
+      scheme: 'mailto',
+      path: cleaned,
+      queryParameters: const {
+        'subject': 'ServeNow Support',
+      },
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+  }
+
+  Future<void> _showSupportOptions() async {
+    Map<String, dynamic> contact = _supportContact ?? const <String, dynamic>{};
+    final token = Provider.of<AuthProvider>(context, listen: false).token;
+    if ((contact['phone'] ?? '').toString().trim().isEmpty &&
+        (contact['whatsapp'] ?? '').toString().trim().isEmpty &&
+        (contact['email'] ?? '').toString().trim().isEmpty &&
+        token != null) {
+      try {
+        contact = await ApiService.getCustomerSupportContact(token);
+        if (!mounted) return;
+        setState(() {
+          _supportContact = contact;
+        });
+      } catch (_) {}
+    }
+
+    final name = (contact['name'] ?? 'ServeNow Support').toString().trim();
+    final phone = (contact['phone'] ?? '').toString().trim();
+    final whatsapp = (contact['whatsapp'] ?? phone).toString().trim();
+    final email = (contact['email'] ?? '').toString().trim();
+
+    if (phone.isEmpty && whatsapp.isEmpty && email.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Support contact is not configured yet.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.isEmpty ? 'Contact Us' : name,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Choose how you want to contact us.',
+                  style: TextStyle(fontSize: 12.5, color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                if (phone.isNotEmpty)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFE8F1FF),
+                      child: Icon(Icons.call_outlined, color: Colors.blue),
+                    ),
+                    title: const Text('Call'),
+                    subtitle: Text(phone),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _makeCall(phone);
+                    },
+                  ),
+                if (whatsapp.isNotEmpty)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFEAF9EF),
+                      child: Icon(Icons.chat_outlined, color: Colors.green),
+                    ),
+                    title: const Text('WhatsApp'),
+                    subtitle: Text(whatsapp),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _openWhatsApp(whatsapp);
+                    },
+                  ),
+                if (email.isNotEmpty)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFEFF3FF),
+                      child: Icon(Icons.email_outlined, color: CustomerPalette.primary),
+                    ),
+                    title: const Text('Email'),
+                    subtitle: Text(email),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _sendEmail(email);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSupportCard() {
+    final contact = _supportContact ?? const <String, dynamic>{};
+    final name = (contact['name'] ?? 'ServeNow Support').toString().trim();
+    final phone = (contact['phone'] ?? '').toString().trim();
+    final whatsapp = (contact['whatsapp'] ?? phone).toString().trim();
+    final email = (contact['email'] ?? '').toString().trim();
+    if (phone.isEmpty && whatsapp.isEmpty && email.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD7E4FF)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.support_agent, color: CustomerPalette.primary, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Contact Us',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Need help with any order? Contact $name directly.',
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: Colors.black87,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (phone.isNotEmpty || email.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            if (phone.isNotEmpty)
+              Text(
+                phone,
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            if (email.isNotEmpty)
+              Text(
+                email,
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (phone.isNotEmpty)
+                _supportActionButton(
+                  icon: Icons.call_outlined,
+                  color: Colors.blue,
+                  label: 'Call',
+                  onPressed: () => _makeCall(phone),
+                ),
+              if (whatsapp.isNotEmpty)
+                _supportActionButton(
+                  icon: Icons.chat_outlined,
+                  color: Colors.green,
+                  label: 'WhatsApp',
+                  onPressed: () => _openWhatsApp(whatsapp),
+                ),
+              if (email.isNotEmpty)
+                _supportActionButton(
+                  icon: Icons.email_outlined,
+                  color: CustomerPalette.primary,
+                  label: 'Email',
+                  onPressed: () => _sendEmail(email),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _supportActionButton({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16, color: color),
+      label: Text(
+        label,
+        style: TextStyle(color: color, fontWeight: FontWeight.w700),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color.withValues(alpha: 0.35)),
+        backgroundColor: color.withValues(alpha: 0.06),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
   Map<String, dynamic>? _promotionFlashData() {
@@ -749,10 +1014,29 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.shopping_bag),
+            TextButton.icon(
               onPressed: () => Navigator.of(context).pushNamed('/orders'),
-              tooltip: 'My Orders',
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+              icon: const Icon(Icons.shopping_bag, size: 18),
+              label: const Text(
+                'My Orders',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: _showSupportOptions,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+              icon: const Icon(Icons.support_agent, size: 18),
+              label: const Text(
+                'Contact Us',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
             IconButton(
               icon: const Icon(Icons.logout),
@@ -841,6 +1125,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                 ),
+                _buildSupportCard(),
 
                 // Search Section
                 Padding(

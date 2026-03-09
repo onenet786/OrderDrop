@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import 'auth_provider.dart';
 
@@ -65,7 +67,19 @@ class NotificationProvider with ChangeNotifier {
     const iosSettings = DarwinInitializationSettings();
     const settings = InitializationSettings(android: androidSettings, iOS: iosSettings);
     
-    await _localNotifications.initialize(settings);
+    await _localNotifications.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (response) {
+        final payload = response.payload;
+        if (payload == null || payload.isEmpty) return;
+        try {
+          final data = jsonDecode(payload);
+          if (data is Map<String, dynamic>) {
+            _handleNotificationAction(data);
+          }
+        } catch (_) {}
+      },
+    );
     await _localNotifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -83,6 +97,7 @@ class NotificationProvider with ChangeNotifier {
     String type = 'info',
     String icon = 'info',
     bool persistUntilDismissed = false,
+    Map<String, dynamic>? payload,
   }) {
     final key = '${title.trim()}|${message.trim()}|$type|$icon';
     final now = DateTime.now();
@@ -116,6 +131,7 @@ class NotificationProvider with ChangeNotifier {
       title,
       message,
       persistUntilDismissed: persistUntilDismissed,
+      payload: payload,
     );
   }
 
@@ -161,14 +177,36 @@ class NotificationProvider with ChangeNotifier {
 
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         final n = message.notification;
-        if (n == null) return;
+        final title =
+            n?.title ??
+            message.data['title']?.toString() ??
+            'ServeNow Notification';
+        final body =
+            n?.body ?? message.data['message']?.toString() ?? '';
         addNotification(
-          title: n.title ?? 'ServeNow Notification',
-          message: n.body ?? '',
-          type: 'info',
-          icon: 'notifications',
+          title: title,
+          message: body,
+          type: message.data['type']?.toString() ?? 'info',
+          icon:
+              message.data['type'] == 'app_update_available'
+                  ? 'system_update'
+                  : 'notifications',
+          persistUntilDismissed:
+              message.data['type']?.toString() == 'app_update_available',
+          payload: Map<String, dynamic>.from(message.data),
         );
       });
+
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        _handleNotificationAction(Map<String, dynamic>.from(message.data));
+      });
+
+      final initialMessage = await _firebaseMessaging!.getInitialMessage();
+      if (initialMessage != null) {
+        _handleNotificationAction(
+          Map<String, dynamic>.from(initialMessage.data),
+        );
+      }
 
       _firebaseMessaging!.onTokenRefresh.listen((token) {
         _currentPushToken = token;
@@ -565,6 +603,7 @@ class NotificationProvider with ChangeNotifier {
     String title,
     String message, {
     bool persistUntilDismissed = false,
+    Map<String, dynamic>? payload,
   }) async {
     try {
       final androidDetails = AndroidNotificationDetails(
@@ -587,9 +626,46 @@ class NotificationProvider with ChangeNotifier {
         title,
         message,
         details,
+        payload:
+            payload == null || payload.isEmpty ? null : jsonEncode(payload),
       );
     } catch (e) {
       debugPrint('[NotificationProvider] Foreground notification failed: $e');
+    }
+  }
+
+  Future<void> _handleNotificationAction(Map<String, dynamic> data) async {
+    final type = (data['type'] ?? '').toString().trim().toLowerCase();
+    if (type != 'app_update_available') return;
+
+    final packageId =
+        (data['android_package'] ?? 'com.onenetsol.servenow').toString().trim();
+    final playStoreUrl =
+        (data['play_store_url'] ??
+                'https://play.google.com/store/apps/details?id=$packageId')
+            .toString()
+            .trim();
+
+    Uri? primaryUri;
+    Uri? fallbackUri;
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      primaryUri = Uri.parse('market://details?id=$packageId');
+      fallbackUri = Uri.parse(playStoreUrl);
+    } else {
+      primaryUri = Uri.parse(playStoreUrl);
+    }
+
+    try {
+      if (await launchUrl(primaryUri, mode: LaunchMode.externalApplication)) {
+        return;
+      }
+    } catch (_) {}
+
+    if (fallbackUri != null) {
+      try {
+        await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
     }
   }
 

@@ -742,6 +742,28 @@ img, video, canvas, svg {
   -webkit-text-fill-color: currentColor;
 }
 
+#financial-dashboard .stats-grid {
+  gap: 0.7rem;
+}
+
+#financial-dashboard .stat-card {
+  padding: 0.75rem 0.8rem;
+  min-height: 84px;
+}
+
+#financial-dashboard .stat-card h3 {
+  font-size: 1.25rem;
+  line-height: 1.1;
+  margin-bottom: 0.2rem;
+}
+
+#financial-dashboard .stat-card p {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  letter-spacing: 0.035em;
+}
+
 /* Order Details View Styles */
 .order-info-section {
     display: grid;
@@ -1376,6 +1398,38 @@ textarea:focus {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.order-note-indicator {
+    --order-indicator-color: #f59e0b;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--order-indicator-color);
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.08);
+    display: inline-block;
+    flex: 0 0 auto;
+    animation: orderIndicatorPulse 1.2s ease-in-out infinite;
+}
+
+.order-note-indicator.is-static {
+    animation: none;
+    opacity: 0.9;
+    transform: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--order-indicator-color) 18%, transparent);
+}
+
+@keyframes orderIndicatorPulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(0.9);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--order-indicator-color) 35%, transparent);
+    }
+    50% {
+        opacity: 0.35;
+        transform: scale(1.15);
+        box-shadow: 0 0 0 6px color-mix(in srgb, var(--order-indicator-color) 0%, transparent);
+    }
 }
 
 /* Status Badges */

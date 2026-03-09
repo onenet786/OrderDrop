@@ -773,18 +773,6 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     final delivered = _stats['delivered']?.toString() ?? '0';
     final preparing = _stats['preparing']?.toString() ?? '0';
     final ready = _stats['ready']?.toString() ?? '0';
-    final totalAmount =
-        double.tryParse(_stats['total_amount']?.toString() ?? '0')
-                ?.toStringAsFixed(2) ??
-            '0.00';
-    final grossSales =
-        double.tryParse(_stats['gross_sales']?.toString() ?? '0')
-                ?.toStringAsFixed(2) ??
-            '0.00';
-    final netSales =
-        double.tryParse(_stats['net_sales']?.toString() ?? '0')
-                ?.toStringAsFixed(2) ??
-            totalAmount;
     final balance = double.tryParse(_stats['received_balance']?.toString() ?? '0')
             ?.toStringAsFixed(2) ??
         '0.00';
@@ -898,31 +886,16 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStatItem('Total Orders', totalOrders, Colors.blue),
-              _buildStatItem('Delivered', delivered, Colors.green),
-              _buildStatItem('Preparing', preparing, Colors.orange),
+              _buildStatItem('Total Orders', totalOrders, Colors.blue, flex: 2),
+              _buildStatItem('Delivered', delivered, Colors.green, flex: 2),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStatItem('Ready', ready, Colors.purple),
-              _buildStatItem('Net Sales', 'PKR $netSales', Colors.teal, flex: 2),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildStatItem(
-                'Gross Sales',
-                'PKR $grossSales',
-                Colors.indigo,
-                flex: 2,
-              ),
-              const SizedBox(width: 12),
-              const Expanded(child: SizedBox.shrink()),
+              _buildStatItem('Preparing', preparing, Colors.orange, flex: 2),
+              _buildStatItem('Ready', ready, Colors.purple, flex: 2),
             ],
           ),
           if (paymentTerm.isNotEmpty) ...[

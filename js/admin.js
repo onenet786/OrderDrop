@@ -237,6 +237,67 @@ function updateBroadcastPushControls() {
     }
 }
 
+async function sendAppUpdatePushNotification() {
+    const sendBtn = document.getElementById('sendAppUpdatePushBtn');
+    const audience = (document.getElementById('appUpdateAudience')?.value || 'all').trim() || 'all';
+    const version = (document.getElementById('appUpdateVersion')?.value || '').trim();
+    const title = (document.getElementById('appUpdateTitle')?.value || '').trim() || 'App Update Available';
+    const message = (document.getElementById('appUpdateMessage')?.value || '').trim();
+    const playStoreUrl = (document.getElementById('appUpdatePlayStoreUrl')?.value || '').trim();
+
+    if (!message.length) {
+        showWarning('Missing Message', 'Please enter update message.');
+        return;
+    }
+
+    const payload = {
+        audience,
+        version,
+        title,
+        message,
+        play_store_url: playStoreUrl
+    };
+
+    try {
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+        }
+        const response = await fetch(`${API_BASE}/api/stores/app-update-notification`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            showError('Send Failed', data.message || 'Failed to send app update notification');
+            return;
+        }
+        showSuccess('Sent', `App update push sent to ${data.push_notification?.pushed_count || 0} installed app users.`);
+        const versionEl = document.getElementById('appUpdateVersion');
+        const titleEl = document.getElementById('appUpdateTitle');
+        const messageEl = document.getElementById('appUpdateMessage');
+        const urlEl = document.getElementById('appUpdatePlayStoreUrl');
+        const audienceEl = document.getElementById('appUpdateAudience');
+        if (versionEl) versionEl.value = '';
+        if (titleEl) titleEl.value = '';
+        if (messageEl) messageEl.value = '';
+        if (urlEl) urlEl.value = '';
+        if (audienceEl) audienceEl.value = 'all';
+    } catch (error) {
+        console.error('Error sending app update push notification:', error);
+        showError('Send Failed', 'Failed to send app update notification');
+    } finally {
+        if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<i class="fas fa-download"></i> Send App Update Push';
+        }
+    }
+}
+
 async function sendBroadcastPushNotification() {
     const sendBtn = document.getElementById('sendBroadcastPushBtn');
     const title = (document.getElementById('broadcastPushTitle')?.value || '').trim();
@@ -1419,6 +1480,11 @@ function initializeAdmin() {
         sendBroadcastPushBtn.addEventListener('click', sendBroadcastPushNotification);
         sendBroadcastPushBtn.dataset.boundClick = '1';
     }
+    const sendAppUpdatePushBtn = document.getElementById('sendAppUpdatePushBtn');
+    if (sendAppUpdatePushBtn && !sendAppUpdatePushBtn.dataset.boundClick) {
+        sendAppUpdatePushBtn.addEventListener('click', sendAppUpdatePushNotification);
+        sendAppUpdatePushBtn.dataset.boundClick = '1';
+    }
     updateGlobalDeliveryPushControls();
     updateBroadcastPushControls();
     bindLivePromotionControls();
@@ -2434,6 +2500,8 @@ function printOrderReport() {
 let pendingStoreStatusSectionId = null;
 
 function switchTab(tabName) {
+    const contentTabName = tabName === 'sale-reports' ? 'inventory-report' : tabName;
+
     // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
@@ -2443,7 +2511,7 @@ function switchTab(tabName) {
     });
 
     // Show selected tab (defensive: ensure elements exist)
-    const tabEl = document.getElementById(tabName);
+    const tabEl = document.getElementById(contentTabName);
     const linkEl = document.querySelector(`[data-tab="${tabName}"]`);
     if (!tabEl || !linkEl) {
         console.warn('switchTab: tab or link not found for', tabName);
@@ -2552,6 +2620,11 @@ function switchTab(tabName) {
             // Reports tab doesn't need initial loading, user will generate reports manually
             break;
         case 'inventory-report':
+            if (typeof window.setInventoryReportScope === 'function') window.setInventoryReportScope('inventory');
+            loadInventoryReport();
+            break;
+        case 'sale-reports':
+            if (typeof window.setInventoryReportScope === 'function') window.setInventoryReportScope('sales');
             loadInventoryReport();
             break;
         case 'rider-reports':
@@ -4430,6 +4503,41 @@ function populateStoreFilter() {
     filterStore.value = currentValue;
 }
 
+function getOrderIndicatorColor(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    switch (normalized) {
+        case 'confirmed':
+            return '#3b82f6';
+        case 'ready':
+        case 'delivered':
+        case 'completed':
+        case 'approved':
+        case 'paid':
+            return '#10b981';
+        case 'out_for_delivery':
+        case 'cancelled':
+        case 'rejected':
+        case 'failed':
+            return '#ef4444';
+        case 'pending':
+        case 'preparing':
+        default:
+            return '#f59e0b';
+    }
+}
+
+function buildOrderCustomerAlertSummary(order) {
+    const flags = [];
+    if (order?.delivery_time) flags.push('Preferred delivery time');
+    if (order?.special_instructions) flags.push('Special instructions');
+    return flags.join(' and ');
+}
+
+function shouldAnimateOrderIndicator(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    return !['delivered', 'cancelled'].includes(normalized);
+}
+
 function displayOrders(orders = AppState.orders) {
     const tbody = document.getElementById('ordersTableBody');
     if (!tbody) return;
@@ -4460,6 +4568,26 @@ function displayOrders(orders = AppState.orders) {
             ? `${order.rider_first_name} ${order.rider_last_name || ''}`.trim()
             : 'Not Assigned';
         const row = document.createElement('tr');
+        const preferredDeliveryTime = order.delivery_time ? escapeHtml(String(order.delivery_time)) : '';
+        const specialInstructions = order.special_instructions ? escapeHtml(String(order.special_instructions)) : '';
+        const hasCustomerAlert = Boolean(preferredDeliveryTime || specialInstructions);
+        const indicatorColor = getOrderIndicatorColor(order.status);
+        const indicatorClass = shouldAnimateOrderIndicator(order.status)
+            ? 'order-note-indicator'
+            : 'order-note-indicator is-static';
+        const alertSummary = hasCustomerAlert
+            ? escapeHtml(buildOrderCustomerAlertSummary(order))
+            : '';
+        const customerHtml = `
+            <div style="display:flex; flex-direction:column; gap:2px;">
+                <span style="font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+                    ${hasCustomerAlert ? `<span class="${indicatorClass}" style="--order-indicator-color:${indicatorColor};" title="${alertSummary}"></span>` : ''}
+                    <span>${order.first_name} ${order.last_name}</span>
+                </span>
+                ${preferredDeliveryTime ? `<span style="font-size:11px; color:#64748b;">Preferred Time: ${preferredDeliveryTime}</span>` : ''}
+                ${specialInstructions ? `<span style="font-size:11px; color:#64748b;">Instructions: ${specialInstructions}</span>` : ''}
+            </div>
+        `;
 
         const isDelivered = String(order.status || '').toLowerCase() === 'delivered';
         const deliveredAt = order.delivered_at || order.completed_at || order.updated_at;
@@ -4526,7 +4654,7 @@ function displayOrders(orders = AppState.orders) {
 
         row.innerHTML = `
             <td>${orderNumberHtml}</td>
-            <td>${order.first_name} ${order.last_name}</td>
+            <td>${customerHtml}</td>
             <td>${order.store_name || 'Multiple Stores'}</td>
             <td>PKR ${parseFloat(order.total_amount).toFixed(2)}</td>
             <td>${statusHtml}</td>
@@ -5349,6 +5477,8 @@ async function viewOrderDetails(orderId) {
         }
 
         const order = data.order;
+        const preferredDeliveryTime = order.delivery_time ? escapeHtml(String(order.delivery_time)) : '';
+        const specialInstructions = order.special_instructions ? escapeHtml(String(order.special_instructions)) : '';
         document.getElementById('viewOrderTitle').textContent = `Order Details: ${order.order_number}`;
 
         let html = `
@@ -5359,6 +5489,8 @@ async function viewOrderDetails(orderId) {
                     <p><strong>Email:</strong> ${order.email}</p>
                     <p><strong>Phone:</strong> ${order.phone || 'N/A'}</p>
                     <p><strong>Address:</strong> ${order.delivery_address}</p>
+                    ${preferredDeliveryTime ? `<p><strong>Preferred Delivery Time:</strong> ${preferredDeliveryTime}</p>` : ''}
+                    ${specialInstructions ? `<p><strong>Special Instructions:</strong> ${specialInstructions}</p>` : ''}
                 </div>
                 <div class="info-group">
                     <h4>Order Status</h4>
@@ -10571,7 +10703,7 @@ async function applyRoleRestrictions() {
                 'menu_financial_brv': 'bank-receipt-vouchers',
                 'menu_financial_jnv': 'journal-vouchers',
                 'menu_financial_dashboard': 'financial-dashboard',
-                'menu_reports': ['order-reports', 'inventory-report', 'rider-reports', 'store-reports', 'financial-reports'],
+                'menu_reports': ['order-reports', 'inventory-report', 'sale-reports', 'rider-reports', 'store-reports', 'financial-reports'],
                 'menu_settings': ['settings', 'database', 'db-backup', 'logs', 'problems', 'units', 'sizes', 'categories'],
                 'menu_settings_general': 'settings',
                 'menu_settings_database': 'database',

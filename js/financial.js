@@ -547,6 +547,8 @@ async function loadFinancialDashboard() {
             setAmount('totalRiderCashAmount', stats.riderCashSubmitted, '#2563eb');
             setAmount('paymentVouchersAmount', stats.paymentVouchers, '#7c3aed');
             setAmount('receiptVouchersAmount', stats.receiptVouchers, '#4f46e5');
+            setAmount('deliveryChargesAmount', stats.deliveryCharges || 0, '#0891b2');
+            setAmount('storeBalancesAmount', stats.storeBalances || 0, '#b45309');
             setAmount('totalUnsettledAmount', stats.totalUnsettledAmount || 0, '#ea580c');
             setDynamicAmount('netProfitIfSettledAmount', stats.netProfitIfSettled || 0, '#059669', '#b91c1c');
 
@@ -558,6 +560,8 @@ async function loadFinancialDashboard() {
             setTileStyle('totalRiderCashAmount', '#2563eb', 'linear-gradient(135deg,#eff6ff,#eef2ff)');
             setTileStyle('paymentVouchersAmount', '#7c3aed', 'linear-gradient(135deg,#f5f3ff,#faf5ff)');
             setTileStyle('receiptVouchersAmount', '#4f46e5', 'linear-gradient(135deg,#eef2ff,#e0e7ff)');
+            setTileStyle('deliveryChargesAmount', '#0891b2', 'linear-gradient(135deg,#ecfeff,#cffafe)');
+            setTileStyle('storeBalancesAmount', '#b45309', 'linear-gradient(135deg,#fffbeb,#fde68a)');
             setTileStyle('totalUnsettledAmount', '#ea580c', 'linear-gradient(135deg,#fff7ed,#ffedd5)');
             setTileStyle('netProfitIfSettledAmount', toNum(stats.netProfitIfSettled || 0) < 0 ? '#b91c1c' : '#059669', toNum(stats.netProfitIfSettled || 0) < 0 ? 'linear-gradient(135deg,#fff1f2,#fef2f2)' : 'linear-gradient(135deg,#ecfdf5,#f0fdf4)');
 
@@ -1739,10 +1743,13 @@ async function createRiderCash() {
     document.querySelector('#riderCashModal h2').textContent = 'Record Rider Cash Movement';
     document.querySelector('#riderCashModal .btn-primary').textContent = 'Record Movement';
     await populateRidersDropdown();
+    const typeSelect = document.getElementById('movementType');
+    if (typeSelect) {
+        typeSelect.value = 'cash_submission';
+    }
 
     // Setup listeners for pending orders
     const riderSelect = document.getElementById('riderId');
-    const typeSelect = document.getElementById('movementType');
     const container = document.getElementById('pendingOrdersContainer');
     const submittedContainer = document.getElementById('submittedOrdersContainer');
     const pendingFuelContainer = document.getElementById('pendingFuelContainer');
@@ -2083,6 +2090,11 @@ async function submitRiderCash() {
     const movementType = document.getElementById('movementType').value;
     const amount = parseFloat(document.getElementById('riderCashAmountInput').value);
     const description = document.getElementById('riderCashDescription').value;
+
+    if (!id && movementType === 'cash_collection') {
+        showError('Invalid Movement', 'Cash collection is auto-created from orders. Use Cash Submission when rider hands cash to office.');
+        return;
+    }
 
     const payload = {
         rider_id: riderId,
@@ -2546,6 +2558,9 @@ async function submitGenerateReport() {
     if (storeId && (reportType === 'order_wise_sale_summary' || reportType === 'periodic_sales_report')) {
         payload.store_id = storeId;
     }
+    if (storeId && (reportType === 'periodic_comprehensive_summary_report' || reportType === 'periodic_store_payments_balance_report')) {
+        payload.store_id = storeId;
+    }
     if (storeId && (reportType === 'store_payable_reconciliation' || reportType === 'unsettled_amounts_report')) {
         payload.store_id = storeId;
     }
@@ -2886,6 +2901,90 @@ function renderPeriodicCreditCashReportHtml(data) {
         <strong>Total Profit:</strong> ${formatFinancialReportCurrency(summary.total_profit || 0)} |
         <strong>Total Delivery Charges:</strong> ${formatFinancialReportCurrency(summary.total_delivery_charges || 0)} |
         <strong>Grand Total:</strong> ${formatFinancialReportCurrency(summary.grand_total || 0)}
+    </div>`;
+
+    return html;
+}
+
+function renderPeriodicComprehensiveSummaryReportHtml(data) {
+    const summary = data.summary || {};
+    const sortedRows = [...(data.rows || [])].sort((a, b) => getFinancialReportSortTime(b.report_date) - getFinancialReportSortTime(a.report_date));
+    const netPosition = Number((
+        Number(summary.total_sale || 0) +
+        Number(summary.total_delivery_charges || 0) -
+        Number(summary.total_expense || 0) -
+        Number(summary.total_fuel || 0)
+    ).toFixed(2));
+    let html = '<h3>Periodic Comprehensive Summary Report</h3>';
+
+    html += renderFinancialReportTable(
+        'Date Wise Comprehensive Summary',
+        ['Date', 'Total Sale', 'Credit Sale', 'Cash Sale', 'Delivery Charges', 'Expense', 'Fuel'],
+        sortedRows.map((row) => [
+            formatFinancialReportDate(row.report_date),
+            formatFinancialReportCurrency(row.total_sale || 0),
+            formatFinancialReportCurrency(row.credit_sale || 0),
+            formatFinancialReportCurrency(row.cash_sale || 0),
+            formatFinancialReportCurrency(row.delivery_charges || 0),
+            formatFinancialReportCurrency(row.expense || 0),
+            formatFinancialReportCurrency(row.fuel || 0)
+        ]),
+        [
+            'TOTAL',
+            formatFinancialReportCurrency(summary.total_sale || 0),
+            formatFinancialReportCurrency(summary.total_credit_sale || 0),
+            formatFinancialReportCurrency(summary.total_cash_sale || 0),
+            formatFinancialReportCurrency(summary.total_delivery_charges || 0),
+            formatFinancialReportCurrency(summary.total_expense || 0),
+            formatFinancialReportCurrency(summary.total_fuel || 0)
+        ]
+    );
+
+    html += `<div style="margin-top: 15px; font-size: 1.0em; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px;">
+        <strong>Total Sale:</strong> ${formatFinancialReportCurrency(summary.total_sale || 0)} |
+        <strong>Total Credit Sale:</strong> ${formatFinancialReportCurrency(summary.total_credit_sale || 0)} |
+        <strong>Total Cash Sale:</strong> ${formatFinancialReportCurrency(summary.total_cash_sale || 0)} |
+        <strong>Total Delivery Charges:</strong> ${formatFinancialReportCurrency(summary.total_delivery_charges || 0)} |
+        <strong>Total Expense:</strong> ${formatFinancialReportCurrency(summary.total_expense || 0)} |
+        <strong>Total Fuel:</strong> ${formatFinancialReportCurrency(summary.total_fuel || 0)} |
+        <strong>Net Position:</strong> ${formatFinancialReportCurrency(netPosition)}
+    </div>`;
+
+    return html;
+}
+
+function renderPeriodicStorePaymentsBalanceReportHtml(data) {
+    const summary = data.summary || {};
+    const sortedRows = [...(data.rows || [])].sort((a, b) => {
+        const termCompare = String(a.payment_term || '').localeCompare(String(b.payment_term || ''));
+        if (termCompare !== 0) return termCompare;
+        return String(a.store_name || '').localeCompare(String(b.store_name || ''));
+    });
+    let html = '<h3>Periodic Store Payments & Balance Report</h3>';
+
+    html += renderFinancialReportTable(
+        'Store Payments & Balance',
+        ['Store', 'Payment Term', 'Generated Payable', 'Paid Settlements', 'Balance'],
+        sortedRows.map((row) => [
+            row.store_name || '-',
+            row.payment_term || '-',
+            formatFinancialReportCurrency(row.generated_payable || 0),
+            formatFinancialReportCurrency(row.paid_amount || 0),
+            formatFinancialReportCurrency(row.balance_amount || 0)
+        ]),
+        [
+            'TOTAL',
+            '',
+            formatFinancialReportCurrency(summary.total_generated_payable || 0),
+            formatFinancialReportCurrency(summary.total_paid_amount || 0),
+            formatFinancialReportCurrency(summary.total_balance_amount || 0)
+        ]
+    );
+
+    html += `<div style="margin-top: 15px; font-size: 1.0em; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 5px;">
+        <strong>Total Generated Payable:</strong> ${formatFinancialReportCurrency(summary.total_generated_payable || 0)} |
+        <strong>Total Paid Settlements:</strong> ${formatFinancialReportCurrency(summary.total_paid_amount || 0)} |
+        <strong>Total Balance:</strong> ${formatFinancialReportCurrency(summary.total_balance_amount || 0)}
     </div>`;
 
     return html;
@@ -3270,6 +3369,82 @@ function generatePDF(reportId) {
                     formatFinancialReportCurrency(data.summary?.total_profit || 0),
                     formatFinancialReportCurrency(data.summary?.total_delivery_charges || 0),
                     formatFinancialReportCurrency(data.summary?.grand_total || 0)
+                ]]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'periodic_comprehensive_summary_report') {
+            const sortedRows = [...(data.rows || [])].sort((a, b) => getFinancialReportSortTime(b.report_date) - getFinancialReportSortTime(a.report_date));
+            doc.text('Periodic Comprehensive Summary Report', 14, startY);
+            if (data.summary) {
+                const netPosition = Number((
+                    Number(data.summary.total_sale || 0) +
+                    Number(data.summary.total_delivery_charges || 0) -
+                    Number(data.summary.total_expense || 0) -
+                    Number(data.summary.total_fuel || 0)
+                ).toFixed(2));
+                doc.setFontSize(10);
+                doc.text(
+                    `Sale: ${formatFinancialReportCurrency(data.summary.total_sale || 0)} | Credit: ${formatFinancialReportCurrency(data.summary.total_credit_sale || 0)} | Cash: ${formatFinancialReportCurrency(data.summary.total_cash_sale || 0)} | Delivery: ${formatFinancialReportCurrency(data.summary.total_delivery_charges || 0)} | Expense: ${formatFinancialReportCurrency(data.summary.total_expense || 0)} | Fuel: ${formatFinancialReportCurrency(data.summary.total_fuel || 0)} | Net: ${formatFinancialReportCurrency(netPosition)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 10;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Date', 'Total Sale', 'Credit Sale', 'Cash Sale', 'Delivery Charges', 'Expense', 'Fuel']],
+                body: sortedRows.map((row) => [
+                    formatFinancialReportDate(row.report_date),
+                    formatFinancialReportCurrency(row.total_sale || 0),
+                    formatFinancialReportCurrency(row.credit_sale || 0),
+                    formatFinancialReportCurrency(row.cash_sale || 0),
+                    formatFinancialReportCurrency(row.delivery_charges || 0),
+                    formatFinancialReportCurrency(row.expense || 0),
+                    formatFinancialReportCurrency(row.fuel || 0)
+                ]).concat([[
+                    'TOTAL',
+                    formatFinancialReportCurrency(data.summary?.total_sale || 0),
+                    formatFinancialReportCurrency(data.summary?.total_credit_sale || 0),
+                    formatFinancialReportCurrency(data.summary?.total_cash_sale || 0),
+                    formatFinancialReportCurrency(data.summary?.total_delivery_charges || 0),
+                    formatFinancialReportCurrency(data.summary?.total_expense || 0),
+                    formatFinancialReportCurrency(data.summary?.total_fuel || 0)
+                ]]),
+                theme: 'grid',
+                styles: { fontSize: 8 }
+            });
+        } else if (data.type === 'periodic_store_payments_balance_report') {
+            const sortedRows = [...(data.rows || [])].sort((a, b) => {
+                const termCompare = String(a.payment_term || '').localeCompare(String(b.payment_term || ''));
+                if (termCompare !== 0) return termCompare;
+                return String(a.store_name || '').localeCompare(String(b.store_name || ''));
+            });
+            doc.text('Periodic Store Payments & Balance Report', 14, startY);
+            if (data.summary) {
+                doc.setFontSize(10);
+                doc.text(
+                    `Generated Payable: ${formatFinancialReportCurrency(data.summary.total_generated_payable || 0)} | Paid Settlements: ${formatFinancialReportCurrency(data.summary.total_paid_amount || 0)} | Balance: ${formatFinancialReportCurrency(data.summary.total_balance_amount || 0)}`,
+                    14,
+                    startY + 5
+                );
+                startY += 10;
+            }
+            doc.autoTable({
+                startY: startY + 5,
+                head: [['Store', 'Payment Term', 'Generated Payable', 'Paid Settlements', 'Balance']],
+                body: sortedRows.map((row) => [
+                    row.store_name || '-',
+                    row.payment_term || '-',
+                    formatFinancialReportCurrency(row.generated_payable || 0),
+                    formatFinancialReportCurrency(row.paid_amount || 0),
+                    formatFinancialReportCurrency(row.balance_amount || 0)
+                ]).concat([[
+                    'TOTAL',
+                    '',
+                    formatFinancialReportCurrency(data.summary?.total_generated_payable || 0),
+                    formatFinancialReportCurrency(data.summary?.total_paid_amount || 0),
+                    formatFinancialReportCurrency(data.summary?.total_balance_amount || 0)
                 ]]),
                 theme: 'grid',
                 styles: { fontSize: 8 }
@@ -4264,6 +4439,10 @@ function viewReport(reportId) {
         extraDetails = renderPeriodicSalesReportHtml(data);
     } else if (data && data.type === 'periodic_credit_cash_report') {
         extraDetails = renderPeriodicCreditCashReportHtml(data);
+    } else if (data && data.type === 'periodic_comprehensive_summary_report') {
+        extraDetails = renderPeriodicComprehensiveSummaryReportHtml(data);
+    } else if (data && data.type === 'periodic_store_payments_balance_report') {
+        extraDetails = renderPeriodicStorePaymentsBalanceReportHtml(data);
     } else if (data && data.type === 'order_wise_sale_summary') {
         extraDetails = '<h3>Order Wise Sale Summary</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.85em"><thead><tr><th>Order #</th><th>Items</th><th>Item Sales</th><th>Total Cost</th><th>Comm.</th><th>Del. Charges</th><th>Total Amount</th></tr></thead><tbody>';
         
@@ -4562,6 +4741,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 storeGroup.style.display = (
                     this.value === 'order_wise_sale_summary' ||
                     this.value === 'periodic_sales_report' ||
+                    this.value === 'periodic_comprehensive_summary_report' ||
+                    this.value === 'periodic_store_payments_balance_report' ||
                     this.value === 'store_payable_reconciliation' ||
                     this.value === 'unsettled_amounts_report' ||
                     this.value === 'store_order_settlement_report'

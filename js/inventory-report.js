@@ -1,7 +1,26 @@
 let currentInventoryData = null;
+let currentStoreSalesRows = [];
 let currentManualSalesRows = [];
 let currentStoreProductSalesRows = [];
 let currentCombinedProductSalesRows = [];
+let currentSalesWithDeliveryRows = [];
+let currentInventoryReportScope = "inventory";
+
+const inventoryReportOptions = {
+    inventory: [
+        { value: "store", label: "Store-wise Inventory" },
+        { value: "category", label: "Category-wise Inventory" },
+        { value: "breakdown", label: "Store-wise Category Breakdown" },
+        { value: "product-detail", label: "Product Cost/Sale Detail" },
+    ],
+    sales: [
+        { value: "sales", label: "Store Sale-wise" },
+        { value: "manual-sales", label: "Manual Order Product Sales" },
+        { value: "store-product-sales", label: "Store Product Sales" },
+        { value: "combined-product-sales", label: "Combined Product Sales" },
+        { value: "sales-with-delivery", label: "Sales With Delivery Charges" },
+    ],
+};
 
 function inventoryMoney(value) {
     const n = Number(value);
@@ -47,6 +66,45 @@ function closeInventoryModal(modalId) {
     if (modal) modal.classList.remove("show");
 }
 
+function getInventoryReportOptionsForScope(scope) {
+    return scope === "sales"
+        ? inventoryReportOptions.sales
+        : inventoryReportOptions.inventory;
+}
+
+function applyInventoryReportScope() {
+    const reportSelect = document.getElementById("inventoryReportSelect");
+    if (!reportSelect) return;
+
+    const heading = document.getElementById("inventoryReportHeading");
+    if (heading) {
+        heading.textContent = currentInventoryReportScope === "sales" ? "Sale Reports" : "Inventory Report";
+    }
+
+    const summaryCards = document.getElementById("inventorySummaryCards");
+    if (summaryCards) {
+        summaryCards.style.display = currentInventoryReportScope === "sales" ? "none" : "";
+    }
+
+    const options = getInventoryReportOptionsForScope(currentInventoryReportScope);
+    const currentValue = reportSelect.value;
+    reportSelect.innerHTML = options
+        .map((option) => `<option value="${option.value}">${option.label}</option>`)
+        .join("");
+
+    const hasCurrent = options.some((option) => option.value === currentValue);
+    reportSelect.value = hasCurrent
+        ? currentValue
+        : (currentInventoryReportScope === "sales" ? "combined-product-sales" : "store");
+}
+
+function setInventoryReportScope(scope) {
+    currentInventoryReportScope = scope === "sales" ? "sales" : "inventory";
+    applyInventoryReportScope();
+}
+
+window.setInventoryReportScope = setInventoryReportScope;
+
 function inventoryMonetaryType(value) {
     const t = String(value || "").trim().toLowerCase();
     if (t === "manual") return "Manual";
@@ -71,6 +129,16 @@ function inventoryFinancialRule(mode) {
     if (m === "profit") return "Profit";
     if (m === "discount") return "Discount";
     return "-";
+}
+
+function calculateUniqueOrderTotal(rows) {
+    const seenOrderIds = new Set();
+    return (rows || []).reduce((sum, item) => {
+        const orderKey = String(item.order_id || item.order_number || "");
+        if (!orderKey || seenOrderIds.has(orderKey)) return sum;
+        seenOrderIds.add(orderKey);
+        return sum + (Number(item.order_total || 0) || 0);
+    }, 0);
 }
 
 function getSelectedInventoryStoreId() {
@@ -243,6 +311,31 @@ function loadCombinedProductSalesReport() {
         });
 }
 
+function loadSalesWithDeliveryReport() {
+    const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
+    const token = localStorage.getItem("serveNowToken");
+    const query = buildInventorySalesQuery();
+
+    fetch(`${apiBase}/api/admin/sales-with-delivery-report${query}`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                displaySalesWithDeliveryReport(data);
+            } else {
+                showError("Sales With Delivery Charges Report", data.message || "Failed to load sales with delivery charges report");
+            }
+        })
+        .catch((err) => {
+            console.error("Error loading sales with delivery charges report:", err);
+            showError("Sales With Delivery Charges Report", "Error loading sales with delivery charges report");
+        });
+}
+
 function populateInventoryStoreFilter(stores, selectedStoreId) {
     const select = document.getElementById("inventoryStoreFilter");
     if (!select) return;
@@ -367,7 +460,9 @@ function displayStoreSalesReport(data) {
     if (!tbody) return;
     tbody.innerHTML = "";
 
-    (data.store_sales || []).forEach((store) => {
+    currentStoreSalesRows = data.store_sales || [];
+
+    currentStoreSalesRows.forEach((store) => {
         const row = document.createElement("tr");
         row.innerHTML = `
             <td>${store.store_name}</td>
@@ -414,7 +509,7 @@ function displayManualOrderSalesReport(data) {
             <td>${inventoryMoney(item.gross_sales)}</td>
             <td>${inventoryMoney(item.net_sales)}</td>
             <td>${inventoryMoney(item.estimated_profit)}</td>
-            <td>${inventoryDateTime(item.last_sold_at)}</td>
+            <td>${inventoryMoney(item.order_total)}</td>
         `;
         row.addEventListener("dblclick", () => {
             openManualSalesEditModal(item.order_item_id);
@@ -423,6 +518,7 @@ function displayManualOrderSalesReport(data) {
     });
 
     if (footer) {
+        const seenOrderIds = new Set();
         const totals = rows.reduce((acc, item) => {
             acc.costPrice += Number(item.cost_price ?? item.average_cost_price ?? 0) || 0;
             acc.salePrice += Number(item.sale_price ?? item.average_sale_price ?? 0) || 0;
@@ -431,6 +527,11 @@ function displayManualOrderSalesReport(data) {
             acc.grossSales += Number(item.gross_sales || 0) || 0;
             acc.netSales += Number(item.net_sales || 0) || 0;
             acc.profit += Number(item.estimated_profit || 0) || 0;
+            const orderKey = String(item.order_id || item.order_number || "");
+            if (orderKey && !seenOrderIds.has(orderKey)) {
+                seenOrderIds.add(orderKey);
+                acc.orderTotal += Number(item.order_total || 0) || 0;
+            }
             return acc;
         }, {
             costPrice: 0,
@@ -440,6 +541,7 @@ function displayManualOrderSalesReport(data) {
             grossSales: 0,
             netSales: 0,
             profit: 0,
+            orderTotal: 0,
         });
 
         footer.innerHTML = `
@@ -452,7 +554,7 @@ function displayManualOrderSalesReport(data) {
                 <td>${inventoryMoney(totals.grossSales)}</td>
                 <td>${inventoryMoney(totals.netSales)}</td>
                 <td>${inventoryMoney(totals.profit)}</td>
-                <td>-</td>
+                <td>${inventoryMoney(totals.orderTotal)}</td>
             </tr>
         `;
     }
@@ -492,7 +594,7 @@ function displayStoreProductSalesReport(data) {
             <td>${inventoryMoney(item.gross_sales)}</td>
             <td>${inventoryMoney(item.net_sales)}</td>
             <td>${inventoryMoney(item.estimated_profit)}</td>
-            <td>${inventoryDateTime(item.last_sold_at)}</td>
+            <td>${inventoryMoney(item.order_total)}</td>
         `;
         row.addEventListener("dblclick", () => {
             openStoreProductSalesEditModal(item.order_item_id);
@@ -501,6 +603,7 @@ function displayStoreProductSalesReport(data) {
     });
 
     if (footer) {
+        const seenOrderIds = new Set();
         const totals = rows.reduce((acc, item) => {
             acc.costPrice += Number(item.cost_price ?? item.average_cost_price ?? 0) || 0;
             acc.salePrice += Number(item.sale_price ?? item.average_sale_price ?? 0) || 0;
@@ -509,6 +612,11 @@ function displayStoreProductSalesReport(data) {
             acc.grossSales += Number(item.gross_sales || 0) || 0;
             acc.netSales += Number(item.net_sales || 0) || 0;
             acc.profit += Number(item.estimated_profit || 0) || 0;
+            const orderKey = String(item.order_id || item.order_number || "");
+            if (orderKey && !seenOrderIds.has(orderKey)) {
+                seenOrderIds.add(orderKey);
+                acc.orderTotal += Number(item.order_total || 0) || 0;
+            }
             return acc;
         }, {
             costPrice: 0,
@@ -518,6 +626,7 @@ function displayStoreProductSalesReport(data) {
             grossSales: 0,
             netSales: 0,
             profit: 0,
+            orderTotal: 0,
         });
 
         footer.innerHTML = `
@@ -530,7 +639,7 @@ function displayStoreProductSalesReport(data) {
                 <td>${inventoryMoney(totals.grossSales)}</td>
                 <td>${inventoryMoney(totals.netSales)}</td>
                 <td>${inventoryMoney(totals.profit)}</td>
-                <td>-</td>
+                <td>${inventoryMoney(totals.orderTotal)}</td>
             </tr>
         `;
     }
@@ -571,7 +680,7 @@ function displayCombinedProductSalesReport(data) {
             <td>${inventoryMoney(item.gross_sales)}</td>
             <td>${inventoryMoney(item.net_sales)}</td>
             <td>${inventoryMoney(item.estimated_profit)}</td>
-            <td>${inventoryDateTime(item.last_sold_at)}</td>
+            <td>${inventoryMoney(item.order_total)}</td>
         `;
         row.addEventListener("dblclick", () => {
             openCombinedProductSalesEditModal(item.order_item_id);
@@ -580,6 +689,7 @@ function displayCombinedProductSalesReport(data) {
     });
 
     if (footer) {
+        const seenOrderIds = new Set();
         const totals = rows.reduce((acc, item) => {
             acc.costPrice += Number(item.cost_price ?? item.average_cost_price ?? 0) || 0;
             acc.salePrice += Number(item.sale_price ?? item.average_sale_price ?? 0) || 0;
@@ -588,6 +698,11 @@ function displayCombinedProductSalesReport(data) {
             acc.grossSales += Number(item.gross_sales || 0) || 0;
             acc.netSales += Number(item.net_sales || 0) || 0;
             acc.profit += Number(item.estimated_profit || 0) || 0;
+            const orderKey = String(item.order_id || item.order_number || "");
+            if (orderKey && !seenOrderIds.has(orderKey)) {
+                seenOrderIds.add(orderKey);
+                acc.orderTotal += Number(item.order_total || 0) || 0;
+            }
             return acc;
         }, {
             costPrice: 0,
@@ -597,6 +712,7 @@ function displayCombinedProductSalesReport(data) {
             grossSales: 0,
             netSales: 0,
             profit: 0,
+            orderTotal: 0,
         });
 
         footer.innerHTML = `
@@ -609,7 +725,80 @@ function displayCombinedProductSalesReport(data) {
                 <td>${inventoryMoney(totals.grossSales)}</td>
                 <td>${inventoryMoney(totals.netSales)}</td>
                 <td>${inventoryMoney(totals.profit)}</td>
-                <td>-</td>
+                <td>${inventoryMoney(totals.orderTotal)}</td>
+            </tr>
+        `;
+    }
+}
+
+function displaySalesWithDeliveryReport(data) {
+    const tbody = document.getElementById("salesWithDeliveryBody");
+    const footer = document.getElementById("salesWithDeliveryFooter");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    if (footer) footer.innerHTML = "";
+
+    const rows = data.sales_with_delivery || [];
+    currentSalesWithDeliveryRows = rows;
+    if (!rows.length) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="12" style="text-align:center;">No sales found for the selected scope.</td>`;
+        tbody.appendChild(row);
+        return;
+    }
+
+    rows.forEach((item) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>${inventoryTitleCase(item.sale_type || "-")}</td>
+            <td>${item.store_names || item.store_name || "-"}</td>
+            <td>${item.order_number || "-"}</td>
+            <td>${inventoryTitleCase(item.order_status || "-")}</td>
+            <td>${inventoryNumber(item.total_quantity)}</td>
+            <td>${inventoryMoney(item.total_cost)}</td>
+            <td>${inventoryMoney(item.gross_sales)}</td>
+            <td>${inventoryMoney(item.net_sales)}</td>
+            <td>${inventoryMoney(item.delivery_fee)}</td>
+            <td>${inventoryMoney(item.total_with_delivery)}</td>
+            <td>${inventoryMoney(item.estimated_profit)}</td>
+            <td>${inventoryMoney(item.order_total)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    const totals = rows.reduce((acc, item) => {
+        acc.qty += Number(item.total_quantity || 0) || 0;
+        acc.totalCost += Number(item.total_cost || 0) || 0;
+        acc.grossSales += Number(item.gross_sales || 0) || 0;
+        acc.netSales += Number(item.net_sales || 0) || 0;
+        acc.delivery += Number(item.delivery_fee || 0) || 0;
+        acc.totalWithDelivery += Number(item.total_with_delivery || 0) || 0;
+        acc.profit += Number(item.estimated_profit || 0) || 0;
+        acc.orderTotal += Number(item.order_total || 0) || 0;
+        return acc;
+    }, {
+        qty: 0,
+        totalCost: 0,
+        grossSales: 0,
+        netSales: 0,
+        delivery: 0,
+        totalWithDelivery: 0,
+        profit: 0,
+        orderTotal: 0,
+    });
+
+    if (footer) {
+        footer.innerHTML = `
+            <tr style="background:#f8fafc; font-weight:700; border-top:2px solid #cbd5e1;">
+                <td colspan="4">Totals</td>
+                <td>${inventoryNumber(totals.qty)}</td>
+                <td>${inventoryMoney(totals.totalCost)}</td>
+                <td>${inventoryMoney(totals.grossSales)}</td>
+                <td>${inventoryMoney(totals.netSales)}</td>
+                <td>${inventoryMoney(totals.delivery)}</td>
+                <td>${inventoryMoney(totals.totalWithDelivery)}</td>
+                <td>${inventoryMoney(totals.profit)}</td>
+                <td>${inventoryMoney(totals.orderTotal)}</td>
             </tr>
         `;
     }
@@ -752,6 +941,7 @@ function switchInventoryReport(reportType) {
         "manualSalesReportSection",
         "storeProductSalesReportSection",
         "combinedProductSalesReportSection",
+        "salesWithDeliveryReportSection",
         "productDetailReportSection",
     ];
     sections.forEach((id) => {
@@ -785,6 +975,10 @@ function switchInventoryReport(reportType) {
             document.getElementById("combinedProductSalesReportSection").style.display = "block";
             loadCombinedProductSalesReport();
             break;
+        case "sales-with-delivery":
+            document.getElementById("salesWithDeliveryReportSection").style.display = "block";
+            loadSalesWithDeliveryReport();
+            break;
         case "product-detail":
             document.getElementById("productDetailReportSection").style.display = "block";
             break;
@@ -804,7 +998,7 @@ function exportInventoryReportPdf() {
         showError("Inventory Report", "PDF library not loaded");
         return;
     }
-    if (!currentInventoryData) {
+    if (!currentInventoryData && currentInventoryReportScope !== "sales") {
         showWarning("Inventory Report", "Load inventory report first");
         return;
     }
@@ -812,11 +1006,24 @@ function exportInventoryReportPdf() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF("l", "mm", "a4");
     const now = new Date();
-    const reportName = "Inventory Report";
-    const selectedStoreId = currentInventoryData.selected_store_id;
+    const activeType = (document.getElementById("inventoryReportSelect") || {}).value || "store";
+    const reportNameMap = {
+        store: "Inventory Report",
+        category: "Category-wise Inventory Report",
+        breakdown: "Store-wise Category Breakdown Report",
+        "product-detail": "Product Cost/Sale Detail Report",
+        sales: "Store Sale-wise Report",
+        "manual-sales": "Manual Order Product Sales Report",
+        "store-product-sales": "Store Product Sales Report",
+        "combined-product-sales": "Combined Product Sales Report",
+        "sales-with-delivery": "Sales With Delivery Charges Report",
+    };
+    const reportName = reportNameMap[activeType] || "Inventory Report";
+    const selectedStoreId = getSelectedInventoryStoreId();
     const selectedStoreName = selectedStoreId
-        ? ((currentInventoryData.stores || []).find((s) => Number(s.id) === Number(selectedStoreId)) || {}).name || `Store #${selectedStoreId}`
+        ? ((currentInventoryData?.stores || []).find((s) => Number(s.id) === Number(selectedStoreId)) || {}).name || `Store #${selectedStoreId}`
         : "All Stores";
+    const { startDate, endDate } = getSelectedInventoryDateRange();
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
@@ -827,18 +1034,22 @@ function exportInventoryReportPdf() {
     doc.setFontSize(10);
     doc.text(`Store Scope: ${selectedStoreName}`, 14, 28);
     doc.text(`Generated: ${now.toLocaleString()}`, 14, 33);
+    doc.text(`Date Range: ${startDate || "-"} to ${endDate || "-"}`, 14, 38);
 
-    const summary = currentInventoryData.summary || {};
-    doc.setFont("helvetica", "bold");
-    doc.text("Summary", 14, 41);
-    doc.setFont("helvetica", "normal");
-    doc.text(
-        `Stores: ${inventoryNumber(summary.total_stores)} | Categories: ${inventoryNumber(summary.total_categories)} | Products: ${inventoryNumber(summary.total_products)} | Stock: ${inventoryNumber(summary.total_stock)} | Inventory Value: ${inventoryMoney(summary.total_inventory_value)}`,
-        14,
-        47
-    );
+    let startY = 46;
+    if (currentInventoryReportScope !== "sales") {
+        const summary = currentInventoryData.summary || {};
+        doc.setFont("helvetica", "bold");
+        doc.text("Summary", 14, 46);
+        doc.setFont("helvetica", "normal");
+        doc.text(
+            `Stores: ${inventoryNumber(summary.total_stores)} | Categories: ${inventoryNumber(summary.total_categories)} | Products: ${inventoryNumber(summary.total_products)} | Stock: ${inventoryNumber(summary.total_stock)} | Inventory Value: ${inventoryMoney(summary.total_inventory_value)}`,
+            14,
+            52
+        );
+        startY = 58;
+    }
 
-    const activeType = (document.getElementById("inventoryReportSelect") || {}).value || "store";
     let tableHead = [];
     let tableBody = [];
 
@@ -876,9 +1087,203 @@ function exportInventoryReportPdf() {
             inventoryMonetaryValue(r.financial_type, r.financial_value),
             r.is_available ? "Active" : "Inactive",
         ]);
-    } else if (activeType === "sales" || activeType === "manual-sales" || activeType === "store-product-sales" || activeType === "combined-product-sales") {
-        showWarning("Inventory Report", "Sales report PDF export is not part of inventory PDF. Switch to an inventory view.");
-        return;
+    } else if (activeType === "sales") {
+        tableHead = [["Store", "Total Orders", "Total Sales", "Average Order Value", "Unique Customers"]];
+        const rows = currentStoreSalesRows || [];
+        tableBody = rows.map((r) => [
+            r.store_name,
+            inventoryNumber(r.total_orders),
+            inventoryMoney(r.total_sales_net),
+            inventoryMoney(r.average_order_value),
+            inventoryNumber(r.unique_customers),
+        ]);
+        const totals = rows.reduce((acc, r) => {
+            acc.orders += Number(r.total_orders || 0) || 0;
+            acc.sales += Number(r.total_sales_net || 0) || 0;
+            acc.customers += Number(r.unique_customers || 0) || 0;
+            return acc;
+        }, { orders: 0, sales: 0, customers: 0 });
+        const avg = totals.orders > 0 ? totals.sales / totals.orders : 0;
+        tableBody.push([
+            "Totals",
+            inventoryNumber(totals.orders),
+            inventoryMoney(totals.sales),
+            inventoryMoney(avg),
+            inventoryNumber(totals.customers),
+        ]);
+    } else if (activeType === "manual-sales") {
+        tableHead = [["Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Order Total"]];
+        const rows = currentManualSalesRows || [];
+        tableBody = rows.map((r) => [
+            r.store_name,
+            r.category_name || "-",
+            r.product_name,
+            r.order_number || r.order_numbers || "-",
+            inventoryTitleCase(r.order_status || "-"),
+            inventoryMoney(r.cost_price ?? r.average_cost_price),
+            inventoryMoney(r.sale_price ?? r.average_sale_price),
+            inventoryNumber(r.total_quantity),
+            inventoryMoney(r.total_cost),
+            inventoryMoney(r.gross_sales),
+            inventoryMoney(r.net_sales),
+            inventoryMoney(r.estimated_profit),
+            inventoryMoney(r.order_total),
+        ]);
+        const totals = rows.reduce((acc, r) => {
+            acc.costPrice += Number(r.cost_price ?? r.average_cost_price ?? 0) || 0;
+            acc.salePrice += Number(r.sale_price ?? r.average_sale_price ?? 0) || 0;
+            acc.qty += Number(r.total_quantity || 0) || 0;
+            acc.totalCost += Number(r.total_cost || 0) || 0;
+            acc.grossSales += Number(r.gross_sales || 0) || 0;
+            acc.netSales += Number(r.net_sales || 0) || 0;
+            acc.profit += Number(r.estimated_profit || 0) || 0;
+            return acc;
+        }, { costPrice: 0, salePrice: 0, qty: 0, totalCost: 0, grossSales: 0, netSales: 0, profit: 0 });
+        tableBody.push([
+            "Totals",
+            "",
+            "",
+            "",
+            "",
+            inventoryMoney(totals.costPrice),
+            inventoryMoney(totals.salePrice),
+            inventoryNumber(totals.qty),
+            inventoryMoney(totals.totalCost),
+            inventoryMoney(totals.grossSales),
+            inventoryMoney(totals.netSales),
+            inventoryMoney(totals.profit),
+            inventoryMoney(calculateUniqueOrderTotal(rows)),
+        ]);
+    } else if (activeType === "store-product-sales") {
+        tableHead = [["Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Order Total"]];
+        const rows = currentStoreProductSalesRows || [];
+        tableBody = rows.map((r) => [
+            r.store_name,
+            r.category_name || "-",
+            r.product_name,
+            r.order_number || r.order_numbers || "-",
+            inventoryTitleCase(r.order_status || "-"),
+            inventoryMoney(r.cost_price ?? r.average_cost_price),
+            inventoryMoney(r.sale_price ?? r.average_sale_price),
+            inventoryNumber(r.total_quantity),
+            inventoryMoney(r.total_cost),
+            inventoryMoney(r.gross_sales),
+            inventoryMoney(r.net_sales),
+            inventoryMoney(r.estimated_profit),
+            inventoryMoney(r.order_total),
+        ]);
+        const totals = rows.reduce((acc, r) => {
+            acc.costPrice += Number(r.cost_price ?? r.average_cost_price ?? 0) || 0;
+            acc.salePrice += Number(r.sale_price ?? r.average_sale_price ?? 0) || 0;
+            acc.qty += Number(r.total_quantity || 0) || 0;
+            acc.totalCost += Number(r.total_cost || 0) || 0;
+            acc.grossSales += Number(r.gross_sales || 0) || 0;
+            acc.netSales += Number(r.net_sales || 0) || 0;
+            acc.profit += Number(r.estimated_profit || 0) || 0;
+            return acc;
+        }, { costPrice: 0, salePrice: 0, qty: 0, totalCost: 0, grossSales: 0, netSales: 0, profit: 0 });
+        tableBody.push([
+            "Totals",
+            "",
+            "",
+            "",
+            "",
+            inventoryMoney(totals.costPrice),
+            inventoryMoney(totals.salePrice),
+            inventoryNumber(totals.qty),
+            inventoryMoney(totals.totalCost),
+            inventoryMoney(totals.grossSales),
+            inventoryMoney(totals.netSales),
+            inventoryMoney(totals.profit),
+            inventoryMoney(calculateUniqueOrderTotal(rows)),
+        ]);
+    } else if (activeType === "combined-product-sales") {
+        tableHead = [["Sale Type", "Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Order Total"]];
+        const rows = currentCombinedProductSalesRows || [];
+        tableBody = rows.map((r) => [
+            inventoryTitleCase(r.sale_type || "-"),
+            r.store_name,
+            r.category_name || "-",
+            r.product_name,
+            r.order_number || r.order_numbers || "-",
+            inventoryTitleCase(r.order_status || "-"),
+            inventoryMoney(r.cost_price ?? r.average_cost_price),
+            inventoryMoney(r.sale_price ?? r.average_sale_price),
+            inventoryNumber(r.total_quantity),
+            inventoryMoney(r.total_cost),
+            inventoryMoney(r.gross_sales),
+            inventoryMoney(r.net_sales),
+            inventoryMoney(r.estimated_profit),
+            inventoryMoney(r.order_total),
+        ]);
+        const totals = rows.reduce((acc, r) => {
+            acc.costPrice += Number(r.cost_price ?? r.average_cost_price ?? 0) || 0;
+            acc.salePrice += Number(r.sale_price ?? r.average_sale_price ?? 0) || 0;
+            acc.qty += Number(r.total_quantity || 0) || 0;
+            acc.totalCost += Number(r.total_cost || 0) || 0;
+            acc.grossSales += Number(r.gross_sales || 0) || 0;
+            acc.netSales += Number(r.net_sales || 0) || 0;
+            acc.profit += Number(r.estimated_profit || 0) || 0;
+            return acc;
+        }, { costPrice: 0, salePrice: 0, qty: 0, totalCost: 0, grossSales: 0, netSales: 0, profit: 0 });
+        tableBody.push([
+            "Totals",
+            "",
+            "",
+            "",
+            "",
+            "",
+            inventoryMoney(totals.costPrice),
+            inventoryMoney(totals.salePrice),
+            inventoryNumber(totals.qty),
+            inventoryMoney(totals.totalCost),
+            inventoryMoney(totals.grossSales),
+            inventoryMoney(totals.netSales),
+            inventoryMoney(totals.profit),
+            inventoryMoney(calculateUniqueOrderTotal(rows)),
+        ]);
+    } else if (activeType === "sales-with-delivery") {
+        tableHead = [["Sale Type", "Store", "Order Number", "Status", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Delivery Charges", "Total With Delivery", "Profit", "Order Total"]];
+        const rows = currentSalesWithDeliveryRows || [];
+        tableBody = rows.map((r) => [
+            inventoryTitleCase(r.sale_type || "-"),
+            r.store_names || r.store_name || "-",
+            r.order_number || "-",
+            inventoryTitleCase(r.order_status || "-"),
+            inventoryNumber(r.total_quantity),
+            inventoryMoney(r.total_cost),
+            inventoryMoney(r.gross_sales),
+            inventoryMoney(r.net_sales),
+            inventoryMoney(r.delivery_fee),
+            inventoryMoney(r.total_with_delivery),
+            inventoryMoney(r.estimated_profit),
+            inventoryMoney(r.order_total),
+        ]);
+        const totals = rows.reduce((acc, r) => {
+            acc.qty += Number(r.total_quantity || 0) || 0;
+            acc.totalCost += Number(r.total_cost || 0) || 0;
+            acc.grossSales += Number(r.gross_sales || 0) || 0;
+            acc.netSales += Number(r.net_sales || 0) || 0;
+            acc.delivery += Number(r.delivery_fee || 0) || 0;
+            acc.totalWithDelivery += Number(r.total_with_delivery || 0) || 0;
+            acc.profit += Number(r.estimated_profit || 0) || 0;
+            acc.orderTotal += Number(r.order_total || 0) || 0;
+            return acc;
+        }, { qty: 0, totalCost: 0, grossSales: 0, netSales: 0, delivery: 0, totalWithDelivery: 0, profit: 0, orderTotal: 0 });
+        tableBody.push([
+            "Totals",
+            "",
+            "",
+            "",
+            inventoryNumber(totals.qty),
+            inventoryMoney(totals.totalCost),
+            inventoryMoney(totals.grossSales),
+            inventoryMoney(totals.netSales),
+            inventoryMoney(totals.delivery),
+            inventoryMoney(totals.totalWithDelivery),
+            inventoryMoney(totals.profit),
+            inventoryMoney(totals.orderTotal),
+        ]);
     } else {
         tableHead = [["Store", "Products", "Stock", "Inventory Value"]];
         tableBody = (currentInventoryData.store_wise || []).map((r) => [
@@ -890,7 +1295,7 @@ function exportInventoryReportPdf() {
     }
 
     doc.autoTable({
-        startY: 53,
+        startY,
         head: tableHead,
         body: tableBody,
         styles: { fontSize: 9, cellPadding: 2.5, valign: "middle" },
@@ -907,10 +1312,13 @@ function exportInventoryReportPdf() {
 
     const fileDate = now.toISOString().slice(0, 10);
     const scope = selectedStoreId ? `store_${selectedStoreId}` : "all_stores";
-    doc.save(`Inventory_Report_${scope}_${fileDate}.pdf`);
+    const safeReportName = reportName.replace(/[^a-z0-9]+/gi, "_");
+    doc.save(`${safeReportName}_${scope}_${fileDate}.pdf`);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    const initialScope = window.location.hash === "#sale-reports" ? "sales" : "inventory";
+    setInventoryReportScope(initialScope);
     ensureInventoryDateDefaults();
 
     const tabLinks = document.querySelectorAll(".tab-link");
