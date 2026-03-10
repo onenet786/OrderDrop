@@ -2,6 +2,7 @@ const admin = require("firebase-admin");
 
 let firebaseReady = false;
 let firebaseInitAttempted = false;
+let firebaseInitError = null;
 
 function initializeFirebaseAdmin() {
   if (firebaseInitAttempted) return firebaseReady;
@@ -28,6 +29,7 @@ function initializeFirebaseAdmin() {
         "[Push] Firebase Admin not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_PATH.",
       );
       firebaseReady = false;
+      firebaseInitError = "missing_credentials";
       return false;
     }
 
@@ -35,13 +37,31 @@ function initializeFirebaseAdmin() {
       credential: admin.credential.cert(credentials),
     });
     firebaseReady = true;
+    firebaseInitError = null;
     console.log("[Push] Firebase Admin initialized.");
     return true;
   } catch (error) {
     firebaseReady = false;
+    firebaseInitError = error?.message || "init_failed";
     console.error("[Push] Firebase Admin initialization failed:", error.message);
     return false;
   }
+}
+
+function getPushServiceStatus() {
+  const jsonRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  const pathRaw = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+  const hasJson = !!(jsonRaw && jsonRaw.trim());
+  const hasPath = !!(pathRaw && pathRaw.trim());
+  const credentialSource = hasJson ? "env_json" : hasPath ? "env_path" : "none";
+  const ready = initializeFirebaseAdmin();
+
+  return {
+    firebase_ready: !!ready,
+    credential_source: credentialSource,
+    init_attempted: firebaseInitAttempted,
+    init_error: firebaseInitError,
+  };
 }
 
 async function ensurePushDeviceTokensTable(db) {
@@ -138,7 +158,9 @@ async function sendPushToUser(
 ) {
   const uid = parseInt(String(userId), 10);
   const role = normalizeString(userType, 30);
-  if (!uid || !role) return { sent: 0, failed: 0, skipped: true };
+  if (!uid || !role) {
+    return { sent: 0, failed: 0, skipped: true, reason: "invalid_user" };
+  }
 
   await ensurePushDeviceTokensTable(db);
   const [rows] = await db.execute(
@@ -149,10 +171,17 @@ async function sendPushToUser(
   const tokens = (rows || [])
     .map((x) => normalizeString(x.device_token, 512))
     .filter(Boolean);
-  if (!tokens.length) return { sent: 0, failed: 0, skipped: true };
+  if (!tokens.length) {
+    return { sent: 0, failed: 0, skipped: true, reason: "no_tokens" };
+  }
 
   if (!initializeFirebaseAdmin()) {
-    return { sent: 0, failed: tokens.length, skipped: true };
+    return {
+      sent: 0,
+      failed: tokens.length,
+      skipped: true,
+      reason: "firebase_not_ready",
+    };
   }
 
   const payload = {
@@ -199,7 +228,11 @@ async function sendPushToUser(
     }
   }
 
-  return { sent: response.successCount, failed: response.failureCount };
+  return {
+    sent: response.successCount,
+    failed: response.failureCount,
+    skipped: false,
+  };
 }
 
 module.exports = {
@@ -207,4 +240,5 @@ module.exports = {
   upsertPushToken,
   deactivatePushToken,
   sendPushToUser,
+  getPushServiceStatus,
 };

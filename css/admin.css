@@ -764,6 +764,33 @@ img, video, canvas, svg {
   letter-spacing: 0.035em;
 }
 
+/* Dashboard Overview should match Financial Dashboard card density */
+#dashboard .stats-grid {
+  gap: 0.7rem;
+}
+
+#dashboard .stat-card {
+  padding: 0.75rem 0.8rem;
+  min-height: 84px;
+}
+
+#dashboard .stat-card h3 {
+  font-size: 1.25rem;
+  line-height: 1.1;
+  margin-bottom: 0.2rem;
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: currentColor;
+}
+
+#dashboard .stat-card p {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  letter-spacing: 0.035em;
+}
+
 /* Order Details View Styles */
 .order-info-section {
     display: grid;

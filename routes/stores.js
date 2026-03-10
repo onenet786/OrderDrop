@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireStoreOwner } = require('../middleware/auth');
-const { sendPushToUser, ensurePushDeviceTokensTable } = require('../services/pushNotifications');
+const { sendPushToUser, ensurePushDeviceTokensTable, getPushServiceStatus } = require('../services/pushNotifications');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -1305,9 +1305,19 @@ router.post('/app-update-notification', authenticateToken, requireAdmin, async (
         }
 
         const recipients = await getTargetAppUsers(req.db, audience);
+        if (!recipients.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'No active app device tokens found for the selected audience'
+            });
+        }
+
         let pushed = 0;
+        let failed = 0;
+        let skipped = 0;
+        const skipReasons = new Set();
         for (const recipient of recipients) {
-            await sendPushToUser(req.db, {
+            const result = await sendPushToUser(req.db, {
                 userId: recipient.id,
                 userType: recipient.user_type,
                 title,
@@ -1323,7 +1333,36 @@ router.post('/app-update-notification', authenticateToken, requireAdmin, async (
                 },
                 collapseKey: version ? `app_update_${version}` : 'app_update_available'
             });
-            pushed++;
+            pushed += Number(result.sent || 0);
+            failed += Number(result.failed || 0);
+            if (result.skipped) {
+                skipped += 1;
+                if (result.reason) skipReasons.add(result.reason);
+                if (result.reason === 'firebase_not_ready') break;
+            }
+        }
+
+        if (pushed === 0) {
+            const reasons = Array.from(skipReasons);
+            let message = 'Failed to send app update notification';
+            if (reasons.includes('firebase_not_ready')) {
+                message = 'Push service is not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_PATH.';
+            } else if (reasons.includes('no_tokens')) {
+                message = 'No active push tokens found. Ask users to open the app so their device token registers.';
+            }
+            return res.status(500).json({
+                success: false,
+                message,
+                push_notification: {
+                    audience,
+                    version: version || null,
+                    recipient_count: recipients.length,
+                    pushed_count: pushed,
+                    failed_count: failed,
+                    skipped_count: skipped,
+                    skip_reasons: reasons
+                }
+            });
         }
 
         return res.json({
@@ -1333,7 +1372,10 @@ router.post('/app-update-notification', authenticateToken, requireAdmin, async (
                 audience,
                 version: version || null,
                 recipient_count: recipients.length,
-                pushed_count: pushed
+                pushed_count: pushed,
+                failed_count: failed,
+                skipped_count: skipped,
+                skip_reasons: Array.from(skipReasons)
             }
         });
     } catch (error) {
@@ -1341,6 +1383,33 @@ router.post('/app-update-notification', authenticateToken, requireAdmin, async (
         return res.status(500).json({
             success: false,
             message: 'Failed to send app update notification',
+            error: error.message
+        });
+    }
+});
+
+router.get('/push-status', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        await ensurePushDeviceTokensTable(req.db);
+        const [rows] = await req.db.execute(
+            `SELECT LOWER(COALESCE(platform, 'unknown')) AS platform,
+                    COUNT(*) AS active_tokens,
+                    MAX(last_seen_at) AS last_seen
+             FROM push_device_tokens
+             WHERE is_active = 1
+             GROUP BY LOWER(COALESCE(platform, 'unknown'))
+             ORDER BY platform`
+        );
+        return res.json({
+            success: true,
+            push_service: getPushServiceStatus(),
+            tokens: rows || []
+        });
+    } catch (error) {
+        console.error('Error fetching push status:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to fetch push status',
             error: error.message
         });
     }

@@ -1485,6 +1485,12 @@ function initializeAdmin() {
         sendAppUpdatePushBtn.addEventListener('click', sendAppUpdatePushNotification);
         sendAppUpdatePushBtn.dataset.boundClick = '1';
     }
+    const refreshPushStatusBtn = document.getElementById('refreshPushStatusBtn');
+    if (refreshPushStatusBtn && !refreshPushStatusBtn.dataset.boundClick) {
+        refreshPushStatusBtn.addEventListener('click', loadPushStatus);
+        refreshPushStatusBtn.dataset.boundClick = '1';
+    }
+    loadPushStatus();
     updateGlobalDeliveryPushControls();
     updateBroadcastPushControls();
     bindLivePromotionControls();
@@ -3182,6 +3188,56 @@ function loadRecentActivity() {
     .catch(err => console.error('Error loading recent activity:', err));
 }
 
+async function loadPushStatus() {
+    const pill = document.getElementById('pushStatusPill');
+    const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value ?? '-';
+    };
+    if (pill) {
+        pill.textContent = 'Checking…';
+        pill.classList.remove('ready', 'error');
+    }
+    try {
+        const response = await fetch(`${API_BASE}/api/stores/push-status`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Failed to load push status');
+        }
+        const service = data.push_service || {};
+        const tokens = Array.isArray(data.tokens) ? data.tokens : [];
+        const totalTokens = tokens.reduce((sum, t) => sum + (parseInt(String(t.active_tokens || 0), 10) || 0), 0);
+        const lastSeen = tokens.map((t) => t.last_seen).filter(Boolean).sort().slice(-1)[0] || '-';
+        setText('pushStatusReady', service.firebase_ready ? 'Yes' : 'No');
+        setText('pushStatusSource', service.credential_source || '-');
+        setText('pushStatusError', service.init_error || '-');
+        setText('pushStatusTokens', String(totalTokens));
+        setText('pushStatusLastSeen', lastSeen);
+        if (pill) {
+            if (service.firebase_ready) {
+                pill.textContent = 'Ready';
+                pill.classList.add('ready');
+            } else {
+                pill.textContent = 'Not Ready';
+                pill.classList.add('error');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading push status:', error);
+        setText('pushStatusReady', 'No');
+        setText('pushStatusSource', '-');
+        setText('pushStatusError', error.message || 'Error');
+        setText('pushStatusTokens', '-');
+        setText('pushStatusLastSeen', '-');
+        if (pill) {
+            pill.textContent = 'Error';
+            pill.classList.add('error');
+        }
+    }
+}
+
 function renderActivityList(containerId, items) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -3192,14 +3248,20 @@ function renderActivityList(containerId, items) {
     }
 
     items.forEach(item => {
+        const colorKey = String(item.color || '').toLowerCase().trim();
+        const allowedColors = new Set(['blue', 'green', 'orange', 'red', 'purple', 'teal']);
+        const tone = allowedColors.has(colorKey) ? colorKey : 'blue';
         const div = document.createElement('div');
-        div.className = 'activity-item';
+        div.className = `activity-item activity-item--${tone}`;
         div.innerHTML = `
-            <div class="title">${item.title}</div>
-            <div class="subtitle">${item.subtitle}</div>
-            <div class="meta">
-                <span>${new Date(item.timestamp).toLocaleDateString()}</span>
-                <span>${new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            <div class="activity-accent"></div>
+            <div class="activity-content">
+                <div class="title">${item.title}</div>
+                <div class="subtitle">${item.subtitle}</div>
+                <div class="meta">
+                    <span>${new Date(item.timestamp).toLocaleDateString()}</span>
+                    <span>${new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                </div>
             </div>
         `;
         // Add click listener
@@ -5747,6 +5809,12 @@ async function editOrder(orderId) {
             return;
         }
 
+        const ridersPromise = fetch(`${API_BASE}/api/orders/available-riders`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        })
+            .then((resp) => (resp.ok ? resp.json() : { success: false }))
+            .catch(() => ({ success: false }));
+
         const itemsResponse = await fetch(`${API_BASE}/api/orders/${orderId}/items`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
@@ -5784,15 +5852,10 @@ async function editOrder(orderId) {
             showWarning('Cannot Edit', `Cannot edit items for ${freshOrder.status} orders. You can only change status and rider details.`);
         }
 
-        const ridersResponse = await fetch(`${API_BASE}/api/orders/available-riders`, {
-            headers: { 'Authorization': `Bearer ${authToken}` }
-        });
-        
-        if (ridersResponse.status === 403) {
-             console.warn('Access denied to fetch riders');
+        const ridersData = await ridersPromise;
+        if (ridersData?.status === 403) {
+            console.warn('Access denied to fetch riders');
         }
-        
-        const ridersData = ridersResponse.ok ? await ridersResponse.json() : { success: false };
 
         const riderSelect = document.getElementById('orderRider');
         riderSelect.innerHTML = '<option value="">Select Rider</option>';
@@ -5808,16 +5871,32 @@ async function editOrder(orderId) {
              riderSelect.innerHTML += `<option value="${freshOrder.rider_id}" selected>${freshOrder.rider_first_name} ${freshOrder.rider_last_name} (Current)</option>`;
         }
 
-        const storeSelect = document.getElementById('orderItemStore');
-        storeSelect.innerHTML = '<option value="">Keep Current Store</option>';
-        if (itemsData.success && itemsData.availableStores) {
-            itemsData.availableStores.forEach(store => {
-                storeSelect.innerHTML += `<option value="${store.id}">${store.name}</option>`;
-            });
+        let storeSelect = document.getElementById('orderItemStore');
+        if (storeSelect) {
+            storeSelect.innerHTML = '<option value="">Keep Current Store</option>';
+            if (itemsData.success && itemsData.availableStores) {
+                itemsData.availableStores.forEach(store => {
+                    storeSelect.innerHTML += `<option value="${store.id}">${store.name}</option>`;
+                });
+            }
+            const storeSelectClone = storeSelect.cloneNode(true);
+            storeSelectClone.innerHTML = storeSelect.innerHTML;
+            storeSelect.parentNode.replaceChild(storeSelectClone, storeSelect);
+            storeSelect = storeSelectClone;
         }
 
         const itemsContainer = document.getElementById('orderItemsContainer');
         if (itemsData.success && itemsData.items && itemsData.items.length > 0) {
+            const itemMap = new Map(itemsData.items.map(item => [String(item.id), item]));
+            const readItemsFromInputs = () => Array.from(document.querySelectorAll('.item-quantity-input')).map(inp => {
+                const itemId = String(inp.dataset.itemId || '');
+                const originalItem = itemMap.get(itemId);
+                if (!originalItem) return null;
+                return {
+                    ...originalItem,
+                    quantity: parseInt(inp.value, 10) || 0
+                };
+            }).filter(Boolean);
             itemsContainer.innerHTML = itemsData.items.map(item => `
                 <div style="display: grid; grid-template-columns: 1fr 80px 100px 80px; gap: 1rem; align-items: center; padding: 0.75rem; border-bottom: 1px solid #e2e8f0; background: #fff;">
                     <div>
@@ -5847,43 +5926,33 @@ async function editOrder(orderId) {
 
             document.querySelectorAll('.item-quantity-input').forEach(input => {
                 input.addEventListener('input', function() {
-                    const items = Array.from(document.querySelectorAll('.item-quantity-input')).map(inp => {
-                        const itemId = inp.dataset.itemId;
-                        const originalItem = itemsData.items.find(i => i.id == itemId);
-                        return {
-                            ...originalItem,
-                            quantity: parseInt(inp.value) || 0
-                        };
-                    });
-                    const currentDeliveryFee = document.getElementById('orderDeliveryFee').value;
+                    const items = readItemsFromInputs();
+                    const currentDeliveryFee = document.getElementById('orderDeliveryFee')?.value || 0;
                     updateOrderSummary(items, currentDeliveryFee);
                     renderStoreWiseOrderTotals('orderStoreWiseTotals', items);
                 });
             });
 
-            document.getElementById('orderDeliveryFee').addEventListener('input', function() {
-                const items = Array.from(document.querySelectorAll('.item-quantity-input')).map(inp => {
-                    const itemId = inp.dataset.itemId;
-                    const originalItem = itemsData.items.find(i => i.id == itemId);
-                    return {
-                        ...originalItem,
-                        quantity: parseInt(inp.value) || 0
-                    };
+            const deliveryFeeInput = document.getElementById('orderDeliveryFee');
+            if (deliveryFeeInput) {
+                const deliveryFeeClone = deliveryFeeInput.cloneNode(true);
+                deliveryFeeClone.value = deliveryFeeInput.value;
+                deliveryFeeInput.parentNode.replaceChild(deliveryFeeClone, deliveryFeeInput);
+                deliveryFeeClone.addEventListener('input', function() {
+                    const items = readItemsFromInputs();
+                    updateOrderSummary(items, this.value);
+                    renderStoreWiseOrderTotals('orderStoreWiseTotals', items);
                 });
-                updateOrderSummary(items, this.value);
-                renderStoreWiseOrderTotals('orderStoreWiseTotals', items);
-            });
+            }
 
-            document.getElementById('orderTotalAmount').addEventListener('input', function() {
+            const orderTotalInput = document.getElementById('orderTotalAmount');
+            if (orderTotalInput) {
+                const orderTotalClone = orderTotalInput.cloneNode(true);
+                orderTotalClone.value = orderTotalInput.value;
+                orderTotalInput.parentNode.replaceChild(orderTotalClone, orderTotalInput);
+                orderTotalClone.addEventListener('input', function() {
                 const totalAmount = parseFloat(this.value) || 0;
-                const items = Array.from(document.querySelectorAll('.item-quantity-input')).map(inp => {
-                    const itemId = inp.dataset.itemId;
-                    const originalItem = itemsData.items.find(i => i.id == itemId);
-                    return {
-                        ...originalItem,
-                        quantity: parseInt(inp.value) || 0
-                    };
-                });
+                const items = readItemsFromInputs();
                 const itemsSubtotal = items.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
                 const deliveryFee = Math.max(0, totalAmount - itemsSubtotal);
                 
@@ -5897,7 +5966,8 @@ async function editOrder(orderId) {
                     itemsSubtotalEl.textContent = `PKR ${itemsSubtotal.toFixed(2)}`;
                 }
                 renderStoreWiseOrderTotals('orderStoreWiseTotals', items);
-            });
+                });
+            }
 
             const uniqueStores = new Set(itemsData.items.map(item => item.store_id).filter(Boolean));
             const storeCount = uniqueStores.size;
@@ -5948,49 +6018,34 @@ async function editOrder(orderId) {
         }
         
         const productSelect = document.getElementById('addItemProduct');
-        if (productSelect && itemsData.success) {
-            const productsRes = await fetch(`${API_BASE}/api/orders/${orderId}/available-products`, {
-                headers: { 'Authorization': `Bearer ${authToken}` }
-            });
-            const productsData = await productsRes.json();
-            
-            if (productsData.success && productsData.products) {
-                productSelect.innerHTML = '<option value="">Choose product...</option>';
-                productsData.products.forEach(product => {
-                    productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}">${product.name} - PKR ${Number(product.price).toFixed(2)} (${product.store_name})</option>`;
+        const loadProducts = async (selectedStoreId) => {
+            if (!productSelect) return;
+            try {
+                let query = `${API_BASE}/api/orders/${orderId}/available-products`;
+                if (selectedStoreId) {
+                    query += `?store_id=${selectedStoreId}`;
+                }
+                const productsRes = await fetch(query, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
                 });
+                const productsData = await productsRes.json();
+                if (productsData.success && productsData.products) {
+                    productSelect.innerHTML = '<option value="">Choose product...</option>';
+                    productsData.products.forEach(product => {
+                        productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}">${product.name} - PKR ${Number(product.price).toFixed(2)} (${product.store_name})</option>`;
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching products for store:', error);
             }
+        };
+
+        if (storeSelect) {
+            storeSelect.addEventListener('change', function() {
+                loadProducts(this.value);
+            });
         }
 
-        const storeSelectDropdown = document.getElementById('orderItemStore');
-        if (storeSelectDropdown) {
-            storeSelectDropdown.addEventListener('change', async function() {
-                const selectedStoreId = this.value;
-                if (!productSelect) return;
-                
-                try {
-                    let query = `${API_BASE}/api/orders/${orderId}/available-products`;
-                    if (selectedStoreId) {
-                        query += `?store_id=${selectedStoreId}`;
-                    }
-                    
-                    const productsRes = await fetch(query, {
-                        headers: { 'Authorization': `Bearer ${authToken}` }
-                    });
-                    const productsData = await productsRes.json();
-                    
-                    if (productsData.success && productsData.products) {
-                        productSelect.innerHTML = '<option value="">Choose product...</option>';
-                        productsData.products.forEach(product => {
-                            productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}">${product.name} - PKR ${Number(product.price).toFixed(2)} (${product.store_name})</option>`;
-                        });
-                    }
-                } catch (error) {
-                    console.error('Error fetching products for store:', error);
-                }
-            });
-        }
-        
         document.getElementById('orderStatus').value = freshOrder.status;
         const originalStatusInput = document.getElementById('originalOrderStatus');
         if (originalStatusInput) originalStatusInput.value = freshOrder.status;
@@ -6001,6 +6056,9 @@ async function editOrder(orderId) {
         document.getElementById('editOrderForm').dataset.orderId = orderId;
 
         showModal('editOrderModal');
+        if (productSelect && itemsData.success) {
+            loadProducts(storeSelect?.value || '');
+        }
     } catch (error) {
         console.error('Error loading order details:', error);
         showError('Error', 'Failed to load order details. Please try again.');

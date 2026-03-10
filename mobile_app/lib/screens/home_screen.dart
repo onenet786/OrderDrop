@@ -74,40 +74,62 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchData() async {
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
-      await _resolveLocationContext();
-      Map<String, dynamic>? globalStatus;
-      if (token != null) {
+      Future<T?> safe<T>(Future<T> future) async {
         try {
-          final global = await ApiService.getGlobalDeliveryStatus(token);
-          globalStatus = (global['status'] is Map<String, dynamic>)
-              ? (global['status'] as Map<String, dynamic>)
-              : (global['global_status'] is Map<String, dynamic>)
-                  ? (global['global_status'] as Map<String, dynamic>)
-                  : global;
-        } catch (_) {}
+          return await future;
+        } catch (_) {
+          return null;
+        }
       }
-      Map<String, dynamic>? livePromotions;
-      try {
-        final promotions = await ApiService.getLivePromotions(token);
-        livePromotions = (promotions['live_promotions'] is Map<String, dynamic>)
-            ? (promotions['live_promotions'] as Map<String, dynamic>)
-            : promotions;
-      } catch (_) {}
-      Map<String, dynamic>? customerFlash;
-      Map<String, dynamic>? supportContact;
-      if (token != null) {
-        try {
-          customerFlash = await ApiService.getCustomerFlashMessage(token);
-        } catch (_) {}
-        try {
-          supportContact = await ApiService.getCustomerSupportContact(token);
-        } catch (_) {}
-      }
-      final storesResp = await ApiService.getStores(
+
+      final locationFuture = _resolveLocationContext();
+      final globalFuture = token != null
+          ? safe(ApiService.getGlobalDeliveryStatus(token))
+          : Future.value(null);
+      final promotionsFuture = safe(ApiService.getLivePromotions(token));
+      final flashFuture = token != null
+          ? safe(ApiService.getCustomerFlashMessage(token))
+          : Future.value(null);
+      final supportFuture = token != null
+          ? safe(ApiService.getCustomerSupportContact(token))
+          : Future.value(null);
+
+      await locationFuture;
+      final storesFuture = safe(ApiService.getStores(
         latitude: _userLat,
         longitude: _userLng,
         city: _userCity,
-      );
+      ));
+
+      final results = await Future.wait([
+        globalFuture,
+        promotionsFuture,
+        flashFuture,
+        supportFuture,
+        storesFuture,
+      ]);
+
+      final globalRaw = results[0] as Map<String, dynamic>?;
+      final promotionsRaw = results[1] as Map<String, dynamic>?;
+      final customerFlash = results[2] as Map<String, dynamic>?;
+      final supportContact = results[3] as Map<String, dynamic>?;
+      final storesResp = (results[4] as Map<String, dynamic>?) ?? {};
+
+      Map<String, dynamic>? globalStatus;
+      if (globalRaw != null) {
+        globalStatus = (globalRaw['status'] is Map<String, dynamic>)
+            ? (globalRaw['status'] as Map<String, dynamic>)
+            : (globalRaw['global_status'] is Map<String, dynamic>)
+                ? (globalRaw['global_status'] as Map<String, dynamic>)
+                : globalRaw;
+      }
+
+      Map<String, dynamic>? livePromotions;
+      if (promotionsRaw != null) {
+        livePromotions = (promotionsRaw['live_promotions'] is Map<String, dynamic>)
+            ? (promotionsRaw['live_promotions'] as Map<String, dynamic>)
+            : promotionsRaw;
+      }
 
       if (mounted) {
         final stores = (storesResp['stores'] as List<dynamic>? ?? []);

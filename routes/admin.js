@@ -808,7 +808,12 @@ router.get(
         ? String(req.query.end_date).trim()
         : "";
       const whereClauses = [];
-      const queryParams = [];
+      const manualProductDescription = "created from admin manual order";
+      const queryParams = [
+        manualProductDescription,
+        manualProductDescription,
+        manualProductDescription,
+      ];
 
       if (hasStoreFilter) {
         whereClauses.push("s.id = ?");
@@ -1342,6 +1347,141 @@ router.get(
       return res.status(500).json({
         success: false,
         message: "Failed to fetch sales with delivery report",
+        error: err.message,
+      });
+    }
+  }
+);
+
+router.get(
+  "/sales-by-payment-report",
+  authenticateToken,
+  requireStaffAccess,
+  async (req, res) => {
+    try {
+      await ensureManualOrderItemCostColumn(req.db);
+
+      if (!(await hasPermission(req, "report_sales"))) {
+        return res.status(403).json({
+          success: false,
+          message: "Permission denied: report_sales required",
+        });
+      }
+
+      const parsedStoreId = Number.parseInt(String(req.query.store_id || ""), 10);
+      const hasStoreFilter = Number.isInteger(parsedStoreId) && parsedStoreId > 0;
+      const startDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.start_date || "").trim())
+        ? String(req.query.start_date).trim()
+        : "";
+      const endDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.end_date || "").trim())
+        ? String(req.query.end_date).trim()
+        : "";
+      const manualProductDescription = "created from admin manual order";
+      const queryParams = [
+        manualProductDescription,
+        manualProductDescription,
+        manualProductDescription,
+      ];
+
+      if (hasStoreFilter) queryParams.push(parsedStoreId);
+      if (startDate) queryParams.push(startDate);
+      if (endDate) queryParams.push(endDate);
+
+      const [rows] = await req.db.execute(
+        `
+          SELECT
+              o.id as order_id,
+              o.order_number,
+              o.status as order_status,
+              o.created_at as sold_at,
+              COALESCE(o.total_amount, 0) as order_total,
+              LOWER(TRIM(COALESCE(o.payment_method, ''))) as payment_method,
+              GROUP_CONCAT(DISTINCT s.name ORDER BY s.name SEPARATOR ', ') as store_names,
+              CASE
+                  WHEN SUM(CASE WHEN LOWER(TRIM(COALESCE(p.description, ''))) = ? THEN 1 ELSE 0 END) > 0
+                       AND SUM(CASE WHEN LOWER(TRIM(COALESCE(p.description, ''))) != ? THEN 1 ELSE 0 END) > 0
+                    THEN 'mixed'
+                  WHEN SUM(CASE WHEN LOWER(TRIM(COALESCE(p.description, ''))) = ? THEN 1 ELSE 0 END) > 0
+                    THEN 'manual'
+                  ELSE 'store'
+              END as order_type,
+              CASE
+                  WHEN SUM(CASE WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 1 ELSE 0 END) > 0
+                       AND SUM(CASE WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT LIKE '%credit%' THEN 1 ELSE 0 END) > 0
+                    THEN 'mixed'
+                  WHEN SUM(CASE WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 1 ELSE 0 END) > 0
+                    THEN 'credit'
+                  ELSE 'cash'
+              END as store_payment_term,
+              CASE
+                  WHEN SUM(CASE WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 1 ELSE 0 END) > 0
+                    THEN 'credit'
+                  WHEN LOWER(TRIM(COALESCE(o.payment_method, ''))) LIKE '%credit%' THEN 'credit'
+                  WHEN LOWER(TRIM(COALESCE(MAX(o.payment_status), ''))) <> 'paid' THEN 'credit'
+                  ELSE 'cash'
+              END as sale_type,
+              SUM(oi.quantity) as total_quantity,
+              SUM(oi.quantity * COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)) as total_cost,
+              SUM(oi.quantity * oi.price) as gross_sales,
+              SUM(oi.quantity * oi.price) as net_sales,
+              COALESCE(o.delivery_fee, 0) as delivery_fee,
+              SUM(
+                  oi.quantity * (
+                      oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
+                  )
+              ) as estimated_profit
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          JOIN products p ON p.id = oi.product_id
+          JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+          LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id
+              AND (
+                  (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id)
+                  OR
+                  (oi.unit_id IS NOT NULL AND psp.unit_id = oi.unit_id)
+              )
+          WHERE o.status != 'cancelled'
+          ${hasStoreFilter ? "AND COALESCE(oi.store_id, p.store_id) = ?" : ""}
+          ${startDate ? "AND DATE(o.created_at) >= ?" : ""}
+          ${endDate ? "AND DATE(o.created_at) <= ?" : ""}
+          GROUP BY o.id, o.order_number, o.status, o.created_at, o.delivery_fee, o.payment_method
+          ORDER BY sale_type ASC, o.created_at DESC, o.order_number DESC
+        `,
+        queryParams
+      );
+
+      return res.json({
+        success: true,
+        sales_by_payment: rows.map((row) => {
+          const grossSales = parseFloat(row.gross_sales) || 0;
+          const netSales = parseFloat(row.net_sales) || 0;
+          const deliveryFee = parseFloat(row.delivery_fee) || 0;
+          return {
+            order_id: Number(row.order_id) || null,
+            order_number: row.order_number,
+            order_status: String(row.order_status || "").toLowerCase(),
+            payment_method: String(row.payment_method || "").toLowerCase(),
+            order_type: String(row.order_type || "").toLowerCase(),
+            store_payment_term: String(row.store_payment_term || "").toLowerCase(),
+            sale_type: String(row.sale_type || "").toLowerCase(),
+            store_names: row.store_names || "",
+            total_quantity: Number(row.total_quantity) || 0,
+            total_cost: parseFloat(row.total_cost) || 0,
+            gross_sales: grossSales,
+            net_sales: netSales,
+            delivery_fee: deliveryFee,
+            total_with_delivery: netSales + deliveryFee,
+            order_total: parseFloat(row.order_total) || 0,
+            estimated_profit: parseFloat(row.estimated_profit) || 0,
+            last_sold_at: row.sold_at || null,
+          };
+        }),
+      });
+    } catch (err) {
+      console.error("Sales by payment report error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch sales by payment report",
         error: err.message,
       });
     }
