@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet - ServeNow</title>
+    <link rel="stylesheet" href="css/user.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://js.stripe.com/v3/"></script>
+    <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="images/servenow_brand_logo.png" alt="ServeNow" onerror="this.src='https://placehold.co/32x32/667eea/ffffff?text=SN'">
+                    <span>ServeNow</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
+                    <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+                    <li><a href="wallet.html" class="active"><i class="fas fa-wallet"></i> Wallet</a></li>
+                    <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart</a></li>
+                    <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
+                    <li><a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Header -->
+        <header class="app-header">
+            <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar navigation" title="Toggle sidebar navigation">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-right">
+                <div class="user-profile">
+                    <span>Welcome</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-content">
+            <div id="toastContainer" class="toast-container"></div>
+
+            <div class="wallet-container">
+                <div class="wallet-header">
+                    <div class="balance-card">
+                        <h3>Available Balance</h3>
+                        <div class="balance-amount">PKR <span id="walletBalance">0.00</span></div>
+                        <div class="balance-stats">
+                            <div class="stat-item">
+                                <strong>Last Topup</strong>
+                                <span id="lastTopup">-</span>
+                            </div>
+                            <div class="stat-item">
+                                <strong>Total Spent</strong>
+                                <span id="totalSpent">PKR 0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="topup-section">
+                    <h3>Top Up Wallet</h3>
+                    <div class="form-group">
+                        <label>Select Amount</label>
+                        <div class="topup-options" id="topupOptions">
+                            <div class="topup-amount-btn" data-amount="500">PKR 500</div>
+                            <div class="topup-amount-btn" data-amount="1000">PKR 1000</div>
+                            <div class="topup-amount-btn" data-amount="2000">PKR 2000</div>
+                            <div class="topup-amount-btn" data-amount="5000">PKR 5000</div>
+                        </div>
+                        <label>Or Enter Amount</label>
+                        <input type="number" id="topupAmount" placeholder="Enter amount (Min PKR 100)">
+                    </div>
+
+                    <div id="card-element" class="form-group">
+                        <!-- Stripe Element -->
+                    </div>
+                    <div id="card-errors" role="alert" class="error"></div>
+
+                    <button id="submitTopup" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
+                        Top Up Now
+                    </button>
+                </div>
+
+                <div class="transactions-section">
+                    <h3>Recent Transactions</h3>
+                    <div class="table-container">
+                        <table class="transaction-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactionsList">
+                                <!-- Loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="app-footer">
+                <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Change Password</h3>
+                <span class="close" onclick="closeModal('changePasswordModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">Current Password</label>
+                        <input type="password" id="currentPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">New Password</label>
+                        <input type="password" id="newPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmNewPassword">Confirm New Password</label>
+                        <input type="password" id="confirmNewPassword" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('changePasswordModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitChangePassword()">Change Password</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/app.js?v=20"></script>
+    <script src="js/notifications.js"></script>
+    <script src="js/wallet.js"></script>
+    <script>
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const appSidebar = document.getElementById('appSidebar');
+
+        if (sidebarToggle && appSidebar) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appSidebar.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 1024 && 
+                    appSidebar.classList.contains('active') && 
+                    !appSidebar.contains(e.target) && 
+                    e.target !== sidebarToggle) {
+                    appSidebar.classList.remove('active');
+                }
+            });
+        }
+        
+        // Modal functions
+        function showChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'block';
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+        
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = "none";
+            }
+        }
+    </script>
+</body>
+</html>
+
+
+

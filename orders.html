@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orders - ServeNow</title>
+    <link rel="stylesheet" href="css/user.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .tabs {
+            display: flex;
+            gap: 2px;
+            background: #e2e8f0;
+            padding: 4px;
+            border-radius: 8px;
+        }
+        .tab-btn {
+            min-height: 44px;
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+            border: none;
+            background: transparent;
+            color: #64748b;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+        .tab-btn.active {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .tab-btn:hover:not(.active) {
+            background: rgba(255,255,255,0.5);
+            color: #475569;
+        }
+    </style>
+    <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="images/servenow_brand_logo.png" alt="ServeNow" onerror="this.src='https://placehold.co/32x32/667eea/ffffff?text=SN'">
+                    <span>ServeNow</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
+                    <li><a href="orders.html" class="active"><i class="fas fa-box"></i> Orders</a></li>
+                    <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
+                    <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart</a></li>
+                    <li><a href="#" onclick="showChangePasswordModal(); return false;"><i class="fas fa-key"></i> Change Password</a></li>
+                    <li><a href="#" onclick="logout(); return false;"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Header -->
+        <header class="app-header">
+            <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar navigation" title="Toggle sidebar navigation">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-right">
+                <div class="user-profile">
+                    <span>Welcome</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-content">
+            <div id="toastContainer" class="toast-container"></div>
+
+            <div class="page-header" style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+                <h2>My Orders</h2>
+                <div class="filters" style="display: flex; gap: 1rem; align-items: center;">
+                    <select id="assignmentFilter" class="form-control" onchange="refreshOrders()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;">
+                        <option value="unassigned">Unassigned</option>
+                        <option value="all">All Assignments</option>
+                        <option value="assigned">Assigned</option>
+                    </select>
+                    <div class="tabs">
+                        <button id="pendingTab" class="tab-btn active" onclick="switchOrderTab('pending')">Pending</button>
+                        <button id="allTab" class="tab-btn" onclick="switchOrderTab('all')">All Orders</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="ordersContainer" class="stats-grid" style="display: flex; flex-direction: column; gap: 1rem;">
+                <!-- Orders will be loaded dynamically -->
+                <p>Loading orders...</p>
+            </div>
+
+            <footer class="app-footer">
+                <p>© 2025 SERVENOW. All Rights Reserved. Powered by: OneNet Solutions Pakistan</p>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Change Password</h3>
+                <span class="close" onclick="closeModal('changePasswordModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">Current Password</label>
+                        <input type="password" id="currentPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">New Password</label>
+                        <input type="password" id="newPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmNewPassword">Confirm New Password</label>
+                        <input type="password" id="confirmNewPassword" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('changePasswordModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitChangePassword()">Change Password</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/app.js?v=20"></script>
+    <script src="js/notifications.js"></script>
+    <script src="js/orders.js"></script>
+    <script>
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const appSidebar = document.getElementById('appSidebar');
+
+        if (sidebarToggle && appSidebar) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appSidebar.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 1024 && 
+                    appSidebar.classList.contains('active') && 
+                    !appSidebar.contains(e.target) && 
+                    e.target !== sidebarToggle) {
+                    appSidebar.classList.remove('active');
+                }
+            });
+        }
+        
+        // Modal functions
+        function showChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'block';
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+        
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = "none";
+            }
+        }
+
+        // Tab Shim for orders.js
+        // orders.js expects 'pendingTab' and 'allTab' elements
+        // It likely adds event listeners to them.
+        // My HTML provides them.
+        
+        function switchOrderTab(type) {
+             const pendingTab = document.getElementById('pendingTab');
+             const allTab = document.getElementById('allTab');
+             
+             if(type === 'pending') {
+                 pendingTab.classList.add('active');
+                 allTab.classList.remove('active');
+             } else {
+                 allTab.classList.add('active');
+                 pendingTab.classList.remove('active');
+             }
+             
+             if (typeof displayOrders === 'function') {
+                 displayOrders(type);
+             }
+        }
+    </script>
+</body>
+</html>
+
+
+
