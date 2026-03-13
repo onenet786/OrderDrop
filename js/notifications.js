@@ -23,6 +23,7 @@
     const notificationsStore = [];
     const MAX_NOTIFICATIONS = 20;
     let notifyPermissionRequested = false;
+    const systemNotifyDedup = new Map();
 
     function canSystemNotify() {
         return 'Notification' in window && Notification.permission === 'granted';
@@ -37,15 +38,20 @@
     }
 
     function systemNotify(title, body) {
-        if (canSystemNotify()) {
-            try {
-                new Notification(title, { body });
-                return true;
-            } catch (_) {
-                return false;
-            }
+        if (window.__serveNowDisableSystemNotify) return false;
+        ensureNotifyPermission();
+        if (!canSystemNotify()) return false;
+        const key = `${String(title || '').trim()}|${String(body || '').trim()}`;
+        const now = Date.now();
+        const last = systemNotifyDedup.get(key) || 0;
+        if ((now - last) < 3000) return true;
+        systemNotifyDedup.set(key, now);
+        try {
+            new Notification(title, { body });
+            return true;
+        } catch (_) {
+            return false;
         }
-        return false;
     }
 
     function emitUserIdentification() {

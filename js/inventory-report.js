@@ -21,6 +21,7 @@ const inventoryReportOptions = {
         { value: "combined-product-sales", label: "Combined Product Sales" },
         { value: "sales-with-delivery", label: "Sales With Delivery Charges" },
         { value: "sales-by-payment", label: "Cash/Credit Sales With Delivery" },
+        { value: "sales-by-payment-simple", label: "Cash/Credit Sales With Delivery (By Type)" },
     ],
 };
 
@@ -360,6 +361,31 @@ function loadSalesByPaymentReport() {
         .catch((err) => {
             console.error("Error loading cash/credit sales report:", err);
             showError("Cash/Credit Sales With Delivery Report", "Error loading cash/credit sales report");
+        });
+}
+
+function loadSalesByPaymentSimpleReport() {
+    const apiBase = window.API_BASE || `${window.location.protocol}//${window.location.host}`;
+    const token = localStorage.getItem("serveNowToken");
+    const query = buildInventorySalesQuery();
+
+    fetch(`${apiBase}/api/admin/sales-by-payment-report${query}`, {
+        method: "GET",
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                displaySalesByPaymentSimpleReport(data);
+            } else {
+                showError("Cash/Credit Sales With Delivery Report (By Type)", data.message || "Failed to load cash/credit sales report");
+            }
+        })
+        .catch((err) => {
+            console.error("Error loading cash/credit sales report:", err);
+            showError("Cash/Credit Sales With Delivery Report (By Type)", "Error loading cash/credit sales report");
         });
 }
 
@@ -840,9 +866,182 @@ function displaySalesByPaymentReport(data) {
 
     const rows = data.sales_by_payment || [];
     currentSalesByPaymentRows = rows;
+    const columnCount = 10;
     if (!rows.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="9" style="text-align:center;">No sales found for the selected scope.</td>`;
+        row.innerHTML = `<td colspan="${columnCount}" style="text-align:center;">No sales found for the selected scope.</td>`;
+        tbody.appendChild(row);
+        return;
+    }
+
+    const totalsByType = rows.reduce((acc, item) => {
+        const typeKey = String(item.sale_type || item.payment_method || "other").toLowerCase();
+        const storeKey = String(item.store_names || item.store_name || "-").trim() || "-";
+        if (!acc[typeKey]) {
+            acc[typeKey] = {
+                totalCost: 0,
+                netSales: 0,
+                profit: 0,
+                delivery: 0,
+                totalWithDelivery: 0,
+                orderTotal: 0,
+                stores: {},
+            };
+        }
+        const typeGroup = acc[typeKey];
+        if (!typeGroup.stores[storeKey]) {
+            typeGroup.stores[storeKey] = {
+                totalCost: 0,
+                netSales: 0,
+                profit: 0,
+                delivery: 0,
+                totalWithDelivery: 0,
+                orderTotal: 0,
+                rows: [],
+            };
+        }
+        const storeGroup = typeGroup.stores[storeKey];
+        storeGroup.rows.push(item);
+        storeGroup.totalCost += Number(item.total_cost || 0) || 0;
+        storeGroup.netSales += Number(item.net_sales || 0) || 0;
+        storeGroup.profit += Number(item.estimated_profit || 0) || 0;
+        storeGroup.delivery += Number(item.delivery_fee || 0) || 0;
+        storeGroup.totalWithDelivery += Number(item.total_with_delivery || 0) || 0;
+        storeGroup.orderTotal += Number(item.order_total || 0) || 0;
+
+        typeGroup.totalCost += Number(item.total_cost || 0) || 0;
+        typeGroup.netSales += Number(item.net_sales || 0) || 0;
+        typeGroup.profit += Number(item.estimated_profit || 0) || 0;
+        typeGroup.delivery += Number(item.delivery_fee || 0) || 0;
+        typeGroup.totalWithDelivery += Number(item.total_with_delivery || 0) || 0;
+        typeGroup.orderTotal += Number(item.order_total || 0) || 0;
+        return acc;
+    }, {});
+
+    const order = ["credit", "cash"].filter((k) => totalsByType[k]);
+    const otherKeys = Object.keys(totalsByType).filter((k) => !order.includes(k));
+    const groupedKeys = [...order, ...otherKeys];
+
+    groupedKeys.forEach((key) => {
+        const typeGroup = totalsByType[key];
+        if (!typeGroup) return;
+        const headingRow = document.createElement("tr");
+        headingRow.className = "aginv-report-group-row";
+        headingRow.innerHTML = `
+            <td colspan="${columnCount}">${inventoryTitleCase(key)} Sale</td>
+        `;
+        tbody.appendChild(headingRow);
+
+        const storeKeys = Object.keys(typeGroup.stores || {}).sort((a, b) => a.localeCompare(b));
+        storeKeys.forEach((storeKey) => {
+            const storeGroup = typeGroup.stores[storeKey];
+            if (!storeGroup) return;
+            const storeRow = document.createElement("tr");
+            storeRow.className = "aginv-report-subgroup-row";
+            storeRow.innerHTML = `
+                <td colspan="${columnCount}">Store: ${storeKey}</td>
+            `;
+            tbody.appendChild(storeRow);
+
+            storeGroup.rows.forEach((item) => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${item.order_number || "-"}</td>
+                    <td>${inventoryTitleCase(item.order_type || "-")}</td>
+                    <td>${storeKey}</td>
+                    <td>${inventoryTitleCase(item.store_payment_term || "-")}</td>
+                    <td>${inventoryMoney(item.total_cost)}</td>
+                    <td>${inventoryMoney(item.net_sales)}</td>
+                    <td>${inventoryMoney(item.estimated_profit)}</td>
+                    <td>${inventoryMoney(item.delivery_fee)}</td>
+                    <td>${inventoryMoney(item.total_with_delivery)}</td>
+                    <td>${inventoryMoney(item.order_total)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            const storeTotalsRow = document.createElement("tr");
+            storeTotalsRow.className = "aginv-report-subtotal-row";
+            storeTotalsRow.innerHTML = `
+                <td>Store Totals</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>${inventoryMoney(storeGroup.totalCost)}</td>
+                <td>${inventoryMoney(storeGroup.netSales)}</td>
+                <td>${inventoryMoney(storeGroup.profit)}</td>
+                <td>${inventoryMoney(storeGroup.delivery)}</td>
+                <td>${inventoryMoney(storeGroup.totalWithDelivery)}</td>
+                <td>${inventoryMoney(storeGroup.orderTotal)}</td>
+            `;
+            tbody.appendChild(storeTotalsRow);
+        });
+
+        const totalsRow = document.createElement("tr");
+        totalsRow.className = "aginv-report-total-row";
+        totalsRow.innerHTML = `
+            <td>${inventoryTitleCase(key)} Totals</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td>${inventoryMoney(typeGroup.totalCost)}</td>
+            <td>${inventoryMoney(typeGroup.netSales)}</td>
+            <td>${inventoryMoney(typeGroup.profit)}</td>
+            <td>${inventoryMoney(typeGroup.delivery)}</td>
+            <td>${inventoryMoney(typeGroup.totalWithDelivery)}</td>
+            <td>${inventoryMoney(typeGroup.orderTotal)}</td>
+        `;
+        tbody.appendChild(totalsRow);
+    });
+
+    const grandTotals = Object.values(totalsByType).reduce((acc, t) => {
+        acc.totalCost += t.totalCost;
+        acc.netSales += t.netSales;
+        acc.profit += t.profit;
+        acc.delivery += t.delivery;
+        acc.totalWithDelivery += t.totalWithDelivery;
+        acc.orderTotal += t.orderTotal;
+        return acc;
+    }, {
+        totalCost: 0,
+        netSales: 0,
+        profit: 0,
+        delivery: 0,
+        totalWithDelivery: 0,
+        orderTotal: 0,
+    });
+
+    if (footer) {
+        footer.innerHTML = `
+            <tr class="aginv-report-grand-row">
+                <td>Grand Totals</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>${inventoryMoney(grandTotals.totalCost)}</td>
+                <td>${inventoryMoney(grandTotals.netSales)}</td>
+                <td>${inventoryMoney(grandTotals.profit)}</td>
+                <td>${inventoryMoney(grandTotals.delivery)}</td>
+                <td>${inventoryMoney(grandTotals.totalWithDelivery)}</td>
+                <td>${inventoryMoney(grandTotals.orderTotal)}</td>
+            </tr>
+        `;
+    }
+}
+
+function displaySalesByPaymentSimpleReport(data) {
+    const tbody = document.getElementById("salesByPaymentSimpleBody");
+    const footer = document.getElementById("salesByPaymentSimpleFooter");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    if (footer) footer.innerHTML = "";
+
+    const rows = data.sales_by_payment || [];
+    currentSalesByPaymentRows = rows;
+    const columnCount = 10;
+    if (!rows.length) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="${columnCount}" style="text-align:center;">No sales found for the selected scope.</td>`;
         tbody.appendChild(row);
         return;
     }
@@ -880,7 +1079,7 @@ function displaySalesByPaymentReport(data) {
         const headingRow = document.createElement("tr");
         headingRow.className = "aginv-report-group-row";
         headingRow.innerHTML = `
-            <td colspan="9">${inventoryTitleCase(key)} Sale</td>
+            <td colspan="${columnCount}">${inventoryTitleCase(key)} Sale</td>
         `;
         tbody.appendChild(headingRow);
 
@@ -889,6 +1088,7 @@ function displaySalesByPaymentReport(data) {
             row.innerHTML = `
                 <td>${item.order_number || "-"}</td>
                 <td>${inventoryTitleCase(item.order_type || "-")}</td>
+                <td>${item.store_names || item.store_name || "-"}</td>
                 <td>${inventoryTitleCase(item.store_payment_term || "-")}</td>
                 <td>${inventoryMoney(item.total_cost)}</td>
                 <td>${inventoryMoney(item.net_sales)}</td>
@@ -904,6 +1104,7 @@ function displaySalesByPaymentReport(data) {
         totalsRow.className = "aginv-report-total-row";
         totalsRow.innerHTML = `
             <td>${inventoryTitleCase(key)} Totals</td>
+            <td></td>
             <td></td>
             <td></td>
             <td>${inventoryMoney(group.totalCost)}</td>
@@ -937,6 +1138,7 @@ function displaySalesByPaymentReport(data) {
         footer.innerHTML = `
             <tr class="aginv-report-grand-row">
                 <td>Grand Totals</td>
+                <td></td>
                 <td></td>
                 <td></td>
                 <td>${inventoryMoney(grandTotals.totalCost)}</td>
@@ -1089,6 +1291,7 @@ function switchInventoryReport(reportType) {
         "combinedProductSalesReportSection",
         "salesWithDeliveryReportSection",
         "salesByPaymentReportSection",
+        "salesByPaymentSimpleReportSection",
         "productDetailReportSection",
     ];
     sections.forEach((id) => {
@@ -1130,6 +1333,10 @@ function switchInventoryReport(reportType) {
             document.getElementById("salesByPaymentReportSection").style.display = "block";
             loadSalesByPaymentReport();
             break;
+        case "sales-by-payment-simple":
+            document.getElementById("salesByPaymentSimpleReportSection").style.display = "block";
+            loadSalesByPaymentSimpleReport();
+            break;
         case "product-detail":
             document.getElementById("productDetailReportSection").style.display = "block";
             break;
@@ -1169,6 +1376,7 @@ function exportInventoryReportPdf() {
         "combined-product-sales": "Combined Product Sales Report",
         "sales-with-delivery": "Sales With Delivery Charges Report",
         "sales-by-payment": "Cash/Credit Sales With Delivery Report",
+        "sales-by-payment-simple": "Cash/Credit Sales With Delivery Report (By Type)",
     };
     const reportName = reportNameMap[activeType] || "Inventory Report";
     const selectedStoreId = getSelectedInventoryStoreId();
@@ -1436,8 +1644,8 @@ function exportInventoryReportPdf() {
             inventoryMoney(totals.profit),
             inventoryMoney(totals.orderTotal),
         ]);
-    } else if (activeType === "sales-by-payment") {
-        tableHead = [["Order Number", "Order Type", "Store Payment Term", "Cost Price", "Sale Price", "Profit", "Delivery Charges", "Total With Delivery", "Order Total"]];
+    } else if (activeType === "sales-by-payment-simple") {
+        tableHead = [["Order Number", "Order Type", "Store", "Store Payment Term", "Cost Price", "Sale Price", "Profit", "Delivery Charges", "Total With Delivery", "Order Total"]];
         const rows = currentSalesByPaymentRows || [];
         tableBody = [];
         const totalsByType = rows.reduce((acc, r) => {
@@ -1492,11 +1700,13 @@ function exportInventoryReportPdf() {
                 "",
                 "",
                 "",
+                "",
             ]);
             (group.rows || []).forEach((r) => {
                 tableBody.push([
                     r.order_number || "-",
                     inventoryTitleCase(r.order_type || "-"),
+                    r.store_names || r.store_name || "-",
                     inventoryTitleCase(r.store_payment_term || "-"),
                     inventoryMoney(r.total_cost),
                     inventoryMoney(r.net_sales),
@@ -1510,6 +1720,7 @@ function exportInventoryReportPdf() {
                 `${inventoryTitleCase(key)} Totals`,
                 "",
                 "",
+                "",
                 inventoryMoney(group.totalCost),
                 inventoryMoney(group.netSales),
                 inventoryMoney(group.profit),
@@ -1520,6 +1731,155 @@ function exportInventoryReportPdf() {
         });
         tableBody.push([
             "Grand Totals",
+            "",
+            "",
+            "",
+            inventoryMoney(grandTotals.totalCost),
+            inventoryMoney(grandTotals.netSales),
+            inventoryMoney(grandTotals.profit),
+            inventoryMoney(grandTotals.delivery),
+            inventoryMoney(grandTotals.totalWithDelivery),
+            inventoryMoney(grandTotals.orderTotal),
+        ]);
+    } else if (activeType === "sales-by-payment") {
+        tableHead = [["Order Number", "Order Type", "Store", "Store Payment Term", "Cost Price", "Sale Price", "Profit", "Delivery Charges", "Total With Delivery", "Order Total"]];
+        const rows = currentSalesByPaymentRows || [];
+        tableBody = [];
+        const totalsByType = rows.reduce((acc, r) => {
+            const typeKey = String(r.sale_type || r.payment_method || "other").toLowerCase();
+            const storeKey = String(r.store_names || r.store_name || "-").trim() || "-";
+            if (!acc[typeKey]) {
+                acc[typeKey] = {
+                    totalCost: 0,
+                    netSales: 0,
+                    profit: 0,
+                    delivery: 0,
+                    totalWithDelivery: 0,
+                    orderTotal: 0,
+                    stores: {},
+                };
+            }
+            const typeGroup = acc[typeKey];
+            if (!typeGroup.stores[storeKey]) {
+                typeGroup.stores[storeKey] = {
+                    totalCost: 0,
+                    netSales: 0,
+                    profit: 0,
+                    delivery: 0,
+                    totalWithDelivery: 0,
+                    orderTotal: 0,
+                    rows: [],
+                };
+            }
+            const storeGroup = typeGroup.stores[storeKey];
+            storeGroup.rows.push(r);
+            storeGroup.totalCost += Number(r.total_cost || 0) || 0;
+            storeGroup.netSales += Number(r.net_sales || 0) || 0;
+            storeGroup.profit += Number(r.estimated_profit || 0) || 0;
+            storeGroup.delivery += Number(r.delivery_fee || 0) || 0;
+            storeGroup.totalWithDelivery += Number(r.total_with_delivery || 0) || 0;
+            storeGroup.orderTotal += Number(r.order_total || 0) || 0;
+
+            typeGroup.totalCost += Number(r.total_cost || 0) || 0;
+            typeGroup.netSales += Number(r.net_sales || 0) || 0;
+            typeGroup.profit += Number(r.estimated_profit || 0) || 0;
+            typeGroup.delivery += Number(r.delivery_fee || 0) || 0;
+            typeGroup.totalWithDelivery += Number(r.total_with_delivery || 0) || 0;
+            typeGroup.orderTotal += Number(r.order_total || 0) || 0;
+            return acc;
+        }, {});
+        const grandTotals = Object.values(totalsByType).reduce((acc, t) => {
+            acc.totalCost += t.totalCost;
+            acc.netSales += t.netSales;
+            acc.profit += t.profit;
+            acc.delivery += t.delivery;
+            acc.totalWithDelivery += t.totalWithDelivery;
+            acc.orderTotal += t.orderTotal;
+            return acc;
+        }, {
+            totalCost: 0,
+            netSales: 0,
+            profit: 0,
+            delivery: 0,
+            totalWithDelivery: 0,
+            orderTotal: 0,
+        });
+        const order = ["credit", "cash"].filter((k) => totalsByType[k]);
+        const otherKeys = Object.keys(totalsByType).filter((k) => !order.includes(k));
+        [...order, ...otherKeys].forEach((key) => {
+            const group = totalsByType[key];
+            tableBody.push([
+                `${inventoryTitleCase(key)} Sale`,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]);
+            const storeKeys = Object.keys(group.stores || {}).sort((a, b) => a.localeCompare(b));
+            storeKeys.forEach((storeKey) => {
+                const storeGroup = group.stores[storeKey];
+                tableBody.push([
+                    `Store: ${storeKey}`,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                ]);
+                (storeGroup.rows || []).forEach((r) => {
+                    tableBody.push([
+                        r.order_number || "-",
+                        inventoryTitleCase(r.order_type || "-"),
+                        storeKey,
+                        inventoryTitleCase(r.store_payment_term || "-"),
+                        inventoryMoney(r.total_cost),
+                        inventoryMoney(r.net_sales),
+                        inventoryMoney(r.estimated_profit),
+                        inventoryMoney(r.delivery_fee),
+                        inventoryMoney(r.total_with_delivery),
+                        inventoryMoney(r.order_total),
+                    ]);
+                });
+                tableBody.push([
+                    "Store Totals",
+                    "",
+                    "",
+                    "",
+                    inventoryMoney(storeGroup.totalCost),
+                    inventoryMoney(storeGroup.netSales),
+                    inventoryMoney(storeGroup.profit),
+                    inventoryMoney(storeGroup.delivery),
+                    inventoryMoney(storeGroup.totalWithDelivery),
+                    inventoryMoney(storeGroup.orderTotal),
+                ]);
+            });
+            tableBody.push([
+                `${inventoryTitleCase(key)} Totals`,
+                "",
+                "",
+                "",
+                "",
+                inventoryMoney(group.totalCost),
+                inventoryMoney(group.netSales),
+                inventoryMoney(group.profit),
+                inventoryMoney(group.delivery),
+                inventoryMoney(group.totalWithDelivery),
+                inventoryMoney(group.orderTotal),
+            ]);
+        });
+        tableBody.push([
+            "Grand Totals",
+            "",
+            "",
             "",
             "",
             inventoryMoney(grandTotals.totalCost),

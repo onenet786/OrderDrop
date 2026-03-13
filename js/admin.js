@@ -2,6 +2,8 @@
 // Use full origin to avoid relative-path edge cases
 // Expose a diagnostics object early so console helpers are always available
 window._adminDiag = window._adminDiag || {};
+// Prevent duplicate system tray notifications from notifications.js on admin pages.
+window.__serveNowDisableSystemNotify = true;
 
 // API_BASE, currentUser, and authToken are provided by app.js (loaded in admin.html)
 let currentUserPermissions = new Set();

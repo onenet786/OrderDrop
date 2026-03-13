@@ -19,7 +19,7 @@ class RiderDashboardScreen extends StatefulWidget {
 }
 
 class _RiderDashboardScreenState extends State<RiderDashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final Logger _logger = Logger();
   late TabController _tabController;
   bool _isLoading = true;
@@ -35,6 +35,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   bool _isLoadingStats = false;
   bool _isNotificationRefreshRunning = false;
   int _selectedTabIndex = 0;
+  late AnimationController _blinkController;
+  late Animation<double> _blinkAnimation;
 
   Future<void> _makeCall(String phoneNumber) async {
     final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
@@ -111,6 +113,15 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_syncTabIndex);
+    _blinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _blinkAnimation = CurvedAnimation(
+      parent: _blinkController,
+      curve: Curves.easeInOut,
+    );
+    _blinkController.repeat(reverse: true);
     _loadAllData();
     _startLocationTracking();
     _startAssignmentAutoRefresh();
@@ -219,6 +230,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   void dispose() {
     _tabController.removeListener(_syncTabIndex);
     _tabController.dispose();
+    _blinkController.dispose();
     _locationTrackingTimer?.cancel();
     _assignmentRefreshTimer?.cancel();
     NotificationService.disconnect();
@@ -1470,6 +1482,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     final status = delivery['status'] ?? 'unknown';
     final paymentStatus = delivery['payment_status'] ?? 'pending';
     final customerPhone = (delivery['phone'] ?? '').toString();
+    final instructions =
+        (delivery['special_instructions'] ?? '').toString().trim();
+    final preferredTime = (delivery['delivery_time'] ?? '').toString().trim();
+    final hasNotice = instructions.isNotEmpty || preferredTime.isNotEmpty;
+    final statusColor = _getStatusColor(status);
+    final shouldBlink = hasNotice &&
+        status.toString().toLowerCase() != 'delivered' &&
+        status.toString().toLowerCase() != 'cancelled';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1495,6 +1515,31 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      if (shouldBlink)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            children: [
+                              FadeTransition(
+                                opacity: _blinkAnimation,
+                                child: Icon(
+                                  Icons.circle,
+                                  size: 10,
+                                  color: statusColor,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Special Instructions',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: statusColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       const SizedBox(height: 4),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -1502,14 +1547,14 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: _getStatusColor(status).withValues(alpha: 0.1),
+                          color: statusColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _getStatusColor(status)),
+                          border: Border.all(color: statusColor),
                         ),
                         child: Text(
                           status.toUpperCase(),
                           style: TextStyle(
-                            color: _getStatusColor(status),
+                            color: statusColor,
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
                           ),
@@ -1578,6 +1623,18 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
             const SizedBox(height: 12),
             _buildDetailRow('Address', '${delivery['delivery_address']}'),
             _buildDetailRow('Phone', '${delivery['phone'] ?? 'N/A'}'),
+            if (preferredTime.isNotEmpty)
+              _buildDetailRow(
+                'Preferred',
+                preferredTime,
+                valueColor: const Color(0xFF2563EB),
+              ),
+            if (instructions.isNotEmpty)
+              _buildDetailRow(
+                'Notes',
+                instructions,
+                valueColor: const Color(0xFFE65100),
+              ),
             if (customerPhone.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8.0),

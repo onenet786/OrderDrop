@@ -5003,6 +5003,18 @@ function setupPeriodFilters() {
         });
         storeSelect.dataset.boundStoreReportFilter = '1';
     }
+
+    const pendingOnlyCheckbox = document.getElementById('storeReportPendingOnly');
+    if (pendingOnlyCheckbox && !pendingOnlyCheckbox.dataset.boundStoreReportFilter) {
+        pendingOnlyCheckbox.addEventListener('change', () => {
+            if (Array.isArray(lastStoreData)) {
+                const filtered = applyStoreReportFilters(lastStoreData);
+                displayStoreReports(filtered);
+                updateStoreReportDueTotals(filtered);
+            }
+        });
+        pendingOnlyCheckbox.dataset.boundStoreReportFilter = '1';
+    }
     
     // Initialize defaults on load
     initializeDateDefaults();
@@ -5060,6 +5072,145 @@ function displayRiderReports(riders) {
     });
 }
 
+function shouldShowStoreReportPendingOnly() {
+    const checkbox = document.getElementById('storeReportPendingOnly');
+    return checkbox ? checkbox.checked : false;
+}
+
+function applyStoreReportFilters(stores) {
+    const pendingOnly = shouldShowStoreReportPendingOnly();
+    if (!pendingOnly) return stores || [];
+    return (stores || []).filter(s => {
+        const pending = parseFloat(s.pending_settlement || 0);
+        return pending > 0;
+    });
+}
+
+function updateStoreReportDueTotals(stores) {
+    const countEl = document.getElementById('storeReportDueStoreCount');
+    const amountEl = document.getElementById('storeReportDuePayable');
+    if (!countEl && !amountEl) return;
+
+    const rows = stores || [];
+    const totalStores = rows.length;
+    const totalPayable = rows.reduce((sum, s) => sum + (parseFloat(s.pending_settlement || 0) || 0), 0);
+
+    if (countEl) countEl.textContent = String(totalStores);
+    if (amountEl) amountEl.textContent = `Rs ${totalPayable.toFixed(2)}`;
+}
+
+function escapeHtml(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+async function showStoreDueOrders(store) {
+    const storeId = Number(store?.id || store?.store_id || 0);
+    if (!storeId) {
+        showError('Store Due Orders', 'Store ID not found.');
+        return;
+    }
+
+    const modal = document.getElementById('storeDueOrdersModal');
+    const content = document.getElementById('storeDueOrdersContent');
+    if (!modal || !content) return;
+
+    const storeName = store?.name || `Store #${storeId}`;
+    content.innerHTML = 'Loading due orders...';
+    if (typeof showModal === 'function') showModal('storeDueOrdersModal');
+
+    try {
+        const response = await fetch(`${API_BASE}/api/financial/store-settlements/unsettled-items?store_id=${storeId}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}` }
+        });
+        const data = await response.json();
+        if (!data.success) {
+            content.innerHTML = `<div style="color:#b91c1c;">${escapeHtml(data.message || 'Failed to load due orders.')}</div>`;
+            return;
+        }
+
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (!items.length) {
+            content.innerHTML = `<div>No due orders found for <strong>${escapeHtml(storeName)}</strong>.</div>`;
+            return;
+        }
+
+        const summary = data.summary || {};
+        const grouped = new Map();
+        items.forEach(item => {
+            const key = String(item.order_id || item.order_number || '');
+            if (!key) return;
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    order_number: item.order_number || '-',
+                    order_date: item.order_date || item.order_date,
+                    items_count: 0,
+                    gross: 0,
+                    discount: 0,
+                    net: 0,
+                    payable: 0
+                });
+            }
+            const group = grouped.get(key);
+            group.items_count += 1;
+            group.gross += Number(item.line_gross || 0);
+            group.discount += Number(item.line_discount || 0);
+            group.net += Number(item.line_net || 0);
+            group.payable += Number(item.line_payable || 0);
+        });
+
+        const rows = Array.from(grouped.values()).sort((a, b) => {
+            const aTime = a.order_date ? new Date(a.order_date).getTime() : 0;
+            const bTime = b.order_date ? new Date(b.order_date).getTime() : 0;
+            return aTime - bTime;
+        });
+
+        const rowsHtml = rows.map(row => `
+            <tr>
+                <td>${escapeHtml(row.order_number)}</td>
+                <td>${row.order_date ? new Date(row.order_date).toLocaleString() : '-'}</td>
+                <td>${row.items_count}</td>
+                <td>${formatFinancialReportCurrency(row.gross)}</td>
+                <td>${formatFinancialReportCurrency(row.discount)}</td>
+                <td>${formatFinancialReportCurrency(row.payable)}</td>
+            </tr>
+        `).join('');
+
+        content.innerHTML = `
+            <div style="margin-bottom:0.75rem;">
+                <strong>Store:</strong> ${escapeHtml(storeName)}<br>
+                <strong>Orders:</strong> ${rows.length} |
+                <strong>Items:</strong> ${items.length} |
+                <strong>Net Payable:</strong> ${formatFinancialReportCurrency(summary.net_amount || 0)}
+            </div>
+            <div class="table-container" style="margin-top:0.5rem;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Date</th>
+                            <th>Items</th>
+                            <th>Gross</th>
+                            <th>Discount</th>
+                            <th>Payable</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Error loading store due orders:', error);
+        content.innerHTML = '<div style="color:#b91c1c;">Failed to load due orders.</div>';
+    }
+}
+
 async function loadStoreReports() {
     try {
         const start_date = document.getElementById('storeReportStartDate')?.value;
@@ -5077,8 +5228,10 @@ async function loadStoreReports() {
         const data = await response.json();
 
         if (data.success) {
-            lastStoreData = data.stores;
-            displayStoreReports(data.stores);
+            lastStoreData = data.stores || [];
+            const filtered = applyStoreReportFilters(lastStoreData);
+            displayStoreReports(filtered);
+            updateStoreReportDueTotals(filtered);
         }
     } catch (error) {
         console.error('Error loading store reports:', error);
@@ -5089,6 +5242,12 @@ function displayStoreReports(stores) {
     const tbody = document.getElementById('storeReportsTableBody');
     if (!tbody) return;
     tbody.innerHTML = '';
+
+    if (!stores || stores.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1rem;">No stores found</td></tr>';
+        updateStoreReportDueTotals([]);
+        return;
+    }
 
     (stores || []).forEach(s => {
         const earnings = parseFloat(s.total_earnings || 0);
@@ -5105,6 +5264,11 @@ function displayStoreReports(stores) {
             <td>Rs  ${paid.toFixed(2)}</td>
             <td style="color: ${pending > 0 ? 'orange' : 'inherit'}">Rs  ${pending.toFixed(2)}</td>
         `;
+        if (pending > 0) {
+            row.title = 'Double-click to view due orders';
+            row.style.cursor = 'pointer';
+            row.addEventListener('dblclick', () => showStoreDueOrders(s));
+        }
         tbody.appendChild(row);
     });
 }
@@ -5225,13 +5389,14 @@ function exportRiderReport() {
 }
 
 function exportStoreReport() {
-    if (!lastStoreData || lastStoreData.length === 0) {
+    const exportRows = applyStoreReportFilters(lastStoreData || []);
+    if (!exportRows || exportRows.length === 0) {
         showWarning('No Data', 'No store report data to export. Generate a report first.');
         return;
     }
 
     const headers = ['Payment Term', 'Store Name', 'Email', 'Phone', 'Total Orders', 'Total Earnings', 'Total Paid', 'Pending Settlement'];
-    const rows = lastStoreData.map(s => [
+    const rows = exportRows.map(s => [
         s.payment_term || 'No Payment Term',
         s.name,
         s.email,

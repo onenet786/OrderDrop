@@ -808,12 +808,7 @@ router.get(
         ? String(req.query.end_date).trim()
         : "";
       const whereClauses = [];
-      const manualProductDescription = "created from admin manual order";
-      const queryParams = [
-        manualProductDescription,
-        manualProductDescription,
-        manualProductDescription,
-      ];
+      const queryParams = [];
 
       if (hasStoreFilter) {
         whereClauses.push("s.id = ?");

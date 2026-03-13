@@ -109,11 +109,11 @@ class _HomeScreenState extends State<HomeScreen> {
         storesFuture,
       ]);
 
-      final globalRaw = results[0] as Map<String, dynamic>?;
-      final promotionsRaw = results[1] as Map<String, dynamic>?;
-      final customerFlash = results[2] as Map<String, dynamic>?;
-      final supportContact = results[3] as Map<String, dynamic>?;
-      final storesResp = (results[4] as Map<String, dynamic>?) ?? {};
+      final globalRaw = results[0];
+      final promotionsRaw = results[1];
+      final customerFlash = results[2];
+      final supportContact = results[3];
+      final storesResp = results[4] ?? {};
 
       Map<String, dynamic>? globalStatus;
       if (globalRaw != null) {

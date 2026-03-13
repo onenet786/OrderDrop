@@ -19,6 +19,9 @@
   --text-main: #0f172a;
   --text-muted: #64748b;
   --text-light: #f8fafc;
+  --watermark-image: url('../images/servenow_brand_logo.png');
+  --watermark-size-surface: 240px;
+  --watermark-opacity-surface: 0.06;
 
   /* Layout */
   --sidebar-width: 260px;
@@ -54,6 +57,36 @@ body {
   line-height: 1.5;
   height: 100vh;
   overflow: hidden; /* App layout handles scrolling */
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: url('../images/servenow_brand_logo.png') center/420px no-repeat;
+  opacity: 0.06;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-content {
+  position: relative;
+}
+
+.app-content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('../images/servenow_brand_logo.png') center/420px no-repeat;
+  opacity: 0.06;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-content > * {
+  position: relative;
+  z-index: 1;
 }
 
 a {
@@ -285,6 +318,29 @@ button {
   box-shadow: var(--shadow);
   overflow: hidden;
   margin-top: 1rem;
+  position: relative;
+}
+
+.table-container,
+.modal-content {
+  position: relative;
+}
+
+.table-container::after,
+.modal-content::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--watermark-image) center/var(--watermark-size-surface) no-repeat;
+  opacity: var(--watermark-opacity-surface);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.table-container > *,
+.modal-content > * {
+  position: relative;
+  z-index: 1;
 }
 
 table {
