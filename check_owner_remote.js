@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const BASE_URL = 'http://23.137.84.249:3002';
+const BASE_URL = 'http://66.163.116.74:3002';
 const OWNER_EMAIL = 'owner@servenow.pk';
 const OWNER_PASS = '123456';
 

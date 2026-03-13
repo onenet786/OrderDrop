@@ -5,6 +5,7 @@ require('dotenv').config();
 
 async function setupDatabase() {
     let connection;
+    const dbName = process.env.DB_NAME || 'orderdrop';
 
     try {
         console.log('Connecting to MySQL...');
@@ -20,12 +21,12 @@ async function setupDatabase() {
         console.log('Connected to MySQL server');
 
         // Drop and create database
-        await connection.query('DROP DATABASE IF EXISTS servenow');
-        await connection.query('CREATE DATABASE servenow');
-        console.log('Database created');
+        await connection.query('DROP DATABASE IF EXISTS ??', [dbName]);
+        await connection.query('CREATE DATABASE ??', [dbName]);
+        console.log(`Database "${dbName}" created`);
 
         // Switch to the database
-        await connection.query('USE servenow');
+        await connection.query('USE ??', [dbName]);
 
         // Read and execute schema
         const schemaPath = path.join(__dirname, 'database', 'schema.sql');

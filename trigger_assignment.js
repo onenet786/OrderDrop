@@ -2,7 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = 'http://23.137.84.249:3002';
+const BASE_URL = 'http://66.163.116.74:3002';
 const ADMIN_EMAIL = 'admin@servenow.pk';
 const ADMIN_PASS = '123456';
 const ORDER_ID = 1; // From fix_data.js

@@ -13,7 +13,7 @@ const config = {
             host: process.env.DB_HOST || 'localhost',
             user: process.env.DB_USER || 'root',
             password: process.env.DB_PASSWORD || '',
-            database: process.env.DB_NAME || 'servenow',
+            database: process.env.DB_NAME || 'orderdrop',
             port: process.env.DB_PORT || 3306,
             connectionLimit: 5,
             debug: true
@@ -50,7 +50,7 @@ const config = {
         security: {
             corsOrigin: process.env.ALLOWED_ORIGINS ? 
                 process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : 
-                ['https://yourdomain.com'],
+                ['https://flaura.pk', 'https://www.flaura.pk', 'http://66.163.116.74:3002'],
             sessionSecret: process.env.JWT_SECRET,
             jwtExpire: process.env.JWT_EXPIRE || '7d',
             saltRounds: 12,
@@ -72,7 +72,7 @@ const config = {
             host: 'localhost',
             user: 'root',
             password: '',
-            database: 'servenow_test',
+            database: 'orderdrop_test',
             port: 3306,
             connectionLimit: 5,
             debug: false

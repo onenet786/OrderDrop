@@ -232,7 +232,11 @@ const corsOptions = {
     } else {
       const allowedOrigins = process.env.ALLOWED_ORIGINS
         ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
-        : ["http://localhost:3002", "http://localhost:3001"];
+        : [
+            "https://flaura.pk",
+            "https://www.flaura.pk",
+            "http://66.163.116.74:3002",
+          ];
 
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
@@ -498,7 +502,7 @@ async function startServer() {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`Server accessible at: http://0.0.0.0:${PORT}`);
-    console.log(`External access URL: http://23.137.84.249:${PORT}`);
+    console.log(`External access URL: http://66.163.116.74:${PORT}`);
     console.log("Server startup complete. Ready to accept connections.");
   });
 }

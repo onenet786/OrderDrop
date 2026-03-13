@@ -1,5 +1,5 @@
 -- Migration: add units and sizes tables and link to products
-USE servenow;
+USE orderdrop;
 
 -- Create units table
 CREATE TABLE IF NOT EXISTS units (

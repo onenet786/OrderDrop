@@ -135,7 +135,7 @@ Example: `routes/products.js` line 30-44 shows product list response wrapping.
 
 ### Mobile App Integration
 - Flutter app connects to backend via ApiService (`mobile_app/lib/services/api_service.dart`)
-- API base URL: `http://23.137.84.249:3002` (production) with fallback for simulator/local
+- API base URL: `https://flaura.pk` (production) with IP fallback `http://66.163.116.74:3002` for simulator/local
 - App uses Provider package for state management (AuthProvider, CartProvider in `mobile_app/lib/providers/`)
 - Mobile uses same `/api/` endpoints as web frontend
 

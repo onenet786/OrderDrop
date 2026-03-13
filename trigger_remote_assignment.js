@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const BASE_URL = 'http://23.137.84.249:3002';
+const BASE_URL = 'http://66.163.116.74:3002';
 const ADMIN_EMAIL = 'admin@servenow.com';
 const ADMIN_PASS = 'Admin786';
 const ORDER_ID = 30; // From previous output

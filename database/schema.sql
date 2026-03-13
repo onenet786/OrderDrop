@@ -1,7 +1,7 @@
 -- ServeNow Database Schema
 -- Create database
-CREATE DATABASE IF NOT EXISTS servenow;
-USE servenow;
+CREATE DATABASE IF NOT EXISTS orderdrop;
+USE orderdrop;
 
 -- Users table
 CREATE TABLE users (

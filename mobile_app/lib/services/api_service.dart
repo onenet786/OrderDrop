@@ -23,19 +23,26 @@ class ApiService {
   static const String serviceUnavailableMessage =
       'ServeNow is temporarily unavailable. The site is under maintenance. Please try again shortly.';
 
+  static const String _fallbackIpBase = 'http://66.163.116.74:3002';
+  static const String _prodBase = 'https://flaura.pk';
+  static const String _envBase =
+      String.fromEnvironment('API_BASE_URL', defaultValue: '');
+
   static String get baseUrl {
+    if (_envBase.isNotEmpty) return _envBase;
+
     if (kDebugMode) {
       if (kIsWeb) {
-        return 'http://23.137.84.249:3002';
+        return _fallbackIpBase;
       } else if (Platform.isAndroid) {
-        return 'http://23.137.84.249:3002'; // Android Emulator localhost
+        return _fallbackIpBase; // Android emulator/device base
       } else if (Platform.isIOS) {
-        return 'http://23.137.84.249:3002'; // iOS Simulator localhost
+        return _fallbackIpBase; // iOS simulator/device base
       }
     }
 
     // Fallback to production/remote URL
-    return 'http://23.137.84.249:3002';
+    return _prodBase;
   }
 
   static String getImageUrl(String? url) {
@@ -59,7 +66,8 @@ class ApiService {
         lower.contains('network request failed') ||
         lower.contains('socketexception') ||
         lower.contains('clientexception') ||
-        lower.contains('23.137.84.249');
+        lower.contains('66.163.116.74') ||
+        lower.contains('flaura.pk');
   }
 
   static Future<http.Response> _send(
