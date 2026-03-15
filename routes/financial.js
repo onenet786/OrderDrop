@@ -610,12 +610,18 @@ router.get('/dashboard', async (req, res) => {
                     WHEN transaction_type = 'income' THEN amount 
                     WHEN transaction_type = 'adjustment' AND category = 'rider_cash' THEN amount 
                     WHEN transaction_type = 'adjustment' AND category = 'receipt' THEN amount 
+                    WHEN transaction_type = 'adjustment' AND category = 'store_payable'
+                         AND LOWER(TRIM(COALESCE(s.payment_term, ''))) IN ('credit', 'credit with discount')
+                        THEN amount
                     WHEN transaction_type = 'expense' THEN -amount 
                     WHEN transaction_type = 'settlement' THEN -amount 
                     WHEN transaction_type = 'refund' THEN -amount 
                     ELSE 0 
                 END) as total
             FROM financial_transactions ft
+            LEFT JOIN stores s
+              ON s.id = ft.related_entity_id
+             AND ft.related_entity_type = 'store'
             WHERE payment_method = 'cash' 
             AND ft.status = 'completed'
             AND COALESCE(category, '') != 'rider_receivable'
@@ -6491,6 +6497,22 @@ router.get('/reports/stores-detailed', async (req, res) => {
                 s.email, 
                 s.phone,
                 s.payment_term,
+                s.payment_grace_days,
+                s.payment_grace_start_date,
+                CASE
+                    WHEN s.payment_grace_start_date IS NOT NULL
+                         AND s.payment_grace_days IS NOT NULL
+                         AND s.payment_grace_days > 0
+                        THEN DATE_ADD(s.payment_grace_start_date, INTERVAL s.payment_grace_days DAY)
+                    ELSE NULL
+                END AS grace_due_date,
+                CASE
+                    WHEN s.payment_grace_start_date IS NOT NULL
+                         AND s.payment_grace_days IS NOT NULL
+                         AND s.payment_grace_days > 0
+                        THEN DATEDIFF(DATE_ADD(s.payment_grace_start_date, INTERVAL s.payment_grace_days DAY), CURDATE())
+                    ELSE NULL
+                END AS grace_days_left,
                 COALESCE(earn.total_orders, 0) AS total_orders,
                 COALESCE(earn.total_earnings, 0) AS total_earnings,
                 COALESCE(earn.total_payable, 0) AS total_payable,

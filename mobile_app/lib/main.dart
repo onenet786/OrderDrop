@@ -32,6 +32,7 @@ import 'screens/forgot_password_screen.dart';
 import 'screens/ui_test_home_screen.dart';
 import 'screens/customer_dashboard_test_screen.dart';
 import 'theme/customer_palette.dart';
+import 'services/notifier.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -91,16 +92,18 @@ class MyApp extends StatelessWidget {
             left: false,
             right: false,
             bottom: true,
-            child: _AppUpdateOverlay(
-              child: Stack(
-                children: [
-                  if (child != null) child,
-                  const Positioned(
-                    right: 6,
-                    bottom: 4,
-                    child: _VersionBadge(),
-                  ),
-                ],
+            child: _SessionGuard(
+              child: _AppUpdateOverlay(
+                child: Stack(
+                  children: [
+                    if (child != null) child,
+                    const Positioned(
+                      right: 6,
+                      bottom: 4,
+                      child: _VersionBadge(),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -289,6 +292,59 @@ class _VersionBadgeState extends State<_VersionBadge> {
         ),
       ),
     );
+  }
+}
+
+class _SessionGuard extends StatefulWidget {
+  final Widget child;
+
+  const _SessionGuard({required this.child});
+
+  @override
+  State<_SessionGuard> createState() => _SessionGuardState();
+}
+
+class _SessionGuardState extends State<_SessionGuard> {
+  bool _initialized = false;
+  bool _wasAuthenticated = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = Provider.of<AuthProvider>(context);
+    final isAuthenticated = auth.isAuthenticated;
+
+    if (!_initialized) {
+      _initialized = true;
+      _wasAuthenticated = isAuthenticated;
+      return;
+    }
+
+    if (_wasAuthenticated && !isAuthenticated) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final currentRoute = ModalRoute.of(context)?.settings.name;
+        if (auth.sessionExpired) {
+          Notifier.error(
+            context,
+            'Session expired. Please log in again.',
+          );
+          auth.clearSessionExpiredFlag();
+        }
+        if (currentRoute != '/login') {
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/login', (route) => false);
+        }
+      });
+    }
+
+    _wasAuthenticated = isAuthenticated;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
   }
 }
 

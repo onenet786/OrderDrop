@@ -8,6 +8,7 @@ CREATE TABLE users (
     id INT PRIMARY KEY AUTO_INCREMENT,
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
+    date_of_birth DATE DEFAULT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     phone VARCHAR(20),
     password VARCHAR(255) NOT NULL,
@@ -19,6 +20,30 @@ CREATE TABLE users (
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Refresh tokens table
+CREATE TABLE refresh_tokens (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    user_type ENUM(
+        'customer',
+        'store_owner',
+        'admin',
+        'standard_user',
+        'staff',
+        'vendor',
+        'rider'
+    ) NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    revoked_at TIMESTAMP NULL,
+    replaced_by_hash CHAR(64) NULL,
+    device_id VARCHAR(128) DEFAULT NULL,
+    INDEX idx_refresh_token_hash (token_hash),
+    INDEX idx_refresh_user (user_id, user_type),
+    INDEX idx_refresh_expires (expires_at)
 );
 
 -- Stores table

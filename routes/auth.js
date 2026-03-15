@@ -12,9 +12,95 @@ const {
 
 const router = express.Router();
 
+const ACCESS_TOKEN_EXPIRE = process.env.JWT_EXPIRE || "7d";
+const REFRESH_TOKEN_EXPIRE_DAYS = parseInt(
+  process.env.REFRESH_TOKEN_EXPIRE_DAYS || "30",
+  10
+);
+
 // Helper: safe boolean check
 function isTrue(v) {
   return v === true || v === 1 || v === "1";
+}
+
+function hashRefreshToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function generateRefreshToken() {
+  return crypto.randomBytes(64).toString("hex");
+}
+
+async function issueRefreshToken(db, { userId, userType, deviceId = null }) {
+  const refreshToken = generateRefreshToken();
+  const tokenHash = hashRefreshToken(refreshToken);
+  const expiresAt = new Date(
+    Date.now() + REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60 * 1000
+  );
+
+  await db.execute(
+    `INSERT INTO refresh_tokens (user_id, user_type, token_hash, expires_at, device_id)
+     VALUES (?, ?, ?, ?, ?)`,
+    [userId, userType, tokenHash, expiresAt, deviceId]
+  );
+
+  return refreshToken;
+}
+
+async function rotateRefreshToken(db, tokenRow) {
+  const now = new Date();
+  const newToken = generateRefreshToken();
+  const newHash = hashRefreshToken(newToken);
+  const expiresAt = new Date(
+    Date.now() + REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60 * 1000
+  );
+
+  await db.execute(
+    `UPDATE refresh_tokens
+     SET revoked_at = ?, replaced_by_hash = ?
+     WHERE id = ?`,
+    [now, newHash, tokenRow.id]
+  );
+
+  await db.execute(
+    `INSERT INTO refresh_tokens (user_id, user_type, token_hash, expires_at, device_id)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      tokenRow.user_id,
+      tokenRow.user_type,
+      newHash,
+      expiresAt,
+      tokenRow.device_id || null,
+    ]
+  );
+
+  return newToken;
+}
+
+async function loadAccountForToken(db, userId, userType) {
+  if (userType === "rider") {
+    const [riders] = await db.execute(
+      "SELECT id, first_name, last_name, email, is_active FROM riders WHERE id = ?",
+      [userId]
+    );
+    return riders[0] ? { ...riders[0], user_type: "rider" } : null;
+  }
+
+  const [users] = await db.execute(
+    "SELECT id, first_name, last_name, email, user_type, is_active FROM users WHERE id = ?",
+    [userId]
+  );
+  return users[0] || null;
+}
+
+function buildAccessTokenPayload(account) {
+  return {
+    id: account.id,
+    email: account.email,
+    user_type: account.user_type,
+    first_name: account.first_name,
+    last_name: account.last_name,
+  };
 }
 
 // Forgot Password
@@ -255,6 +341,14 @@ router.post(
       .optional()
       .isMobilePhone()
       .withMessage("Please provide a valid phone number"),
+    body("dateOfBirth")
+      .optional({ checkFalsy: true })
+      .isISO8601({ strict: true })
+      .withMessage("Date of birth must be in YYYY-MM-DD format"),
+    body("date_of_birth")
+      .optional({ checkFalsy: true })
+      .isISO8601({ strict: true })
+      .withMessage("Date of birth must be in YYYY-MM-DD format"),
   ],
   async (req, res) => {
     try {
@@ -276,6 +370,7 @@ router.post(
         password,
         userType = "customer",
       } = req.body;
+      const dateOfBirth = req.body.dateOfBirth || req.body.date_of_birth || null;
 
       // Check if user already exists
       const [existingUser] = await req.db.execute(
@@ -299,11 +394,12 @@ router.post(
 
       // Insert user
       const [result] = await req.db.execute(
-        `INSERT INTO users (first_name, last_name, email, phone, address, password, user_type, verification_code, verification_expires_at, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO users (first_name, last_name, date_of_birth, email, phone, address, password, user_type, verification_code, verification_expires_at, is_verified)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           firstName,
           lastName,
+          dateOfBirth,
           email,
           phone || null,
           address || null,
@@ -325,6 +421,7 @@ router.post(
             id: result.insertId,
             first_name: firstName,
             last_name: lastName,
+            date_of_birth: dateOfBirth,
             email: email,
             user_type: userType,
             created_at: new Date()
@@ -337,6 +434,7 @@ router.post(
       // Issue token (client may gate access until verification)
       // SECURITY: Do not issue token if verification is required
       let token = null;
+      let refreshToken = null;
       if (!process.env.REQUIRE_EMAIL_VERIFICATION || process.env.REQUIRE_EMAIL_VERIFICATION === 'false') {
           token = jwt.sign(
             {
@@ -348,8 +446,14 @@ router.post(
               is_verified: false,
             },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRE }
+            { expiresIn: ACCESS_TOKEN_EXPIRE }
           );
+
+          refreshToken = await issueRefreshToken(req.db, {
+            userId: result.insertId,
+            userType: userType,
+            deviceId: req.body.device_id || null,
+          });
       }
 
       return res.status(201).json({
@@ -358,10 +462,12 @@ router.post(
           "User registered successfully. Please check your email for verification code.",
         requires_verification: true,
         token, // Will be null
+        refresh_token: refreshToken,
         user: {
           id: result.insertId,
           first_name: firstName,
           last_name: lastName,
+          date_of_birth: dateOfBirth,
           email,
           user_type: userType,
           phone,
@@ -435,8 +541,13 @@ router.post(
               last_name: user.last_name,
             },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRE }
+            { expiresIn: ACCESS_TOKEN_EXPIRE }
           );
+          const refreshToken = await issueRefreshToken(req.db, {
+            userId: user.id,
+            userType: user.user_type,
+            deviceId: req.body.device_id || null,
+          });
 
           try {
             const ip =
@@ -453,10 +564,12 @@ router.post(
             success: true,
             message: "Login successful",
             token,
+            refresh_token: refreshToken,
             user: {
               id: user.id,
               first_name: user.first_name,
               last_name: user.last_name,
+              date_of_birth: user.date_of_birth,
               email: user.email,
               user_type: user.user_type,
               phone: user.phone,
@@ -510,8 +623,13 @@ router.post(
               last_name: rider.last_name,
             },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRE }
+            { expiresIn: ACCESS_TOKEN_EXPIRE }
           );
+          const refreshToken = await issueRefreshToken(req.db, {
+            userId: rider.id,
+            userType: "rider",
+            deviceId: req.body.device_id || null,
+          });
 
           try {
             const ip =
@@ -528,6 +646,7 @@ router.post(
             success: true,
             message: "Rider login successful",
             token,
+            refresh_token: refreshToken,
             user: {
               id: rider.id,
               first_name: rider.first_name,
@@ -608,7 +727,7 @@ router.get("/me", authenticateToken, async (req, res) => {
     // Default to Users table (Admin/Customer/Store Owner)
     // Use email check to prevent ID collision with riders table
     const [users] = await req.db.execute(
-      "SELECT id, first_name, last_name, email, phone, address, user_type, created_at FROM users WHERE id = ? AND email = ?",
+      "SELECT id, first_name, last_name, date_of_birth, email, phone, address, user_type, created_at FROM users WHERE id = ? AND email = ?",
       [req.user.id, req.user.email]
     );
 
@@ -628,6 +747,92 @@ router.get("/me", authenticateToken, async (req, res) => {
     });
   }
 });
+
+// Refresh access token
+router.post(
+  "/refresh",
+  [body("refresh_token").notEmpty().withMessage("Refresh token is required")],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const refreshToken = req.body.refresh_token;
+      const tokenHash = hashRefreshToken(refreshToken);
+
+      const [rows] = await req.db.execute(
+        `SELECT id, user_id, user_type, expires_at, revoked_at, device_id
+         FROM refresh_tokens
+         WHERE token_hash = ? AND revoked_at IS NULL
+         LIMIT 1`,
+        [tokenHash]
+      );
+
+      if (rows.length === 0) {
+        return res.status(401).json({
+          success: false,
+          message: "Refresh token invalid or expired",
+        });
+      }
+
+      const tokenRow = rows[0];
+      if (new Date(tokenRow.expires_at) <= new Date()) {
+        await req.db.execute(
+          "UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?",
+          [new Date(), tokenRow.id]
+        );
+        return res.status(401).json({
+          success: false,
+          message: "Refresh token expired",
+        });
+      }
+
+      const account = await loadAccountForToken(
+        req.db,
+        tokenRow.user_id,
+        tokenRow.user_type
+      );
+
+      if (!account || account.is_active === false || account.is_active === 0) {
+        await req.db.execute(
+          "UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?",
+          [new Date(), tokenRow.id]
+        );
+        return res.status(401).json({
+          success: false,
+          message: "Account inactive or not found",
+        });
+      }
+
+      const accessToken = jwt.sign(
+        buildAccessTokenPayload(account),
+        process.env.JWT_SECRET,
+        { expiresIn: ACCESS_TOKEN_EXPIRE }
+      );
+
+      const newRefreshToken = await rotateRefreshToken(req.db, tokenRow);
+
+      return res.json({
+        success: true,
+        token: accessToken,
+        refresh_token: newRefreshToken,
+      });
+    } catch (error) {
+      console.error("Refresh token error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to refresh session",
+        error: error.message,
+      });
+    }
+  }
+);
 
 // Change password (supports user and rider)
 router.post(
@@ -741,7 +946,7 @@ router.get("/profile", authenticateToken, async (req, res) => {
     }
 
     const [users] = await req.db.execute(
-      "SELECT id, first_name, last_name, email, phone, address, user_type, created_at FROM users WHERE id = ?",
+      "SELECT id, first_name, last_name, date_of_birth, email, phone, address, user_type, created_at FROM users WHERE id = ?",
       [req.user.id]
     );
 

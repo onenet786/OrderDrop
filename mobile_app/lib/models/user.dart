@@ -6,6 +6,7 @@ class User {
   final String userType;
   final String? phone;
   final String? address;
+  final String? dateOfBirth;
 
   User({
     required this.id,
@@ -15,6 +16,7 @@ class User {
     required this.userType,
     this.phone,
     this.address,
+    this.dateOfBirth,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,7 @@ class User {
       userType: json['user_type'] ?? 'customer',
       phone: json['phone'],
       address: json['address'],
+      dateOfBirth: json['date_of_birth'],
     );
   }
 
@@ -38,6 +41,7 @@ class User {
       'user_type': userType,
       'phone': phone,
       'address': address,
+      'date_of_birth': dateOfBirth,
     };
   }
 }

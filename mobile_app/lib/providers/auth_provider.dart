@@ -10,15 +10,66 @@ class AuthProvider with ChangeNotifier {
   final Logger _logger = Logger();
   User? _user;
   String? _token;
+  String? _refreshToken;
   bool _isLoading = false;
+  bool _sessionExpired = false;
+  bool _handlingUnauthorized = false;
+  Future<String?>? _refreshingToken;
+
+  AuthProvider() {
+    ApiService.refreshAccessToken = _refreshAccessToken;
+  }
 
   User? get user => _user;
   String? get token => _token;
+  String? get refreshToken => _refreshToken;
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _token != null;
   bool get isAdmin => _user?.userType == 'admin';
   bool get isRider => _user?.userType == 'rider';
   bool get isStoreOwner => _user?.userType == 'store_owner';
+  bool get sessionExpired => _sessionExpired;
+
+  bool _isUnauthorizedError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('invalid or expired token') ||
+        message.contains('expired token') ||
+        message.contains('token expired') ||
+        message.contains('token invalid') ||
+        message.contains('unauthorized') ||
+        message.contains('jwt');
+  }
+
+  Future<void> _clearLocalSession({bool clearPushToken = true}) async {
+    _token = null;
+    _refreshToken = null;
+    _user = null;
+    _isLoading = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+    await prefs.remove('refresh_token');
+    await prefs.remove('user');
+    if (clearPushToken) {
+      await prefs.remove('push_token');
+    }
+    notifyListeners();
+  }
+
+  Future<void> _handleUnauthorized() async {
+    if (_handlingUnauthorized) return;
+    if (_token == null && _user == null) return;
+    _handlingUnauthorized = true;
+    _sessionExpired = true;
+    try {
+      await _clearLocalSession(clearPushToken: true);
+    } finally {
+      _handlingUnauthorized = false;
+    }
+  }
+
+  void clearSessionExpiredFlag() {
+    _sessionExpired = false;
+  }
 
   Future<void> login(String email, String password) async {
     _isLoading = true;
@@ -28,6 +79,7 @@ class AuthProvider with ChangeNotifier {
       final data = await ApiService.login(email, password);
       if (data['success'] == true || data['token'] != null) {
         _token = data['token'];
+        _refreshToken = data['refresh_token'];
         if (data['user'] != null) {
           _user = User.fromJson(data['user']);
         }
@@ -37,9 +89,14 @@ class AuthProvider with ChangeNotifier {
         if (_token != null) {
           await prefs.setString('token', _token!);
         }
+        if (_refreshToken != null && _refreshToken!.isNotEmpty) {
+          await prefs.setString('refresh_token', _refreshToken!);
+        }
         if (_user != null) {
           await prefs.setString('user', jsonEncode(_user!.toJson()));
         }
+
+        _sessionExpired = false;
 
         // Initialize Stripe with public key
         await _initializeStripe(_token!);
@@ -57,6 +114,7 @@ class AuthProvider with ChangeNotifier {
   Future<bool> register({
     required String firstName,
     required String lastName,
+    required String dateOfBirth,
     required String email,
     required String password,
     String? phone,
@@ -69,6 +127,7 @@ class AuthProvider with ChangeNotifier {
       final response = await ApiService.register(
         firstName: firstName,
         lastName: lastName,
+        dateOfBirth: dateOfBirth,
         email: email,
         password: password,
         phone: phone,
@@ -81,6 +140,7 @@ class AuthProvider with ChangeNotifier {
 
       if (response['success'] == true || response['token'] != null) {
         _token = response['token'];
+        _refreshToken = response['refresh_token'];
         if (response['user'] != null) {
           _user = User.fromJson(response['user']);
         }
@@ -90,9 +150,14 @@ class AuthProvider with ChangeNotifier {
         if (_token != null) {
           await prefs.setString('token', _token!);
         }
+        if (_refreshToken != null && _refreshToken!.isNotEmpty) {
+          await prefs.setString('refresh_token', _refreshToken!);
+        }
         if (_user != null) {
           await prefs.setString('user', jsonEncode(_user!.toJson()));
         }
+
+        _sessionExpired = false;
 
         return false;
       } else {
@@ -189,9 +254,8 @@ class AuthProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    _sessionExpired = false;
     final oldToken = _token;
-    _token = null;
-    _user = null;
     final prefs = await SharedPreferences.getInstance();
     final pushToken = prefs.getString('push_token');
     if (oldToken != null && pushToken != null && pushToken.trim().isNotEmpty) {
@@ -202,10 +266,7 @@ class AuthProvider with ChangeNotifier {
         );
       } catch (_) {}
     }
-    await prefs.remove('token');
-    await prefs.remove('user');
-    await prefs.remove('push_token');
-    notifyListeners();
+    await _clearLocalSession(clearPushToken: true);
   }
 
   Future<void> changePassword(
@@ -258,6 +319,7 @@ class AuthProvider with ChangeNotifier {
     if (!prefs.containsKey('token')) return;
 
     _token = prefs.getString('token');
+    _refreshToken = prefs.getString('refresh_token');
 
     // First load from cache to show something immediately
     if (prefs.containsKey('user')) {
@@ -280,11 +342,83 @@ class AuthProvider with ChangeNotifier {
       }
     } catch (e) {
       // Token might be expired or invalid
-      // Optional: force logout if 401
-      _logger.w('Auto-login verification failed: $e');
+      if (_isUnauthorizedError(e)) {
+        _logger.w('Auto-login token invalid, attempting refresh: $e');
+        final refreshed = await _refreshAccessToken();
+        if (refreshed != null) {
+          try {
+            final data = await ApiService.getProfile(refreshed);
+            if (data['success'] == true && data['user'] != null) {
+              _user = User.fromJson(data['user']);
+              await prefs.setString('user', jsonEncode(_user!.toJson()));
+            }
+          } catch (refreshError) {
+            _logger.w('Profile fetch failed after refresh: $refreshError');
+          }
+        } else {
+          await _handleUnauthorized();
+          return;
+        }
+      } else {
+        _logger.w('Auto-login verification failed: $e');
+      }
     }
 
     notifyListeners();
+  }
+
+  Future<String?> _refreshAccessToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final refreshToken = _refreshToken ?? prefs.getString('refresh_token');
+    if (refreshToken == null || refreshToken.trim().isEmpty) return null;
+
+    final inflight = _refreshingToken;
+    if (inflight != null) return inflight;
+
+    final future = _doRefresh(refreshToken);
+    _refreshingToken = future;
+    try {
+      return await future;
+    } finally {
+      if (_refreshingToken == future) {
+        _refreshingToken = null;
+      }
+    }
+  }
+
+  Future<String?> _doRefresh(String refreshToken) async {
+    try {
+      final response = await ApiService.refreshToken(refreshToken);
+      final newToken = response['token']?.toString();
+      if (newToken == null || newToken.trim().isEmpty) {
+        return null;
+      }
+      _token = newToken;
+      final newRefresh = response['refresh_token']?.toString();
+      if (newRefresh != null && newRefresh.trim().isNotEmpty) {
+        _refreshToken = newRefresh;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', _token!);
+      if (_refreshToken != null && _refreshToken!.trim().isNotEmpty) {
+        await prefs.setString('refresh_token', _refreshToken!);
+      }
+      _sessionExpired = false;
+      notifyListeners();
+      return _token;
+    } catch (e) {
+      if (e is ApiServiceException && e.isServiceUnavailable) {
+        return null;
+      }
+      if (_isUnauthorizedError(e) ||
+          e.toString().toLowerCase().contains('refresh token')) {
+        _logger.w('Refresh token invalid, clearing session: $e');
+        await _handleUnauthorized();
+      } else {
+        _logger.w('Refresh token request failed: $e');
+      }
+      return null;
+    }
   }
 
   Future<void> _initializeStripe(String token) async {
@@ -299,5 +433,13 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       // Ignore Stripe initialization errors, wallet is optional
     }
+  }
+
+  @override
+  void dispose() {
+    if (ApiService.refreshAccessToken == _refreshAccessToken) {
+      ApiService.refreshAccessToken = null;
+    }
+    super.dispose();
   }
 }

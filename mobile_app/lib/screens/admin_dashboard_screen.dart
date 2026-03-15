@@ -153,6 +153,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         type: 'warning',
         icon: 'warning',
         persistUntilDismissed: true,
+        payload: {
+          'type': 'store_due_alert',
+          'store_id': storeId,
+          'store_name': storeName,
+        },
       );
     } catch (e) {
       _logger.w('Grace alert poll skipped: $e');

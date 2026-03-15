@@ -7350,6 +7350,20 @@ async function unmuteStoreGraceAlert(storeId) {
     });
 }
 
+function promptMuteHours(storeName, lead, dueDate, pending) {
+    const promptText =
+        `[Store Due Alert]\n${storeName}\n${lead}\nDue Date: ${dueDate}\nPending: PKR ${pending}\n\n` +
+        `Enter mute duration in hours (1 to 720):`;
+    const raw = window.prompt(promptText, '24');
+    if (raw === null) return null;
+    const hours = parseInt(String(raw).trim(), 10);
+    if (!Number.isFinite(hours) || hours <= 0) {
+        showWarning('Invalid Duration', 'Please enter a valid number of hours.');
+        return null;
+    }
+    return Math.min(24 * 30, Math.max(1, hours));
+}
+
 async function handleStoreUnmuteGraceAlert() {
     const sid = parseInt(String(AppState.editing.storeId || ''), 10);
     if (!Number.isInteger(sid) || sid <= 0) {
@@ -7399,18 +7413,20 @@ async function checkStoreGraceAlerts() {
                         async () => {
                         try { window.focus(); } catch (_) {}
                         const doMute = window.confirm(
-                            `[Store Due Alert]\n${storeName}\n${lead}\nDue Date: ${dueDate}\nPending: PKR ${pending}\n\nMute this alert for 24 hours?`
+                            `[Store Due Alert]\n${storeName}\n${lead}\nDue Date: ${dueDate}\nPending: PKR ${pending}\n\nMute this alert for a specific time?`
                         );
                         if (doMute) {
-                            await muteStoreGraceAlert(top.store_id, 24);
+                            const hours = promptMuteHours(storeName, lead, dueDate, pending);
+                            if (!hours) return;
+                            await muteStoreGraceAlert(top.store_id, hours);
                             const undo = window.confirm(
-                                `${storeName} alert muted for 24 hours.\n\nClick OK to undo and re-enable notification now.`
+                                `${storeName} alert muted for ${hours} hours.\n\nClick OK to undo and re-enable notification now.`
                             );
                             if (undo) {
                                 await unmuteStoreGraceAlert(top.store_id);
                                 showInfo('Alert Re-enabled', `${storeName} due alert is active again.`);
                             } else {
-                                showInfo('Alert Muted', `${storeName} due alert muted for 24 hours.`);
+                                showInfo('Alert Muted', `${storeName} due alert muted for ${hours} hours.`);
                             }
                         }
                         }
@@ -10745,33 +10761,44 @@ async function applyRoleRestrictions() {
             currentUserPermissions = new Set(data.permissions);
             const perms = currentUserPermissions;
             
-            // Map permissions to tab IDs
-            const tabMap = {
-                'menu_dashboard': 'dashboard',
-                'menu_orders': 'orders',
-                'menu_products': 'products',
-                'menu_stores': ['stores', 'store-status'],
-                'menu_riders': 'riders',
-                'menu_users': 'accounts',
-                'menu_payments': ['payments', 'wallets'],
-                'menu_financial_cpv': 'payment-vouchers',
-                'menu_financial_settlements': 'store-settlements',
-                'menu_financial_expenses': 'expenses',
-                'menu_financial_crv': 'receipt-vouchers',
-                'menu_financial_rider_cash': 'rider-cash',
-                'menu_financial_bpv': 'bank-payment-vouchers',
-                'menu_financial_brv': 'bank-receipt-vouchers',
-                'menu_financial_jnv': 'journal-vouchers',
-                'menu_financial_dashboard': 'financial-dashboard',
-                'menu_reports': ['order-reports', 'inventory-report', 'sale-reports', 'rider-reports', 'store-reports', 'financial-reports'],
-                'menu_settings': ['settings', 'database', 'db-backup', 'logs', 'problems', 'units', 'sizes', 'categories'],
-                'menu_settings_general': 'settings',
-                'menu_settings_database': 'database',
-                'menu_settings_backup': 'db-backup',
-                'menu_settings_logs': 'logs',
-                'menu_settings_problems': 'problems',
-                'menu_user_rights': 'user-rights'
-            };
+            const tabRules = [
+                { perms: ['menu_dashboard'], tabs: ['dashboard'] },
+                { perms: ['menu_orders'], tabs: ['orders'] },
+                { perms: ['menu_products'], tabs: ['products'] },
+                { perms: ['menu_stores'], tabs: ['stores'] },
+                { perms: ['menu_store_status', 'menu_stores'], tabs: ['store-status'] },
+                { perms: ['menu_users'], tabs: ['accounts'] },
+                { perms: ['menu_riders'], tabs: ['riders'] },
+                { perms: ['menu_user_rights'], tabs: ['user-rights'] },
+                { perms: ['menu_payments'], tabs: ['payments'] },
+                { perms: ['menu_wallets', 'menu_payments'], tabs: ['wallets'] },
+
+                { perms: ['menu_report_orders', 'menu_reports'], tabs: ['order-reports'] },
+                { perms: ['menu_report_inventory', 'menu_reports'], tabs: ['inventory-report'] },
+                { perms: ['menu_report_sales', 'menu_reports'], tabs: ['sale-reports'] },
+                { perms: ['menu_report_riders', 'menu_reports'], tabs: ['rider-reports'] },
+                { perms: ['menu_report_stores', 'menu_reports'], tabs: ['store-reports'] },
+                { perms: ['menu_report_store_payment_terms', 'menu_reports'], tabs: ['store-payment-term-reports'] },
+                { perms: ['menu_report_financial', 'menu_reports'], tabs: ['financial-reports'] },
+                { perms: ['menu_financial_dashboard', 'menu_reports'], tabs: ['financial-dashboard'] },
+
+                { perms: ['menu_categories', 'menu_settings'], tabs: ['categories'] },
+                { perms: ['menu_units', 'menu_settings'], tabs: ['units'] },
+                { perms: ['menu_sizes', 'menu_settings'], tabs: ['sizes'] },
+
+                { perms: ['menu_financial_cpv', 'menu_financial'], tabs: ['payment-vouchers'] },
+                { perms: ['menu_financial_settlements', 'menu_financial'], tabs: ['store-settlements'] },
+                { perms: ['menu_financial_expenses', 'menu_financial'], tabs: ['expenses'] },
+                { perms: ['menu_financial_crv', 'menu_financial'], tabs: ['receipt-vouchers'] },
+                { perms: ['menu_financial_rider_cash', 'menu_financial'], tabs: ['rider-cash'] },
+                { perms: ['menu_financial_bpv', 'menu_financial'], tabs: ['bank-payment-vouchers'] },
+                { perms: ['menu_financial_brv', 'menu_financial'], tabs: ['bank-receipt-vouchers'] },
+                { perms: ['menu_financial_jnv', 'menu_financial'], tabs: ['journal-vouchers'] },
+
+                { perms: ['menu_settings_general', 'menu_settings'], tabs: ['settings'] },
+                { perms: ['menu_settings_backup', 'menu_settings_database', 'menu_settings'], tabs: ['db-backup'] },
+                { perms: ['menu_settings_problems', 'menu_settings'], tabs: ['problems'] }
+            ];
 
             // Hide everything first (default deny)
             const allTabs = document.querySelectorAll('.tab-link');
@@ -10780,34 +10807,29 @@ async function applyRoleRestrictions() {
                 if (link.closest('li')) link.closest('li').style.display = 'none';
             });
             
-            // Show allowed
-            Object.entries(tabMap).forEach(([permKey, tabIds]) => {
-                // Special handling for dashboard: show if user has orders permission too
-                if (permKey === 'menu_dashboard' && !perms.has('menu_dashboard') && perms.has('menu_orders')) {
-                     // Auto-grant dashboard view if they have orders access (matches backend logic)
-                     const links = document.querySelectorAll(`.tab-link[data-tab="dashboard"]`);
-                     links.forEach(link => {
-                         link.style.display = 'block';
-                         if (link.closest('li')) link.closest('li').style.display = 'block';
-                     });
-                     return;
+            const showTab = (tabId) => {
+                const links = document.querySelectorAll(`.tab-link[data-tab="${tabId}"]`);
+                links.forEach(link => {
+                    link.style.display = 'block';
+                    if (link.closest('li')) link.closest('li').style.display = 'block';
+                });
+                const link = document.querySelector(`.tab-link[data-tab="${tabId}"]`);
+                if (link) {
+                    const dropdown = link.closest('.dropdown');
+                    if (dropdown) dropdown.style.display = 'block';
                 }
+            };
 
-                if (perms.has(permKey)) {
-                    const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
-                    ids.forEach(tid => {
-                        const links = document.querySelectorAll(`.tab-link[data-tab="${tid}"]`);
-                        links.forEach(link => {
-                            link.style.display = 'block';
-                            if (link.closest('li')) link.closest('li').style.display = 'block';
-                        });
-                        // Show parent dropdown if needed
-                        const link = document.querySelector(`.tab-link[data-tab="${tid}"]`);
-                        if (link) {
-                            const dropdown = link.closest('.dropdown');
-                            if (dropdown) dropdown.style.display = 'block';
-                        }
-                    });
+            const hasAnyPerm = (keys) => keys.some((k) => perms.has(k));
+
+            // Special handling for dashboard: show if user has orders permission too
+            if (!perms.has('menu_dashboard') && perms.has('menu_orders')) {
+                showTab('dashboard');
+            }
+
+            tabRules.forEach((rule) => {
+                if (hasAnyPerm(rule.perms)) {
+                    rule.tabs.forEach(showTab);
                 }
             });
             
@@ -10874,46 +10896,54 @@ async function applyRoleRestrictions() {
                 document.head.appendChild(style);
             }
 
-            // Financial Reports Filter Handling
-            const reportTypeSelect = document.getElementById('financialReportType');
-            if (reportTypeSelect) {
+            const reportSelectIds = ['reportTypeFilter', 'financialReportType'];
+            const permMap = {
+                'daily_summary': 'report_daily_summary',
+                'weekly_summary': 'report_weekly_summary',
+                'monthly_summary': 'report_monthly_summary',
+                'store_settlement': 'report_store_settlement',
+                'store_financials': 'report_store_financials',
+                'store_payable_reconciliation': 'report_store_payable_reconciliation',
+                'unsettled_amounts_report': 'report_unsettled_amounts',
+                'cash_discrepancy_report': 'report_cash_discrepancy',
+                'store_order_settlement_report': 'report_store_order_settlement',
+                'periodic_sales_report': 'report_periodic_sales',
+                'periodic_credit_cash_report': 'report_periodic_credit_cash',
+                'periodic_comprehensive_summary_report': 'report_periodic_comprehensive_summary',
+                'periodic_store_payments_balance_report': 'report_periodic_store_payments_balance',
+                'rider_cash_report': 'report_rider_cash',
+                'rider_fuel_report': 'report_rider_fuel',
+                'rider_orders_report': 'report_rider_orders',
+                'rider_payments_report': 'report_rider_payments',
+                'rider_receivings_report': 'report_rider_receivings',
+                'rider_petrol_report': 'report_rider_petrol',
+                'rider_daily_mileage_report': 'report_rider_daily_mileage',
+                'rider_daily_activity_report': 'report_rider_daily_activity',
+                'rider_day_closing_report': 'report_rider_day_closing',
+                'order_profit_report': 'report_order_profit',
+                'general_voucher': 'report_general_voucher',
+                'expense_report': 'report_expense',
+                'custom': 'report_custom',
+                'comprehensive_report': 'report_comprehensive_cash',
+                'transaction_summary': 'report_transactions_summary',
+                'delivery_charges_breakdown': 'report_delivery_charges',
+                'order_wise_sale_summary': 'report_order_summary'
+            };
+
+            reportSelectIds.forEach((selectId) => {
+                const reportTypeSelect = document.getElementById(selectId);
+                if (!reportTypeSelect) return;
                 const reportOptions = reportTypeSelect.querySelectorAll('option');
                 reportOptions.forEach(opt => {
-                    // Skip "all" or generic options if any
-                    if (opt.value) {
-                         const permKey = `report_${opt.value.replace(/-/g, '_')}`;
-                         // If we have a matching permission key for this report type
-                         // and the user DOES NOT have it, disable/hide the option
-                         // Note: We need to ensure the value in <option> matches the key suffix
-                         
-                         // Map option values to permission keys
-                         // NOTE: Keys here MUST match value="" in admin.html <option> tags
-                         const permMap = {
-                             'daily_summary': 'report_daily_summary',
-                             'weekly_summary': 'report_weekly_summary',
-                             'monthly_summary': 'report_monthly_summary',
-                             'store_settlement': 'report_store_settlement',
-                             'store_financials': 'report_store_financials',
-                             'rider_cash_report': 'report_rider_cash',
-                             'rider_fuel_report': 'report_rider_fuel',
-                             'comprehensive_report': 'report_comprehensive_cash',
-                             'transaction_summary': 'report_transactions_summary',
-                             'general_voucher': 'report_general_voucher',
-                             'expense_report': 'report_expense',
-                             'delivery_charges_breakdown': 'report_delivery_charges',
-                             'order_wise_sale_summary': 'report_order_summary',
-                             'custom': 'report_custom'
-                         };
-
-                         const requiredPerm = permMap[opt.value];
-                         if (requiredPerm && !perms.has(requiredPerm)) {
-                             opt.disabled = true;
-                             opt.hidden = true; // Modern browsers
-                             opt.style.display = 'none'; // Fallback
-                         }
+                    if (!opt.value) return;
+                    const requiredPerm = permMap[opt.value];
+                    if (requiredPerm && !perms.has(requiredPerm)) {
+                        opt.disabled = true;
+                        opt.hidden = true;
+                        opt.style.display = 'none';
                     }
                 });
-            }
+            });
         }
     } catch (e) {
         console.error('Error applying permissions:', e);
@@ -10922,179 +10952,538 @@ async function applyRoleRestrictions() {
 
 // --- User Rights Management ---
 
+const RIGHTS_STATE = {
+    groups: [],
+    users: [],
+    selectedGroupId: ''
+};
+
 const AVAILABLE_PERMISSIONS = [
-    { key: 'menu_dashboard', label: 'Dashboard', group: 'Menus' },
-    { key: 'menu_orders', label: 'Orders Management', group: 'Menus' },
-    { key: 'menu_products', label: 'Products Management', group: 'Menus' },
-    { key: 'menu_stores', label: 'Store Management', group: 'Menus' },
-    { key: 'menu_riders', label: 'Rider Management', group: 'Menus' },
-    { key: 'menu_users', label: 'User Accounts', group: 'Menus' },
-    { key: 'menu_payments', label: 'Payments & Wallets', group: 'Menus' },
-    { key: 'menu_financial', label: 'Financial Vouchers', group: 'Menus' },
-    { key: 'menu_reports', label: 'Reports', group: 'Menus' },
-    { key: 'menu_settings', label: 'Settings & Utilities', group: 'Menus' },
-    { key: 'menu_user_rights', label: 'User Rights', group: 'Menus' },
-    
+    { key: 'menu_dashboard', label: 'Dashboard', group: 'Menus - Core' },
+    { key: 'menu_orders', label: 'Orders', group: 'Menus - Core' },
+    { key: 'menu_products', label: 'Products', group: 'Menus - Core' },
+    { key: 'menu_stores', label: 'Stores', group: 'Menus - Core' },
+    { key: 'menu_store_status', label: 'Store Status', group: 'Menus - Core' },
+    { key: 'menu_payments', label: 'Payments', group: 'Menus - Core' },
+    { key: 'menu_wallets', label: 'Wallets', group: 'Menus - Core' },
+
+    { key: 'menu_users', label: 'Users', group: 'Menus - Accounts' },
+    { key: 'menu_riders', label: 'Riders', group: 'Menus - Accounts' },
+    { key: 'menu_user_rights', label: 'User Rights', group: 'Menus - Accounts' },
+
+    { key: 'menu_report_orders', label: 'Order Reports', group: 'Menus - Reports' },
+    { key: 'menu_report_inventory', label: 'Inventory Report', group: 'Menus - Reports' },
+    { key: 'menu_report_sales', label: 'Sale Reports', group: 'Menus - Reports' },
+    { key: 'menu_report_riders', label: 'Rider Reports', group: 'Menus - Reports' },
+    { key: 'menu_report_stores', label: 'Store Reports', group: 'Menus - Reports' },
+    { key: 'menu_report_store_payment_terms', label: 'Store Payment Term Report', group: 'Menus - Reports' },
+    { key: 'menu_report_financial', label: 'Financial Reports', group: 'Menus - Reports' },
+    { key: 'menu_financial_dashboard', label: 'Financial Dashboard', group: 'Menus - Reports' },
+
+    { key: 'menu_categories', label: 'Categories', group: 'Menus - Catalog' },
+    { key: 'menu_units', label: 'Units', group: 'Menus - Catalog' },
+    { key: 'menu_sizes', label: 'Sizes', group: 'Menus - Catalog' },
+
+    { key: 'menu_financial_cpv', label: 'CPV (Cash Payment Voucher)', group: 'Menus - Financial' },
+    { key: 'menu_financial_settlements', label: 'Store Settlements', group: 'Menus - Financial' },
+    { key: 'menu_financial_expenses', label: 'Expenses', group: 'Menus - Financial' },
+    { key: 'menu_financial_crv', label: 'CRV (Cash Receive Voucher)', group: 'Menus - Financial' },
+    { key: 'menu_financial_rider_cash', label: 'Rider Cash', group: 'Menus - Financial' },
+    { key: 'menu_financial_bpv', label: 'BPV (Bank Payment Voucher)', group: 'Menus - Financial' },
+    { key: 'menu_financial_brv', label: 'BRV (Bank Receive Voucher)', group: 'Menus - Financial' },
+    { key: 'menu_financial_jnv', label: 'JNV (Journal Voucher)', group: 'Menus - Financial' },
+
+    { key: 'menu_settings_general', label: 'Settings', group: 'Menus - System' },
+    { key: 'menu_settings_backup', label: 'Utilities / DB Backup', group: 'Menus - System' },
+    { key: 'menu_settings_problems', label: 'Problems & Diagnostics', group: 'Menus - System' },
+    { key: 'menu_settings_database', label: 'Database Tools (Restricted)', group: 'Menus - System' },
+
     { key: 'action_edit_order', label: 'Edit Order / Assign Rider', group: 'Actions' },
     { key: 'action_manage_products', label: 'Add/Edit Products', group: 'Actions' },
     { key: 'action_manage_stores', label: 'Add/Edit Stores', group: 'Actions' },
     { key: 'action_manage_categories', label: 'Add/Edit Categories', group: 'Actions' },
     { key: 'action_manage_units', label: 'Add/Edit Units', group: 'Actions' },
     { key: 'action_manage_sizes', label: 'Add/Edit Sizes', group: 'Actions' },
-    
-    { key: 'report_sales', label: 'Sales Reports', group: 'Reports' },
-    { key: 'report_inventory', label: 'Inventory Reports', group: 'Reports' },
-    { key: 'report_rider_performance', label: 'Rider Performance', group: 'Reports' },
 
-    { key: 'report_daily_summary', label: 'Daily Summary', group: 'Financial Reports' },
-    { key: 'report_weekly_summary', label: 'Weekly Summary', group: 'Financial Reports' },
-    { key: 'report_monthly_summary', label: 'Monthly Summary', group: 'Financial Reports' },
-    { key: 'report_store_settlement', label: 'Store Settlement', group: 'Financial Reports' },
-    { key: 'report_store_financials', label: 'Store Financials (Cost Analysis)', group: 'Financial Reports' },
-    { key: 'report_rider_cash', label: 'Rider Cash Report', group: 'Financial Reports' },
-    { key: 'report_rider_fuel', label: 'Rider Fuel Report', group: 'Financial Reports' },
-    { key: 'report_comprehensive_cash', label: 'Comprehensive Cash Report', group: 'Financial Reports' },
-    { key: 'report_transactions_summary', label: 'Transactions Summary', group: 'Financial Reports' },
-    { key: 'report_general_voucher', label: 'General Voucher (JNV)', group: 'Financial Reports' },
-    { key: 'report_expense', label: 'Expense Report', group: 'Financial Reports' },
-    { key: 'report_delivery_charges', label: 'Delivery Charges Breakdown', group: 'Financial Reports' },
-    { key: 'report_order_summary', label: 'Order Summary', group: 'Financial Reports' },
-    { key: 'report_custom', label: 'Custom', group: 'Financial Reports' },
-    
-    { key: 'menu_financial_cpv', label: 'CPV (Cash Payment Voucher)', group: 'Financial Transactions' },
-    { key: 'menu_financial_settlements', label: 'Store Settlements', group: 'Financial Transactions' },
-    { key: 'menu_financial_expenses', label: 'Expenses', group: 'Financial Transactions' },
-    { key: 'menu_financial_crv', label: 'CRV (Cash Receive Voucher)', group: 'Financial Transactions' },
-    { key: 'menu_financial_rider_cash', label: 'Rider Cash', group: 'Financial Transactions' },
-    { key: 'menu_financial_bpv', label: 'BPV (Bank Payment Voucher)', group: 'Financial Transactions' },
-    { key: 'menu_financial_brv', label: 'BRV (Bank Receive Voucher)', group: 'Financial Transactions' },
-    { key: 'menu_financial_jnv', label: 'JNV (Journal Voucher)', group: 'Financial Transactions' },
-    { key: 'menu_financial_dashboard', label: 'Financial Dashboard', group: 'Financial Transactions' },
-    
-    { key: 'menu_settings_general', label: 'General Settings', group: 'Utilities' },
-    { key: 'menu_settings_database', label: 'Database Management', group: 'Utilities' },
-    { key: 'menu_settings_backup', label: 'Database Backup', group: 'Utilities' },
-    { key: 'menu_settings_logs', label: 'System Logs', group: 'Utilities' },
-    { key: 'menu_settings_problems', label: 'Problem Diagnostics', group: 'Utilities' }
+    { key: 'report_sales', label: 'Sales Reports API', group: 'Reports - Operational' },
+    { key: 'report_inventory', label: 'Inventory Reports API', group: 'Reports - Operational' },
+    { key: 'report_rider_performance', label: 'Rider Performance Reports', group: 'Reports - Operational' },
+
+    { key: 'report_daily_summary', label: 'Daily Summary', group: 'Reports - Financial Types' },
+    { key: 'report_weekly_summary', label: 'Weekly Summary', group: 'Reports - Financial Types' },
+    { key: 'report_monthly_summary', label: 'Monthly Summary', group: 'Reports - Financial Types' },
+    { key: 'report_store_settlement', label: 'Store Settlement', group: 'Reports - Financial Types' },
+    { key: 'report_store_financials', label: 'Store Financials', group: 'Reports - Financial Types' },
+    { key: 'report_store_payable_reconciliation', label: 'Store Payable Reconciliation', group: 'Reports - Financial Types' },
+    { key: 'report_unsettled_amounts', label: 'Unsettled Amounts', group: 'Reports - Financial Types' },
+    { key: 'report_cash_discrepancy', label: 'Cash Discrepancy', group: 'Reports - Financial Types' },
+    { key: 'report_store_order_settlement', label: 'Store Order Settlement', group: 'Reports - Financial Types' },
+    { key: 'report_periodic_sales', label: 'Periodic Sales', group: 'Reports - Financial Types' },
+    { key: 'report_periodic_credit_cash', label: 'Periodic Credit Cash', group: 'Reports - Financial Types' },
+    { key: 'report_periodic_comprehensive_summary', label: 'Periodic Comprehensive Summary', group: 'Reports - Financial Types' },
+    { key: 'report_periodic_store_payments_balance', label: 'Periodic Store Payments & Balance', group: 'Reports - Financial Types' },
+    { key: 'report_rider_cash', label: 'Rider Cash Report', group: 'Reports - Financial Types' },
+    { key: 'report_rider_fuel', label: 'Rider Fuel Report', group: 'Reports - Financial Types' },
+    { key: 'report_rider_orders', label: 'Rider Orders Report', group: 'Reports - Financial Types' },
+    { key: 'report_rider_payments', label: 'Rider Payments Report', group: 'Reports - Financial Types' },
+    { key: 'report_rider_receivings', label: 'Rider Receivings Report', group: 'Reports - Financial Types' },
+    { key: 'report_rider_petrol', label: 'Rider Petrol Report', group: 'Reports - Financial Types' },
+    { key: 'report_rider_daily_mileage', label: 'Rider Daily Mileage Report', group: 'Reports - Financial Types' },
+    { key: 'report_rider_daily_activity', label: 'Rider Daily Activity Report', group: 'Reports - Financial Types' },
+    { key: 'report_rider_day_closing', label: 'Rider Day Closing Report', group: 'Reports - Financial Types' },
+    { key: 'report_order_profit', label: 'Order Profit Report', group: 'Reports - Financial Types' },
+    { key: 'report_general_voucher', label: 'General Voucher (JNV)', group: 'Reports - Financial Types' },
+    { key: 'report_expense', label: 'Expense Report', group: 'Reports - Financial Types' },
+    { key: 'report_custom', label: 'Custom Report', group: 'Reports - Financial Types' },
+
+    { key: 'menu_reports', label: 'All Reports (Legacy)', group: 'Legacy' },
+    { key: 'menu_financial', label: 'All Financial Vouchers (Legacy)', group: 'Legacy' },
+    { key: 'menu_settings', label: 'All Settings & Catalog (Legacy)', group: 'Legacy' }
 ];
 
-async function loadUserRights() {
-    // Populate permissions grid
+function renderPermissionsGrid() {
     const grid = document.getElementById('permissionsGrid');
-    if (grid) {
-        grid.innerHTML = '';
-        const groups = {};
-        
-        AVAILABLE_PERMISSIONS.forEach(perm => {
-            if (!groups[perm.group]) groups[perm.group] = [];
-            groups[perm.group].push(perm);
+    if (!grid) return;
+    grid.innerHTML = '';
+    const groups = new Map();
+    AVAILABLE_PERMISSIONS.forEach((perm) => {
+        if (!groups.has(perm.group)) groups.set(perm.group, []);
+        groups.get(perm.group).push(perm);
+    });
+
+    groups.forEach((perms, groupName) => {
+        const groupDiv = document.createElement('div');
+        groupDiv.innerHTML = `<h4 style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px; color: #2c3e50;">${groupName}</h4>`;
+        perms.forEach((perm) => {
+            const label = document.createElement('label');
+            label.style.display = 'flex';
+            label.style.alignItems = 'center';
+            label.style.marginBottom = '8px';
+            label.style.cursor = 'pointer';
+            label.innerHTML = `
+                <input type="checkbox" name="permissions" value="${perm.key}" style="margin-right: 10px; width: 18px; height: 18px;">
+                <span>${perm.label}</span>
+            `;
+            groupDiv.appendChild(label);
         });
-        
-        for (const [groupName, perms] of Object.entries(groups)) {
-            const groupDiv = document.createElement('div');
-            groupDiv.innerHTML = `<h4 style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px; color: #2c3e50;">${groupName}</h4>`;
-            
-            perms.forEach(perm => {
-                const label = document.createElement('label');
-                label.style.display = 'flex';
-                label.style.alignItems = 'center';
-                label.style.marginBottom = '8px';
-                label.style.cursor = 'pointer';
-                label.innerHTML = `
-                    <input type="checkbox" name="permissions" value="${perm.key}" style="margin-right: 10px; width: 18px; height: 18px;">
-                    <span>${perm.label}</span>
-                `;
-                groupDiv.appendChild(label);
-            });
-            grid.appendChild(groupDiv);
-        }
+        grid.appendChild(groupDiv);
+    });
+}
+
+function applyPermissionsToGrid(permissions) {
+    document.querySelectorAll('#permissionsGrid input[type="checkbox"]').forEach(cb => cb.checked = false);
+    (permissions || []).forEach((key) => {
+        const cb = document.querySelector(`#permissionsGrid input[value="${key}"]`);
+        if (cb) cb.checked = true;
+    });
+}
+
+function getSelectedPermissionsFromGrid() {
+    return Array.from(document.querySelectorAll('#permissionsGrid input[name="permissions"]:checked')).map(cb => cb.value);
+}
+
+function updateGroupSelects() {
+    const groupSelect = document.getElementById('rightsGroupSelect');
+    const userGroupSelect = document.getElementById('rightsUserGroupSelect');
+    if (!groupSelect || !userGroupSelect) return;
+
+    const selectedGroupId = RIGHTS_STATE.selectedGroupId;
+    groupSelect.innerHTML = '<option value="">Select a group...</option>';
+    userGroupSelect.innerHTML = '<option value="">No Group</option>';
+
+    RIGHTS_STATE.groups.forEach((g) => {
+        const opt = document.createElement('option');
+        opt.value = String(g.id);
+        opt.textContent = g.name;
+        groupSelect.appendChild(opt);
+
+        const opt2 = document.createElement('option');
+        opt2.value = String(g.id);
+        opt2.textContent = g.name;
+        userGroupSelect.appendChild(opt2);
+    });
+
+    if (selectedGroupId && RIGHTS_STATE.groups.some((g) => String(g.id) === String(selectedGroupId))) {
+        groupSelect.value = String(selectedGroupId);
+    }
+}
+
+function updateUserSelect() {
+    const select = document.getElementById('rightsUserSelect');
+    if (!select) return;
+    select.innerHTML = '<option value="">Select a user...</option>';
+    RIGHTS_STATE.users.forEach((u) => {
+        const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || `User #${u.id}`;
+        const email = u.email ? ` (${u.email})` : '';
+        const groupTag = u.group_name ? ` - ${u.group_name}` : '';
+        const opt = document.createElement('option');
+        opt.value = String(u.id);
+        opt.textContent = `${name}${email}${groupTag}`;
+        select.appendChild(opt);
+    });
+}
+
+function renderGroupMeta(group) {
+    const meta = document.getElementById('rightsGroupMeta');
+    if (!meta) return;
+    if (!group) {
+        meta.textContent = 'Select a group to view details.';
+        return;
+    }
+    const members = group.member_count ?? 0;
+    const permissions = group.permissions_count ?? 0;
+    meta.textContent = `Members: ${members} | Permissions: ${permissions}`;
+}
+
+function renderGroupMembers(groupId) {
+    const wrap = document.getElementById('rightsGroupMembers');
+    if (!wrap) return;
+    if (!groupId) {
+        wrap.textContent = '';
+        return;
+    }
+    const members = RIGHTS_STATE.users.filter((u) => String(u.group_id || '') === String(groupId));
+    if (!members.length) {
+        wrap.textContent = 'No members assigned to this group.';
+        return;
+    }
+    const labels = members.map((u) => {
+        const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || `User #${u.id}`;
+        const email = u.email ? ` (${u.email})` : '';
+        return `${name}${email}`;
+    });
+    wrap.innerHTML = `<strong>Members (${members.length}):</strong> ${escapeHtml(labels.join(', '))}`;
+}
+
+function renderGroupUsersSummary() {
+    const wrap = document.getElementById('rightsGroupUsersSummary');
+    if (!wrap) return;
+
+    const groups = RIGHTS_STATE.groups || [];
+    const users = RIGHTS_STATE.users || [];
+
+    if (!groups.length && !users.length) {
+        wrap.textContent = 'No groups or users loaded yet.';
+        return;
     }
 
-    // Fetch Users
+    const usersByGroup = new Map();
+    const ungrouped = [];
+
+    users.forEach((u) => {
+        if (!u.group_id) {
+            ungrouped.push(u);
+            return;
+        }
+        const gid = String(u.group_id);
+        if (!usersByGroup.has(gid)) usersByGroup.set(gid, []);
+        usersByGroup.get(gid).push(u);
+    });
+
+    const cards = [];
+    groups.forEach((g) => {
+        const gid = String(g.id);
+        const members = usersByGroup.get(gid) || [];
+        const names = members.map((u) => {
+            const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || `User #${u.id}`;
+            const email = u.email ? ` (${u.email})` : '';
+            return `${name}${email}`;
+        });
+        const list = names.length ? escapeHtml(names.join(', ')) : '<em>No users assigned</em>';
+        cards.push(`
+            <div style="padding: 0.75rem 0.85rem; border: 1px solid #eee; border-radius: 8px; background: #fafafa;">
+              <div style="font-weight: 700; color: #2c3e50; margin-bottom: 0.35rem;">
+                ${escapeHtml(g.name || 'Unnamed Group')} <span style="color: #888; font-weight: 500;">(${members.length})</span>
+              </div>
+              <div style="font-size: 0.9rem; color: #555;">${list}</div>
+            </div>
+        `);
+    });
+
+    if (ungrouped.length) {
+        const names = ungrouped.map((u) => {
+            const name = `${u.first_name || ''} ${u.last_name || ''}`.trim() || `User #${u.id}`;
+            const email = u.email ? ` (${u.email})` : '';
+            return `${name}${email}`;
+        });
+        cards.push(`
+            <div style="padding: 0.75rem 0.85rem; border: 1px dashed #e5e5e5; border-radius: 8px; background: #fff;">
+              <div style="font-weight: 700; color: #2c3e50; margin-bottom: 0.35rem;">
+                No Group <span style="color: #888; font-weight: 500;">(${ungrouped.length})</span>
+              </div>
+              <div style="font-size: 0.9rem; color: #555;">${escapeHtml(names.join(', '))}</div>
+            </div>
+        `);
+    }
+
+    wrap.innerHTML = cards.join('');
+}
+
+async function loadRightsGroups() {
+    try {
+        const response = await fetch(`${API_BASE}/api/permissions/groups`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const data = await response.json();
+        if (data.success) {
+            RIGHTS_STATE.groups = Array.isArray(data.groups) ? data.groups : [];
+        } else {
+            RIGHTS_STATE.groups = [];
+        }
+        updateGroupSelects();
+        renderGroupUsersSummary();
+    } catch (e) {
+        console.error('Error loading groups for rights:', e);
+        RIGHTS_STATE.groups = [];
+        updateGroupSelects();
+        renderGroupUsersSummary();
+    }
+}
+
+async function loadRightsUsers() {
     try {
         const response = await fetch(`${API_BASE}/api/permissions/users`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         const data = await response.json();
-        
-        const select = document.getElementById('rightsUserSelect');
-        if (select && data.success) {
-            select.innerHTML = '<option value="">Select a user...</option>';
-            data.users.forEach(u => {
-                select.innerHTML += `<option value="${u.id}">${u.first_name} ${u.last_name} (${u.email})</option>`;
-            });
-            
-            // Remove existing listener to avoid duplicates if called multiple times
-            const newSelect = select.cloneNode(true);
-            select.parentNode.replaceChild(newSelect, select);
-            
-            newSelect.addEventListener('change', async function() {
-                const userId = this.value;
-                const container = document.getElementById('rightsContainer');
-                if (!userId) {
-                    container.style.display = 'none';
-                    return;
-                }
-                container.style.display = 'block';
-                
-                // Fetch permissions for this user
-                try {
-                    const permRes = await fetch(`${API_BASE}/api/permissions/user/${userId}`, {
-                        headers: { 'Authorization': `Bearer ${authToken}` }
-                    });
-                    const permData = await permRes.json();
-                    
-                    // Reset checks
-                    document.querySelectorAll('#userRightsForm input[type="checkbox"]').forEach(cb => cb.checked = false);
-                    
-                    if (permData.success && permData.permissions) {
-                        permData.permissions.forEach(key => {
-                            const cb = document.querySelector(`#userRightsForm input[value="${key}"]`);
-                            if (cb) cb.checked = true;
-                        });
-                    }
-                } catch (e) {
-                    console.error('Error fetching user permissions:', e);
-                    showError('Error', 'Failed to load user permissions');
-                }
-            });
+        if (data.success) {
+            RIGHTS_STATE.users = Array.isArray(data.users) ? data.users : [];
+        } else {
+            RIGHTS_STATE.users = [];
         }
+        updateUserSelect();
+        renderGroupUsersSummary();
     } catch (e) {
         console.error('Error loading users for rights:', e);
+        RIGHTS_STATE.users = [];
+        updateUserSelect();
+        renderGroupUsersSummary();
     }
-    
-    // Select/Deselect All Handlers
+}
+
+async function setSelectedGroup(groupId) {
+    RIGHTS_STATE.selectedGroupId = groupId || '';
+    const group = RIGHTS_STATE.groups.find((g) => String(g.id) === String(groupId));
+    const nameInput = document.getElementById('rightsGroupNameInput');
+    const descInput = document.getElementById('rightsGroupDescInput');
+    if (nameInput) nameInput.value = group ? group.name || '' : '';
+    if (descInput) descInput.value = group ? group.description || '' : '';
+    renderGroupMeta(group);
+    renderGroupMembers(groupId);
+
+    if (!groupId) {
+        applyPermissionsToGrid([]);
+        return;
+    }
+
+    try {
+        const permRes = await fetch(`${API_BASE}/api/permissions/group/${groupId}/permissions`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const permData = await permRes.json();
+        if (permData.success) {
+            applyPermissionsToGrid(permData.permissions || []);
+        } else {
+            applyPermissionsToGrid([]);
+        }
+    } catch (e) {
+        console.error('Error fetching group permissions:', e);
+        applyPermissionsToGrid([]);
+    }
+}
+
+function bindRightsHandlers() {
+    const groupSelect = document.getElementById('rightsGroupSelect');
+    if (groupSelect) {
+        groupSelect.onchange = () => {
+            const groupId = groupSelect.value;
+            setSelectedGroup(groupId);
+        };
+    }
+
+    const userSelect = document.getElementById('rightsUserSelect');
+    const userGroupSelect = document.getElementById('rightsUserGroupSelect');
+    if (userSelect && userGroupSelect) {
+        userSelect.onchange = () => {
+            const userId = userSelect.value;
+            const user = RIGHTS_STATE.users.find((u) => String(u.id) === String(userId));
+            userGroupSelect.value = user?.group_id ? String(user.group_id) : '';
+        };
+    }
+
     const selectAllBtn = document.getElementById('selectAllRightsBtn');
     if (selectAllBtn) {
         selectAllBtn.onclick = () => {
-            document.querySelectorAll('#userRightsForm input[type="checkbox"]').forEach(cb => cb.checked = true);
+            document.querySelectorAll('#permissionsGrid input[type="checkbox"]').forEach(cb => cb.checked = true);
         };
     }
-    
+
     const deselectAllBtn = document.getElementById('deselectAllRightsBtn');
     if (deselectAllBtn) {
         deselectAllBtn.onclick = () => {
-            document.querySelectorAll('#userRightsForm input[type="checkbox"]').forEach(cb => cb.checked = false);
+            document.querySelectorAll('#permissionsGrid input[type="checkbox"]').forEach(cb => cb.checked = false);
         };
     }
-    
-    // Save Form Handler
-    const form = document.getElementById('userRightsForm');
-    if (form) {
-        // Remove existing listener
-        const newForm = form.cloneNode(true);
-        form.parentNode.replaceChild(newForm, form);
-        
-        newForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const select = document.getElementById('rightsUserSelect');
-            const userId = select.value;
-            if (!userId) return;
-            
-            const selected = Array.from(document.querySelectorAll('#userRightsForm input[name="permissions"]:checked')).map(cb => cb.value);
-            
+
+    const createBtn = document.getElementById('createRightsGroupBtn');
+    if (createBtn) {
+        createBtn.onclick = async () => {
+            const name = (document.getElementById('rightsGroupNameInput')?.value || '').trim();
+            const description = (document.getElementById('rightsGroupDescInput')?.value || '').trim();
+            if (!name) {
+                showWarning('Missing Name', 'Please enter a group name.');
+                return;
+            }
             try {
-                const response = await fetch(`${API_BASE}/api/permissions/user/${userId}`, {
+                const response = await fetch(`${API_BASE}/api/permissions/groups`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ name, description })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    showError('Create Failed', data.message || 'Failed to create group');
+                    return;
+                }
+                showSuccess('Group Created', 'Group created successfully.');
+                RIGHTS_STATE.selectedGroupId = String(data.group_id || '');
+                await loadRightsGroups();
+                if (RIGHTS_STATE.selectedGroupId) {
+                    const select = document.getElementById('rightsGroupSelect');
+                    if (select) select.value = RIGHTS_STATE.selectedGroupId;
+                    await setSelectedGroup(RIGHTS_STATE.selectedGroupId);
+                }
+            } catch (err) {
+                console.error('Error creating group:', err);
+                showError('Create Failed', 'Failed to create group');
+            }
+        };
+    }
+
+    const updateBtn = document.getElementById('updateRightsGroupBtn');
+    if (updateBtn) {
+        updateBtn.onclick = async () => {
+            const groupId = RIGHTS_STATE.selectedGroupId;
+            if (!groupId) {
+                showWarning('Select Group', 'Please select a group to update.');
+                return;
+            }
+            const name = (document.getElementById('rightsGroupNameInput')?.value || '').trim();
+            const description = (document.getElementById('rightsGroupDescInput')?.value || '').trim();
+            if (!name) {
+                showWarning('Missing Name', 'Please enter a group name.');
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE}/api/permissions/groups/${groupId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ name, description })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    showError('Update Failed', data.message || 'Failed to update group');
+                    return;
+                }
+                showSuccess('Group Updated', 'Group details updated.');
+                await loadRightsGroups();
+                await setSelectedGroup(groupId);
+            } catch (err) {
+                console.error('Error updating group:', err);
+                showError('Update Failed', 'Failed to update group');
+            }
+        };
+    }
+
+    const deleteBtn = document.getElementById('deleteRightsGroupBtn');
+    if (deleteBtn) {
+        deleteBtn.onclick = async () => {
+            const groupId = RIGHTS_STATE.selectedGroupId;
+            if (!groupId) {
+                showWarning('Select Group', 'Please select a group to delete.');
+                return;
+            }
+            if (!confirm('Delete this group? Assigned users will lose their rights.')) return;
+            try {
+                const response = await fetch(`${API_BASE}/api/permissions/groups/${groupId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    showError('Delete Failed', data.message || 'Failed to delete group');
+                    return;
+                }
+                showSuccess('Group Deleted', 'Group removed successfully.');
+                RIGHTS_STATE.selectedGroupId = '';
+                await loadRightsGroups();
+                await loadRightsUsers();
+                applyPermissionsToGrid([]);
+                renderGroupMeta(null);
+                renderGroupMembers('');
+            } catch (err) {
+                console.error('Error deleting group:', err);
+                showError('Delete Failed', 'Failed to delete group');
+            }
+        };
+    }
+
+    const assignBtn = document.getElementById('assignUserToGroupBtn');
+    if (assignBtn) {
+        assignBtn.onclick = async () => {
+            const userId = document.getElementById('rightsUserSelect')?.value;
+            const groupId = document.getElementById('rightsUserGroupSelect')?.value || null;
+            if (!userId) {
+                showWarning('Select User', 'Please choose a user to assign.');
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE}/api/permissions/user/${userId}/group`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ group_id: groupId ? Number(groupId) : null })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    showError('Assign Failed', data.message || 'Failed to assign group');
+                    return;
+                }
+                showSuccess('Assigned', 'User group updated successfully.');
+                await loadRightsUsers();
+                await loadRightsGroups();
+                if (RIGHTS_STATE.selectedGroupId) {
+                    await setSelectedGroup(RIGHTS_STATE.selectedGroupId);
+                } else {
+                    renderGroupMembers('');
+                }
+            } catch (err) {
+                console.error('Error assigning group:', err);
+                showError('Assign Failed', 'Failed to assign group');
+            }
+        };
+    }
+
+    const form = document.getElementById('groupRightsForm');
+    if (form) {
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const groupId = RIGHTS_STATE.selectedGroupId;
+            if (!groupId) {
+                showWarning('Select Group', 'Please select a group to save rights.');
+                return;
+            }
+            const selected = getSelectedPermissionsFromGrid();
+            try {
+                const response = await fetch(`${API_BASE}/api/permissions/group/${groupId}/permissions`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -11104,15 +11493,25 @@ async function loadUserRights() {
                 });
                 const data = await response.json();
                 if (data.success) {
-                    showSuccess('Saved', 'User rights updated successfully');
+                    showSuccess('Saved', 'Group rights updated successfully');
+                    await loadRightsGroups();
+                    await setSelectedGroup(groupId);
                 } else {
                     showError('Error', data.message || 'Failed to save');
                 }
             } catch (err) {
-                console.error('Error saving permissions:', err);
+                console.error('Error saving group permissions:', err);
                 showError('Error', 'Failed to save permissions');
             }
-        });
+        };
     }
 }
 
+async function loadUserRights() {
+    renderPermissionsGrid();
+    await Promise.all([loadRightsGroups(), loadRightsUsers()]);
+    bindRightsHandlers();
+    if (RIGHTS_STATE.selectedGroupId) {
+        await setSelectedGroup(RIGHTS_STATE.selectedGroupId);
+    }
+}

@@ -5086,6 +5086,33 @@ function applyStoreReportFilters(stores) {
     });
 }
 
+function isCreditStoreTerm(term) {
+    const t = String(term || '').toLowerCase().trim();
+    return t === 'credit' || t === 'credit with discount';
+}
+
+function formatDateOnly(value) {
+    if (!value) return '';
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    const text = String(value);
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    return text;
+}
+
+function formatGraceDueCell(store) {
+    if (!isCreditStoreTerm(store?.payment_term)) return '-';
+    const dueDateRaw = store?.grace_due_date || store?.payment_grace_due_date || null;
+    const dueDate = formatDateOnly(dueDateRaw);
+    if (!dueDate) return '-';
+    const rawDays = store?.grace_days_left;
+    const daysLeft = Number.isFinite(Number(rawDays)) ? Number(rawDays) : null;
+    if (daysLeft === null) return String(dueDate);
+    if (daysLeft === 0) return `${dueDate} (Due today)`;
+    if (daysLeft > 0) return `${dueDate} (${daysLeft} day${daysLeft === 1 ? '' : 's'})`;
+    const overdue = Math.abs(daysLeft);
+    return `${dueDate} (Overdue by ${overdue} day${overdue === 1 ? '' : 's'})`;
+}
+
 function updateStoreReportDueTotals(stores) {
     const countEl = document.getElementById('storeReportDueStoreCount');
     const amountEl = document.getElementById('storeReportDuePayable');
@@ -5244,7 +5271,7 @@ function displayStoreReports(stores) {
     tbody.innerHTML = '';
 
     if (!stores || stores.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1rem;">No stores found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:1rem;">No stores found</td></tr>';
         updateStoreReportDueTotals([]);
         return;
     }
@@ -5253,6 +5280,10 @@ function displayStoreReports(stores) {
         const earnings = parseFloat(s.total_earnings || 0);
         const paid = parseFloat(s.total_paid || 0);
         const pending = parseFloat(s.pending_settlement || 0);
+        const graceStart = isCreditStoreTerm(s.payment_term)
+            ? (formatDateOnly(s.payment_grace_start_date) || '-')
+            : '-';
+        const graceDueText = formatGraceDueCell(s);
 
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -5260,6 +5291,8 @@ function displayStoreReports(stores) {
             <td>${s.name}</td>
             <td>${s.email}<br>${s.phone || '-'}</td>
             <td>${s.total_orders}</td>
+            <td>${graceStart}</td>
+            <td>${graceDueText}</td>
             <td>Rs  ${earnings.toFixed(2)}</td>
             <td>Rs  ${paid.toFixed(2)}</td>
             <td style="color: ${pending > 0 ? 'orange' : 'inherit'}">Rs  ${pending.toFixed(2)}</td>
@@ -5395,13 +5428,26 @@ function exportStoreReport() {
         return;
     }
 
-    const headers = ['Payment Term', 'Store Name', 'Email', 'Phone', 'Total Orders', 'Total Earnings', 'Total Paid', 'Pending Settlement'];
+    const headers = [
+        'Payment Term',
+        'Store Name',
+        'Email',
+        'Phone',
+        'Total Orders',
+        'Grace Start Date',
+        'Next Due Date (Days Left)',
+        'Total Earnings',
+        'Total Paid',
+        'Pending Settlement'
+    ];
     const rows = exportRows.map(s => [
         s.payment_term || 'No Payment Term',
         s.name,
         s.email,
         s.phone || '',
         s.total_orders,
+        isCreditStoreTerm(s.payment_term) ? formatDateOnly(s.payment_grace_start_date) : '',
+        formatGraceDueCell(s),
         parseFloat(s.total_earnings || 0).toFixed(2),
         parseFloat(s.total_paid || 0).toFixed(2),
         parseFloat(s.pending_settlement || 0).toFixed(2)

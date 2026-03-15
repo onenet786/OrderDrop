@@ -17,6 +17,7 @@ class Notification {
   final String type;
   final String icon;
   final DateTime timestamp;
+  final Map<String, dynamic>? payload;
   bool unread;
 
   Notification({
@@ -26,6 +27,7 @@ class Notification {
     this.type = 'info',
     this.icon = 'info',
     required this.timestamp,
+    this.payload,
     this.unread = true,
   });
 
@@ -37,6 +39,10 @@ class Notification {
       type: json['type'] ?? 'info',
       icon: json['icon'] ?? 'info',
       timestamp: DateTime.parse(json['timestamp']),
+      payload:
+          json['payload'] is Map
+              ? Map<String, dynamic>.from(json['payload'])
+              : null,
       unread: json['unread'] ?? true,
     );
   }
@@ -117,6 +123,7 @@ class NotificationProvider with ChangeNotifier {
       type: type,
       icon: icon,
       timestamp: now,
+      payload: payload,
       unread: true,
     );
 

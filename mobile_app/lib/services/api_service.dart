@@ -22,6 +22,8 @@ class ApiService {
   static final Logger _logger = Logger();
   static const String serviceUnavailableMessage =
       'ServeNow is temporarily unavailable. The site is under maintenance. Please try again shortly.';
+  static Future<String?> Function()? refreshAccessToken;
+  static Future<String?>? _refreshInFlight;
 
   static String get baseUrl {
     if (kDebugMode) {
@@ -62,11 +64,48 @@ class ApiService {
         lower.contains('23.137.84.249');
   }
 
-  static Future<http.Response> _send(
-    Future<http.Response> Function() request,
-  ) async {
+  static Future<String?> _refreshAccessTokenOnce() async {
+    final handler = refreshAccessToken;
+    if (handler == null) return null;
+    final inflight = _refreshInFlight;
+    if (inflight != null) return inflight;
+
+    final future = handler();
+    _refreshInFlight = future;
     try {
-      return await request().timeout(const Duration(seconds: 20));
+      return await future;
+    } finally {
+      if (_refreshInFlight == future) {
+        _refreshInFlight = null;
+      }
+    }
+  }
+
+  static bool _shouldAttemptRefresh(
+    http.Response response,
+    Map<String, String>? headers,
+  ) {
+    if (response.statusCode != 401 && response.statusCode != 403) return false;
+    if (headers == null) return false;
+    final authHeader = headers['Authorization'];
+    if (authHeader == null || authHeader.trim().isEmpty) return false;
+    return refreshAccessToken != null;
+  }
+
+  static Future<http.Response> _send(
+    Future<http.Response> Function() request, {
+    Map<String, String>? headers,
+  }) async {
+    try {
+      final response = await request().timeout(const Duration(seconds: 20));
+      if (_shouldAttemptRefresh(response, headers)) {
+        final refreshed = await _refreshAccessTokenOnce();
+        if (refreshed != null && headers != null) {
+          headers['Authorization'] = 'Bearer $refreshed';
+          return await request().timeout(const Duration(seconds: 20));
+        }
+      }
+      return response;
     } on SocketException {
       throw const ApiServiceException(
         serviceUnavailableMessage,
@@ -91,25 +130,34 @@ class ApiService {
   static Future<http.Response> _get(
     Uri uri, {
     Map<String, String>? headers,
-  }) => _send(() => http.get(uri, headers: headers));
+  }) => _send(() => http.get(uri, headers: headers), headers: headers);
 
   static Future<http.Response> _post(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
-  }) => _send(() => http.post(uri, headers: headers, body: body));
+  }) => _send(
+        () => http.post(uri, headers: headers, body: body),
+        headers: headers,
+      );
 
   static Future<http.Response> _put(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
-  }) => _send(() => http.put(uri, headers: headers, body: body));
+  }) => _send(
+        () => http.put(uri, headers: headers, body: body),
+        headers: headers,
+      );
 
   static Future<http.Response> _delete(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
-  }) => _send(() => http.delete(uri, headers: headers, body: body));
+  }) => _send(
+        () => http.delete(uri, headers: headers, body: body),
+        headers: headers,
+      );
 
   static Map<String, dynamic> _handleResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -153,6 +201,7 @@ class ApiService {
   static Future<Map<String, dynamic>> register({
     required String firstName,
     required String lastName,
+    required String dateOfBirth,
     required String email,
     required String password,
     String? phone,
@@ -166,6 +215,7 @@ class ApiService {
       body: jsonEncode({
         'firstName': firstName,
         'lastName': lastName,
+        'dateOfBirth': dateOfBirth,
         'email': email,
         'password': password,
         'phone': phone,
@@ -539,6 +589,17 @@ class ApiService {
     );
     final data = _handleResponse(response);
     return data['orders'] ?? [];
+  }
+
+  static Future<Map<String, dynamic>> refreshToken(String refreshToken) async {
+    final uri = Uri.parse('$baseUrl/api/auth/refresh');
+    _logger.d('ApiService: POST $uri');
+    final response = await _post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'refresh_token': refreshToken}),
+    );
+    return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> getCustomerSupportContact(String token) async {

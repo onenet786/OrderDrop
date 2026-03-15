@@ -1389,7 +1389,6 @@ router.get(
               o.order_number,
               o.status as order_status,
               o.created_at as sold_at,
-              COALESCE(o.total_amount, 0) as order_total,
               LOWER(TRIM(COALESCE(o.payment_method, ''))) as payment_method,
               GROUP_CONCAT(DISTINCT s.name ORDER BY s.name SEPARATOR ', ') as store_names,
               CASE
@@ -1401,34 +1400,43 @@ router.get(
                   ELSE 'store'
               END as order_type,
               CASE
-                  WHEN SUM(CASE WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 1 ELSE 0 END) > 0
-                       AND SUM(CASE WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) NOT LIKE '%credit%' THEN 1 ELSE 0 END) > 0
-                    THEN 'mixed'
-                  WHEN SUM(CASE WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 1 ELSE 0 END) > 0
-                    THEN 'credit'
+                  WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 'credit'
                   ELSE 'cash'
               END as store_payment_term,
               CASE
-                  WHEN SUM(CASE WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 1 ELSE 0 END) > 0
-                    THEN 'credit'
-                  WHEN LOWER(TRIM(COALESCE(o.payment_method, ''))) LIKE '%credit%' THEN 'credit'
-                  WHEN LOWER(TRIM(COALESCE(MAX(o.payment_status), ''))) <> 'paid' THEN 'credit'
+                  WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 'credit'
                   ELSE 'cash'
               END as sale_type,
               SUM(oi.quantity) as total_quantity,
               SUM(oi.quantity * COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)) as total_cost,
               SUM(oi.quantity * oi.price) as gross_sales,
               SUM(oi.quantity * oi.price) as net_sales,
-              COALESCE(o.delivery_fee, 0) as delivery_fee,
+              CASE
+                  WHEN COALESCE(totals.order_item_sales, 0) > 0
+                    THEN COALESCE(o.delivery_fee, 0) * (SUM(oi.quantity * oi.price) / totals.order_item_sales)
+                  ELSE 0
+              END as delivery_fee,
               SUM(
                   oi.quantity * (
                       oi.price - COALESCE(oi.cost_price, psp.cost_price, p.cost_price, 0)
                   )
-              ) as estimated_profit
+              ) as estimated_profit,
+              CASE
+                  WHEN COALESCE(totals.order_item_sales, 0) > 0
+                    THEN COALESCE(o.total_amount, 0) * (SUM(oi.quantity * oi.price) / totals.order_item_sales)
+                  ELSE 0
+              END as order_total
           FROM order_items oi
           JOIN orders o ON o.id = oi.order_id
           JOIN products p ON p.id = oi.product_id
           JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
+          LEFT JOIN (
+              SELECT oi2.order_id, SUM(oi2.quantity * oi2.price) AS order_item_sales
+              FROM order_items oi2
+              JOIN orders o2 ON o2.id = oi2.order_id
+              WHERE o2.status != 'cancelled'
+              GROUP BY oi2.order_id
+          ) totals ON totals.order_id = o.id
           LEFT JOIN product_size_prices psp ON oi.product_id = psp.product_id
               AND (
                   (oi.size_id IS NOT NULL AND psp.size_id = oi.size_id)
@@ -1439,7 +1447,11 @@ router.get(
           ${hasStoreFilter ? "AND COALESCE(oi.store_id, p.store_id) = ?" : ""}
           ${startDate ? "AND DATE(o.created_at) >= ?" : ""}
           ${endDate ? "AND DATE(o.created_at) <= ?" : ""}
-          GROUP BY o.id, o.order_number, o.status, o.created_at, o.delivery_fee, o.payment_method
+          GROUP BY o.id, o.order_number, o.status, o.created_at, o.delivery_fee, o.payment_method,
+                   CASE
+                       WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%credit%' THEN 'credit'
+                       ELSE 'cash'
+                   END
           ORDER BY sale_type ASC, o.created_at DESC, o.order_number DESC
         `,
         queryParams

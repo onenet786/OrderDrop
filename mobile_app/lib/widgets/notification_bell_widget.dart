@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import '../providers/notification_provider.dart' as app_notif;
+import '../providers/auth_provider.dart';
+import '../services/api_service.dart';
 
 class NotificationBellWidget extends StatefulWidget {
   const NotificationBellWidget({super.key});
@@ -265,7 +267,7 @@ class _NotificationPanelState extends State<_NotificationPanel> {
   }
 }
 
-class _NotificationItem extends StatelessWidget {
+class _NotificationItem extends StatefulWidget {
   final app_notif.Notification notification;
   final VoidCallback onTap;
 
@@ -273,6 +275,25 @@ class _NotificationItem extends StatelessWidget {
     required this.notification,
     required this.onTap,
   });
+
+  @override
+  State<_NotificationItem> createState() => _NotificationItemState();
+}
+
+class _NotificationItemState extends State<_NotificationItem> {
+  bool _isMuting = false;
+
+  Map<String, dynamic> get _payload =>
+      widget.notification.payload ?? const {};
+
+  bool get _isStoreDueAlert =>
+      (_payload['type'] ?? '').toString() == 'store_due_alert';
+
+  int get _storeId =>
+      int.tryParse((_payload['store_id'] ?? '').toString()) ?? 0;
+
+  String get _storeName =>
+      (_payload['store_name'] ?? '').toString().trim();
 
   IconData _getIconData(String icon) {
     switch (icon) {
@@ -298,6 +319,8 @@ class _NotificationItem extends StatelessWidget {
         return Icons.schedule;
       case 'store':
         return Icons.store;
+      case 'warning':
+        return Icons.warning_amber;
       default:
         return Icons.info;
     }
@@ -332,10 +355,137 @@ class _NotificationItem extends StatelessWidget {
     }
   }
 
+  Future<void> _muteStoreAlert(int hours) async {
+    if (_isMuting) return;
+    if (_storeId <= 0) return;
+    final auth = context.read<AuthProvider>();
+    final token = auth.token;
+    if (token == null || token.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session expired. Please login again.')),
+      );
+      return;
+    }
+
+    setState(() => _isMuting = true);
+    try {
+      final response = await ApiService.muteStoreGraceAlert(
+        token,
+        _storeId,
+        hours: hours,
+      );
+      if (!mounted) return;
+      if (response['success'] == true) {
+        final label =
+            _storeName.isEmpty ? 'Store due alert muted.' : '$_storeName due alert muted.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(label)),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(response['message'] ?? 'Failed to mute alert')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to mute alert: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isMuting = false);
+    }
+  }
+
+  Future<void> _showCustomMuteDialog() async {
+    final controller = TextEditingController(text: '24');
+    final hours = await showDialog<int>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Mute Due Alert'),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Hours',
+              hintText: 'e.g. 4, 12, 24',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final parsed = int.tryParse(controller.text.trim());
+                Navigator.of(ctx).pop(parsed);
+              },
+              child: const Text('Mute'),
+            ),
+          ],
+        );
+      },
+    );
+
+    final safeHours = (hours ?? 0);
+    if (safeHours > 0) {
+      await _muteStoreAlert(safeHours);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final notification = widget.notification;
+    final canMute = _isStoreDueAlert && _storeId > 0;
+    final showUnread = notification.unread;
+    final trailing = (canMute || showUnread)
+        ? Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (canMute)
+                PopupMenuButton<int>(
+                  icon: _isMuting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.notifications_off_outlined, size: 18),
+                  tooltip: 'Mute due alert',
+                  onSelected: (value) async {
+                    if (value == -1) {
+                      await _showCustomMuteDialog();
+                    } else {
+                      await _muteStoreAlert(value);
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    const PopupMenuItem(value: 1, child: Text('Mute 1 hour')),
+                    const PopupMenuItem(value: 4, child: Text('Mute 4 hours')),
+                    const PopupMenuItem(value: 12, child: Text('Mute 12 hours')),
+                    const PopupMenuItem(value: 24, child: Text('Mute 24 hours')),
+                    const PopupMenuItem(value: 72, child: Text('Mute 3 days')),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(value: -1, child: Text('Custom...')),
+                  ],
+                ),
+              if (showUnread)
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Colors.blue,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+            ],
+          )
+        : const SizedBox.shrink();
+
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -400,15 +550,7 @@ class _NotificationItem extends StatelessWidget {
                 ],
               ),
             ),
-            if (notification.unread)
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: Colors.blue,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
+            if (canMute || showUnread) trailing,
           ],
         ),
       ),

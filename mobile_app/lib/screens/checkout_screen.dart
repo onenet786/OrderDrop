@@ -356,6 +356,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ).pushNamedAndRemoveUntil('/orders', (route) => false);
     } catch (e) {
       if (!mounted) return;
+      if (auth.sessionExpired) return;
       Notifier.error(context, 'Failed to place order: $e');
     } finally {
       if (mounted) {
