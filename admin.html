@@ -1863,23 +1863,14 @@
         <div id="orders" class="tab-content admin-orders-tab">
           <div class="orders-hero">
             <div class="orders-hero-copy">
-              <span class="orders-eyebrow">Operations Desk</span>
               <h2>Orders Management</h2>
-              <p>Monitor incoming orders, filter the queue, assign riders, and update fulfillment without leaving this workspace.</p>
             </div>
-            <div class="orders-hero-actions">
-              <button class="btn btn-primary" id="openManualOrderBtn">
-                <i class="fas fa-plus"></i> Create Manual Order
-              </button>
-            </div>
+            <span class="orders-eyebrow">Operations Desk</span>
           </div>
 
           <div class="orders-filter-card">
             <div class="orders-section-head">
-              <div>
-                <h3>Filter Queue</h3>
-                <p>Refine the order list by date, assignment, rider, status, or store.</p>
-              </div>
+              <h3>Filter Queue <span class="orders-section-inline-copy">(Refine the order list by date, assignment, rider, status, or store.)</span></h3>
               <span class="orders-section-pill">Live Queue</span>
             </div>
 
@@ -1958,11 +1949,12 @@
 
           <div class="orders-table-card">
             <div class="orders-section-head">
-              <div>
-                <h3>Orders Table</h3>
-                <p>Review the current queue, open details, and edit order assignments or statuses.</p>
+              <h3>Orders Table <span class="orders-section-inline-copy">(Review the current queue, open details, and edit order assignments or statuses.)</span></h3>
+              <div class="orders-table-actions">
+                <button class="btn btn-primary" id="openManualOrderBtn">
+                  <i class="fas fa-plus"></i> Create Manual Order
+                </button>
               </div>
-              <span class="orders-section-pill orders-section-pill-muted">Scrollable Table</span>
             </div>
 
             <div class="table-container orders-table-wrap">
