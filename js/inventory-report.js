@@ -134,6 +134,18 @@ function inventoryFinancialRule(mode) {
     return "-";
 }
 
+function resolveManualDeliveryFee(item) {
+    const fee = Number(item?.delivery_fee);
+    if (Number.isFinite(fee) && fee > 0) return fee;
+    const orderTotal = Number(item?.order_total);
+    const gross = Number(item?.gross_sales);
+    const discount = Number(item?.total_discount);
+    if (!Number.isFinite(orderTotal) || !Number.isFinite(gross)) return 0;
+    const net = gross - (Number.isFinite(discount) ? discount : 0);
+    const derived = orderTotal - net;
+    return derived > 0 ? derived : 0;
+}
+
 function calculateUniqueOrderTotal(rows) {
     const seenOrderIds = new Set();
     return (rows || []).reduce((sum, item) => {
@@ -141,6 +153,17 @@ function calculateUniqueOrderTotal(rows) {
         if (!orderKey || seenOrderIds.has(orderKey)) return sum;
         seenOrderIds.add(orderKey);
         return sum + (Number(item.order_total || 0) || 0);
+    }, 0);
+}
+
+function calculateUniqueDeliveryFee(rows, resolver) {
+    const seenOrderIds = new Set();
+    return (rows || []).reduce((sum, item) => {
+        const orderKey = String(item.order_id || item.order_number || "");
+        if (!orderKey || seenOrderIds.has(orderKey)) return sum;
+        seenOrderIds.add(orderKey);
+        const resolved = resolver ? resolver(item) : Number(item.delivery_fee || 0) || 0;
+        return sum + (Number(resolved) || 0);
     }, 0);
 }
 
@@ -539,7 +562,7 @@ function displayManualOrderSalesReport(data) {
     currentManualSalesRows = rows;
     if (!rows.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="13" style="text-align:center;">No manual-order product sales found for the selected scope.</td>`;
+        row.innerHTML = `<td colspan="14" style="text-align:center;">No manual-order product sales found for the selected scope.</td>`;
         tbody.appendChild(row);
         return;
     }
@@ -562,6 +585,7 @@ function displayManualOrderSalesReport(data) {
             <td>${inventoryMoney(item.gross_sales)}</td>
             <td>${inventoryMoney(item.net_sales)}</td>
             <td>${inventoryMoney(item.estimated_profit)}</td>
+            <td>${inventoryMoney(resolveManualDeliveryFee(item))}</td>
             <td>${inventoryMoney(item.order_total)}</td>
         `;
         row.addEventListener("dblclick", () => {
@@ -584,6 +608,7 @@ function displayManualOrderSalesReport(data) {
             if (orderKey && !seenOrderIds.has(orderKey)) {
                 seenOrderIds.add(orderKey);
                 acc.orderTotal += Number(item.order_total || 0) || 0;
+                acc.deliveryFee += resolveManualDeliveryFee(item);
             }
             return acc;
         }, {
@@ -594,6 +619,7 @@ function displayManualOrderSalesReport(data) {
             grossSales: 0,
             netSales: 0,
             profit: 0,
+            deliveryFee: 0,
             orderTotal: 0,
         });
 
@@ -607,6 +633,7 @@ function displayManualOrderSalesReport(data) {
                 <td>${inventoryMoney(totals.grossSales)}</td>
                 <td>${inventoryMoney(totals.netSales)}</td>
                 <td>${inventoryMoney(totals.profit)}</td>
+                <td>${inventoryMoney(totals.deliveryFee)}</td>
                 <td>${inventoryMoney(totals.orderTotal)}</td>
             </tr>
         `;
@@ -624,7 +651,7 @@ function displayStoreProductSalesReport(data) {
     currentStoreProductSalesRows = rows;
     if (!rows.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="13" style="text-align:center;">No store product sales found for the selected scope.</td>`;
+        row.innerHTML = `<td colspan="14" style="text-align:center;">No store product sales found for the selected scope.</td>`;
         tbody.appendChild(row);
         return;
     }
@@ -647,6 +674,7 @@ function displayStoreProductSalesReport(data) {
             <td>${inventoryMoney(item.gross_sales)}</td>
             <td>${inventoryMoney(item.net_sales)}</td>
             <td>${inventoryMoney(item.estimated_profit)}</td>
+            <td>${inventoryMoney(item.delivery_fee ?? 0)}</td>
             <td>${inventoryMoney(item.order_total)}</td>
         `;
         row.addEventListener("dblclick", () => {
@@ -669,6 +697,7 @@ function displayStoreProductSalesReport(data) {
             if (orderKey && !seenOrderIds.has(orderKey)) {
                 seenOrderIds.add(orderKey);
                 acc.orderTotal += Number(item.order_total || 0) || 0;
+                acc.deliveryFee += Number(item.delivery_fee || 0) || 0;
             }
             return acc;
         }, {
@@ -679,6 +708,7 @@ function displayStoreProductSalesReport(data) {
             grossSales: 0,
             netSales: 0,
             profit: 0,
+            deliveryFee: 0,
             orderTotal: 0,
         });
 
@@ -692,6 +722,7 @@ function displayStoreProductSalesReport(data) {
                 <td>${inventoryMoney(totals.grossSales)}</td>
                 <td>${inventoryMoney(totals.netSales)}</td>
                 <td>${inventoryMoney(totals.profit)}</td>
+                <td>${inventoryMoney(totals.deliveryFee)}</td>
                 <td>${inventoryMoney(totals.orderTotal)}</td>
             </tr>
         `;
@@ -709,7 +740,7 @@ function displayCombinedProductSalesReport(data) {
     currentCombinedProductSalesRows = rows;
     if (!rows.length) {
         const row = document.createElement("tr");
-        row.innerHTML = `<td colspan="14" style="text-align:center;">No product sales found for the selected scope.</td>`;
+        row.innerHTML = `<td colspan="15" style="text-align:center;">No product sales found for the selected scope.</td>`;
         tbody.appendChild(row);
         return;
     }
@@ -733,6 +764,7 @@ function displayCombinedProductSalesReport(data) {
             <td>${inventoryMoney(item.gross_sales)}</td>
             <td>${inventoryMoney(item.net_sales)}</td>
             <td>${inventoryMoney(item.estimated_profit)}</td>
+            <td>${inventoryMoney(item.delivery_fee ?? 0)}</td>
             <td>${inventoryMoney(item.order_total)}</td>
         `;
         row.addEventListener("dblclick", () => {
@@ -755,6 +787,7 @@ function displayCombinedProductSalesReport(data) {
             if (orderKey && !seenOrderIds.has(orderKey)) {
                 seenOrderIds.add(orderKey);
                 acc.orderTotal += Number(item.order_total || 0) || 0;
+                acc.deliveryFee += Number(item.delivery_fee || 0) || 0;
             }
             return acc;
         }, {
@@ -765,6 +798,7 @@ function displayCombinedProductSalesReport(data) {
             grossSales: 0,
             netSales: 0,
             profit: 0,
+            deliveryFee: 0,
             orderTotal: 0,
         });
 
@@ -778,6 +812,7 @@ function displayCombinedProductSalesReport(data) {
                 <td>${inventoryMoney(totals.grossSales)}</td>
                 <td>${inventoryMoney(totals.netSales)}</td>
                 <td>${inventoryMoney(totals.profit)}</td>
+                <td>${inventoryMoney(totals.deliveryFee)}</td>
                 <td>${inventoryMoney(totals.orderTotal)}</td>
             </tr>
         `;
@@ -1472,7 +1507,7 @@ function exportInventoryReportPdf() {
             inventoryNumber(totals.customers),
         ]);
     } else if (activeType === "manual-sales") {
-        tableHead = [["Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Order Total"]];
+        tableHead = [["Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Delivery Fee", "Order Total"]];
         const rows = currentManualSalesRows || [];
         tableBody = rows.map((r) => [
             r.store_name,
@@ -1487,6 +1522,7 @@ function exportInventoryReportPdf() {
             inventoryMoney(r.gross_sales),
             inventoryMoney(r.net_sales),
             inventoryMoney(r.estimated_profit),
+            inventoryMoney(r.delivery_fee ?? 0),
             inventoryMoney(r.order_total),
         ]);
         const totals = rows.reduce((acc, r) => {
@@ -1512,10 +1548,11 @@ function exportInventoryReportPdf() {
             inventoryMoney(totals.grossSales),
             inventoryMoney(totals.netSales),
             inventoryMoney(totals.profit),
+            inventoryMoney(calculateUniqueDeliveryFee(rows, resolveManualDeliveryFee)),
             inventoryMoney(calculateUniqueOrderTotal(rows)),
         ]);
     } else if (activeType === "store-product-sales") {
-        tableHead = [["Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Order Total"]];
+        tableHead = [["Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Delivery Fee", "Order Total"]];
         const rows = currentStoreProductSalesRows || [];
         tableBody = rows.map((r) => [
             r.store_name,
@@ -1530,6 +1567,7 @@ function exportInventoryReportPdf() {
             inventoryMoney(r.gross_sales),
             inventoryMoney(r.net_sales),
             inventoryMoney(r.estimated_profit),
+            inventoryMoney(r.delivery_fee ?? 0),
             inventoryMoney(r.order_total),
         ]);
         const totals = rows.reduce((acc, r) => {
@@ -1555,10 +1593,11 @@ function exportInventoryReportPdf() {
             inventoryMoney(totals.grossSales),
             inventoryMoney(totals.netSales),
             inventoryMoney(totals.profit),
+            inventoryMoney(calculateUniqueDeliveryFee(rows)),
             inventoryMoney(calculateUniqueOrderTotal(rows)),
         ]);
     } else if (activeType === "combined-product-sales") {
-        tableHead = [["Sale Type", "Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Order Total"]];
+        tableHead = [["Sale Type", "Store", "Category", "Product", "Order Number", "Status", "Cost Price", "Sale Price", "Qty Sold", "Cost x Qty", "Gross Sales", "Net Sales", "Profit", "Delivery Fee", "Order Total"]];
         const rows = currentCombinedProductSalesRows || [];
         tableBody = rows.map((r) => [
             inventoryTitleCase(r.sale_type || "-"),
@@ -1574,6 +1613,7 @@ function exportInventoryReportPdf() {
             inventoryMoney(r.gross_sales),
             inventoryMoney(r.net_sales),
             inventoryMoney(r.estimated_profit),
+            inventoryMoney(r.delivery_fee ?? 0),
             inventoryMoney(r.order_total),
         ]);
         const totals = rows.reduce((acc, r) => {
@@ -1600,6 +1640,7 @@ function exportInventoryReportPdf() {
             inventoryMoney(totals.grossSales),
             inventoryMoney(totals.netSales),
             inventoryMoney(totals.profit),
+            inventoryMoney(calculateUniqueDeliveryFee(rows)),
             inventoryMoney(calculateUniqueOrderTotal(rows)),
         ]);
     } else if (activeType === "sales-with-delivery") {

@@ -423,11 +423,11 @@
 
         <div id="dashboard" class="tab-content active">
           <h2>Dashboard Overview</h2>
-          <div class="stats-grid" style="grid-template-columns: 1fr">
-            <div>
+          <div class="stats-grid dashboard-overview-grid" style="grid-template-columns: 1fr">
+            <div class="dashboard-overview-panel">
               <h3>Today's Orders</h3>
               <div
-                class="stats-grid"
+                class="stats-grid dashboard-order-cards"
                 style="grid-template-columns: repeat(4, 1fr)"
               >
                 <div class="stat-card dash-card dash-card-info">
@@ -449,7 +449,7 @@
               </div>
               <h3 style="margin-top: 1.5rem">All Orders</h3>
               <div
-                class="stats-grid"
+                class="stats-grid dashboard-order-cards"
                 style="grid-template-columns: repeat(4, 1fr)"
               >
                 <div class="stat-card dash-card dash-card-info">
@@ -1860,113 +1860,143 @@
 
         <!-- Orders Tab -->
 
-        <div id="orders" class="tab-content">
-          <h2>Orders Management</h2>
-          <div style="margin-bottom: 0.85rem;">
-            <button class="btn btn-primary" id="openManualOrderBtn">
-              <i class="fas fa-plus"></i> Create Manual Order
-            </button>
+        <div id="orders" class="tab-content admin-orders-tab">
+          <div class="orders-hero">
+            <div class="orders-hero-copy">
+              <span class="orders-eyebrow">Operations Desk</span>
+              <h2>Orders Management</h2>
+              <p>Monitor incoming orders, filter the queue, assign riders, and update fulfillment without leaving this workspace.</p>
+            </div>
+            <div class="orders-hero-actions">
+              <button class="btn btn-primary" id="openManualOrderBtn">
+                <i class="fas fa-plus"></i> Create Manual Order
+              </button>
+            </div>
           </div>
 
-          <!-- Filters -->
-          <div class="filter-controls">
-            <div class="filter-group">
-                <label for="orderDatePreset">Date Mode</label>
-                <select id="orderDatePreset" class="form-control">
-                    <option value="today" selected>Today</option>
-                    <option value="custom">Custom Range</option>
-                </select>
+          <div class="orders-filter-card">
+            <div class="orders-section-head">
+              <div>
+                <h3>Filter Queue</h3>
+                <p>Refine the order list by date, assignment, rider, status, or store.</p>
+              </div>
+              <span class="orders-section-pill">Live Queue</span>
             </div>
-            <div class="filter-group">
-                <label for="filterStartDate">From Date</label>
-                <input type="date" id="filterStartDate" class="form-control">
+
+            <div class="filter-controls orders-filter-grid">
+              <div class="filter-group">
+                  <label for="orderDatePreset">Date Mode</label>
+                  <select id="orderDatePreset" class="form-control">
+                      <option value="today" selected>Today</option>
+                      <option value="custom">Custom Range</option>
+                  </select>
+              </div>
+              <div class="filter-group">
+                  <label for="filterStartDate">From Date</label>
+                  <input type="date" id="filterStartDate" class="form-control">
+              </div>
+              <div class="filter-group">
+                  <label for="filterEndDate">To Date</label>
+                  <input type="date" id="filterEndDate" class="form-control">
+              </div>
+              <div class="filter-group">
+                  <label for="filterAssignment">Assignment</label>
+                  <div class="search-input-wrapper">
+                      <i class="fas fa-user-check search-icon" style="top: 2.5rem;"></i>
+                      <input type="text" id="filterAssignment" class="form-control" list="filterAssignmentList" placeholder="Type assignment..." style="padding-left: 2.5rem;">
+                      <datalist id="filterAssignmentList">
+                          <option value="All Assignments"></option>
+                          <option value="Unassigned"></option>
+                          <option value="Assigned"></option>
+                      </datalist>
+                  </div>
+              </div>
+              <div class="filter-group">
+                  <label for="filterRider">Rider</label>
+                  <div class="search-input-wrapper">
+                      <i class="fas fa-motorcycle search-icon" style="top: 2.5rem;"></i>
+                      <input type="text" id="filterRider" class="form-control" list="filterRiderList" placeholder="Type rider..." style="padding-left: 2.5rem;">
+                      <datalist id="filterRiderList">
+                          <option value="All Riders"></option>
+                      </datalist>
+                  </div>
+              </div>
+              <div class="filter-group">
+                  <label for="filterStatus">Status</label>
+                  <div class="search-input-wrapper">
+                      <i class="fas fa-tasks search-icon" style="top: 2.5rem;"></i>
+                      <input type="text" id="filterStatus" class="form-control" list="filterStatusList" placeholder="Type status..." style="padding-left: 2.5rem;">
+                      <datalist id="filterStatusList">
+                          <option value="All Statuses"></option>
+                          <option value="Pending"></option>
+                          <option value="Confirmed"></option>
+                          <option value="Preparing"></option>
+                          <option value="Ready"></option>
+                          <option value="Out for Delivery"></option>
+                          <option value="Delivered"></option>
+                          <option value="Cancelled"></option>
+                      </datalist>
+                  </div>
+              </div>
+              <div class="filter-group">
+                  <label for="filterStore">Store</label>
+                  <div class="search-input-wrapper">
+                      <i class="fas fa-store search-icon" style="top: 2.5rem;"></i>
+                      <input type="text" id="filterStore" class="form-control" list="filterStoreList" placeholder="Type store..." style="padding-left: 2.5rem;">
+                      <datalist id="filterStoreList">
+                          <option value="All Stores"></option>
+                      </datalist>
+                  </div>
+              </div>
+              <div class="orders-filter-actions">
+                <button class="btn btn-secondary" id="clearFiltersBtn">
+                    <i class="fas fa-times"></i> Clear
+                </button>
+              </div>
             </div>
-            <div class="filter-group">
-                <label for="filterEndDate">To Date</label>
-                <input type="date" id="filterEndDate" class="form-control">
-            </div>
-            <div class="filter-group">
-                <label for="filterAssignment">Assignment</label>
-                <div class="search-input-wrapper">
-                    <i class="fas fa-user-check search-icon" style="top: 2.5rem;"></i>
-                    <input type="text" id="filterAssignment" class="form-control" list="filterAssignmentList" placeholder="Type assignment..." style="padding-left: 2.5rem;">
-                    <datalist id="filterAssignmentList">
-                        <option value="All Assignments"></option>
-                        <option value="Unassigned"></option>
-                        <option value="Assigned"></option>
-                    </datalist>
-                </div>
-            </div>
-            <div class="filter-group">
-                <label for="filterRider">Rider</label>
-                <div class="search-input-wrapper">
-                    <i class="fas fa-motorcycle search-icon" style="top: 2.5rem;"></i>
-                    <input type="text" id="filterRider" class="form-control" list="filterRiderList" placeholder="Type rider..." style="padding-left: 2.5rem;">
-                    <datalist id="filterRiderList">
-                        <option value="All Riders"></option>
-                    </datalist>
-                </div>
-            </div>
-            <div class="filter-group">
-                <label for="filterStatus">Status</label>
-                <div class="search-input-wrapper">
-                    <i class="fas fa-tasks search-icon" style="top: 2.5rem;"></i>
-                    <input type="text" id="filterStatus" class="form-control" list="filterStatusList" placeholder="Type status..." style="padding-left: 2.5rem;">
-                    <datalist id="filterStatusList">
-                        <option value="All Statuses"></option>
-                        <option value="Pending"></option>
-                        <option value="Confirmed"></option>
-                        <option value="Preparing"></option>
-                        <option value="Ready"></option>
-                        <option value="Out for Delivery"></option>
-                        <option value="Delivered"></option>
-                        <option value="Cancelled"></option>
-                    </datalist>
-                </div>
-            </div>
-            <div class="filter-group">
-                <label for="filterStore">Store</label>
-                <div class="search-input-wrapper">
-                    <i class="fas fa-store search-icon" style="top: 2.5rem;"></i>
-                    <input type="text" id="filterStore" class="form-control" list="filterStoreList" placeholder="Type store..." style="padding-left: 2.5rem;">
-                    <datalist id="filterStoreList">
-                        <option value="All Stores"></option>
-                    </datalist>
-                </div>
-            </div>
-            <button class="btn btn-secondary" id="clearFiltersBtn" style="align-self: flex-end; margin-bottom: 2px;">
-                <i class="fas fa-times"></i> Clear
-            </button>
           </div>
 
-          <div class="table-container">
-            <table id="ordersTable">
-              <thead>
-                <tr>
-                  <th>Order Number</th>
+          <div class="orders-table-card">
+            <div class="orders-section-head">
+              <div>
+                <h3>Orders Table</h3>
+                <p>Review the current queue, open details, and edit order assignments or statuses.</p>
+              </div>
+              <span class="orders-section-pill orders-section-pill-muted">Scrollable Table</span>
+            </div>
 
-                  <th>Customer</th>
+            <div class="table-container orders-table-wrap">
+              <table id="ordersTable">
+                <colgroup>
+                  <col class="orders-col-order-number">
+                  <col class="orders-col-customer">
+                  <col class="orders-col-store">
+                  <col class="orders-col-total">
+                  <col class="orders-col-status">
+                  <col class="orders-col-rider">
+                  <col class="orders-col-rider-location">
+                  <col class="orders-col-date">
+                  <col class="orders-col-actions">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Order Number</th>
+                    <th>Customer</th>
+                    <th>Store</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Assigned Rider</th>
+                    <th><span class="orders-th-stack"><span>Rider</span><span>Location</span></span></th>
+                    <th><span class="orders-th-stack"><span>Order Date</span><span>&amp; Time</span></span></th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
 
-                  <th>Store</th>
-
-                  <th>Total</th>
-
-                  <th>Status</th>
-
-                  <th>Assigned Rider</th>
-
-                  <th>Rider Location</th>
-
-                  <th>Date</th>
-
-                  <th>Actions</th>
-                </tr>
-              </thead>
-
-              <tbody id="ordersTableBody">
-                <!-- Orders will be loaded here -->
-              </tbody>
-            </table>
+                <tbody id="ordersTableBody">
+                  <!-- Orders will be loaded here -->
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -2564,6 +2594,7 @@
                     <th>Gross Sales</th>
                     <th>Net Sales</th>
                     <th>Profit</th>
+                    <th>Delivery Fee</th>
                     <th>Order Total</th>
                   </tr>
                 </thead>
@@ -2598,6 +2629,7 @@
                     <th>Gross Sales</th>
                     <th>Net Sales</th>
                     <th>Profit</th>
+                    <th>Delivery Fee</th>
                     <th>Order Total</th>
                   </tr>
                 </thead>
@@ -2633,6 +2665,7 @@
                     <th>Gross Sales</th>
                     <th>Net Sales</th>
                     <th>Profit</th>
+                    <th>Delivery Fee</th>
                     <th>Order Total</th>
                   </tr>
                 </thead>
@@ -4633,7 +4666,7 @@
     <script src="js/financial_helpers.js" defer></script>
     <script src="js/financial.js?v=19" defer></script>
     <script src="js/admin.js?v=27" defer></script>
-    <script src="js/inventory-report.js" defer></script>
+    <script src="js/inventory-report.js?v=2" defer></script>
     <script>
       const hamburgerMenu = document.getElementById("hamburgerMenu");
       const appSidebar = document.getElementById("appSidebar");

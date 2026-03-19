@@ -297,7 +297,6 @@ function scheduleGlobalDeliveryAutoRefresh(status) {
 let currentUser = null;
 let authToken = localStorage.getItem("serveNowToken");
 
-// Navigation management
 function updateNavigation() {
   const token = localStorage.getItem("serveNowToken");
   const userStr = localStorage.getItem("serveNowUser");

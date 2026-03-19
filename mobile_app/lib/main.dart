@@ -399,12 +399,24 @@ class _AppUpdateOverlayState extends State<_AppUpdateOverlay>
 
   int _compareVersionStrings(String current, String target) {
     List<int> parseParts(String value) {
-      final cleaned = value.split('+').first.trim();
-      if (cleaned.isEmpty) return const <int>[0];
-      return cleaned
+      final trimmed = value.trim();
+      var versionPart = trimmed;
+      var buildNumber = 0;
+      if (trimmed.contains('+')) {
+        final parts = trimmed.split('+');
+        versionPart = parts.first.trim();
+        if (parts.length > 1) {
+          buildNumber =
+              int.tryParse(parts[1].replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+        }
+      }
+      if (versionPart.isEmpty) return <int>[0, buildNumber];
+      final versionParts = versionPart
           .split('.')
           .map((part) => int.tryParse(part.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
           .toList();
+      versionParts.add(buildNumber);
+      return versionParts;
     }
 
     final currentParts = parseParts(current);

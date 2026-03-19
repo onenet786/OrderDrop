@@ -71,9 +71,45 @@
             <div id="toastContainer" class="toast-container"></div>
 
             <section class="hero">
-                <h2>Welcome to ServeNow</h2>
-                <p>Get fresh groceries, cooked food, and household items delivered to your doorstep from registered stores near you.</p>
-                <button id="getLocation">Find Stores Near Me</button>
+                <div class="hero-shell">
+                    <div class="hero-copy">
+                        <span class="hero-kicker">Fast local delivery, one clean dashboard</span>
+                        <h2>Everything your neighborhood needs, delivered with less friction.</h2>
+                        <p>Order fresh groceries, cooked food, and household essentials from registered stores near you, with live availability and a smoother ordering experience from search to checkout.</p>
+                        <div class="hero-actions">
+                            <button id="getLocation">Find Stores Near Me</button>
+                            <a href="stores.html" class="hero-secondary-link">
+                                <i class="fas fa-store"></i>
+                                Browse All Stores
+                            </a>
+                        </div>
+                        <div class="hero-stats" aria-label="ServeNow highlights">
+                            <div class="hero-stat">
+                                <strong>Live stores</strong>
+                                <span>Real-time listings from your area</span>
+                            </div>
+                            <div class="hero-stat">
+                                <strong>Flexible orders</strong>
+                                <span>Groceries, cooked food, and daily needs</span>
+                            </div>
+                            <div class="hero-stat">
+                                <strong>Faster repeat buying</strong>
+                                <span>Wallet, cart, and order history in one place</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hero-panel">
+                        <div class="hero-panel-card">
+                            <span class="hero-panel-label">Today on ServeNow</span>
+                            <h3>Search quickly. Compare confidently. Order locally.</h3>
+                            <ul class="hero-panel-list">
+                                <li><i class="fas fa-location-dot"></i><span>Use location to find nearby stores faster.</span></li>
+                                <li><i class="fas fa-basket-shopping"></i><span>Mix essentials and prepared food from trusted sellers.</span></li>
+                                <li><i class="fas fa-receipt"></i><span>Track orders and payments without leaving your account.</span></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <section id="globalDeliveryWidget" class="global-delivery-widget" style="display: none;"></section>
@@ -100,7 +136,11 @@
 
             <div id="categoriesSection">
                 <section class="categories">
-                    <h3 style="margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700;">Shop by Category</h3>
+                    <div class="section-heading">
+                        <span class="section-eyebrow">Explore</span>
+                        <h3>Shop by Category</h3>
+                        <p class="section-copy">Jump straight into the kind of order you want to place today.</p>
+                    </div>
                     <div class="category-grid">
                         <!-- Static Fallback Categories -->
                         <div class="category-card">
@@ -137,7 +177,11 @@
 
             <div id="searchResultsSection" class="hidden" style="display: none;">
                 <section class="featured-stores" style="margin-top: 3rem;">
-                    <h3 style="margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700;">Matching Results</h3>
+                    <div class="section-heading">
+                        <span class="section-eyebrow">Results</span>
+                        <h3>Matching Results</h3>
+                        <p class="section-copy">Stores and products that match your current search and filter choices.</p>
+                    </div>
                     <div class="store-grid" id="searchResultsGrid">
                         <!-- Search results will be loaded here -->
                     </div>
@@ -145,7 +189,11 @@
             </div>
 
             <section class="featured-stores" id="allStoresSection" style="margin-top: 3rem;">
-                <h3 style="margin-bottom: 1rem; font-size: 1.5rem; font-weight: 700;">All Stores</h3>
+                <div class="section-heading">
+                    <span class="section-eyebrow">Discover</span>
+                    <h3>All Stores</h3>
+                    <p class="section-copy">Browse the latest registered stores and scroll through everything currently available.</p>
+                </div>
                 <div class="scroll-wrapper">
                     <button id="scrollLeftBtn" class="scroll-arrow left-arrow" style="display: none;"><i class="fas fa-chevron-left"></i></button>
                     <div class="horizontal-scroll-container" id="allStoresHorizontal">

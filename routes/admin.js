@@ -975,6 +975,7 @@ router.get(
               o.status as order_status,
               o.created_at as sold_at,
               COALESCE(o.total_amount, 0) as order_total,
+              COALESCE(o.delivery_fee, 0) as delivery_fee,
               s.id as store_id,
               s.name as store_name,
               c.name as category_name,
@@ -1064,6 +1065,7 @@ router.get(
             average_sale_price: salePrice,
             unique_customers: 1,
             order_total: parseFloat(row.order_total) || 0,
+            delivery_fee: parseFloat(row.delivery_fee) || 0,
             last_sold_at: row.sold_at || null,
             order_numbers: String(row.order_number || "").trim(),
           };
@@ -1121,6 +1123,7 @@ router.get(
               o.status as order_status,
               o.created_at as sold_at,
               COALESCE(o.total_amount, 0) as order_total,
+              COALESCE(o.delivery_fee, 0) as delivery_fee,
               s.id as store_id,
               s.name as store_name,
               c.name as category_name,
@@ -1214,6 +1217,7 @@ router.get(
             average_sale_price: salePrice,
             unique_customers: 1,
             order_total: parseFloat(row.order_total) || 0,
+            delivery_fee: parseFloat(row.delivery_fee) || 0,
             last_sold_at: row.sold_at || null,
             order_numbers: String(row.order_number || "").trim(),
           };

@@ -273,9 +273,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   if (trimmed.isEmpty) {
                                     return 'Phone number is required';
                                   }
-                                  if (!RegExp(r'^\\+923\\d{9}$')
+                                  if (!RegExp(r'^\+923\d{9}$')
                                       .hasMatch(trimmed)) {
-                                    return 'Use format +923xxxxxxxxx';
+                                    return 'Use +923 followed by 9 digits';
                                   }
                                   return null;
                                 },
@@ -440,7 +440,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     _updatingPhone = true;
-    final digitsOnly = text.replaceAll(RegExp(r'\\D'), '');
+    final digitsOnly = text.replaceAll(RegExp(r'\D'), '');
     String suffix = digitsOnly;
     if (digitsOnly.startsWith('923')) {
       suffix = digitsOnly.substring(3);

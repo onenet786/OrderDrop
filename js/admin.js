@@ -4399,12 +4399,22 @@ function ensureOrderDateFiltersDefault(force = false) {
     const endInput = document.getElementById('filterEndDate');
     if (!startInput || !endInput) return;
     const today = getTodayDateString();
-    if (force || !startInput.value) startInput.value = today;
-    if (force || !endInput.value) endInput.value = today;
     const preset = document.getElementById('orderDatePreset');
+    const presetValue = String(preset?.value || '').toLowerCase();
+    const shouldUseToday = force || !presetValue || presetValue === 'today';
+
     if (preset && (force || !preset.value)) {
         preset.value = 'today';
     }
+
+    if (shouldUseToday) {
+        startInput.value = today;
+        endInput.value = today;
+        return;
+    }
+
+    if (!startInput.value) startInput.value = today;
+    if (!endInput.value) endInput.value = today;
 }
 
 function applyOrderDatePreset(mode, triggerLoad = false) {
@@ -4610,6 +4620,23 @@ function displayOrders(orders = AppState.orders) {
 
     if (!orders || !Array.isArray(orders)) return;
 
+    const formatOrderDateTime = (value) => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return { date: '-', time: '' };
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = date.toLocaleString('en-GB', { month: 'short' });
+        const year = date.getFullYear();
+        const time = date.toLocaleString('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+        return {
+            date: `${day}-${month}-${year}`,
+            time
+        };
+    };
+
     const formatOrderDuration = (startRaw, endRaw) => {
         const start = new Date(startRaw);
         const end = new Date(endRaw);
@@ -4634,6 +4661,15 @@ function displayOrders(orders = AppState.orders) {
         const row = document.createElement('tr');
         const preferredDeliveryTime = order.delivery_time ? escapeHtml(String(order.delivery_time)) : '';
         const specialInstructions = order.special_instructions ? escapeHtml(String(order.special_instructions)) : '';
+        const riderLocationHtml = order.rider_latitude && order.rider_longitude
+            ? `
+                <span class="orders-location-line">${Number(order.rider_latitude).toFixed(4)},</span>
+                <span class="orders-location-line">${Number(order.rider_longitude).toFixed(4)}</span>
+              `
+            : `
+                <span class="orders-location-line">${escapeHtml(String(order.rider_location || 'N/A'))}</span>
+              `;
+        const orderDateTime = formatOrderDateTime(order.created_at);
         const hasCustomerAlert = Boolean(preferredDeliveryTime || specialInstructions);
         const indicatorColor = getOrderIndicatorColor(order.status);
         const indicatorClass = shouldAnimateOrderIndicator(order.status)
@@ -4643,25 +4679,27 @@ function displayOrders(orders = AppState.orders) {
             ? escapeHtml(buildOrderCustomerAlertSummary(order))
             : '';
         const customerHtml = `
-            <div style="display:flex; flex-direction:column; gap:2px;">
-                <span style="font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+            <div class="orders-customer-cell">
+                <span class="orders-customer-name">
                     ${hasCustomerAlert ? `<span class="${indicatorClass}" style="--order-indicator-color:${indicatorColor};" title="${alertSummary}"></span>` : ''}
                     <span>${order.first_name} ${order.last_name}</span>
                 </span>
-                ${preferredDeliveryTime ? `<span style="font-size:11px; color:#64748b;">Preferred Time: ${preferredDeliveryTime}</span>` : ''}
-                ${specialInstructions ? `<span style="font-size:11px; color:#64748b;">Instructions: ${specialInstructions}</span>` : ''}
+                ${preferredDeliveryTime ? `<span class="orders-cell-meta">Preferred Time: ${preferredDeliveryTime}</span>` : ''}
+                ${specialInstructions ? `<span class="orders-cell-meta">Instructions: ${specialInstructions}</span>` : ''}
             </div>
         `;
 
         const isDelivered = String(order.status || '').toLowerCase() === 'delivered';
+        const isCancelled = String(order.status || '').toLowerCase() === 'cancelled';
+        const isLockedOrder = isDelivered || isCancelled;
         const deliveredAt = order.delivered_at || order.completed_at || order.updated_at;
         const timeTaken = isDelivered
             ? formatOrderDuration(order.created_at, deliveredAt || order.created_at)
             : 'In Progress';
         const orderNumberHtml = `
-            <div style="display:flex; flex-direction:column; gap:2px;">
+            <div class="orders-number-cell">
                 <span style="font-weight:700;">${order.order_number}</span>
-                <span style="font-size:11px; color:#64748b;">Time Taken: ${timeTaken}</span>
+                <span class="orders-cell-meta">Time Taken: ${timeTaken}</span>
             </div>
         `;
         
@@ -4723,18 +4761,24 @@ function displayOrders(orders = AppState.orders) {
             <td>PKR ${parseFloat(order.total_amount).toFixed(2)}</td>
             <td>${statusHtml}</td>
             <td>${riderName}</td>
-            <td>${order.rider_latitude && order.rider_longitude ? 
-                `${Number(order.rider_latitude).toFixed(4)}, ${Number(order.rider_longitude).toFixed(4)}` : 
-                (order.rider_location || 'N/A')}</td>
-            <td>${new Date(order.created_at).toLocaleDateString()}</td>
+            <td class="orders-location-cell">
+                <div class="orders-location-stack">${riderLocationHtml}</div>
+            </td>
+            <td class="orders-date-cell">
+                <div class="orders-date-stack">
+                    <span class="orders-date-primary">${orderDateTime.date}</span>
+                    <span class="orders-date-secondary">${orderDateTime.time}</span>
+                </div>
+            </td>
             <td>
                 <div class="action-buttons">
                     <button class="btn-small btn-info" onclick="viewOrderDetails(${order.id})">
                         <i class="fas fa-eye"></i> View
                     </button>
+                    ${isLockedOrder ? '' : `
                     <button class="btn-small btn-edit" onclick="editOrder(${order.id})">
                         <i class="fas fa-edit"></i> Edit
-                    </button>
+                    </button>`}
                 </div>
             </td>
         `;
@@ -5811,6 +5855,13 @@ async function editOrder(orderId) {
             return;
         }
 
+        const existingOrder = AppState.orders.find(o => o.id == orderId);
+        const existingStatus = String(existingOrder?.status || '').toLowerCase();
+        if (existingStatus === 'delivered') {
+            showWarning('Delivered Order Locked', 'Delivered orders cannot be edited. You can only view them.');
+            return;
+        }
+
         const ridersPromise = fetch(`${API_BASE}/api/orders/available-riders`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         })
@@ -5850,8 +5901,14 @@ async function editOrder(orderId) {
             return;
         }
 
-        if (freshOrder.status === 'delivered' || freshOrder.status === 'cancelled') {
-            showWarning('Cannot Edit', `Cannot edit items for ${freshOrder.status} orders. You can only change status and rider details.`);
+        if (freshOrder.status === 'delivered') {
+            showWarning('Delivered Order Locked', 'Delivered orders cannot be edited. You can only view them.');
+            return;
+        }
+
+        if (freshOrder.status === 'cancelled') {
+            showWarning('Cannot Edit', 'Cancelled orders cannot be edited.');
+            return;
         }
 
         const ridersData = await ridersPromise;
@@ -6081,6 +6138,18 @@ async function saveOrder() {
     const storeId = formData.get('store_id') || null;
 
     try {
+        const freshOrderResponse = await fetch(`${API_BASE}/api/orders/${orderId}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const freshOrderData = await freshOrderResponse.json();
+        const latestStatus = String(freshOrderData?.order?.status || '').toLowerCase();
+        if (latestStatus === 'delivered') {
+            showWarning('Delivered Order Locked', 'Delivered orders cannot be edited. You can only view them.');
+            hideModal('editOrderModal');
+            loadOrders();
+            return;
+        }
+
         console.log(`[saveOrder] Starting save for order ${orderId}`);
         
         const itemQuantityInputs = document.querySelectorAll('.item-quantity-input');
