@@ -10,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import 'auth_provider.dart';
 
+typedef NotificationEventListener = void Function(Map<String, dynamic> event);
+
 class Notification {
   final int id;
   final String title;
@@ -59,6 +61,7 @@ class NotificationProvider with ChangeNotifier {
   String? _currentPushToken;
 
   final List<Notification> _notifications = [];
+  final Map<Object, NotificationEventListener> _eventListeners = {};
   static const int _maxNotifications = 20;
   static const Duration _duplicateWindow = Duration(seconds: 4);
   String? _lastNotificationKey;
@@ -96,6 +99,14 @@ class NotificationProvider with ChangeNotifier {
 
   List<Notification> get notifications => _notifications;
   int get unreadCount => _notifications.where((n) => n.unread).length;
+
+  void addEventListener(Object owner, NotificationEventListener listener) {
+    _eventListeners[owner] = listener;
+  }
+
+  void removeEventListener(Object owner) {
+    _eventListeners.remove(owner);
+  }
 
   void addNotification({
     required String title,
@@ -320,6 +331,40 @@ class NotificationProvider with ChangeNotifier {
     }
   }
 
+  Map<String, dynamic> _normalizeSocketPayload(dynamic data) {
+    if (data is Map<String, dynamic>) return Map<String, dynamic>.from(data);
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return {'value': data};
+  }
+
+  void _emitSocketEvent(String eventName, dynamic data) {
+    if (_eventListeners.isEmpty) return;
+
+    final payload = _normalizeSocketPayload(data);
+    final event = <String, dynamic>{
+      ...payload,
+      'event': eventName,
+      'socket_event': eventName,
+      'data': Map<String, dynamic>.from(payload),
+    };
+    final currentType = (event['type'] ?? '').toString().trim();
+    if (currentType.isEmpty) {
+      event['type'] = eventName;
+    }
+
+    for (final listener in List<NotificationEventListener>.from(
+      _eventListeners.values,
+    )) {
+      try {
+        listener(Map<String, dynamic>.from(event));
+      } catch (e) {
+        debugPrint(
+          '[NotificationProvider] Event listener failed for $eventName: $e',
+        );
+      }
+    }
+  }
+
   void _initSocket() {
     if (_socket != null) {
       if (_socket!.connected) {
@@ -404,6 +449,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('new_user', (data) {
+      _emitSocketEvent('new_user', data);
       debugPrint('Socket: new_user received');
       if (_authProvider?.isAdmin == true) {
         addNotification(
@@ -417,6 +463,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('new_order', (data) {
+      _emitSocketEvent('new_order', data);
       debugPrint('Socket: new_order received');
       if (_authProvider?.isAdmin == true) {
         addNotification(
@@ -430,6 +477,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('order_assigned', (data) {
+      _emitSocketEvent('order_assigned', data);
       debugPrint('Socket: order_assigned received');
       if (_authProvider?.isAdmin == true) {
         addNotification(
@@ -443,6 +491,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('order_status_update', (data) {
+      _emitSocketEvent('order_status_update', data);
       debugPrint(
         'Socket: order_status_update received for user ${data['user_id']}',
       );
@@ -475,6 +524,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('notification', (data) {
+      _emitSocketEvent('notification', data);
       debugPrint('Socket: notification received: $data');
       // Generic handler for targeted notifications
       addNotification(
@@ -486,6 +536,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('rider_notification', (data) {
+      _emitSocketEvent('rider_notification', data);
       final riderId = data['rider_id'].toString();
       final currentUserId = _authProvider?.user?.id.toString();
       debugPrint(
@@ -508,6 +559,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('user_notification', (data) {
+      _emitSocketEvent('user_notification', data);
       final userId = data['user_id'].toString();
       final currentUserId = _authProvider?.user?.id.toString();
       debugPrint(
@@ -539,6 +591,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('store_owner_notification', (data) {
+      _emitSocketEvent('store_owner_notification', data);
       final storeId = data['store_id'].toString();
       debugPrint(
         '[NotificationProvider] store_owner_notification (store $storeId): $data',
@@ -557,6 +610,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('payment_status_update', (data) {
+      _emitSocketEvent('payment_status_update', data);
       debugPrint(
         'Socket: payment_status_update received for user ${data['user_id']}',
       );
@@ -581,6 +635,7 @@ class NotificationProvider with ChangeNotifier {
     });
 
     _socket!.on('order_completed', (data) {
+      _emitSocketEvent('order_completed', data);
       debugPrint(
         'Socket: order_completed received for user ${data['user_id']}',
       );

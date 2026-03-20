@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../providers/cart_provider.dart';
 import '../theme/customer_palette.dart';
+import '../utils/customer_language.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -13,6 +14,21 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   static const int _activeBottomIndex = 3;
+  bool _isUrdu = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLanguagePreference();
+  }
+
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() => _isUrdu = isUrdu);
+  }
+
+  String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
 
   Future<void> _refresh() async {
     await Future.delayed(const Duration(milliseconds: 500));
@@ -35,9 +51,11 @@ class _CartScreenState extends State<CartScreen> {
           (sum, item) => sum + item.quantity,
         );
 
-        return Scaffold(
+        return Directionality(
+          textDirection: CustomerLanguage.textDirection(_isUrdu),
+          child: Scaffold(
           appBar: AppBar(
-            title: const Text('Your Cart'),
+            title: Text(_tr('Your Cart')),
             actions: [
               if (cart.items.isNotEmpty)
                 IconButton(
@@ -46,17 +64,17 @@ class _CartScreenState extends State<CartScreen> {
                     showDialog(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text('Clear Cart?'),
-                        content: const Text(
-                          'Are you sure you want to remove all items?',
+                        title: Text(_tr('Clear Cart?')),
+                        content: Text(
+                          _tr('Are you sure you want to remove all items?'),
                         ),
                         actions: [
                           TextButton(
-                            child: const Text('No'),
+                            child: Text(_tr('No')),
                             onPressed: () => Navigator.of(ctx).pop(),
                           ),
                           TextButton(
-                            child: const Text('Yes'),
+                            child: Text(_tr('Yes')),
                             onPressed: () {
                               cart.clear();
                               Navigator.of(ctx).pop();
@@ -72,9 +90,9 @@ class _CartScreenState extends State<CartScreen> {
           body: RefreshIndicator(
             onRefresh: _refresh,
             child: cart.items.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
-                      'Your cart is empty',
+                      _tr('Your cart is empty'),
                       style: TextStyle(fontSize: 18, color: Colors.grey),
                     ),
                   )
@@ -121,7 +139,7 @@ class _CartScreenState extends State<CartScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      item.product.storeName ?? 'Unknown Store',
+                                      item.product.storeName ?? _tr('Unknown Store'),
                                       style: const TextStyle(
                                         fontSize: 12,
                                         color: CustomerPalette.primaryDark,
@@ -154,7 +172,7 @@ class _CartScreenState extends State<CartScreen> {
                                           child: Text(
                                             item.variantLabel != null
                                                 ? '${item.variantLabel} • PKR ${item.total.toStringAsFixed(2)}'
-                                                : 'Total: PKR ${item.total.toStringAsFixed(2)}',
+                                                : '${_tr('Total')}: ${_tr('PKR')} ${item.total.toStringAsFixed(2)}',
                                             style: const TextStyle(fontSize: 13),
                                           ),
                                         ),
@@ -232,15 +250,15 @@ class _CartScreenState extends State<CartScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text(
-                                  'Total',
+                                Text(
+                                  _tr('Total'),
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 Text(
-                                  'PKR ${cart.totalAmount.toStringAsFixed(2)}',
+                                  '${_tr('PKR')} ${cart.totalAmount.toStringAsFixed(2)}',
                                   style: const TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
@@ -254,7 +272,7 @@ class _CartScreenState extends State<CartScreen> {
                               children: [
                                 Expanded(
                                   child: _buildSummaryMetaTile(
-                                    label: 'Total Stores',
+                                    label: _tr('Total Stores'),
                                     value: '$uniqueStoreCount',
                                     icon: Icons.storefront,
                                   ),
@@ -262,7 +280,7 @@ class _CartScreenState extends State<CartScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: _buildSummaryMetaTile(
-                                    label: 'Total Products',
+                                    label: _tr('Total Products'),
                                     value: '$totalProductsCount',
                                     icon: Icons.shopping_bag_outlined,
                                   ),
@@ -286,9 +304,9 @@ class _CartScreenState extends State<CartScreen> {
                           onPressed: () {
                             Navigator.of(context).pushNamed('/checkout');
                           },
-                          child: const Text(
-                            'Proceed to Checkout',
-                            style: TextStyle(fontSize: 18),
+                          child: Text(
+                            _tr('Proceed to Checkout'),
+                            style: const TextStyle(fontSize: 18),
                           ),
                         ),
                       ),
@@ -297,7 +315,7 @@ class _CartScreenState extends State<CartScreen> {
             ),
           ),
           bottomNavigationBar: _buildBottomBar(),
-        );
+        ));
       },
     );
   }
@@ -368,25 +386,25 @@ class _CartScreenState extends State<CartScreen> {
             _buildBottomIcon(
               index: 0,
               icon: Icons.home_filled,
-              label: 'Home',
+              label: _tr('Home'),
               onTap: () => Navigator.of(context).pushReplacementNamed('/home'),
             ),
             _buildBottomIcon(
               index: 1,
               icon: Icons.storefront,
-              label: 'Stores',
+              label: _tr('Stores'),
               onTap: () => Navigator.of(context).pushReplacementNamed('/home'),
             ),
             _buildBottomIcon(
               index: 2,
               icon: Icons.shopping_bag,
-              label: 'Orders',
+              label: _tr('Orders'),
               onTap: () => Navigator.of(context).pushReplacementNamed('/orders'),
             ),
             _buildBottomIcon(
               index: 3,
               icon: Icons.shopping_cart,
-              label: 'Cart',
+              label: _tr('Cart'),
               onTap: () {},
             ),
           ],

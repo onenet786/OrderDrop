@@ -34,6 +34,7 @@ const AppState = {
     editing: {
         productId: null,
         accountId: null,
+        accountOriginal: null,
         storeId: null,
         categoryId: null,
         riderId: null,
@@ -3392,6 +3393,8 @@ function displayAccounts(accounts) {
 function showAddAccountModal() {
     document.getElementById('editAccountForm').reset();
     document.getElementById('editAccountId').value = '';
+    AppState.editing.accountId = null;
+    AppState.editing.accountOriginal = null;
     document.querySelector('#editAccountModal h3').textContent = 'Add New Account';
 
     // Handle store selection logic for Add Mode
@@ -3433,9 +3436,24 @@ function editAccount(accountId) {
         return;
     }
 
-    AppState.editing.accountId = accountId;
     const isActive = account.is_active === true || account.is_active === 1 || account.is_active === '1';
     const isVerified = account.is_verified === true || account.is_verified === 1 || account.is_verified === '1';
+    
+    AppState.editing.accountId = accountId;
+    AppState.editing.accountOriginal = {
+        id: account.id,
+        firstName: String(account.first_name || '').trim(),
+        lastName: String(account.last_name || '').trim(),
+        email: String(account.email || '').trim().toLowerCase(),
+        phone: String(account.phone || '').trim(),
+        userType: String(account.user_type || 'customer').trim(),
+        isActive,
+        isVerified,
+        address: String(account.address || '').trim(),
+        storeId: account.store_id === undefined || account.store_id === null || account.store_id === ''
+            ? ''
+            : String(account.store_id)
+    };
     
     document.getElementById('editAccountId').value = accountId;
     document.getElementById('editAccountFirstName').value = account.first_name || '';
@@ -3471,6 +3489,7 @@ function editAccount(accountId) {
             populateStoreDropdown(storeSelect, storeSelect.value || selectedStoreId || '');
         } else {
             storeGroup.style.display = 'none';
+            storeSelect.value = '';
         }
     };
 
@@ -3528,7 +3547,7 @@ async function sendTestTrayNotification() {
     }
 }
 
-function saveAccount() {
+async function saveAccount() {
     const accountId = document.getElementById('editAccountId').value;
     const firstName = String(document.getElementById('editAccountFirstName').value || '').trim();
     const lastName = String(document.getElementById('editAccountLastName').value || '').trim();
@@ -3540,60 +3559,150 @@ function saveAccount() {
     const address = String(document.getElementById('editAccountAddress').value || '').trim();
     const password = String(document.getElementById('editAccountPassword').value || '').trim();
     const storeId = String(document.getElementById('editAccountStore').value || '').trim();
+    const normalizedEmail = email.toLowerCase();
+    const original = accountId ? AppState.editing.accountOriginal : null;
 
     if (!firstName || !lastName || !email || !userType) {
         showWarning('Validation Error', 'Please fill in all required fields');
         return;
     }
 
-    const payload = {
-        firstName,
-        lastName,
-        email,
-        user_type: userType,
-        is_active: isActive,
-        is_verified: isVerified
-    };
+    let payload;
 
-    if (phone) payload.phone = phone;
-    if (address) payload.address = address;
+    if (accountId && original) {
+        payload = {};
 
-    if (userType === 'store_owner' && storeId) payload.store_id = Number(storeId);
-    if (userType !== 'store_owner' && accountId) payload.store_id = null;
+        if (firstName !== original.firstName) payload.firstName = firstName;
+        if (lastName !== original.lastName) payload.lastName = lastName;
+        if (normalizedEmail !== original.email) payload.email = email;
+        if (phone !== original.phone) payload.phone = phone;
+        if (address !== original.address) payload.address = address;
+        if (userType !== original.userType) payload.user_type = userType;
+        if (isActive !== original.isActive) payload.is_active = isActive;
+        if (isVerified !== original.isVerified) payload.is_verified = isVerified;
 
-    if (password) {
-        payload.password = password;
+        const originalStoreId = original.storeId || '';
+        if (userType === 'store_owner') {
+            if (storeId !== originalStoreId) {
+                payload.store_id = storeId ? Number(storeId) : '';
+            }
+        } else if (original.userType === 'store_owner' || originalStoreId) {
+            payload.user_type = userType;
+        }
+
+        if (password) {
+            payload.password = password;
+        }
+
+        if (Object.keys(payload).length === 0) {
+            showWarning('No Changes', 'There are no changes to save.');
+            return;
+        }
+    } else {
+        payload = {
+            firstName,
+            lastName,
+            email,
+            user_type: userType,
+            is_active: isActive,
+            is_verified: isVerified
+        };
+
+        if (phone) payload.phone = phone;
+        if (address) payload.address = address;
+        if (userType === 'store_owner' && storeId) payload.store_id = Number(storeId);
+        if (password) {
+            payload.password = password;
+        }
     }
 
     const url = accountId ? `${API_BASE}/api/users/${accountId}` : `${API_BASE}/api/users`;
     const method = accountId ? 'PUT' : 'POST';
 
-    fetch(url, {
-        method: method,
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify(payload)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
+    const executeSave = async (savePayload) => {
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(savePayload)
+        });
+
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (_) {
+            let rawText = '';
+            try {
+                rawText = await response.text();
+            } catch (__){ }
+            data = {
+                success: false,
+                message: rawText || `Request failed with status ${response.status}`
+            };
+        }
+
+        return { response, data };
+    };
+
+    try {
+        let { response, data } = await executeSave(payload);
+
+        const shouldRetryWithoutOptionalFields =
+            !response.ok &&
+            response.status === 400 &&
+            accountId &&
+            userType !== 'store_owner' &&
+            (Object.prototype.hasOwnProperty.call(payload, 'phone') ||
+             Object.prototype.hasOwnProperty.call(payload, 'address') ||
+             Object.prototype.hasOwnProperty.call(payload, 'store_id'));
+
+        if (shouldRetryWithoutOptionalFields) {
+            const retryPayload = {
+                firstName,
+                lastName,
+                email,
+                user_type: userType,
+                is_active: isActive,
+                is_verified: isVerified
+            };
+            if (password) {
+                retryPayload.password = password;
+            }
+
+            console.warn('saveAccount retrying without optional fields', {
+                accountId,
+                originalPayload: payload,
+                retryPayload,
+                initialResponse: data
+            });
+
+            ({ response, data } = await executeSave(retryPayload));
+        }
+
+        if (data && data.success) {
             hideModal('editAccountModal');
             loadAccounts();
             const message = accountId ? 'Account updated successfully' : 'Account created successfully';
             showSuccess('Success', message);
-        } else {
-            const errorText = Array.isArray(data.errors) && data.errors.length
-                ? data.errors.map(e => e.msg || e.message || JSON.stringify(e)).join(', ')
-                : (data.message || 'Failed to save account');
-            showError('Error', errorText);
+            return;
         }
-    })
-    .catch(error => {
+
+        const errorText = Array.isArray(data?.errors) && data.errors.length
+            ? data.errors.map(e => e.msg || e.message || JSON.stringify(e)).join(', ')
+            : (data?.message || `Failed to save account (HTTP ${response.status})`);
+
+        console.error('saveAccount failed', {
+            status: response.status,
+            payload,
+            response: data
+        });
+        showError('Error', errorText);
+    } catch (error) {
         console.error('Error saving account:', error);
         showError('Error', 'Failed to save account. Please try again.');
-    });
+    }
 }
 
 function toggleAccountStatus(accountId, currentStatus) {
@@ -6858,6 +6967,10 @@ function hideModal(modalId) {
         if (modalId === 'addProductModal') {
             AppState.editing.productId = null;
             AppState.editing.productStoreId = null;
+        }
+        if (modalId === 'editAccountModal') {
+            AppState.editing.accountId = null;
+            AppState.editing.accountOriginal = null;
         }
         if (modalId === 'addCategoryModal') AppState.editing.categoryId = null;
         if (modalId === 'addRiderModal') AppState.editing.riderId = null;

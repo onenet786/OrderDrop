@@ -6,6 +6,7 @@ import '../models/cart_item.dart';
 import '../providers/wallet_provider.dart';
 import '../services/api_service.dart';
 import 'package:servenow/services/notifier.dart';
+import '../utils/customer_language.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -24,10 +25,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? _selectedDeliveryTime;
   bool _isLoading = false;
   double? _walletBalance;
+  bool _isUrdu = false;
 
   @override
   void initState() {
     super.initState();
+    _loadLanguagePreference();
     final user = Provider.of<AuthProvider>(context, listen: false).user;
     if (user != null) {
       _nameController.text = '${user.firstName} ${user.lastName}'.trim();
@@ -40,6 +43,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
     _loadWalletBalance();
   }
+
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() => _isUrdu = isUrdu);
+  }
+
+  String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
 
   Future<void> _loadWalletBalance() async {
     try {
@@ -99,7 +110,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
+                    _tr(title),
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: isSelected ? scheme.primary : null,
@@ -109,7 +120,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        subtitle,
+                        _tr(subtitle),
                         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                     ),
@@ -228,7 +239,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ? (when.isNotEmpty ? '$message ($when)' : message)
               : (title.isNotEmpty
                     ? (when.isNotEmpty ? '$title ($when)' : title)
-                    : 'Ordering is temporarily unavailable.');
+                    : _tr('Ordering is temporarily unavailable.'));
           if (!mounted) return;
           setState(() {
             _isLoading = false;
@@ -267,8 +278,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             Notifier.error(
               context,
               reason.isNotEmpty
-                  ? 'The store "${store['name']}" is currently closed. Reason: $reason'
-                  : 'The store "${store['name']}" is currently closed. You cannot place orders at this time.',
+                  ? '${_tr('Store')}: "${store['name']}" ${_tr('Closed')}. $reason'
+                  : '${_tr('Store')}: "${store['name']}" ${_tr('This store is currently closed. You cannot place orders at this time.')}',
               duration: const Duration(seconds: 4),
               sanitize: false,
             );
@@ -288,7 +299,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (!mounted) return;
         Notifier.error(
           context,
-          'Insufficient wallet balance. Need PKR ${(cart.totalAmount - _walletBalance!).toStringAsFixed(2)} more.',
+          '${_tr('Insufficient wallet balance. Need')} ${_tr('PKR')} ${(cart.totalAmount - _walletBalance!).toStringAsFixed(2)} ${_tr('more.')}',
           sanitize: false,
         );
         return;
@@ -357,7 +368,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } catch (e) {
       if (!mounted) return;
       if (auth.sessionExpired) return;
-      Notifier.error(context, 'Failed to place order: $e');
+      Notifier.error(context, '${_tr('Failed to place order')}: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -372,14 +383,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final cart = Provider.of<CartProvider>(context);
 
     if (cart.items.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Checkout')),
-        body: const Center(child: Text('Your cart is empty')),
+      return Directionality(
+        textDirection: CustomerLanguage.textDirection(_isUrdu),
+        child: Scaffold(
+          appBar: AppBar(title: Text(_tr('Checkout'))),
+          body: Center(child: Text(_tr('Your cart is empty'))),
+        ),
       );
     }
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Checkout')),
+    return Directionality(
+      textDirection: CustomerLanguage.textDirection(_isUrdu),
+      child: Scaffold(
+      appBar: AppBar(title: Text(_tr('Checkout'))),
       resizeToAvoidBottomInset: true,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -408,11 +424,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  children: const [
-                                    Icon(Icons.receipt_long, size: 20),
-                                    SizedBox(width: 8),
+                                  children: [
+                                    const Icon(Icons.receipt_long, size: 20),
+                                    const SizedBox(width: 8),
                                     Text(
-                                      'Order Summary',
+                                      _tr('Order Summary'),
                                       style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
@@ -428,7 +444,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     for (var item in cart.items) {
                                       final store =
                                           item.product.storeName ??
-                                          'Unknown Store';
+                                          _tr('Unknown Store');
                                       if (!itemsByStore.containsKey(store)) {
                                         itemsByStore[store] = [];
                                       }
@@ -570,7 +586,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                             children: [
                                               Expanded(
                                                 child: Text(
-                                                  'Subtotal (${entry.key}):',
+                                                  '${_tr('Subtotal')} (${entry.key}):',
                                                   style: const TextStyle(
                                                     fontWeight: FontWeight.w600,
                                                   ),
@@ -611,7 +627,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           children: [
                                             Expanded(
                                               child: Text(
-                                                'Total Delivery Charge ($numStores store${numStores > 1 ? 's' : ''}):',
+                                                '${_tr('Delivery Fee')} ($numStores ${_tr('Stores')}):',
                                                 style: const TextStyle(
                                                   fontSize: 13,
                                                   color: Colors.grey,
@@ -652,8 +668,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Expanded(
-                                              child: const Text(
-                                                'Grand Total',
+                                              child: Text(
+                                                _tr('Grand Total'),
                                                 style: TextStyle(
                                                   fontSize: 16,
                                                   fontWeight: FontWeight.w700,
@@ -703,11 +719,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  children: const [
-                                    Icon(Icons.local_shipping, size: 20),
-                                    SizedBox(width: 8),
+                                  children: [
+                                    const Icon(Icons.local_shipping, size: 20),
+                                    const SizedBox(width: 8),
                                     Text(
-                                      'Delivery Details',
+                                      _tr('Delivery Details'),
                                       style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
@@ -719,8 +735,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 TextFormField(
                                   controller: _nameController,
                                   decoration: InputDecoration(
-                                    label: const Text(
-                                      'Contact Name',
+                                    label: Text(
+                                      _tr('Full Name'),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 2,
                                     ),
@@ -729,7 +745,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ),
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {
-                                      return 'Please enter contact name';
+                                      return _tr('Full Name');
                                     }
                                     return null;
                                   },
@@ -738,8 +754,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 TextFormField(
                                   controller: _phoneController,
                                   decoration: InputDecoration(
-                                    label: const Text(
-                                      'Phone Number',
+                                    label: Text(
+                                      _tr('Phone Number'),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 2,
                                     ),
@@ -749,7 +765,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   keyboardType: TextInputType.phone,
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {
-                                      return 'Please enter phone number';
+                                      return _tr('Phone Number');
                                     }
                                     return null;
                                   },
@@ -758,8 +774,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 TextFormField(
                                   controller: _addressController,
                                   decoration: InputDecoration(
-                                    label: const Text(
-                                      'Delivery Address',
+                                    label: Text(
+                                      _tr('Delivery Address'),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 2,
                                     ),
@@ -769,7 +785,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   maxLines: 2,
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {
-                                      return 'Please enter delivery address';
+                                      return _tr('Delivery Address');
                                     }
                                     return null;
                                   },
@@ -778,30 +794,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 DropdownButtonFormField<String>(
                                   initialValue: _selectedDeliveryTime,
                                   decoration: InputDecoration(
-                                    label: const Text(
-                                      'Preferred Delivery Time (Optional)',
+                                    label: Text(
+                                      _tr('Preferred Delivery Time'),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 2,
                                     ),
                                     border: const OutlineInputBorder(),
                                     prefixIcon: const Icon(Icons.access_time),
                                   ),
-                                  items: const [
+                                  items: [
                                     DropdownMenuItem(
                                       value: 'asap',
-                                      child: Text('ASAP (30-45 mins)'),
+                                      child: Text(_tr('ASAP (30-45 mins)')),
                                     ),
                                     DropdownMenuItem(
                                       value: '1hour',
-                                      child: Text('Within 1 hour'),
+                                      child: Text(_tr('Within 1 hour')),
                                     ),
                                     DropdownMenuItem(
                                       value: '2hours',
-                                      child: Text('Within 2 hours'),
+                                      child: Text(_tr('Within 2 hours')),
                                     ),
                                     DropdownMenuItem(
                                       value: 'tomorrow',
-                                      child: Text('Tomorrow'),
+                                      child: Text(_tr('Tomorrow')),
                                     ),
                                   ],
                                   onChanged: (value) {
@@ -814,8 +830,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 TextFormField(
                                   controller: _instructionsController,
                                   decoration: InputDecoration(
-                                    label: const Text(
-                                      'Special Instructions (Optional)',
+                                    label: Text(
+                                      _tr('Special Instructions'),
                                       overflow: TextOverflow.ellipsis,
                                       maxLines: 2,
                                     ),
@@ -843,11 +859,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  children: const [
-                                    Icon(Icons.payment, size: 20),
-                                    SizedBox(width: 8),
+                                  children: [
+                                    const Icon(Icons.payment, size: 20),
+                                    const SizedBox(width: 8),
                                     Text(
-                                      'Payment Method',
+                                      _tr('Payment Method'),
                                       style: TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
@@ -931,7 +947,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                   CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  'Wallet Balance: PKR ${_walletBalance!.toStringAsFixed(2)}',
+                                                  '${_tr('Wallet')}: ${_tr('PKR')} ${_walletBalance!.toStringAsFixed(2)}',
                                                   style: TextStyle(
                                                     fontWeight: FontWeight.bold,
                                                     color:
@@ -949,7 +965,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                           top: 4,
                                                         ),
                                                     child: Text(
-                                                      'Insufficient balance. Need PKR ${(cart.totalAmount - _walletBalance!).toStringAsFixed(2)} more.',
+                                                      '${_tr('Insufficient wallet balance. Need')} ${_tr('PKR')} ${(cart.totalAmount - _walletBalance!).toStringAsFixed(2)} ${_tr('more.')}',
                                                       style: const TextStyle(
                                                         fontSize: 12,
                                                         color: Colors.red,
@@ -977,8 +993,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
                             onPressed: _submitOrder,
-                            label: const Text(
-                              'Place Order',
+                            label: Text(
+                              _tr('Place Order'),
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -1003,6 +1019,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 },
               ),
             ),
-    );
+    ));
   }
 }

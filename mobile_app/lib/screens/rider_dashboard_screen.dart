@@ -6,8 +6,9 @@ import 'package:geocoding/geocoding.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
 import '../services/api_service.dart';
-import '../services/notification_service.dart';
+import '../utils/customer_language.dart';
 import '../widgets/notification_bell_widget.dart';
 import 'login_screen.dart';
 
@@ -37,6 +38,27 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   int _selectedTabIndex = 0;
   late AnimationController _blinkController;
   late Animation<double> _blinkAnimation;
+  bool _isUrdu = false;
+
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() => _isUrdu = isUrdu);
+  }
+
+  String _tr(String text) {
+    const localTranslations = <String, String>{
+      'Welcome Rider': 'خوش آمدید رائیڈر',
+      'Assigned': 'تعینات',
+      'Rider': 'رائیڈر',
+      'Vehicle': 'گاڑی',
+      'ID': 'شناخت',
+    };
+    if (_isUrdu && localTranslations.containsKey(text)) {
+      return localTranslations[text]!;
+    }
+    return CustomerLanguage.tr(_isUrdu, text);
+  }
 
   Future<void> _makeCall(String phoneNumber) async {
     final cleaned = phoneNumber.trim().replaceAll(RegExp(r'[^0-9+]'), '');
@@ -44,7 +66,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('No valid phone number')));
+        ).showSnackBar(SnackBar(content: Text(_tr('No valid phone number'))));
       }
       return;
     }
@@ -53,13 +75,13 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not launch dialer')),
+          SnackBar(content: Text(_tr('Could not launch dialer'))),
         );
       }
     } else if (mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Dialer app not available')));
+      ).showSnackBar(SnackBar(content: Text(_tr('Dialer app not available'))));
     }
   }
 
@@ -69,7 +91,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('No valid phone number')));
+        ).showSnackBar(SnackBar(content: Text(_tr('No valid phone number'))));
       }
       return;
     }
@@ -90,7 +112,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     if (!launched && mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('SMS app not available')));
+      ).showSnackBar(SnackBar(content: Text(_tr('SMS app not available'))));
     }
   }
 
@@ -102,7 +124,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not launch WhatsApp')),
+          SnackBar(content: Text(_tr('Could not launch WhatsApp'))),
         );
       }
     }
@@ -111,6 +133,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   @override
   void initState() {
     super.initState();
+    _loadLanguagePreference();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_syncTabIndex);
     _blinkController = AnimationController(
@@ -139,17 +162,12 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 
   void _setupNotifications() {
-    NotificationService.initialize(
-      onNotification: (data) {
+    Provider.of<NotificationProvider>(context, listen: false).addEventListener(
+      this,
+      (data) {
         _handleNotification(data);
       },
     );
-
-    // Connect to socket for real-time updates
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    if (authProvider.user != null) {
-      NotificationService.connect(authProvider.user!.id, 'rider');
-    }
   }
 
   void _handleNotification(Map<String, dynamic> notification) {
@@ -233,7 +251,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     _blinkController.dispose();
     _locationTrackingTimer?.cancel();
     _assignmentRefreshTimer?.cancel();
-    NotificationService.disconnect();
+    Provider.of<NotificationProvider>(
+      context,
+      listen: false,
+    ).removeEventListener(this);
     super.dispose();
   }
 
@@ -1076,50 +1097,53 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      drawer: _buildRiderDrawer(),
-      appBar: AppBar(
-        title: const Text('Rider Dashboard'),
-        actions: [
-          const NotificationBellWidget(),
-        ],
-      ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
-      body: RefreshIndicator(
-        onRefresh: _loadAllData,
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                children: [
-                  // Rider Info Section
-                  _buildRiderInfoCard(),
+    return Directionality(
+      textDirection: CustomerLanguage.textDirection(_isUrdu),
+      child: Scaffold(
+        drawer: _buildRiderDrawer(),
+        appBar: AppBar(
+          title: Text(_tr('Rider Dashboard')),
+          actions: [
+            const NotificationBellWidget(),
+          ],
+        ),
+        bottomNavigationBar: _buildBottomNavigationBar(),
+        body: RefreshIndicator(
+          onRefresh: _loadAllData,
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: [
+                    // Rider Info Section
+                    _buildRiderInfoCard(),
 
-                  // Tab Content
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        _buildDeliveriesList(_assignedDeliveries, true),
-                        _buildDeliveriesList(_completedDeliveries, false),
-                        _buildWalletTab(),
-                        _buildProfileTab(),
-                      ],
+                    // Tab Content
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          _buildDeliveriesList(_assignedDeliveries, true),
+                          _buildDeliveriesList(_completedDeliveries, false),
+                          _buildWalletTab(),
+                          _buildProfileTab(),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+        ),
       ),
     );
   }
 
   Widget _buildRiderInfoCard() {
     final name = _riderProfile == null
-        ? 'Rider'
+        ? _tr('Rider')
         : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
               .trim()
               .isEmpty
-        ? (_riderProfile?['first_name'] ?? 'Rider')
+        ? (_riderProfile?['first_name'] ?? _tr('Rider'))
         : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
               .trim();
     final vehicle = _riderProfile?['vehicle_type'] ?? 'N/A';
@@ -1147,8 +1171,8 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Welcome Rider',
+          Text(
+            _tr('Welcome Rider'),
             style: TextStyle(
               color: Colors.white70,
               fontSize: 14,
@@ -1173,7 +1197,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'ID: $riderId  |  Vehicle: $vehicle',
+                  '${_tr('ID')}: $riderId  |  ${_tr('Vehicle')}: $vehicle',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -1189,17 +1213,17 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           Row(
             children: [
               _buildRiderMiniStat(
-                label: 'Assigned',
+                label: _tr('Assigned'),
                 value: _assignedDeliveries.length.toString(),
               ),
               const SizedBox(width: 8),
               _buildRiderMiniStat(
-                label: 'Completed',
+                label: _tr('Completed'),
                 value: _completedDeliveries.length.toString(),
               ),
               const SizedBox(width: 8),
               _buildRiderMiniStat(
-                label: 'Wallet',
+                label: _tr('Wallet'),
                 value: 'PKR ${_walletBalance.toStringAsFixed(0)}',
               ),
             ],
@@ -1211,11 +1235,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
 
   Widget _buildRiderDrawer() {
     final name = _riderProfile == null
-        ? 'Rider'
+        ? _tr('Rider')
         : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
               .trim()
               .isEmpty
-        ? (_riderProfile?['first_name'] ?? 'Rider')
+        ? (_riderProfile?['first_name'] ?? _tr('Rider'))
         : '${_riderProfile?['first_name'] ?? ''} ${_riderProfile?['last_name'] ?? ''}'
               .trim();
     final email = (_riderProfile?['email'] ?? '').toString();
@@ -1247,7 +1271,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
           ListTile(
             leading: const Icon(Icons.home_outlined),
-            title: const Text('Home'),
+            title: Text(_tr('Home')),
             onTap: () {
               Navigator.of(context).pop();
               _switchToTab(0);
@@ -1255,7 +1279,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
           ListTile(
             leading: const Icon(Icons.history),
-            title: const Text('History'),
+            title: Text(_tr('History')),
             onTap: () {
               Navigator.of(context).pop();
               _switchToTab(1);
@@ -1263,7 +1287,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
           ListTile(
             leading: const Icon(Icons.account_balance_wallet_outlined),
-            title: const Text('Wallet'),
+            title: Text(_tr('Wallet')),
             onTap: () {
               Navigator.of(context).pop();
               _switchToTab(2);
@@ -1271,7 +1295,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
           ListTile(
             leading: const Icon(Icons.query_stats),
-            title: const Text('Financial History'),
+            title: Text(_tr('Financial History')),
             onTap: () {
               Navigator.of(context).pop();
               _openRiderFinancialHistory();
@@ -1279,7 +1303,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
           ListTile(
             leading: const Icon(Icons.person_outline),
-            title: const Text('Profile'),
+            title: Text(_tr('Profile')),
             onTap: () {
               Navigator.of(context).pop();
               _switchToTab(3);
@@ -1288,7 +1312,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           const Divider(),
           ListTile(
             leading: const Icon(Icons.refresh),
-            title: const Text('Refresh'),
+            title: Text(_tr('Refresh')),
             onTap: () {
               Navigator.of(context).pop();
               _loadAllData();
@@ -1296,7 +1320,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
           ListTile(
             leading: const Icon(Icons.key),
-            title: const Text('Change Password'),
+            title: Text(_tr('Change Password')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/change-password');
@@ -1304,7 +1328,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           ),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout', style: TextStyle(color: Colors.red)),
+            title: Text(_tr('Logout'), style: const TextStyle(color: Colors.red)),
             onTap: () {
               Navigator.of(context).pop();
               _logout();
@@ -1335,10 +1359,10 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _buildBottomNavItem(0, Icons.home_filled, 'Home'),
-            _buildBottomNavItem(1, Icons.history, 'History'),
-            _buildBottomNavItem(2, Icons.account_balance_wallet, 'Wallet'),
-            _buildBottomNavItem(3, Icons.person, 'Profile'),
+            _buildBottomNavItem(0, Icons.home_filled, _tr('Home')),
+            _buildBottomNavItem(1, Icons.history, _tr('History')),
+            _buildBottomNavItem(2, Icons.account_balance_wallet, _tr('Wallet')),
+            _buildBottomNavItem(3, Icons.person, _tr('Profile')),
           ],
         ),
       ),

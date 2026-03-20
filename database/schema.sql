@@ -162,6 +162,16 @@ CREATE TABLE orders (
     FOREIGN KEY (rider_id) REFERENCES riders(id) ON DELETE SET NULL
 );
 
+CREATE TABLE rider_location_logs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    rider_id INT NOT NULL,
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (rider_id) REFERENCES riders(id) ON DELETE CASCADE,
+    INDEX idx_rider_location_logs_rider_created (rider_id, created_at)
+);
+
 -- Order items table
 CREATE TABLE order_items (
     id INT PRIMARY KEY AUTO_INCREMENT,

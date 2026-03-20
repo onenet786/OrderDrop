@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:latlong2/latlong.dart' as latlng;
 import 'package:logger/logger.dart';
 import 'package:provider/provider.dart';
 
@@ -8,7 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import '../services/api_service.dart';
 import '../services/notifier.dart';
-import '../services/notification_service.dart';
+import '../utils/customer_language.dart';
 import '../widgets/notification_bell_widget.dart';
 import 'offer_campaigns_screen.dart';
 
@@ -19,12 +22,39 @@ class AdminDashboardScreen extends StatefulWidget {
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+    with TickerProviderStateMixin {
+  static const Set<String> _liveRiderTrackerEmails = {
+    'admin@servenow.com',
+    'nazir@servenow.pk',
+  };
+  static const Duration _liveRiderRefreshInterval = Duration(seconds: 8);
+  static const Duration _riderMotionDuration = Duration(milliseconds: 2600);
+  static const List<Color> _riderRoutePalette = [
+    Color(0xFF2563EB),
+    Color(0xFFDC2626),
+    Color(0xFF16A34A),
+    Color(0xFFD97706),
+    Color(0xFF7C3AED),
+    Color(0xFFDB2777),
+    Color(0xFF0891B2),
+    Color(0xFF4F46E5),
+  ];
+
   final Logger _logger = Logger();
   bool _isLoading = true;
   Timer? _liveStatsTimer;
+  Timer? _liveRiderTimer;
   Timer? _graceAlertTimer;
   final Map<String, DateTime> _lastGraceAlertAt = {};
+  late final AnimationController _riderMotionController;
+  final MapController _liveRiderMapController = MapController();
+  final Map<String, latlng.LatLng> _displayedRiderPositions = {};
+  final Map<String, latlng.LatLng> _motionStartPositions = {};
+  final Map<String, latlng.LatLng> _motionTargetPositions = {};
+  final Map<String, String> _liveLocationNameByRider = {};
+  final Map<String, String> _reverseGeocodeCache = {};
+  final Set<String> _pendingReverseGeocodeKeys = {};
 
   int _todayTotal = 0;
   int _todayDelivered = 0;
@@ -43,7 +73,41 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<dynamic> _recentUsersList = [];
   List<dynamic> _recentStoresList = [];
   List<dynamic> _assignableOrdersList = [];
+  List<Map<String, dynamic>> _liveRiderLocations = [];
+  Map<String, List<latlng.LatLng>> _liveRiderTrails = {};
+  String? _selectedLiveRiderId;
   String _selectedActivityType = 'orders';
+  bool _isUrdu = false;
+
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() => _isUrdu = isUrdu);
+  }
+
+  String _tr(String text) {
+    const localTranslations = <String, String>{
+      'Live Rider Tracker': 'لائیو رائیڈر ٹریکر',
+      'Auto-refreshing rider positions for active deliveries':
+          'فعال ڈلیوریوں کے لیے رائیڈر کی پوزیشن خودکار طور پر تازہ ہو رہی ہے',
+      'Select Rider': 'رائیڈر منتخب کریں',
+      'All riders': 'تمام رائیڈرز',
+      'Back to all riders': 'تمام رائیڈرز پر واپس',
+      'Routes': 'روٹس',
+      'Assigned Order': 'تعین شدہ آرڈر',
+      'Trail Points': 'ٹریل پوائنٹس',
+      'Distance': 'فاصلہ',
+      'ETA': 'متوقع وقت',
+      'Location': 'موقع',
+      'Coordinates': 'کوآرڈینیٹس',
+      'No riders are currently sharing live locations':
+          'اس وقت کوئی رائیڈر اپنی لائیو لوکیشن شیئر نہیں کر رہا',
+    };
+    if (_isUrdu && localTranslations.containsKey(text)) {
+      return localTranslations[text]!;
+    }
+    return CustomerLanguage.tr(_isUrdu, text);
+  }
 
   int _toInt(dynamic value) {
     if (value is int) return value;
@@ -61,9 +125,424 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return 0;
   }
 
+  bool _canViewLiveRiderTracker(String? email) {
+    final normalized = (email ?? '').trim().toLowerCase();
+    return _liveRiderTrackerEmails.contains(normalized);
+  }
+
+  List<Map<String, dynamic>> _extractLiveRiderLocations(List<dynamic> orders) {
+    final latestPerRider = <String, Map<String, dynamic>>{};
+
+    for (final raw in orders) {
+      if (raw is! Map) continue;
+      final order = raw.cast<String, dynamic>();
+      final status = (order['status'] ?? '').toString().toLowerCase();
+      if (status == 'delivered' || status == 'cancelled') continue;
+
+      final riderId = (order['rider_id'] ?? '').toString().trim();
+      if (riderId.isEmpty) continue;
+
+      final latitude =
+          double.tryParse((order['rider_latitude'] ?? '').toString());
+      final longitude =
+          double.tryParse((order['rider_longitude'] ?? '').toString());
+      if (latitude == null || longitude == null) continue;
+
+      DateTime createdAt = DateTime.fromMillisecondsSinceEpoch(0);
+      try {
+        createdAt = DateTime.parse((order['created_at'] ?? '').toString());
+      } catch (_) {}
+
+      final riderName =
+          '${order['rider_first_name'] ?? ''} ${order['rider_last_name'] ?? ''}'
+              .trim();
+      final riderKey = riderId;
+      final existing = latestPerRider[riderKey];
+      if (existing != null) {
+        final existingAt = existing['createdAt'] as DateTime?;
+        if (existingAt != null && !createdAt.isAfter(existingAt)) {
+          continue;
+        }
+      }
+
+      latestPerRider[riderKey] = {
+        'riderId': riderId,
+        'riderName': riderName.isEmpty ? 'Rider #$riderId' : riderName,
+        'orderNumber': (order['order_number'] ?? '').toString(),
+        'storeName': (order['store_name'] ?? '').toString(),
+        'storeLatitude': double.tryParse(
+          (order['store_latitude'] ?? '').toString(),
+        ),
+        'storeLongitude': double.tryParse(
+          (order['store_longitude'] ?? '').toString(),
+        ),
+        'status': status,
+        'latitude': latitude,
+        'longitude': longitude,
+        'createdAt': createdAt,
+      };
+    }
+
+    final items = latestPerRider.values.toList()
+      ..sort((a, b) {
+        final aAt = a['createdAt'] as DateTime? ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bAt = b['createdAt'] as DateTime? ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return bAt.compareTo(aAt);
+      });
+    return items;
+  }
+
+  Future<Map<String, List<latlng.LatLng>>> _fetchLiveRiderTrails(
+    String token,
+    List<Map<String, dynamic>> riders,
+  ) async {
+    final riderIds = riders
+        .map((rider) => (rider['riderId'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    if (riderIds.isEmpty) return {};
+
+    final response = await ApiService.getRiderLocationHistory(
+      token,
+      riderIds: riderIds,
+      hours: 3,
+      limit: 40,
+    );
+    final rawHistories =
+        (response['histories'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{};
+
+    final trails = <String, List<latlng.LatLng>>{};
+    for (final rider in riders) {
+      final riderId = (rider['riderId'] ?? '').toString().trim();
+      if (riderId.isEmpty) continue;
+
+      final points = <latlng.LatLng>[];
+      final entries = rawHistories[riderId];
+      if (entries is List) {
+        for (final raw in entries) {
+          if (raw is! Map) continue;
+          final entry = raw.cast<String, dynamic>();
+          final latitude =
+              double.tryParse((entry['latitude'] ?? '').toString());
+          final longitude =
+              double.tryParse((entry['longitude'] ?? '').toString());
+          if (latitude == null || longitude == null) continue;
+          _appendTrailPoint(points, latlng.LatLng(latitude, longitude));
+        }
+      }
+
+      final currentLatitude = rider['latitude'] as double?;
+      final currentLongitude = rider['longitude'] as double?;
+      if (currentLatitude != null && currentLongitude != null) {
+        _appendTrailPoint(
+          points,
+          latlng.LatLng(currentLatitude, currentLongitude),
+        );
+      }
+
+      if (points.isNotEmpty) {
+        trails[riderId] = points;
+      }
+    }
+
+    return trails;
+  }
+
+  void _appendTrailPoint(List<latlng.LatLng> points, latlng.LatLng point) {
+    if (points.isEmpty) {
+      points.add(point);
+      return;
+    }
+
+    final last = points.last;
+    final samePoint =
+        (last.latitude - point.latitude).abs() < 0.000001 &&
+        (last.longitude - point.longitude).abs() < 0.000001;
+    if (!samePoint) {
+      points.add(point);
+    }
+  }
+
+  Color _routeColorForRider(String riderId) {
+    final normalized = riderId.trim();
+    if (normalized.isEmpty) return _riderRoutePalette.first;
+    final hash = normalized.codeUnits.fold<int>(
+      0,
+      (value, code) => (value * 31 + code) & 0x7fffffff,
+    );
+    return _riderRoutePalette[hash % _riderRoutePalette.length];
+  }
+
+  latlng.LatLng? _resolveRiderStartPoint(Map<String, dynamic> rider) {
+    final storeLatitude = rider['storeLatitude'] as double?;
+    final storeLongitude = rider['storeLongitude'] as double?;
+    if (storeLatitude != null && storeLongitude != null) {
+      return latlng.LatLng(storeLatitude, storeLongitude);
+    }
+
+    final riderId = (rider['riderId'] ?? '').toString();
+    final trail = _liveRiderTrails[riderId];
+    if (trail != null && trail.isNotEmpty) {
+      return trail.first;
+    }
+    return null;
+  }
+
+  latlng.LatLng? _resolveRiderCurrentPoint(Map<String, dynamic> rider) {
+    final latitude = rider['latitude'] as double?;
+    final longitude = rider['longitude'] as double?;
+    if (latitude == null || longitude == null) return null;
+    return latlng.LatLng(latitude, longitude);
+  }
+
+  double? _distanceKmForRider(Map<String, dynamic> rider) {
+    final start = _resolveRiderStartPoint(rider);
+    final current = _resolveRiderCurrentPoint(rider);
+    if (start == null || current == null) return null;
+    final meters = latlng.Distance()(start, current);
+    return meters / 1000;
+  }
+
+  int? _etaMinutesForRider(Map<String, dynamic> rider) {
+    final distanceKm = _distanceKmForRider(rider);
+    if (distanceKm == null) return null;
+    if (distanceKm <= 0.1) return 1;
+    return ((distanceKm / 22) * 60).round().clamp(1, 240);
+  }
+
+  String _formatDistanceKm(double? value) {
+    if (value == null) return '-';
+    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} km';
+  }
+
+  String _formatEtaMinutes(int? minutes) {
+    if (minutes == null) return '-';
+    if (minutes <= 1) return '1 min';
+    return '$minutes mins';
+  }
+
+  String _coordinateKey(latlng.LatLng point) {
+    return '${point.latitude.toStringAsFixed(4)},${point.longitude.toStringAsFixed(4)}';
+  }
+
+  String _shortCoordinateLabel(latlng.LatLng? point) {
+    if (point == null) return '-';
+    return '${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}';
+  }
+
+  String _formatPlacemarkLabel(Placemark placemark) {
+    final parts = <String?>[
+      placemark.street,
+      placemark.subLocality,
+      placemark.locality,
+      placemark.subAdministrativeArea,
+      placemark.administrativeArea,
+    ]
+        .map((value) => (value ?? '').trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+
+    final deduped = <String>[];
+    for (final part in parts) {
+      if (!deduped.contains(part)) {
+        deduped.add(part);
+      }
+    }
+    if (deduped.isEmpty) {
+      return '';
+    }
+    return deduped.take(3).join(', ');
+  }
+
+  String _liveLocationLabelForRider(Map<String, dynamic> rider) {
+    final riderId = (rider['riderId'] ?? '').toString().trim();
+    final livePoint = _displayPointForRider(rider);
+    if (riderId.isNotEmpty) {
+      final cached = _liveLocationNameByRider[riderId];
+      if (cached != null && cached.trim().isNotEmpty) {
+        return cached;
+      }
+    }
+    return _shortCoordinateLabel(livePoint);
+  }
+
+  Future<void> _refreshLiveLocationNames(List<Map<String, dynamic>> riders) async {
+    for (final rider in riders) {
+      final riderId = (rider['riderId'] ?? '').toString().trim();
+      final point = _displayPointForRider(rider);
+      if (riderId.isEmpty || point == null) continue;
+
+      final key = _coordinateKey(point);
+      final cached = _reverseGeocodeCache[key];
+      if (cached != null && cached.trim().isNotEmpty) {
+        if (_liveLocationNameByRider[riderId] != cached && mounted) {
+          setState(() {
+            _liveLocationNameByRider[riderId] = cached;
+          });
+        }
+        continue;
+      }
+
+      if (_pendingReverseGeocodeKeys.contains(key)) continue;
+      _pendingReverseGeocodeKeys.add(key);
+
+      try {
+        final placemarks = await placemarkFromCoordinates(
+          point.latitude,
+          point.longitude,
+        );
+        final label = placemarks.isNotEmpty
+            ? _formatPlacemarkLabel(placemarks.first)
+            : '';
+        final finalLabel = label.isNotEmpty ? label : _shortCoordinateLabel(point);
+        _reverseGeocodeCache[key] = finalLabel;
+        if (mounted) {
+          setState(() {
+            _liveLocationNameByRider[riderId] = finalLabel;
+          });
+        }
+      } catch (e) {
+        final fallback = _shortCoordinateLabel(point);
+        _reverseGeocodeCache[key] = fallback;
+        if (mounted) {
+          setState(() {
+            _liveLocationNameByRider[riderId] = fallback;
+          });
+        }
+      } finally {
+        _pendingReverseGeocodeKeys.remove(key);
+      }
+    }
+  }
+
+  double _lerpCoordinate(double start, double end, double t) {
+    return start + ((end - start) * t);
+  }
+
+  latlng.LatLng? _displayPointForRider(Map<String, dynamic> rider) {
+    final riderId = (rider['riderId'] ?? '').toString().trim();
+    if (riderId.isNotEmpty && _displayedRiderPositions.containsKey(riderId)) {
+      return _displayedRiderPositions[riderId];
+    }
+    return _resolveRiderCurrentPoint(rider);
+  }
+
+  void _syncAnimatedRiderLocations(List<Map<String, dynamic>> riders) {
+    final activeIds = riders
+        .map((rider) => (rider['riderId'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    _displayedRiderPositions.removeWhere((key, _) => !activeIds.contains(key));
+    _motionStartPositions.removeWhere((key, _) => !activeIds.contains(key));
+    _motionTargetPositions.removeWhere((key, _) => !activeIds.contains(key));
+
+    var shouldAnimate = false;
+    final distance = latlng.Distance();
+
+    for (final rider in riders) {
+      final riderId = (rider['riderId'] ?? '').toString().trim();
+      final target = _resolveRiderCurrentPoint(rider);
+      if (riderId.isEmpty || target == null) continue;
+
+      final displayed = _displayedRiderPositions[riderId];
+      if (displayed == null) {
+        _displayedRiderPositions[riderId] = target;
+        _motionStartPositions[riderId] = target;
+        _motionTargetPositions[riderId] = target;
+        continue;
+      }
+
+      final moveMeters = distance(displayed, target);
+      if (moveMeters <= 2) {
+        _displayedRiderPositions[riderId] = target;
+        _motionStartPositions[riderId] = target;
+        _motionTargetPositions[riderId] = target;
+        continue;
+      }
+
+      _motionStartPositions[riderId] = displayed;
+      _motionTargetPositions[riderId] = target;
+      shouldAnimate = true;
+    }
+
+    if (shouldAnimate) {
+      _riderMotionController.forward(from: 0);
+    } else if (_riderMotionController.isAnimating) {
+      _riderMotionController.stop();
+    }
+  }
+
+  void _tickRiderMotion() {
+    if (!mounted) return;
+    final progress = Curves.easeInOut.transform(_riderMotionController.value);
+    var changed = false;
+
+    _motionTargetPositions.forEach((riderId, target) {
+      final start = _motionStartPositions[riderId];
+      if (start == null) {
+        _displayedRiderPositions[riderId] = target;
+        changed = true;
+        return;
+      }
+
+      final next = latlng.LatLng(
+        _lerpCoordinate(start.latitude, target.latitude, progress),
+        _lerpCoordinate(start.longitude, target.longitude, progress),
+      );
+
+      final current = _displayedRiderPositions[riderId];
+      final samePoint = current != null &&
+          (current.latitude - next.latitude).abs() < 0.0000001 &&
+          (current.longitude - next.longitude).abs() < 0.0000001;
+      if (!samePoint) {
+        _displayedRiderPositions[riderId] = next;
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      setState(() {});
+    }
+
+    _autoFollowSelectedRider();
+  }
+
+  void _autoFollowSelectedRider() {
+    final selectedId = _selectedLiveRiderId;
+    if (selectedId == null || selectedId.isEmpty) return;
+
+    final rider = _liveRiderLocations.cast<Map<String, dynamic>?>().firstWhere(
+          (item) => item?['riderId'].toString() == selectedId,
+          orElse: () => null,
+        );
+    if (rider == null) return;
+
+    final point = _displayPointForRider(rider);
+    if (point == null) return;
+
+    try {
+      final camera = _liveRiderMapController.camera;
+      final currentCenter = camera.center;
+      final distanceMeters = latlng.Distance()(currentCenter, point);
+      if (distanceMeters < 8) return;
+      _liveRiderMapController.move(point, camera.zoom);
+    } catch (_) {
+      // Map controller may not be attached yet; safe to ignore.
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _riderMotionController = AnimationController(
+      vsync: this,
+      duration: _riderMotionDuration,
+    )..addListener(_tickRiderMotion);
+    _loadLanguagePreference();
     _loadStats();
     _setupLiveRefresh();
   }
@@ -71,37 +550,50 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void dispose() {
     _liveStatsTimer?.cancel();
+    _liveRiderTimer?.cancel();
     _graceAlertTimer?.cancel();
-    NotificationService.disconnect();
+    _riderMotionController
+      ..removeListener(_tickRiderMotion)
+      ..dispose();
+    Provider.of<NotificationProvider>(
+      context,
+      listen: false,
+    ).removeEventListener(this);
     super.dispose();
   }
 
   void _setupLiveRefresh() {
     final auth = Provider.of<AuthProvider>(context, listen: false);
-    if (auth.user != null) {
-      NotificationService.initialize(
-        onNotification: (data) {
-          if (!mounted) return;
-          final type = (data['type'] ?? data['event'] ?? '')
-              .toString()
-              .toLowerCase();
-          // Refresh stats quickly for events that can affect dashboard counters.
-          if (type.contains('user') ||
-              type.contains('order') ||
-              type.contains('payment') ||
-              type.contains('new')) {
-            _loadVisitorStatsOnly();
-          }
-        },
-      );
-      NotificationService.connect(auth.user!.id, 'admin');
-    }
+    Provider.of<NotificationProvider>(context, listen: false).addEventListener(
+      this,
+      (data) {
+        if (!mounted) return;
+        final type = (data['type'] ?? data['event'] ?? '')
+            .toString()
+            .toLowerCase();
+        // Refresh stats quickly for events that can affect dashboard counters.
+        if (type.contains('user') ||
+            type.contains('order') ||
+            type.contains('payment') ||
+            type.contains('new')) {
+          _loadVisitorStatsOnly();
+        }
+      },
+    );
 
     // Fallback polling so logins are reflected even without explicit socket events.
     _liveStatsTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (!mounted) return;
       _loadVisitorStatsOnly();
     });
+
+    final email = auth.user?.email;
+    if (_canViewLiveRiderTracker(email)) {
+      _liveRiderTimer = Timer.periodic(_liveRiderRefreshInterval, (_) {
+        if (!mounted) return;
+        _loadLiveRiderLocationsOnly();
+      });
+    }
 
     _graceAlertTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
@@ -168,10 +660,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null) return;
-      final currentUserId = Provider.of<AuthProvider>(
-        context,
-        listen: false,
-      ).user?.id;
+      final currentUser = Provider.of<AuthProvider>(context, listen: false).user;
+      final currentUserId = currentUser?.id;
+      final allowLiveTracker = _canViewLiveRiderTracker(currentUser?.email);
 
       final results = await Future.wait([
         ApiService.getOrders(
@@ -186,6 +677,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final orders = results[0] as List<dynamic>;
       final visitorStats = results[1] as Map<String, dynamic>;
       final recentActivityData = results[2] as Map<String, dynamic>;
+      final liveRiders = allowLiveTracker
+          ? _extractLiveRiderLocations(orders)
+          : const <Map<String, dynamic>>[];
+      final liveRiderTrails = allowLiveTracker
+          ? await _fetchLiveRiderTrails(token, liveRiders)
+          : const <String, List<latlng.LatLng>>{};
 
       final now = DateTime.now();
       final todayOrders = orders.where((o) {
@@ -282,11 +779,65 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _recentUsersList = recentActivityData['recent_users'] ?? [];
         _recentStoresList = recentActivityData['recent_stores'] ?? [];
         _assignableOrdersList = assignableOrders;
+        _liveRiderLocations = liveRiders;
+        _liveRiderTrails = Map<String, List<latlng.LatLng>>.from(
+          liveRiderTrails,
+        );
+        _syncAnimatedRiderLocations(_liveRiderLocations);
+        _liveLocationNameByRider.removeWhere(
+          (key, _) => !_liveRiderLocations.any(
+            (rider) => rider['riderId'].toString() == key,
+          ),
+        );
+        if (_selectedLiveRiderId != null &&
+            !_liveRiderLocations.any(
+              (rider) => rider['riderId'].toString() == _selectedLiveRiderId,
+            )) {
+          _selectedLiveRiderId = null;
+        }
         _isLoading = false;
       });
+      unawaited(_refreshLiveLocationNames(liveRiders));
     } catch (e) {
       _logger.e('Error loading stats: $e');
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadLiveRiderLocationsOnly() async {
+    try {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      final token = auth.token;
+      if (token == null || !_canViewLiveRiderTracker(auth.user?.email)) return;
+
+      final orders = await ApiService.getOrders(
+        token,
+        status: 'out_for_delivery',
+        includeItemsCount: false,
+        includeStoreStatuses: false,
+      );
+      final riders = _extractLiveRiderLocations(orders);
+      final trails = await _fetchLiveRiderTrails(token, riders);
+      if (!mounted) return;
+      setState(() {
+        _liveRiderLocations = riders;
+        _liveRiderTrails = trails;
+        _syncAnimatedRiderLocations(_liveRiderLocations);
+        _liveLocationNameByRider.removeWhere(
+          (key, _) => !_liveRiderLocations.any(
+            (rider) => rider['riderId'].toString() == key,
+          ),
+        );
+        if (_selectedLiveRiderId != null &&
+            !_liveRiderLocations.any(
+              (rider) => rider['riderId'].toString() == _selectedLiveRiderId,
+            )) {
+          _selectedLiveRiderId = null;
+        }
+      });
+      unawaited(_refreshLiveLocationNames(riders));
+    } catch (e) {
+      _logger.w('Live rider refresh skipped: $e');
     }
   }
 
@@ -326,106 +877,116 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
 
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        title: const Text(
-          'Admin Dashboard',
-          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          const NotificationBellWidget(),
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: CircleAvatar(
-              backgroundColor: Colors.indigo,
-              child: Text(
-                authProvider.user?.firstName.substring(0, 1).toUpperCase() ??
-                    'A',
-                style: const TextStyle(color: Colors.white),
-              ),
+    return Directionality(
+      textDirection: CustomerLanguage.textDirection(_isUrdu),
+      child: Scaffold(
+        backgroundColor: Colors.grey[100],
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.white,
+          iconTheme: const IconThemeData(color: Colors.black87),
+          title: Text(
+            _tr('Admin Dashboard'),
+            style: const TextStyle(
+              color: Colors.black87,
+              fontWeight: FontWeight.bold,
             ),
           ),
-        ],
-      ),
-      drawer: _buildDrawer(context, authProvider),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
-          child: _buildQuickMenu(context),
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadStats,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 4),
-                    const Text(
-                      "Today's Orders",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildStatGrid(
-                      total: _todayTotal,
-                      delivered: _todayDelivered,
-                      pending: _todayPending,
-                      cancelled: _todayCancelled,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "All Orders",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildStatGrid(
-                      total: _allTotal,
-                      delivered: _allDelivered,
-                      pending: _allPending,
-                      cancelled: _allCancelled,
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "Today's Visitors",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildVisitorsGrid(),
-                    const SizedBox(height: 32),
-                    const Text(
-                      'Recent Activity',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildActivityFilter(),
-                    const SizedBox(height: 16),
-                    _buildRecentActivityList(),
-                  ],
+          actions: [
+            const NotificationBellWidget(),
+            Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: CircleAvatar(
+                backgroundColor: Colors.indigo,
+                child: Text(
+                  authProvider.user?.firstName.substring(0, 1).toUpperCase() ??
+                      'A',
+                  style: const TextStyle(color: Colors.white),
                 ),
               ),
             ),
+          ],
+        ),
+        drawer: _buildDrawer(context, authProvider),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+            child: _buildQuickMenu(context),
+          ),
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadStats,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 4),
+                      Text(
+                        _tr("Today's Orders"),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      _buildStatGrid(
+                        total: _todayTotal,
+                        delivered: _todayDelivered,
+                        pending: _todayPending,
+                        cancelled: _todayCancelled,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _tr('All Orders'),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      _buildStatGrid(
+                        total: _allTotal,
+                        delivered: _allDelivered,
+                        pending: _allPending,
+                        cancelled: _allCancelled,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _tr("Today's Visitors"),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      _buildVisitorsGrid(),
+                      if (_canViewLiveRiderTracker(authProvider.user?.email)) ...[
+                        const SizedBox(height: 20),
+                        _buildLiveRiderTrackerSection(),
+                      ],
+                      const SizedBox(height: 32),
+                      Text(
+                        _tr('Recent Activity'),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildActivityFilter(),
+                      const SizedBox(height: 16),
+                      _buildRecentActivityList(),
+                    ],
+                  ),
+                ),
+              ),
+      ),
     );
   }
 
@@ -458,13 +1019,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.dashboard),
-            title: const Text('Dashboard'),
+            title: Text(_tr('Dashboard')),
             selected: true,
             onTap: () => Navigator.of(context).pop(),
           ),
           ListTile(
             leading: const Icon(Icons.store),
-            title: const Text('Manage Stores'),
+            title: Text(_tr('Manage Stores')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/manage-stores');
@@ -472,7 +1033,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.storefront),
-            title: const Text('Store Balances'),
+            title: Text(_tr('Store Balances')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/store-balances');
@@ -480,7 +1041,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.campaign),
-            title: const Text('Store Status'),
+            title: Text(_tr('Store Status')),
             onTap: () {
               Navigator.of(context).pop();
               _openStoreStatusMessageDialog();
@@ -488,7 +1049,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.shopping_bag),
-            title: const Text('Products & Variants'),
+            title: Text(_tr('Products & Variants')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/manage-products');
@@ -496,7 +1057,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.people),
-            title: const Text('Manage Users'),
+            title: Text(_tr('Manage Users')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/manage-users');
@@ -504,7 +1065,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.account_balance_wallet),
-            title: const Text('Wallet'),
+            title: Text(_tr('Wallet')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/wallet');
@@ -512,7 +1073,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.delivery_dining),
-            title: const Text('Riders'),
+            title: Text(_tr('Riders')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/manage-riders');
@@ -520,7 +1081,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.inventory),
-            title: const Text('Inventory Reports'),
+            title: Text(_tr('Inventory Reports')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/inventory-report');
@@ -528,7 +1089,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.receipt_long),
-            title: const Text('Manage Orders'),
+            title: Text(_tr('Manage Orders')),
             onTap: () {
               Navigator.of(context).pop();
               _openManageOrdersForAssignment();
@@ -536,7 +1097,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.key),
-            title: const Text('Change Password'),
+            title: Text(_tr('Change Password')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).pushNamed('/change-password');
@@ -545,7 +1106,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout', style: TextStyle(color: Colors.red)),
+            title: Text(_tr('Logout'), style: const TextStyle(color: Colors.red)),
             onTap: () {
               authProvider.logout();
               Navigator.of(context).pushReplacementNamed('/login');
@@ -564,25 +1125,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }) {
     final cards = [
       (
-        title: 'Total',
+        title: _tr('Total'),
         value: total.toString(),
         icon: Icons.shopping_cart,
         gradient: [Colors.blue.shade400, Colors.blue.shade700],
       ),
       (
-        title: 'Delivered',
+        title: _tr('Delivered'),
         value: delivered.toString(),
         icon: Icons.check_circle,
         gradient: [Colors.green.shade400, Colors.green.shade700],
       ),
       (
-        title: 'Pending',
+        title: _tr('Pending'),
         value: pending.toString(),
         icon: Icons.pending_actions,
         gradient: [Colors.orange.shade400, Colors.orange.shade700],
       ),
       (
-        title: 'Cancelled',
+        title: _tr('Cancelled'),
         value: cancelled.toString(),
         icon: Icons.cancel,
         gradient: [Colors.red.shade400, Colors.red.shade700],
@@ -617,6 +1178,866 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildLiveRiderTrackerSection() {
+    final allRiders = _liveRiderLocations;
+    final hasSelectedRider =
+        _selectedLiveRiderId != null &&
+        allRiders.any(
+          (rider) => rider['riderId'].toString() == _selectedLiveRiderId,
+        );
+    final riders = hasSelectedRider
+        ? allRiders
+            .where(
+              (rider) => rider['riderId'].toString() == _selectedLiveRiderId,
+            )
+            .toList(growable: false)
+        : allRiders;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _tr('Live Rider Tracker'),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF16A34A),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _tr('Auto-refreshing rider positions for active deliveries'),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${allRiders.length} ${_tr('live')}',
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (allRiders.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: hasSelectedRider
+                      ? _selectedLiveRiderId
+                      : '__all__',
+                  decoration: InputDecoration(
+                    labelText: _tr('Select Rider'),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFFD7E3F4)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFFD7E3F4)),
+                    ),
+                  ),
+                  items: [
+                    DropdownMenuItem<String>(
+                      value: '__all__',
+                      child: Text(_tr('All riders')),
+                    ),
+                    ...allRiders.map((rider) {
+                      final riderId = (rider['riderId'] ?? '').toString();
+                      final riderName =
+                          (rider['riderName'] ?? _tr('Rider')).toString();
+                      final orderNumber =
+                          (rider['orderNumber'] ?? '').toString();
+                      return DropdownMenuItem<String>(
+                        value: riderId,
+                        child: Text(
+                          orderNumber.isEmpty
+                              ? riderName
+                              : '$riderName - $orderNumber',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedLiveRiderId =
+                          value == null || value == '__all__' ? null : value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (allRiders.isEmpty)
+                Container(
+                  height: 220,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFF8FAFC), Color(0xFFEFF6FF)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    border: Border.all(color: const Color(0xFFD7E3F4)),
+                  ),
+                  child: Center(
+                    child: Text(
+                      _tr('No riders are currently sharing live locations'),
+                      style: TextStyle(
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                _buildLiveMapSurface(riders),
+              if (riders.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: riders.map(_buildRiderInfoChip).toList(),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLiveMapSurface(List<Map<String, dynamic>> riders) {
+    final selectedRiderName = _selectedLiveRiderId == null
+        ? null
+        : _liveRiderLocations
+            .where(
+              (rider) => rider['riderId'].toString() == _selectedLiveRiderId,
+            )
+            .map((rider) => (rider['riderName'] ?? 'this rider').toString())
+            .cast<String?>()
+            .firstOrNull;
+    final startCoordinates = riders
+        .map((r) {
+          final storeLatitude = r['storeLatitude'] as double?;
+          final storeLongitude = r['storeLongitude'] as double?;
+          if (storeLatitude != null && storeLongitude != null) {
+            return latlng.LatLng(storeLatitude, storeLongitude);
+          }
+          final riderId = (r['riderId'] ?? '').toString();
+          final trail = _liveRiderTrails[riderId];
+          if (trail != null && trail.isNotEmpty) {
+            return trail.first;
+          }
+          return null;
+        })
+        .whereType<latlng.LatLng>()
+        .toList(growable: false);
+    final coordinates = riders
+        .map((r) => _displayPointForRider(r))
+        .whereType<latlng.LatLng>()
+        .toList(growable: false);
+    final trailCoordinates = riders.expand((rider) {
+      final riderId = (rider['riderId'] ?? '').toString();
+      final basePoints = List<latlng.LatLng>.from(
+        _liveRiderTrails[riderId] ?? const <latlng.LatLng>[],
+      );
+      final displayPoint = _displayPointForRider(rider);
+      if (displayPoint != null) {
+        _appendTrailPoint(basePoints, displayPoint);
+      }
+      return basePoints;
+    }).toList(growable: false);
+    final mapCoordinates = <latlng.LatLng>[
+      ...startCoordinates,
+      ...trailCoordinates,
+      ...coordinates,
+    ];
+    final mapKey = riders
+        .map((rider) => rider['riderId'].toString())
+        .join('_');
+
+    final fallbackCenter = mapCoordinates.isNotEmpty
+        ? mapCoordinates.first
+        : const latlng.LatLng(30.3753, 69.3451);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: 280,
+        child: Stack(
+          children: [
+            FlutterMap(
+              key: ValueKey('live-rider-map-$mapKey-${_selectedLiveRiderId ?? 'all'}'),
+              mapController: _liveRiderMapController,
+              options: MapOptions(
+                initialCenter: fallbackCenter,
+                initialZoom: mapCoordinates.length == 1 ? 14 : 6,
+                initialCameraFit: mapCoordinates.isEmpty
+                    ? null
+                    : CameraFit.coordinates(
+                        coordinates: mapCoordinates,
+                        padding: const EdgeInsets.all(48),
+                        maxZoom: 15,
+                      ),
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.drag |
+                      InteractiveFlag.pinchZoom |
+                      InteractiveFlag.doubleTapZoom,
+                ),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.onenetsol.servenow',
+                  maxZoom: 19,
+                ),
+                MarkerLayer(
+                  markers: riders
+                      .map((rider) {
+                        final riderId = (rider['riderId'] ?? '').toString();
+                        final routeColor = _routeColorForRider(riderId);
+                        final startPoint = _resolveRiderStartPoint(rider);
+                        if (startPoint == null) return null;
+                        return Marker(
+                          point: startPoint,
+                          width: 112,
+                          height: 62,
+                          child: _buildWaypointMarker(
+                            label: 'Start',
+                            icon: Icons.storefront,
+                            color: routeColor,
+                          ),
+                        );
+                      })
+                      .whereType<Marker>()
+                      .toList(growable: false),
+                ),
+                if (_liveRiderTrails.isNotEmpty)
+                  PolylineLayer(
+                    polylines: riders
+                        .map((rider) {
+                          final riderId = (rider['riderId'] ?? '').toString();
+                          final points = List<latlng.LatLng>.from(
+                            _liveRiderTrails[riderId] ?? const [],
+                          );
+                          final displayPoint = _displayPointForRider(rider);
+                          if (displayPoint != null) {
+                            _appendTrailPoint(points, displayPoint);
+                          }
+                          if (points.length < 2) return null;
+                          final isSelected = riderId == _selectedLiveRiderId;
+                          final routeColor = _routeColorForRider(riderId);
+                          return Polyline(
+                            points: points,
+                            color: isSelected
+                                ? routeColor
+                                : routeColor.withValues(
+                                    alpha: 0.52,
+                                  ),
+                            strokeWidth: isSelected ? 5 : 3.5,
+                          );
+                        })
+                        .whereType<Polyline>()
+                        .toList(growable: false),
+                  ),
+                MarkerLayer(
+                  markers: riders.map((rider) {
+                    final riderId = (rider['riderId'] ?? '').toString();
+                    final isSelected = riderId == _selectedLiveRiderId;
+                    final routeColor = _routeColorForRider(riderId);
+                    final displayPoint = _displayPointForRider(rider) ??
+                        latlng.LatLng(
+                          (rider['latitude'] as double?) ?? 0,
+                          (rider['longitude'] as double?) ?? 0,
+                        );
+                    return Marker(
+                      point: displayPoint,
+                      width: 110,
+                      height: 76,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedLiveRiderId = riderId;
+                          });
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _autoFollowSelectedRider();
+                          });
+                          _showLiveRiderDetails(rider);
+                        },
+                        child: _buildMapMarker(
+                          rider,
+                          isSelected: isSelected,
+                          accentColor: routeColor,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+            Positioned(
+              top: 12,
+              right: 12,
+              child: _selectedLiveRiderId == null && riders.length > 1
+                  ? _buildRouteLegend(riders)
+                  : const SizedBox.shrink(),
+            ),
+            Positioned(
+              top: 12,
+              left: 12,
+              child: _selectedLiveRiderId != null
+                  ? Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () {
+                          setState(() {
+                            _selectedLiveRiderId = null;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.94),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0xFFD7E3F4),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.arrow_back_rounded,
+                                size: 16,
+                                color: Colors.black87,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                selectedRiderName == null
+                                    ? _tr('Back to all riders')
+                                    : 'Back from $selectedRiderName',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 10,
+              child: Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFFD7E3F4)),
+                    ),
+                    child: const Text(
+                      'Map data OpenStreetMap contributors',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFFD7E3F4)),
+                    ),
+                    child: const Text(
+                      'Tap a rider pin',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRouteLegend(List<Map<String, dynamic>> riders) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 170),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD7E3F4)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _tr('Routes'),
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          ...riders.map((rider) {
+            final riderId = (rider['riderId'] ?? '').toString();
+            final riderName = (rider['riderName'] ?? 'Rider').toString();
+            final routeColor = _routeColorForRider(riderId);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () {
+                  setState(() {
+                    _selectedLiveRiderId = riderId;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _autoFollowSelectedRider();
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 14,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: routeColor,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          riderName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMapMarker(
+    Map<String, dynamic> rider, {
+    bool isSelected = false,
+    required Color accentColor,
+  }) {
+    final riderName = (rider['riderName'] ?? 'Rider').toString();
+    final status = (rider['status'] ?? '').toString().replaceAll('_', ' ');
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 96),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: isSelected ? 32 : 28,
+                height: isSelected ? 32 : 28,
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? accentColor.withValues(alpha: 0.22)
+                      : accentColor.withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withValues(alpha: 0.26),
+                      blurRadius: 12,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: isSelected ? 18 : 16,
+                height: isSelected ? 18 : 16,
+                decoration: BoxDecoration(
+                  color: isSelected ? accentColor : accentColor,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.delivery_dining,
+                  size: 10,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            riderName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+            ),
+          ),
+          Text(
+            status.isEmpty ? 'Live' : status,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: accentColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWaypointMarker({
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Align(
+      alignment: Alignment.topLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.28)),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.12),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showLiveRiderDetails(Map<String, dynamic> rider) {
+    final riderId = (rider['riderId'] ?? '').toString();
+    final routeColor = _routeColorForRider(riderId);
+    final riderName = (rider['riderName'] ?? 'Rider').toString();
+    final orderNumber = (rider['orderNumber'] ?? '-').toString();
+    final storeName = (rider['storeName'] ?? 'Unknown Store').toString();
+    final status = (rider['status'] ?? '').toString().replaceAll('_', ' ');
+    final livePoint = _displayPointForRider(rider);
+    final liveLocation = _liveLocationLabelForRider(rider);
+    final trailPoints = _liveRiderTrails[riderId]?.length ?? 1;
+    final assignedOrder = orderNumber.isEmpty ? 'Not assigned' : orderNumber;
+    final distanceKm = _distanceKmForRider(rider);
+    final etaMinutes = _etaMinutesForRider(rider);
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  riderName,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: routeColor,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _buildLiveDetailRow(
+                  Icons.assignment_turned_in,
+                  _tr('Assigned Order'),
+                  assignedOrder,
+                ),
+                _buildLiveDetailRow(Icons.storefront, 'Store', storeName),
+                _buildLiveDetailRow(
+                  Icons.local_shipping,
+                  _tr('Status'),
+                  status.isEmpty ? 'Live' : status,
+                ),
+                _buildLiveDetailRow(
+                  Icons.timeline,
+                  _tr('Trail Points'),
+                  trailPoints.toString(),
+                ),
+                _buildLiveDetailRow(
+                  Icons.social_distance,
+                  _tr('Distance'),
+                  _formatDistanceKm(distanceKm),
+                ),
+                _buildLiveDetailRow(
+                  Icons.schedule,
+                  _tr('ETA'),
+                  _formatEtaMinutes(etaMinutes),
+                ),
+                _buildLiveDetailRow(Icons.place, _tr('Location'), liveLocation),
+                _buildLiveDetailRow(
+                  Icons.explore,
+                  _tr('Coordinates'),
+                  _shortCoordinateLabel(livePoint),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLiveDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFFB45309)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                ),
+                children: [
+                  TextSpan(
+                    text: '$label: ',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  TextSpan(text: value),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRiderInfoChip(Map<String, dynamic> rider) {
+    final riderId = (rider['riderId'] ?? '').toString();
+    final routeColor = _routeColorForRider(riderId);
+    final riderName = (rider['riderName'] ?? 'Rider').toString();
+    final orderNumber = (rider['orderNumber'] ?? '').toString();
+    final storeName = (rider['storeName'] ?? '').toString();
+    final locationLabel = _liveLocationLabelForRider(rider);
+    final trailPoints = _liveRiderTrails[riderId]?.length ?? 1;
+    final distanceKm = _distanceKmForRider(rider);
+    final etaMinutes = _etaMinutesForRider(rider);
+    final isSelected = riderId == _selectedLiveRiderId;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedLiveRiderId = riderId;
+        });
+        _showLiveRiderDetails(rider);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 170,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? routeColor.withValues(alpha: 0.10)
+              : routeColor.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected ? routeColor : routeColor.withValues(alpha: 0.32),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 30,
+              height: 5,
+              decoration: BoxDecoration(
+                color: routeColor,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              riderName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+            ),
+            if (orderNumber.isNotEmpty)
+              Text(
+                'Assigned: $orderNumber',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+            if (storeName.isNotEmpty)
+              Text(
+                storeName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: Colors.black54),
+              ),
+            const SizedBox(height: 4),
+            Text(
+              locationLabel,
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: Color(0xFF9A3412),
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$trailPoints route points',
+              style: TextStyle(
+                fontSize: 10.5,
+                color: routeColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${_tr('Distance')}: ${_formatDistanceKm(distanceKm)}',
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: Colors.black87,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              '${_tr('ETA')}: ${_formatEtaMinutes(etaMinutes)}',
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: Colors.black54,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1148,42 +2569,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _buildQuickMenuItem(
               context: context,
               icon: Icons.store,
-              label: 'Stores',
+              label: _tr('Stores'),
               route: '/manage-stores',
             ),
             const SizedBox(width: 10),
             _buildQuickMenuItem(
               context: context,
               icon: Icons.shopping_bag,
-              label: 'Products',
+              label: _tr('Products'),
               route: '/manage-products',
             ),
             const SizedBox(width: 10),
             _buildQuickMenuItem(
               context: context,
               icon: Icons.receipt_long,
-              label: 'Orders',
+              label: _tr('Orders'),
               onTap: _openManageOrdersForAssignment,
             ),
             const SizedBox(width: 10),
             _buildQuickMenuItem(
               context: context,
               icon: Icons.inventory_2,
-              label: 'Inventory',
+              label: _tr('Inventory'),
               route: '/inventory-report',
             ),
             const SizedBox(width: 10),
             _buildQuickMenuItem(
               context: context,
               icon: Icons.campaign,
-              label: 'Status',
+              label: _tr('Status'),
               onTap: _openStoreStatusMessageDialog,
             ),
             const SizedBox(width: 10),
             _buildQuickMenuItem(
               context: context,
               icon: Icons.local_offer_outlined,
-              label: 'Offers',
+              label: _tr('Offers'),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => OfferCampaignsScreen(isAdmin: true),

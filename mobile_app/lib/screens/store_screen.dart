@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
 import '../models/cart_item.dart';
 import 'package:servenow/services/notifier.dart';
+import '../utils/customer_language.dart';
 
 class StoreScreen extends StatefulWidget {
   final int storeId;
@@ -24,6 +25,7 @@ class _StoreScreenState extends State<StoreScreen> {
   Map<String, dynamic>? _globalStatus;
   Timer? _globalStatusRefreshTimer;
   Timer? _globalStatusPollTimer;
+  bool _isUrdu = false;
 
   String _variantKey(ProductVariant v) {
     return '${v.sizeId ?? 'n'}:${v.unitId ?? 'n'}';
@@ -40,12 +42,21 @@ class _StoreScreenState extends State<StoreScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLanguagePreference();
     _storeDetailsFuture = ApiService.getStoreDetails(widget.storeId);
     _loadGlobalStatus();
     _globalStatusPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _loadGlobalStatus();
     });
   }
+
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() => _isUrdu = isUrdu);
+  }
+
+  String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
 
   Future<void> _refresh() async {
     setState(() {
@@ -134,15 +145,15 @@ class _StoreScreenState extends State<StoreScreen> {
   }
 
   String _globalStatusMessage(Map<String, dynamic>? status) {
-    if (status == null) return 'Ordering is temporarily unavailable.';
+    if (status == null) return _tr('Ordering is temporarily unavailable.');
     final message = (status['status_message'] ?? '').toString().trim();
     final when = _formatDeliveryWindow(status['start_at'], status['end_at']);
     if (message.isNotEmpty && when.isNotEmpty) return '$message ($when)';
     if (message.isNotEmpty) return message;
-    if (when.isNotEmpty) return 'Delivery update: $when';
+    if (when.isNotEmpty) return '${_tr('Delivery update')}: $when';
     final title = (status['title'] ?? '').toString().trim();
     if (title.isNotEmpty) return title;
-    return 'Ordering is temporarily unavailable.';
+    return _tr('Ordering is temporarily unavailable.');
   }
 
   String _formatDeliveryWindow(dynamic startRaw, dynamic endRaw) {
@@ -185,7 +196,7 @@ class _StoreScreenState extends State<StoreScreen> {
       if (!mounted) return;
       Notifier.error(
         context,
-        'This store is currently closed. You cannot place orders at this time.',
+        _tr('This store is currently closed. You cannot place orders at this time.'),
         duration: const Duration(seconds: 4),
         sanitize: false,
       );
@@ -196,7 +207,7 @@ class _StoreScreenState extends State<StoreScreen> {
     final cart = Provider.of<CartProvider>(context, listen: false);
 
     if (product.stockQuantity <= 0) {
-      Notifier.info(context, 'Out of stock');
+      Notifier.info(context, _tr('Out of stock'));
       return;
     }
 
@@ -210,7 +221,10 @@ class _StoreScreenState extends State<StoreScreen> {
     );
 
     if (existingItem.quantity >= product.stockQuantity) {
-      Notifier.info(context, 'Only ${product.stockQuantity} available');
+      Notifier.info(
+        context,
+        '${_tr('Only')} ${product.stockQuantity} ${_tr('available')}',
+      );
       return;
     }
 
@@ -221,7 +235,7 @@ class _StoreScreenState extends State<StoreScreen> {
       } else {
         Notifier.success(
           context,
-          'Added to cart',
+          _tr('Added to cart'),
           duration: const Duration(seconds: 1),
         );
       }
@@ -232,9 +246,11 @@ class _StoreScreenState extends State<StoreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Directionality(
+      textDirection: CustomerLanguage.textDirection(_isUrdu),
+      child: Scaffold(
       appBar: AppBar(
-        title: const Text('Store Details'),
+        title: Text(_tr('Store Details')),
         actions: [
           Consumer<CartProvider>(
             builder: (ctx, cart, child) => Stack(
@@ -281,12 +297,12 @@ class _StoreScreenState extends State<StoreScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return Center(child: Text('${_tr('Error')}: ${snapshot.error}'));
           }
 
           final data = snapshot.data;
           if (data == null || data['success'] != true) {
-            return const Center(child: Text('Store not found'));
+            return Center(child: Text(_tr('Store not found')));
           }
 
           final store = data['store'];
@@ -380,7 +396,7 @@ class _StoreScreenState extends State<StoreScreen> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    isOpen ? '🟢 OPEN' : '🔴 CLOSED',
+                                    isOpen ? '🟢 ${_tr('OPEN')}' : '🔴 ${_tr('CLOSED')}',
                                     style: TextStyle(
                                       color: isOpen
                                           ? Colors.green.shade800
@@ -514,11 +530,11 @@ class _StoreScreenState extends State<StoreScreen> {
                     ),
                   ),
                 ),
-                const SliverToBoxAdapter(
+                SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16.0),
                     child: Text(
-                      'Products',
+                      _tr('Products'),
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -571,7 +587,7 @@ class _StoreScreenState extends State<StoreScreen> {
           );
         },
       ),
-    );
+    ));
   }
 
   String _formatTimeOnly(dynamic time) {
@@ -782,7 +798,11 @@ class _StoreScreenState extends State<StoreScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          child: Text(isGlobalBlocked ? 'Unavailable' : 'Add to Cart'),
+                          child: Text(
+                            isGlobalBlocked
+                                ? _tr('Unavailable')
+                                : _tr('Add to Cart'),
+                          ),
                         ),
                       ),
                     ],

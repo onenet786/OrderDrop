@@ -3,9 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
 import '../services/api_service.dart';
-import '../services/notification_service.dart';
 import '../theme/customer_palette.dart';
+import '../utils/customer_language.dart';
 import '../widgets/notification_bell_widget.dart';
 
 class OrdersScreen extends StatefulWidget {
@@ -22,17 +23,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
   String? _error;
   String _statusFilter = 'all';
   final Set<String> _expandedOrders = {};
+  bool _isUrdu = false;
 
   @override
   void initState() {
     super.initState();
+    _loadLanguagePreference();
     _fetchOrders();
     _setupNotifications();
   }
 
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() => _isUrdu = isUrdu);
+  }
+
+  String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
+
   void _setupNotifications() {
-    NotificationService.initialize(
-      onNotification: (data) {
+    Provider.of<NotificationProvider>(context, listen: false).addEventListener(
+      this,
+      (data) {
         _handleNotification(data);
       },
     );
@@ -42,7 +54,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (!mounted) return;
 
     final type = (notification['type'] ?? '').toString().toLowerCase();
-    final message = (notification['message'] ?? 'Order update').toString();
+    final message = (notification['message'] ?? _tr('Order update')).toString();
     if (type == 'order_update' ||
         type == 'refresh_orders' ||
         type == 'payment_status_update' ||
@@ -106,7 +118,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Could not launch dialer')));
+    ).showSnackBar(SnackBar(content: Text(_tr('Could not launch dialer'))));
   }
 
   Future<void> _sendSms(String phoneNumber) async {
@@ -119,7 +131,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Could not launch SMS app')));
+    ).showSnackBar(SnackBar(content: Text(_tr('Could not launch SMS app'))));
   }
 
   Future<void> _openWhatsApp(String phoneNumber) async {
@@ -132,7 +144,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Could not launch WhatsApp')));
+    ).showSnackBar(SnackBar(content: Text(_tr('Could not launch WhatsApp'))));
   }
 
   List<dynamic> get _visibleOrders {
@@ -150,6 +162,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   @override
+  void dispose() {
+    Provider.of<NotificationProvider>(
+      context,
+      listen: false,
+    ).removeEventListener(this);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final userName = authProvider.user?.firstName ?? 'Customer';
@@ -162,7 +183,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
       return status == 'delivered';
     }).length;
 
-    return Scaffold(
+    return Directionality(
+      textDirection: CustomerLanguage.textDirection(_isUrdu),
+      child: Scaffold(
       backgroundColor: CustomerPalette.background,
       appBar: AppBar(
         leading: IconButton(
@@ -175,7 +198,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             }
           },
         ),
-        title: const Text('My Orders'),
+        title: Text(_tr('My Orders')),
         actions: [
           const NotificationBellWidget(),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _fetchOrders),
@@ -199,7 +222,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       const SizedBox(height: 6),
                       Expanded(
                         child: _visibleOrders.isEmpty
-                            ? const Center(child: Text('No orders found.'))
+                            ? Center(child: Text(_tr('No orders found.')))
                             : ListView.builder(
                                 padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
                                 itemCount: _visibleOrders.length,
@@ -215,7 +238,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
       ),
       bottomNavigationBar: _buildBottomBar(),
-    );
+    ));
   }
 
   Widget _buildBottomBar() {
@@ -241,25 +264,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
             _buildBottomIcon(
               index: 0,
               icon: Icons.home_filled,
-              label: 'Home',
+              label: _tr('Home'),
               onTap: () => Navigator.of(context).pushReplacementNamed('/home'),
             ),
             _buildBottomIcon(
               index: 1,
               icon: Icons.storefront,
-              label: 'Stores',
+              label: _tr('Stores'),
               onTap: () => Navigator.of(context).pushReplacementNamed('/home'),
             ),
             _buildBottomIcon(
               index: 2,
               icon: Icons.shopping_bag,
-              label: 'Orders',
+              label: _tr('Orders'),
               onTap: () {},
             ),
             _buildBottomIcon(
               index: 3,
               icon: Icons.shopping_cart,
-              label: 'Cart',
+              label: _tr('Cart'),
               onTap: () => Navigator.of(context).pushReplacementNamed('/cart'),
             ),
           ],
@@ -315,14 +338,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
             const Icon(Icons.error_outline, color: Colors.redAccent, size: 34),
             const SizedBox(height: 8),
             Text(
-              'Failed to load orders\n$_error',
+              '${_tr('Failed to load orders')}\n$_error',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 10),
             FilledButton.icon(
               onPressed: _fetchOrders,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(_tr('Retry')),
             ),
           ],
         ),
@@ -355,7 +378,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Hello, $userName',
+                  '${_tr('Customer')}: $userName',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
@@ -368,11 +391,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _buildMetricTile('Total', '$total')),
+              Expanded(child: _buildMetricTile(_tr('Total'), '$total')),
               const SizedBox(width: 8),
-              Expanded(child: _buildMetricTile('Active', '$active')),
+              Expanded(child: _buildMetricTile(_tr('Active'), '$active')),
               const SizedBox(width: 8),
-              Expanded(child: _buildMetricTile('Delivered', '$completed')),
+              Expanded(child: _buildMetricTile(_tr('Completed'), '$completed')),
             ],
           ),
         ],
@@ -415,11 +438,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
-          _filterChip('all', 'All'),
+          _filterChip('all', _tr('All')),
           const SizedBox(width: 8),
-          _filterChip('active', 'Active'),
+          _filterChip('active', _tr('Active')),
           const SizedBox(width: 8),
-          _filterChip('history', 'History'),
+          _filterChip('history', _tr('History')),
         ],
       ),
     );
@@ -483,7 +506,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Order #$orderNumber',
+                        '${_tr('Orders')} #$orderNumber',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -493,7 +516,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       Text(
                         createdAt != null
                             ? _formatDateTime(createdAt)
-                            : 'Date not available',
+                            : _tr('Order Date'),
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.black54,
@@ -516,21 +539,21 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   children: [
                     Expanded(
                       child: _amountBlock(
-                        label: 'Subtotal',
+                        label: _tr('Subtotal'),
                         value: _formatPkr(subtotal),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: _amountBlock(
-                        label: 'Delivery',
+                        label: _tr('Delivery'),
                         value: _formatPkr(deliveryFee),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: _amountBlock(
-                        label: 'Grand Total',
+                        label: _tr('Grand Total'),
                         value: _formatPkr(grandTotal),
                         highlight: true,
                       ),
@@ -540,25 +563,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 const SizedBox(height: 10),
                 _lineInfo(
                   icon: Icons.location_on_outlined,
-                  label: 'Address',
+                  label: _tr('Address'),
                   value: (order['delivery_address'] ?? 'N/A').toString(),
                 ),
                 if (isGroup)
                   _lineInfo(
                     icon: Icons.store_mall_directory_outlined,
-                    label: 'Shipments',
-                    value: '${subOrders.length} stores',
+                    label: _tr('Shipments'),
+                    value: '${subOrders.length} ${_tr('Stores')}',
                   )
                 else
                   _lineInfo(
                     icon: Icons.storefront_outlined,
-                    label: 'Store',
+                    label: _tr('Store'),
                     value: (order['store_name'] ?? 'N/A').toString(),
                   ),
                 if ((order['payment_method'] ?? '').toString().trim().isNotEmpty)
                   _lineInfo(
                     icon: Icons.payments_outlined,
-                    label: 'Payment',
+                    label: _tr('Payment'),
                     value: '${order['payment_method']}',
                   ),
               ],
@@ -578,7 +601,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 });
               },
               icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
-              label: Text(isExpanded ? 'Hide details' : 'View details'),
+              label: Text(
+                isExpanded ? _tr('Hide details') : _tr('View details'),
+              ),
             ),
           ),
           if (isExpanded) ...[
@@ -610,13 +635,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildGroupDetails(List subOrders) {
     if (subOrders.isEmpty) {
-      return const Text('No shipment details available');
+      return Text(_tr('No shipment details available'));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Shipment Details',
+        Text(
+          _tr('Shipments'),
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
         ),
         const SizedBox(height: 8),
@@ -663,7 +688,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     child: TextButton.icon(
                       onPressed: () => _makeCall(storePhone),
                       icon: const Icon(Icons.call_outlined, size: 16),
-                      label: const Text('Call Store'),
+                      label: Text(_tr('Call Store')),
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
                         minimumSize: const Size(0, 28),
@@ -684,7 +709,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            '$qty x ${item['product_name'] ?? 'Item'}${label.isNotEmpty ? ' ($label)' : ''}',
+                            '$qty x ${item['product_name'] ?? _tr('Items')}${label.isNotEmpty ? ' ($label)' : ''}',
                             style: const TextStyle(fontSize: 12.5),
                           ),
                         ),
@@ -704,10 +729,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 const Divider(height: 12),
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Store Total',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                        '${_tr('Store')} ${_tr('Total')}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
                     Text(
@@ -730,13 +755,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
   Widget _buildSingleOrderDetails(Map<String, dynamic> order) {
     final items = (order['items'] as List?) ?? const [];
     if (items.isEmpty) {
-      return const Text('No items found for this order');
+      return Text(_tr('No items found for this order'));
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Items',
+        Text(
+          _tr('Items'),
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
         ),
         const SizedBox(height: 8),
@@ -757,7 +782,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    '$qty x ${item['product_name'] ?? 'Item'}${label.isNotEmpty ? ' ($label)' : ''}',
+                    '$qty x ${item['product_name'] ?? _tr('Items')}${label.isNotEmpty ? ' ($label)' : ''}',
                     style: const TextStyle(fontSize: 12.5),
                   ),
                 ),
@@ -779,7 +804,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Widget _buildRiderContact(String riderName, String riderPhone) {
-    final displayName = riderName.trim().isEmpty ? 'Assigned Rider' : riderName;
+    final displayName = riderName.trim().isEmpty ? _tr('Customer') : riderName;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -801,7 +826,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 child: _contactButton(
                   icon: Icons.call_outlined,
                   color: Colors.blue,
-                  label: 'Call',
+                  label: _tr('Call'),
                   onPressed: () => _makeCall(riderPhone),
                 ),
               ),
@@ -810,7 +835,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 child: _contactButton(
                   icon: Icons.sms_outlined,
                   color: Colors.orange,
-                  label: 'SMS',
+                  label: _tr('SMS'),
                   onPressed: () => _sendSms(riderPhone),
                 ),
               ),
@@ -819,7 +844,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 child: _contactButton(
                   icon: Icons.chat_outlined,
                   color: Colors.green,
-                  label: 'WhatsApp',
+                  label: _tr('WhatsApp'),
                   onPressed: () => _openWhatsApp(riderPhone),
                 ),
               ),
@@ -832,7 +857,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildStoreContact(String storeName, String storePhone) {
     final displayStore =
-        storeName.trim().isEmpty ? 'Store' : storeName.trim();
+        storeName.trim().isEmpty ? _tr('Store') : storeName.trim();
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -844,7 +869,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Store: $displayStore',
+            '${_tr('Store')}: $displayStore',
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
@@ -853,7 +878,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
             child: _contactButton(
               icon: Icons.call_outlined,
               color: Colors.deepPurple,
-              label: 'Call Store',
+              label: _tr('Call Store'),
               onPressed: () => _makeCall(storePhone),
             ),
           ),
@@ -973,7 +998,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         border: Border.all(color: color.withValues(alpha: 0.6)),
       ),
       child: Text(
-        status.toUpperCase().replaceAll('_', ' '),
+        _tr(status.toUpperCase().replaceAll('_', ' ')),
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.w800,

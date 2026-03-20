@@ -413,6 +413,42 @@ async function ensureRiderLocationColumns(db) {
   }
 }
 
+async function ensureRiderLocationLogsTable(db) {
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS rider_location_logs (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        rider_id INT NOT NULL,
+        latitude DECIMAL(10, 8) NOT NULL,
+        longitude DECIMAL(11, 8) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_rider_location_logs_rider_created (rider_id, created_at)
+      )
+    `);
+  } catch (e) {
+    console.error("Failed to ensure rider_location_logs table:", e);
+  }
+}
+
+function compressLocationHistory(rows, maxPoints) {
+  if (!Array.isArray(rows) || rows.length <= maxPoints) return rows;
+  if (maxPoints <= 2) {
+    return [rows[0], rows[rows.length - 1]];
+  }
+
+  const compressed = [rows[0]];
+  const interiorSlots = maxPoints - 2;
+  const lastIndex = rows.length - 1;
+
+  for (let i = 1; i <= interiorSlots; i += 1) {
+    const index = Math.round((i * lastIndex) / (interiorSlots + 1));
+    compressed.push(rows[index]);
+  }
+
+  compressed.push(rows[lastIndex]);
+  return compressed;
+}
+
 function roundAmount(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -1789,6 +1825,85 @@ router.put(
   },
 );
 
+router.get("/rider/location-history", authenticateToken, async (req, res) => {
+  try {
+    if (
+      req.user.user_type !== "admin" &&
+      req.user.user_type !== "standard_user"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Admin only.",
+      });
+    }
+
+    await ensureRiderLocationLogsTable(req.db);
+
+    const riderIds = String(req.query.riderIds || "")
+      .split(",")
+      .map((value) => Number.parseInt(String(value).trim(), 10))
+      .filter((value, index, arr) =>
+        Number.isInteger(value) && value > 0 && arr.indexOf(value) === index
+      );
+
+    if (riderIds.length === 0) {
+      return res.json({ success: true, histories: {} });
+    }
+
+    const hours = Math.min(
+      Math.max(Number.parseInt(String(req.query.hours || "3"), 10) || 3, 1),
+      24,
+    );
+    const limit = Math.min(
+      Math.max(Number.parseInt(String(req.query.limit || "40"), 10) || 40, 5),
+      200,
+    );
+
+    const placeholders = riderIds.map(() => "?").join(", ");
+    const [rows] = await req.db.execute(
+      `SELECT rider_id, latitude, longitude, created_at
+       FROM rider_location_logs
+       WHERE rider_id IN (${placeholders})
+         AND created_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)
+       ORDER BY rider_id ASC, created_at ASC`,
+      [...riderIds, hours],
+    );
+
+    const histories = {};
+    for (const riderId of riderIds) {
+      histories[String(riderId)] = [];
+    }
+
+    for (const row of rows) {
+      const key = String(row.rider_id);
+      if (!histories[key]) histories[key] = [];
+      histories[key].push({
+        latitude: Number.parseFloat(row.latitude),
+        longitude: Number.parseFloat(row.longitude),
+        created_at: row.created_at,
+      });
+    }
+
+    for (const key of Object.keys(histories)) {
+      histories[key] = compressLocationHistory(histories[key], limit);
+    }
+
+    res.json({
+      success: true,
+      hours,
+      limit,
+      histories,
+    });
+  } catch (error) {
+    console.error("Error fetching rider location history:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch rider location history",
+      error: error.message,
+    });
+  }
+});
+
 // Get rider wallet stats (Daily, Weekly, Monthly)
 router.get("/rider/wallet-stats", authenticateToken, async (req, res) => {
   try {
@@ -2742,6 +2857,7 @@ router.get("/", authenticateToken, async (req, res) => {
     const [orders] = await req.db.execute(
       `
             SELECT o.*, u.first_name, u.last_name, u.email, s.name as store_name,
+                   s.latitude as store_latitude, s.longitude as store_longitude,
                    r.first_name as rider_first_name, r.last_name as rider_last_name
                    ${selectExtra}
             FROM orders o

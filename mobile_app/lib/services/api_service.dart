@@ -20,24 +20,33 @@ class ApiServiceException implements Exception {
 
 class ApiService {
   static final Logger _logger = Logger();
+  static const String _defaultBaseUrl = 'https://servenow.pk';
+  static const String _configuredBaseUrl = String.fromEnvironment(
+    'SERVENOW_API_BASE_URL',
+    defaultValue: '',
+  );
   static const String serviceUnavailableMessage =
       'ServeNow is temporarily unavailable. The site is under maintenance. Please try again shortly.';
   static Future<String?> Function()? refreshAccessToken;
   static Future<String?>? _refreshInFlight;
 
   static String get baseUrl {
-    if (kDebugMode) {
-      if (kIsWeb) {
-        return 'http://23.137.84.249:3002';
-      } else if (Platform.isAndroid) {
-        return 'http://23.137.84.249:3002'; // Android Emulator localhost
+    final configured = _configuredBaseUrl.trim();
+    if (configured.isNotEmpty) {
+      return configured.replaceFirst(RegExp(r'\/+$'), '');
+    }
+
+    if (kDebugMode && !kIsWeb) {
+      if (Platform.isAndroid) {
+        return 'http://10.0.2.2:3002';
       } else if (Platform.isIOS) {
-        return 'http://23.137.84.249:3002'; // iOS Simulator localhost
+        return 'http://127.0.0.1:3002';
+      } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        return 'http://127.0.0.1:3002';
       }
     }
 
-    // Fallback to production/remote URL
-    return 'http://23.137.84.249:3002';
+    return _defaultBaseUrl;
   }
 
   static String getImageUrl(String? url) {
@@ -61,7 +70,8 @@ class ApiService {
         lower.contains('network request failed') ||
         lower.contains('socketexception') ||
         lower.contains('clientexception') ||
-        lower.contains('23.137.84.249');
+        lower.contains('23.137.84.249') ||
+        lower.contains('servenow.pk');
   }
 
   static Future<String?> _refreshAccessTokenOnce() async {
@@ -1312,6 +1322,36 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({'latitude': latitude, 'longitude': longitude}),
+    );
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> getRiderLocationHistory(
+    String token, {
+    required List<String> riderIds,
+    int hours = 3,
+    int limit = 40,
+  }) async {
+    final ids = riderIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (ids.isEmpty) {
+      return const {'success': true, 'histories': <String, dynamic>{}};
+    }
+
+    final uri = Uri.parse('$baseUrl/api/orders/rider/location-history').replace(
+      queryParameters: {
+        'riderIds': ids.join(','),
+        'hours': hours.toString(),
+        'limit': limit.toString(),
+      },
+    );
+    _logger.d('ApiService: GET $uri');
+    final response = await _get(
+      uri,
+      headers: {'Authorization': 'Bearer $token'},
     );
     return _handleResponse(response);
   }

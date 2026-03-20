@@ -445,14 +445,20 @@ class _AppUpdateOverlayState extends State<_AppUpdateOverlay>
     final latestVersion = (status['latest_version'] ?? '').toString().trim();
     if (latestVersion.isEmpty) return null;
 
+    final installedComparableVersion = installedVersion.isEmpty
+        ? ''
+        : (installedBuild.isNotEmpty
+              ? '$installedVersion+$installedBuild'
+              : installedVersion);
+
     final minimumSupportedVersion =
         (status['minimum_supported_version'] ?? '').toString().trim();
     final updateAvailable =
-        _compareVersionStrings(installedVersion, latestVersion) < 0;
+        _compareVersionStrings(installedComparableVersion, latestVersion) < 0;
     if (!updateAvailable) return null;
 
     final forcedByVersion = minimumSupportedVersion.isNotEmpty &&
-        _compareVersionStrings(installedVersion, minimumSupportedVersion) < 0;
+        _compareVersionStrings(installedComparableVersion, minimumSupportedVersion) < 0;
     final reminderHour =
         int.tryParse((status['reminder_hour'] ?? '12').toString()) ?? 12;
 
@@ -460,6 +466,7 @@ class _AppUpdateOverlayState extends State<_AppUpdateOverlay>
       ...status,
       'installed_version': installedVersion,
       'installed_build': installedBuild,
+      'installed_comparable_version': installedComparableVersion,
       'latest_version': latestVersion,
       'update_available': true,
       'force_update_active':

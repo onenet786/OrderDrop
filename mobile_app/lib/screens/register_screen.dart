@@ -1,10 +1,13 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/auth_provider.dart';
 import '../services/notifier.dart';
 import '../theme/customer_palette.dart';
+import '../utils/customer_language.dart';
 import 'verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -22,17 +25,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+
   DateTime? _selectedDob;
   bool _updatingPhone = false;
+  bool _isUrdu = false;
 
   @override
   void initState() {
     super.initState();
+    _loadLanguagePreference();
     _phoneController.text = '+923';
     _phoneController.selection = TextSelection.collapsed(
       offset: _phoneController.text.length,
     );
     _phoneController.addListener(_enforcePhonePrefix);
+  }
+
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() => _isUrdu = isUrdu);
+  }
+
+  String _tr(String text) {
+    const localTranslations = <String, String>{
+      'Select date of birth': 'تاریخ پیدائش منتخب کریں',
+      'Cancel': 'منسوخ',
+      'Select': 'منتخب کریں',
+    };
+    if (_isUrdu && localTranslations.containsKey(text)) {
+      return localTranslations[text]!;
+    }
+    return CustomerLanguage.tr(_isUrdu, text);
   }
 
   @override
@@ -55,10 +79,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final nameParts =
           fullName.isEmpty ? <String>[] : fullName.split(RegExp(r'\s+'));
       final firstName = nameParts.isNotEmpty ? nameParts.first : fullName;
-      final lastName = nameParts.length > 1
-          ? nameParts.sublist(1).join(' ')
-          : fullName;
-      final requiresVerification = await Provider.of<AuthProvider>(context, listen: false).register(
+      final lastName =
+          nameParts.length > 1 ? nameParts.sublist(1).join(' ') : fullName;
+
+      final requiresVerification = await Provider.of<AuthProvider>(
+        context,
+        listen: false,
+      ).register(
         firstName: firstName,
         lastName: lastName,
         dateOfBirth: _dobController.text,
@@ -76,16 +103,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
             builder: (ctx) => VerificationScreen(email: _emailController.text),
           ),
         );
+        return;
+      }
+
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      if (auth.isAdmin) {
+        Navigator.of(context).pushReplacementNamed('/admin');
+      } else if (auth.isRider) {
+        Navigator.of(context).pushReplacementNamed('/rider');
       } else {
-        // Navigate to home or show success
-        final auth = Provider.of<AuthProvider>(context, listen: false);
-        if (auth.isAdmin) {
-          Navigator.of(context).pushReplacementNamed('/admin');
-        } else if (auth.isRider) {
-          Navigator.of(context).pushReplacementNamed('/rider');
-        } else {
-          Navigator.of(context).pushReplacementNamed('/home');
-        }
+        Navigator.of(context).pushReplacementNamed('/home');
       }
     } catch (e) {
       if (mounted) {
@@ -97,266 +124,276 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              CustomerPalette.primary,
-              CustomerPalette.primaryDark,
-              CustomerPalette.accent,
-            ],
+
+    return Directionality(
+      textDirection: CustomerLanguage.textDirection(_isUrdu),
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                CustomerPalette.primary,
+                CustomerPalette.primaryDark,
+                CustomerPalette.accent,
+              ],
+            ),
           ),
-        ),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: EdgeInsets.only(
-                top: 36,
-                bottom:
-                    MediaQuery.of(context).size.height *
-                    0.1, // Slightly less bottom padding for taller form
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildBrandHeader(),
-                  const SizedBox(height: 18),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(40),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 350),
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: CustomerPalette.card.withValues(alpha: 0.92),
-                          borderRadius: BorderRadius.circular(40),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Register for ServeNow',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: CustomerPalette.textDark,
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              // First Name & Last Name Row
-                              TextFormField(
-                                controller: _fullNameController,
-                                textInputAction: TextInputAction.next,
-                                style: const TextStyle(
-                                  color: CustomerPalette.textDark,
-                                ),
-                                decoration: _buildInputDecoration(
-                                  context,
-                                  'Full Name',
-                                  Icons.person,
-                                ),
-                                validator: (value) {
-                                  final trimmed = value?.trim() ?? '';
-                                  if (trimmed.isEmpty) return 'Full name is required';
-                                  if (trimmed.length < 2) {
-                                    return 'Full name is too short';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _emailController,
-                                keyboardType: TextInputType.emailAddress,
-                                textInputAction: TextInputAction.next,
-                                style: const TextStyle(
-                                  color: CustomerPalette.textDark,
-                                ),
-                                decoration: _buildInputDecoration(
-                                  context,
-                                  'Email Address',
-                                  Icons.email,
-                                ),
-                                validator: (value) {
-                                  final trimmed = value?.trim() ?? '';
-                                  if (trimmed.isEmpty) return 'Email is required';
-                                  if (!trimmed.contains('@')) {
-                                    return 'Enter a valid email';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _passwordController,
-                                textInputAction: TextInputAction.next,
-                                style: const TextStyle(
-                                  color: CustomerPalette.textDark,
-                                ),
-                                decoration: _buildInputDecoration(
-                                  context,
-                                  'Password',
-                                  Icons.lock,
-                                ),
-                                obscureText: true,
-                                validator: (value) {
-                                  final trimmed = value?.trim() ?? '';
-                                  if (trimmed.isEmpty) return 'Password is required';
-                                  if (trimmed.length < 6) {
-                                    return 'Password must be at least 6 characters';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _dobController,
-                                readOnly: true,
-                                style: const TextStyle(
-                                  color: CustomerPalette.textDark,
-                                ),
-                                decoration: _buildInputDecoration(
-                                  context,
-                                  'Date of Birth',
-                                  Icons.cake_outlined,
-                                ).copyWith(
-                                  suffixIcon: IconButton(
-                                    icon: const Icon(Icons.calendar_today_outlined),
-                                    onPressed: () => _selectDob(context),
-                                  ),
-                                ),
-                                onTap: () => _selectDob(context),
-                                validator: (value) {
-                                  final trimmed = value?.trim() ?? '';
-                                  if (trimmed.isEmpty) {
-                                    return 'Date of birth is required';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _phoneController,
-                                keyboardType: TextInputType.phone,
-                                textInputAction: TextInputAction.next,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(
-                                    RegExp(r'[0-9+]'),
-                                  ),
-                                  LengthLimitingTextInputFormatter(13),
-                                ],
-                                style: const TextStyle(
-                                  color: CustomerPalette.textDark,
-                                ),
-                                decoration: _buildInputDecoration(
-                                  context,
-                                  'Phone Number',
-                                  Icons.phone,
-                                ),
-                                validator: (value) {
-                                  final trimmed = value?.trim() ?? '';
-                                  if (trimmed.isEmpty) {
-                                    return 'Phone number is required';
-                                  }
-                                  if (!RegExp(r'^\+923\d{9}$')
-                                      .hasMatch(trimmed)) {
-                                    return 'Use +923 followed by 9 digits';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              TextFormField(
-                                controller: _addressController,
-                                textInputAction: TextInputAction.done,
-                                style: const TextStyle(
-                                  color: CustomerPalette.textDark,
-                                ),
-                                decoration: _buildInputDecoration(
-                                  context,
-                                  'Address',
-                                  Icons.location_on,
-                                ),
-                                validator: (value) {
-                                  final trimmed = value?.trim() ?? '';
-                                  if (trimmed.isEmpty) {
-                                    return 'Address is required';
-                                  }
-                                  if (trimmed.length < 4) {
-                                    return 'Address is too short';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 24),
-                              SizedBox(
-                                width: double.infinity,
-                                height: 50,
-                                child: Selector<AuthProvider, bool>(
-                                  selector: (_, auth) => auth.isLoading,
-                                  builder: (context, isLoading, child) {
-                                    return ElevatedButton(
-                                      onPressed: isLoading ? null : _submit,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            CustomerPalette.primary,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                      ),
-                                      child: isLoading
-                                          ? const CircularProgressIndicator(
-                                              color: Colors.white,
-                                            )
-                                          : const Text(
-                                              'Register',
-                                              style: TextStyle(
-                                                fontSize: 18,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.of(context)
-                                      .pop(); // Go back to login
-                                },
-                                child: Text(
-                                  'Already have an account? Login here',
-                                  style: TextStyle(
-                                    color: theme.colorScheme.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  top: 36,
+                  bottom: MediaQuery.of(context).size.height * 0.1,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildBrandHeader(),
+                    const SizedBox(height: 18),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(40),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          constraints: const BoxConstraints(maxWidth: 350),
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: CustomerPalette.card.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(40),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
                               ),
                             ],
+                          ),
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _tr('Register for ServeNow'),
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: CustomerPalette.textDark,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                TextFormField(
+                                  controller: _fullNameController,
+                                  textInputAction: TextInputAction.next,
+                                  style: const TextStyle(
+                                    color: CustomerPalette.textDark,
+                                  ),
+                                  decoration: _buildInputDecoration(
+                                    context,
+                                    _tr('Full Name'),
+                                    Icons.person,
+                                  ),
+                                  validator: (value) {
+                                    final trimmed = value?.trim() ?? '';
+                                    if (trimmed.isEmpty) {
+                                      return _tr('Full name is required');
+                                    }
+                                    if (trimmed.length < 2) {
+                                      return _tr('Full name is too short');
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _emailController,
+                                  keyboardType: TextInputType.emailAddress,
+                                  textInputAction: TextInputAction.next,
+                                  style: const TextStyle(
+                                    color: CustomerPalette.textDark,
+                                  ),
+                                  decoration: _buildInputDecoration(
+                                    context,
+                                    _tr('Email Address'),
+                                    Icons.email,
+                                  ),
+                                  validator: (value) {
+                                    final trimmed = value?.trim() ?? '';
+                                    if (trimmed.isEmpty) {
+                                      return _tr('Email is required');
+                                    }
+                                    if (!trimmed.contains('@')) {
+                                      return _tr('Enter a valid email');
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _passwordController,
+                                  textInputAction: TextInputAction.next,
+                                  obscureText: true,
+                                  style: const TextStyle(
+                                    color: CustomerPalette.textDark,
+                                  ),
+                                  decoration: _buildInputDecoration(
+                                    context,
+                                    _tr('Password'),
+                                    Icons.lock,
+                                  ),
+                                  validator: (value) {
+                                    final trimmed = value?.trim() ?? '';
+                                    if (trimmed.isEmpty) {
+                                      return _tr('Password is required');
+                                    }
+                                    if (trimmed.length < 6) {
+                                      return _tr(
+                                        'Password must be at least 6 characters',
+                                      );
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _dobController,
+                                  readOnly: true,
+                                  style: const TextStyle(
+                                    color: CustomerPalette.textDark,
+                                  ),
+                                  decoration: _buildInputDecoration(
+                                    context,
+                                    _tr('Date of Birth'),
+                                    Icons.cake_outlined,
+                                  ).copyWith(
+                                    suffixIcon: IconButton(
+                                      icon: const Icon(
+                                        Icons.calendar_today_outlined,
+                                      ),
+                                      onPressed: () => _selectDob(context),
+                                    ),
+                                  ),
+                                  onTap: () => _selectDob(context),
+                                  validator: (value) {
+                                    final trimmed = value?.trim() ?? '';
+                                    if (trimmed.isEmpty) {
+                                      return _tr('Date of birth is required');
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _phoneController,
+                                  keyboardType: TextInputType.phone,
+                                  textInputAction: TextInputAction.next,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9+]'),
+                                    ),
+                                    LengthLimitingTextInputFormatter(13),
+                                  ],
+                                  style: const TextStyle(
+                                    color: CustomerPalette.textDark,
+                                  ),
+                                  decoration: _buildInputDecoration(
+                                    context,
+                                    _tr('Phone Number'),
+                                    Icons.phone,
+                                  ),
+                                  validator: (value) {
+                                    final trimmed = value?.trim() ?? '';
+                                    if (trimmed.isEmpty) {
+                                      return _tr('Phone number is required');
+                                    }
+                                    if (!RegExp(r'^\+923\d{9}$')
+                                        .hasMatch(trimmed)) {
+                                      return _tr(
+                                        'Use +923 followed by 9 digits',
+                                      );
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                TextFormField(
+                                  controller: _addressController,
+                                  textInputAction: TextInputAction.done,
+                                  style: const TextStyle(
+                                    color: CustomerPalette.textDark,
+                                  ),
+                                  decoration: _buildInputDecoration(
+                                    context,
+                                    _tr('Address'),
+                                    Icons.location_on,
+                                  ),
+                                  validator: (value) {
+                                    final trimmed = value?.trim() ?? '';
+                                    if (trimmed.isEmpty) {
+                                      return _tr('Address is required');
+                                    }
+                                    if (trimmed.length < 4) {
+                                      return _tr('Address is too short');
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 24),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 50,
+                                  child: Selector<AuthProvider, bool>(
+                                    selector: (_, auth) => auth.isLoading,
+                                    builder: (context, isLoading, child) {
+                                      return ElevatedButton(
+                                        onPressed: isLoading ? null : _submit,
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              CustomerPalette.primary,
+                                          foregroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                        child: isLoading
+                                            ? const CircularProgressIndicator(
+                                                color: Colors.white,
+                                              )
+                                            : Text(
+                                                _tr('Register'),
+                                                style: const TextStyle(
+                                                  fontSize: 18,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: Text(
+                                    _tr('Already have an account? Login here'),
+                                    style: TextStyle(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -392,9 +429,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        const Text(
-          'Create your account',
-          style: TextStyle(
+        Text(
+          _tr('Create your account'),
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -414,9 +451,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       initialDate: initialDate,
       firstDate: DateTime(1900, 1, 1),
       lastDate: today,
-      helpText: 'Select date of birth',
-      cancelText: 'Cancel',
-      confirmText: 'Select',
+      helpText: _tr('Select date of birth'),
+      cancelText: _tr('Cancel'),
+      confirmText: _tr('Select'),
     );
     if (picked == null) return;
     setState(() {
@@ -435,22 +472,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _enforcePhonePrefix() {
     if (_updatingPhone) return;
     final text = _phoneController.text;
-    if (text.startsWith('+923')) {
-      return;
-    }
+    if (text.startsWith('+923')) return;
 
     _updatingPhone = true;
     final digitsOnly = text.replaceAll(RegExp(r'\D'), '');
-    String suffix = digitsOnly;
+    var suffix = digitsOnly;
     if (digitsOnly.startsWith('923')) {
       suffix = digitsOnly.substring(3);
     } else if (digitsOnly.startsWith('3')) {
       suffix = digitsOnly.substring(1);
     }
+
     var next = '+923$suffix';
     if (next.length > 13) {
       next = next.substring(0, 13);
     }
+
     _phoneController.text = next;
     _phoneController.selection = TextSelection.collapsed(
       offset: _phoneController.text.length,

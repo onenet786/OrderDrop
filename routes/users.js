@@ -72,7 +72,22 @@ router.post('/', authenticateToken, requireAdmin, [
     body('user_type').isIn(['customer', 'store_owner', 'admin', 'standard_user', 'rider']).withMessage('Invalid user type'),
     body('is_verified').optional().isBoolean(),
     body('is_active').optional().isBoolean(),
-    body('store_id').optional({ checkFalsy: true }).isInt({ min: 1 }).toInt()
+    body('store_id')
+        .optional({ nullable: true })
+        .custom((value) => {
+            if (value === '' || value === null) return true;
+            const parsed = Number(value);
+            if (!Number.isInteger(parsed) || parsed < 1) {
+                throw new Error('store_id must be a positive integer');
+            }
+            return true;
+        })
+        .customSanitizer((value) => {
+            if (value === '' || value === null || value === undefined) {
+                return null;
+            }
+            return Number(value);
+        })
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -143,7 +158,22 @@ router.put('/:id', authenticateToken, requireAdmin, [
     body('user_type').optional().isIn(['customer', 'store_owner', 'admin', 'standard_user', 'rider']).withMessage('Invalid user type'),
     body('is_active').optional().isBoolean().withMessage('is_active must be a boolean'),
     body('is_verified').optional().isBoolean().withMessage('is_verified must be a boolean'),
-    body('store_id').optional({ checkFalsy: true }).isInt({ min: 1 }).toInt()
+    body('store_id')
+        .optional({ nullable: true })
+        .custom((value) => {
+            if (value === '' || value === null) return true;
+            const parsed = Number(value);
+            if (!Number.isInteger(parsed) || parsed < 1) {
+                throw new Error('store_id must be a positive integer');
+            }
+            return true;
+        })
+        .customSanitizer((value) => {
+            if (value === '' || value === null || value === undefined) {
+                return null;
+            }
+            return Number(value);
+        })
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -174,7 +204,13 @@ router.put('/:id', authenticateToken, requireAdmin, [
         if (user_type !== undefined) { updateFields.push('user_type = ?'); updateValues.push(user_type); }
         if (is_active !== undefined) { updateFields.push('is_active = ?'); updateValues.push(is_active); }
         if (is_verified !== undefined) { updateFields.push('is_verified = ?'); updateValues.push(is_verified); }
-        if (store_id !== undefined) { updateFields.push('store_id = ?'); updateValues.push(store_id || null); }
+        if (user_type !== undefined && user_type !== 'store_owner') {
+            updateFields.push('store_id = ?');
+            updateValues.push(null);
+        } else if (store_id !== undefined) {
+            updateFields.push('store_id = ?');
+            updateValues.push(store_id || null);
+        }
 
         // Handle password separately (hash)
         if (password !== undefined && password !== '') {

@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +13,7 @@ import '../providers/cart_provider.dart';
 import '../providers/notification_provider.dart' as app_notif;
 import '../services/api_service.dart';
 import '../theme/customer_palette.dart';
+import '../utils/customer_language.dart';
 import '../widgets/notification_bell_widget.dart';
 import 'store_screen.dart';
 
@@ -48,16 +49,138 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   int _bottomIndex = 0;
   bool _launchFlashShown = false;
   String? _launchFlashSignature;
+  bool _isUrdu = false;
 
   @override
   void initState() {
     super.initState();
+    _loadLanguagePreference();
     _fetchData();
     _globalStatusPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _refreshGlobalStatusOnly();
     });
     _searchController.addListener(_onSearchChanged);
     _startBannerAutoScroll();
+  }
+
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() {
+      _isUrdu = isUrdu;
+    });
+  }
+
+  Future<void> _setLanguage(bool isUrdu) async {
+    await CustomerLanguage.saveIsUrdu(isUrdu);
+    if (!mounted) return;
+    setState(() {
+      _isUrdu = isUrdu;
+    });
+  }
+
+  String _tr(String english) {
+    const translations = <String, String>{
+      'ServeNow Support': 'سروناؤ سپورٹ',
+      'Contact Us': 'ہم سے رابطہ کریں',
+      'Support contact is not configured yet.': 'ابھی سپورٹ رابطہ معلومات شامل نہیں کی گئی ہیں۔',
+      'Choose how you want to contact us.': 'رابطے کا طریقہ منتخب کریں۔',
+      'Email': 'ای میل',
+      'Update Required': 'اپ ڈیٹ ضروری ہے',
+      'Update Available': 'اپ ڈیٹ دستیاب ہے',
+      'A new version of ServeNow is available.': 'سروناؤ کا نیا ورژن دستیاب ہے۔',
+      'A newer version of ServeNow is available.': 'سروناؤ کا نیا ورژن دستیاب ہے۔',
+      'Installed': 'انسٹال شدہ',
+      'Latest': 'تازہ ترین',
+      'Unknown': 'نامعلوم',
+      'Update Now': 'ابھی اپ ڈیٹ کریں',
+      'Hide': 'چھپائیں',
+      'ServeNow Flash Message': 'سروناؤ اہم پیغام',
+      'Check latest updates in ServeNow.': 'سروناؤ کی تازہ ترین معلومات دیکھیں۔',
+      'Check latest promotions and events.': 'تازہ پروموشنز اور ایونٹس دیکھیں۔',
+      'Flash Message': 'اہم پیغام',
+      'OK': 'ٹھیک ہے',
+      'Promotion window': 'پروموشن مدت',
+      'My Cart': 'میری کارٹ',
+      'Welcome': 'خوش آمدید',
+      'Ref Area': 'حوالہ علاقہ',
+      'ServeNow Customer': 'سروناؤ کسٹمر',
+      'Live Promotions': 'لائیو پروموشنز',
+      'Live: Promotions / Events': 'لائیو: پروموشنز / ایونٹس',
+      'live widgets': 'لائیو ویجٹس',
+      'Live Delivery Pause': 'لائیو ڈیلیوری بندش',
+      'Delivery Update': 'ڈیلیوری اپ ڈیٹ',
+      'Search store by name or area': 'دکان نام یا علاقے سے تلاش کریں',
+      'No stores found in this category': 'اس زمرے میں کوئی دکان نہیں ملی۔',
+      'Language': 'زبان',
+      'Select Language': 'زبان منتخب کریں',
+      'English': 'English',
+      'Urdu': 'اردو',
+      'Selected': 'منتخب',
+      'You are not allowed to see Store when you are out of Delivery Area': 'ڈیلیوری ایریا سے باہر ہونے پر آپ دکانیں نہیں دیکھ سکتے۔',
+    };
+    if (_isUrdu && translations.containsKey(english)) {
+      return translations[english]!;
+    }
+    return CustomerLanguage.tr(_isUrdu, english);
+  }
+
+  String _languageLabel() => _isUrdu ? 'اردو' : 'EN';
+
+  Future<void> _showLanguageOptions() async {
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _tr('Select Language'),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.language),
+                  title: Text(_tr('English')),
+                  trailing: !_isUrdu
+                      ? Text(
+                          _tr('Selected'),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        )
+                      : null,
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await _setLanguage(false);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.translate),
+                  title: const Text('اردو'),
+                  trailing: _isUrdu
+                      ? Text(
+                          _tr('Selected'),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        )
+                      : null,
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await _setLanguage(true);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -176,7 +299,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         _serviceLimitedMessage = limited
             ? (limitedMessage.isNotEmpty
                 ? limitedMessage
-                : 'You are not allowed to see Store when you are out of Delivery Area')
+                : _tr('You are not allowed to see Store when you are out of Delivery Area'))
             : null;
         _isLoading = false;
       });
@@ -264,7 +387,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final uri = Uri(
       scheme: 'mailto',
       path: cleaned,
-      queryParameters: const {'subject': 'ServeNow Support'},
+      queryParameters: {'subject': _tr('ServeNow Support')},
     );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -287,7 +410,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       } catch (_) {}
     }
 
-    final name = (contact['name'] ?? 'Contact Us').toString().trim();
+    final name = (contact['name'] ?? _tr('Contact Us')).toString().trim();
     final phone = (contact['phone'] ?? '').toString().trim();
     final whatsapp = (contact['whatsapp'] ?? phone).toString().trim();
     final email = (contact['email'] ?? '').toString().trim();
@@ -295,7 +418,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     if (phone.isEmpty && whatsapp.isEmpty && email.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Support contact is not configured yet.')),
+        SnackBar(content: Text(_tr('Support contact is not configured yet.'))),
       );
       return;
     }
@@ -313,12 +436,12 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  name.isEmpty ? 'Contact Us' : name,
+                  name.isEmpty ? _tr('Contact Us') : name,
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  'Choose how you want to contact us.',
+                Text(
+                  _tr('Choose how you want to contact us.'),
                   style: TextStyle(fontSize: 12.5, color: Colors.black54),
                 ),
                 const SizedBox(height: 12),
@@ -329,7 +452,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                       backgroundColor: Color(0xFFE8F1FF),
                       child: Icon(Icons.call_outlined, color: Colors.blue),
                     ),
-                    title: const Text('Call'),
+                    title: Text(_tr('Call')),
                     subtitle: Text(phone),
                     onTap: () {
                       Navigator.of(sheetContext).pop();
@@ -343,7 +466,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                       backgroundColor: Color(0xFFEAF9EF),
                       child: Icon(Icons.chat_outlined, color: Colors.green),
                     ),
-                    title: const Text('WhatsApp'),
+                    title: Text(_tr('WhatsApp')),
                     subtitle: Text(whatsapp),
                     onTap: () {
                       Navigator.of(sheetContext).pop();
@@ -357,7 +480,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                       backgroundColor: Color(0xFFEFF3FF),
                       child: Icon(Icons.email_outlined, color: CustomerPalette.primary),
                     ),
-                    title: const Text('Email'),
+                    title: Text(_tr('Email')),
                     subtitle: Text(email),
                     onTap: () {
                       Navigator.of(sheetContext).pop();
@@ -408,10 +531,16 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final latestVersion = (status['latest_version'] ?? '').toString().trim();
     final minimumSupportedVersion =
         (status['minimum_supported_version'] ?? '').toString().trim();
+    final installedComparableVersion = installedVersion.isEmpty
+        ? ''
+        : (installedBuild.isNotEmpty
+              ? '$installedVersion+$installedBuild'
+              : installedVersion);
     final updateAvailable =
-        latestVersion.isNotEmpty && _compareVersionStrings(installedVersion, latestVersion) < 0;
+        latestVersion.isNotEmpty &&
+        _compareVersionStrings(installedComparableVersion, latestVersion) < 0;
     final forcedByVersion = minimumSupportedVersion.isNotEmpty &&
-        _compareVersionStrings(installedVersion, minimumSupportedVersion) < 0;
+        _compareVersionStrings(installedComparableVersion, minimumSupportedVersion) < 0;
     final reminderHour =
         int.tryParse((status['reminder_hour'] ?? '12').toString()) ?? 12;
 
@@ -419,6 +548,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       ...status,
       'installed_version': installedVersion,
       'installed_build': installedBuild,
+      'installed_comparable_version': installedComparableVersion,
       'update_available': updateAvailable,
       'force_update_active':
           (status['force_update'] == true || status['force_update'] == 1) || forcedByVersion,
@@ -452,7 +582,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final latestVersion = (status['latest_version'] ?? '').toString().trim();
     final installedVersion = (status['installed_version'] ?? '').toString().trim();
     final forceUpdate = status['force_update_active'] == true;
-    final message = (status['message'] ?? 'A new version of ServeNow is available.')
+    final message = (status['message'] ?? _tr('A new version of ServeNow is available.'))
         .toString()
         .trim();
 
@@ -473,7 +603,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  forceUpdate ? 'Update Required' : 'Update Available',
+                  forceUpdate ? _tr('Update Required') : _tr('Update Available'),
                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                 ),
               ),
@@ -481,13 +611,13 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
           ),
           const SizedBox(height: 8),
           Text(
-            message.isNotEmpty ? message : 'A newer version of ServeNow is available.',
+            message.isNotEmpty ? message : _tr('A newer version of ServeNow is available.'),
             style: const TextStyle(fontSize: 12.8, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
-            'Installed: ${installedVersion.isNotEmpty ? installedVersion : 'Unknown'}'
-            '${latestVersion.isNotEmpty ? '   Latest: $latestVersion' : ''}',
+            '${_tr('Installed')}: ${installedVersion.isNotEmpty ? installedVersion : _tr('Unknown')}'
+            '${latestVersion.isNotEmpty ? '   ${_tr('Latest')}: $latestVersion' : ''}',
             style: const TextStyle(fontSize: 12, color: Colors.black54),
           ),
           const SizedBox(height: 10),
@@ -497,7 +627,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 child: FilledButton.icon(
                   onPressed: () => _openAppUpdateLink(status),
                   icon: const Icon(Icons.open_in_new, size: 16),
-                  label: const Text('Update Now'),
+                  label: Text(_tr('Update Now')),
                   style: FilledButton.styleFrom(
                     backgroundColor: CustomerPalette.primary,
                     foregroundColor: Colors.white,
@@ -516,7 +646,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                       };
                     });
                   },
-                  child: const Text('Hide'),
+                  child: Text(_tr('Hide')),
                 ),
               ],
             ],
@@ -626,7 +756,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                   (flash['notification_target'] ?? 'all').toString() == 'all'));
       if (isVisible) {
         final title =
-            (flash['title'] ?? 'ServeNow Flash Message').toString().trim();
+            (flash['title'] ?? _tr('ServeNow Flash Message')).toString().trim();
         final message = (flash['status_message'] ?? '').toString().trim();
         final imageUrl = ApiService.getImageUrl(
           (flash['image_url'] ?? '').toString().trim(),
@@ -634,10 +764,10 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         final signature =
             '${flash['updated_at'] ?? ''}|$title|$message|$imageUrl|${flash['start_at'] ?? ''}|${flash['end_at'] ?? ''}';
         return {
-          'title': title.isNotEmpty ? title : 'ServeNow Flash Message',
+          'title': title.isNotEmpty ? title : _tr('ServeNow Flash Message'),
           'message': message.isNotEmpty
               ? message
-              : 'Check latest updates in ServeNow.',
+              : _tr('Check latest updates in ServeNow.'),
           'imageUrl': imageUrl,
           'signature': signature,
         };
@@ -650,7 +780,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     if (!_toBool(promo['is_window_active']) && !_isGlobalWindowActive(promo)) {
       return null;
     }
-    final title = (promo['title'] ?? 'ServeNow Flash Message').toString().trim();
+    final title = (promo['title'] ?? _tr('ServeNow Flash Message')).toString().trim();
     final message = _livePromotionMessage().trim();
     final images = _promotionImages();
     final imageUrl =
@@ -659,10 +789,10 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         '${promo['id'] ?? ''}|${promo['updated_at'] ?? ''}|$title|$message|$imageUrl';
 
     return {
-      'title': title.isNotEmpty ? title : 'ServeNow Flash Message',
+      'title': title.isNotEmpty ? title : _tr('ServeNow Flash Message'),
       'message': message.isNotEmpty
           ? message
-          : 'Check latest promotions and events.',
+          : _tr('Check latest promotions and events.'),
       'imageUrl': imageUrl,
       'signature': signature,
     };
@@ -680,7 +810,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       try {
         Provider.of<app_notif.NotificationProvider>(context, listen: false)
             .addNotification(
-              title: (flash['title'] ?? 'ServeNow Flash Message').toString(),
+              title: (flash['title'] ?? _tr('ServeNow Flash Message')).toString(),
               message: (flash['message'] ?? '').toString(),
               type: 'promotion',
               icon: 'campaign',
@@ -695,14 +825,14 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   }
 
   void _showLaunchFlashDialog(Map<String, dynamic> flash) {
-    final title = (flash['title'] ?? 'ServeNow Flash Message').toString();
+    final title = (flash['title'] ?? _tr('ServeNow Flash Message')).toString();
     final message = (flash['message'] ?? '').toString();
     final imageUrl = (flash['imageUrl'] ?? '').toString();
 
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: 'Flash Message',
+      barrierLabel: _tr('Flash Message'),
       barrierColor: Colors.black54,
       transitionDuration: const Duration(milliseconds: 260),
       pageBuilder: (context, animation, secondaryAnimation) {
@@ -801,7 +931,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                       style: FilledButton.styleFrom(
                         backgroundColor: CustomerPalette.primary,
                       ),
-                      child: const Text('OK'),
+                      child: Text(_tr('OK')),
                     ),
                   ),
                 ],
@@ -857,7 +987,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final when = _formatDeliveryWindow(status['start_at'], status['end_at']);
     if (message.isNotEmpty && when.isNotEmpty) return '$message ($when)';
     if (message.isNotEmpty) return message;
-    if (when.isNotEmpty) return 'Delivery update: $when';
+    if (when.isNotEmpty) return '${_tr('Delivery update')}: $when';
     final title = (status['title'] ?? '').toString().trim();
     return title;
   }
@@ -900,7 +1030,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final when = _formatDeliveryWindow(promo['start_at'], promo['end_at']);
     if (reason.isNotEmpty && when.isNotEmpty) return '$reason ($when)';
     if (reason.isNotEmpty) return reason;
-    if (when.isNotEmpty) return 'Promotion window: $when';
+    if (when.isNotEmpty) return '${_tr('Promotion window')}: $when';
     return '';
   }
 
@@ -948,7 +1078,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             children: [
               ListTile(
                 leading: const Icon(Icons.shopping_bag_outlined),
-                title: const Text('My Orders'),
+                title: Text(_tr('My Orders')),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   Navigator.of(context).pushNamed('/orders');
@@ -956,7 +1086,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               ),
               ListTile(
                 leading: const Icon(Icons.shopping_cart_outlined),
-                title: const Text('My Cart'),
+                title: Text(_tr('My Cart')),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   Navigator.of(context).pushNamed('/cart');
@@ -964,7 +1094,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               ),
               ListTile(
                 leading: const Icon(Icons.key_outlined),
-                title: const Text('Change Password'),
+                title: Text(_tr('Change Password')),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   Navigator.of(context).pushNamed('/change-password');
@@ -972,7 +1102,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               ),
               ListTile(
                 leading: const Icon(Icons.support_agent_outlined),
-                title: const Text('Contact Us'),
+                title: Text(_tr('Contact Us')),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   _showSupportOptions();
@@ -980,7 +1110,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               ),
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
-                title: const Text('Logout', style: TextStyle(color: Colors.red)),
+                title: Text(_tr('Logout'), style: const TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.of(ctx).pop();
                   Provider.of<AuthProvider>(context, listen: false).logout();
@@ -1001,9 +1131,11 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final crossAxisCount = isLandscape ? 4 : 2;
 
-    return Scaffold(
-      backgroundColor: CustomerPalette.background,
-      body: SafeArea(
+    return Directionality(
+      textDirection: _isUrdu ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        backgroundColor: CustomerPalette.background,
+        body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _fetchData,
           child: SingleChildScrollView(
@@ -1026,7 +1158,8 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
           ),
         ),
       ),
-      bottomNavigationBar: _buildBottomBar(),
+        bottomNavigationBar: _buildBottomBar(),
+      ),
     );
   }
 
@@ -1039,21 +1172,23 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             icon: const Icon(Icons.menu, size: 28),
             onPressed: _openQuickActions,
           ),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Home',
+              _tr('Home'),
               textAlign: TextAlign.center,
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
             ),
           ),
-          IconButton(
+          TextButton.icon(
+            onPressed: _showLanguageOptions,
             icon: const Icon(Icons.language, color: CustomerPalette.primary),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Language options coming soon')),
-              );
-            },
-            tooltip: 'Language',
+            label: Text(
+              _languageLabel(),
+              style: const TextStyle(
+                color: CustomerPalette.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
           const NotificationBellWidget(),
           Consumer<CartProvider>(
@@ -1098,8 +1233,8 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Welcome',
+          Text(
+            _tr('Welcome'),
             style: TextStyle(fontSize: 18, color: Colors.black87),
           ),
         ],
@@ -1138,8 +1273,8 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 const SizedBox(height: 6),
                 Text(
                   _userCity?.isNotEmpty == true
-                      ? 'Ref Area: $_userCity'
-                      : 'ServeNow Customer',
+                      ? '${_tr('Ref Area')}: $_userCity'
+                      : _tr('ServeNow Customer'),
                   style: const TextStyle(
                     color: Colors.white70,
                     fontWeight: FontWeight.w600,
@@ -1153,7 +1288,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                       child: FilledButton.icon(
                         onPressed: () => Navigator.of(context).pushNamed('/orders'),
                         icon: const Icon(Icons.shopping_bag, size: 16),
-                        label: const Text('My Orders'),
+                        label: Text(_tr('My Orders')),
                         style: FilledButton.styleFrom(
                           backgroundColor: CustomerPalette.accent,
                           foregroundColor: Colors.white,
@@ -1166,7 +1301,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                       child: OutlinedButton.icon(
                         onPressed: _showSupportOptions,
                         icon: const Icon(Icons.support_agent, size: 16),
-                        label: const Text('Contact Us'),
+                        label: Text(_tr('Contact Us')),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.white,
                           side: const BorderSide(color: Colors.white70),
@@ -1212,7 +1347,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 final item = items[index];
                 if (item['type'] == 'promotion') {
                   final promoImages = _promotionImages();
-                  final promoTitle = (_livePromotions?['title'] ?? 'Live Promotions')
+                  final promoTitle = (_livePromotions?['title'] ?? _tr('Live Promotions'))
                       .toString()
                       .trim();
                   final promoMessage = _livePromotionMessage();
@@ -1260,8 +1395,8 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                                   color: Colors.white.withValues(alpha: 0.18),
                                   borderRadius: BorderRadius.circular(30),
                                 ),
-                                child: const Text(
-                                  'Live: Promotions / Events',
+                                child: Text(
+                                  _tr('Live: Promotions / Events'),
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 11,
@@ -1273,7 +1408,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                               Text(
                                 promoTitle.isNotEmpty
                                     ? promoTitle
-                                    : 'Live Promotions',
+                                    : _tr('Live Promotions'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -1298,7 +1433,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                               if (promoImages.length > 1) ...[
                                 const SizedBox(height: 8),
                                 Text(
-                                  '${promoImages.length} live widgets',
+                                  '${promoImages.length} ${_tr('live widgets')}',
                                   style: const TextStyle(
                                     color: Colors.white70,
                                     fontSize: 11,
@@ -1340,7 +1475,9 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  blocked ? 'Live Delivery Pause' : 'Delivery Update',
+                                  blocked
+                                      ? _tr('Live Delivery Pause')
+                                      : _tr('Delivery Update'),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 16,
@@ -1448,7 +1585,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: 'Search store by name or area',
+          hintText: _tr('Search store by name or area'),
           prefixIcon: const Icon(Icons.search),
           filled: true,
           fillColor: Colors.white,
@@ -1506,7 +1643,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       return Padding(
         padding: const EdgeInsets.all(24.0),
         child: Center(
-          child: Text(_serviceLimitedMessage ?? 'No stores found in this category'),
+          child: Text(_serviceLimitedMessage ?? _tr('No stores found in this category')),
         ),
       );
     }
@@ -1562,7 +1699,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
               ),
               child: Center(
                 child: Text(
-                  isOpen ? 'OPEN' : 'CLOSED',
+                  isOpen ? _tr('OPEN') : _tr('CLOSED'),
                   style: TextStyle(
                     color: isOpen ? Colors.green.shade800 : Colors.red.shade800,
                     fontWeight: FontWeight.bold,
@@ -1619,7 +1756,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    (store['name'] ?? 'Unknown Store').toString(),
+                    (store['name'] ?? _tr('Unknown Store')).toString(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
@@ -1682,19 +1819,19 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             _buildBottomIcon(
               index: 0,
               icon: Icons.home_filled,
-              label: 'Home',
+              label: _tr('Home'),
               onTap: () => setState(() => _bottomIndex = 0),
             ),
             _buildBottomIcon(
               index: 1,
               icon: Icons.storefront,
-              label: 'Stores',
+              label: _tr('Stores'),
               onTap: () => setState(() => _bottomIndex = 1),
             ),
             _buildBottomIcon(
               index: 2,
               icon: Icons.shopping_bag,
-              label: 'Orders',
+              label: _tr('Orders'),
               onTap: () {
                 setState(() => _bottomIndex = 2);
                 Navigator.of(context).pushNamed('/orders');
@@ -1703,7 +1840,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
             _buildBottomIcon(
               index: 3,
               icon: Icons.shopping_cart,
-              label: 'Cart',
+              label: _tr('Cart'),
               badgeCount: context.watch<CartProvider>().itemCount,
               onTap: () {
                 setState(() => _bottomIndex = 3);
@@ -1795,3 +1932,4 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   }
 
 }
+

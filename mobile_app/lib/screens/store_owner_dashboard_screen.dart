@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:logger/logger.dart';
 import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
 import '../services/api_service.dart';
-import '../services/notification_service.dart';
+import '../utils/customer_language.dart';
 import '../widgets/notification_bell_widget.dart';
 import 'offer_campaigns_screen.dart';
 import 'login_screen.dart';
@@ -25,26 +26,32 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
   List<dynamic> _activeOrders = []; // Preparing, Ready
   List<dynamic> _historyOrders = []; // Delivered, Cancelled
   Map<String, dynamic> _stats = {};
+  bool _isUrdu = false;
+
+  Future<void> _loadLanguagePreference() async {
+    final isUrdu = await CustomerLanguage.loadIsUrdu();
+    if (!mounted) return;
+    setState(() => _isUrdu = isUrdu);
+  }
+
+  String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
 
   @override
   void initState() {
     super.initState();
+    _loadLanguagePreference();
     _tabController = TabController(length: 3, vsync: this);
     _loadOrders();
     _setupNotifications();
   }
 
   void _setupNotifications() {
-    NotificationService.initialize(
-      onNotification: (data) {
+    Provider.of<NotificationProvider>(context, listen: false).addEventListener(
+      this,
+      (data) {
         _handleNotification(data);
       },
     );
-
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    if (authProvider.user != null) {
-      NotificationService.connect(authProvider.user!.id, 'store_owner');
-    }
   }
 
   void _handleNotification(Map<String, dynamic> notification) {
@@ -113,7 +120,10 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
   @override
   void dispose() {
     _tabController.dispose();
-    NotificationService.disconnect();
+    Provider.of<NotificationProvider>(
+      context,
+      listen: false,
+    ).removeEventListener(this);
     super.dispose();
   }
 
@@ -160,7 +170,9 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to load orders: $e')));
+        ).showSnackBar(
+          SnackBar(content: Text('${_tr('Failed to load orders:')} $e')),
+        );
       }
     } finally {
       if (mounted) {
@@ -179,7 +191,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Order marked as ${newStatus.toUpperCase()}'),
+            content: Text('${_tr('Order marked as')} ${newStatus.toUpperCase()}'),
             duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
             showCloseIcon: true,
@@ -197,7 +209,9 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
+        ).showSnackBar(
+          SnackBar(content: Text('${_tr('Failed to update status:')} $e')),
+        );
       }
     }
   }
@@ -236,7 +250,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       firstDate: DateTime(now.year - 2),
       lastDate: DateTime(now.year + 1),
       initialDate: now.subtract(const Duration(days: 6)),
-      helpText: 'Select Start Date',
+      helpText: _tr('Select Start Date'),
     );
     if (fromDate == null || !mounted) return;
 
@@ -245,7 +259,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
       firstDate: fromDate,
       lastDate: DateTime(now.year + 1),
       initialDate: now.isAfter(fromDate) ? now : fromDate,
-      helpText: 'Select End Date',
+      helpText: _tr('Select End Date'),
     );
     if (toDate == null || !mounted) return;
     try {
@@ -516,14 +530,14 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
           return StatefulBuilder(
             builder: (dialogContext, setDialogState) {
               return AlertDialog(
-                title: const Text('Update Store Status'),
+                title: Text(_tr('Update Store Status')),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Mark as Closed'),
+                        title: Text(_tr('Mark as Closed')),
                         value: isClosed,
                         onChanged: (v) => setDialogState(() => isClosed = v),
                       ),
@@ -531,9 +545,9 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                         controller: messageCtrl,
                         maxLines: 4,
                         maxLength: 500,
-                        decoration: const InputDecoration(
-                          labelText: 'Status Message',
-                          hintText: 'Store is closed due to maintenance...',
+                        decoration: InputDecoration(
+                          labelText: _tr('Status Message'),
+                          hintText: _tr('Store is closed due to maintenance...'),
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -543,7 +557,7 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                 actions: [
                   TextButton(
                     onPressed: saving ? null : () => Navigator.of(ctx).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(_tr('Cancel')),
                   ),
                   ElevatedButton(
                     onPressed: saving
@@ -559,19 +573,21 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
                               if (!mounted || !ctx.mounted) return;
                               Navigator.of(ctx).pop();
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Store message updated'),
+                                SnackBar(
+                                  content: Text(_tr('Store message updated')),
                                 ),
                               );
                             } catch (e) {
                               if (!mounted) return;
                               setDialogState(() => saving = false);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Failed to save: $e')),
+                                SnackBar(
+                                  content: Text('${_tr('Failed to save:')} $e'),
+                                ),
                               );
                             }
                           },
-                    child: const Text('Save'),
+                    child: Text(_tr('Save')),
                   ),
                 ],
               );
@@ -582,7 +598,9 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to open store message dialog: $e')),
+        SnackBar(
+          content: Text('${_tr('Failed to open store message dialog:')} $e'),
+        ),
       );
     }
   }
@@ -598,67 +616,70 @@ class _StoreOwnerDashboardScreenState extends State<StoreOwnerDashboardScreen>
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
-        elevation: 0, // Remove shadow to blend with body container
-        title: const Text('Store Dashboard'),
-        actions: [
-          const NotificationBellWidget(),
-          IconButton(
-            icon: const Icon(Icons.query_stats),
-            tooltip: 'Financial History',
-            onPressed: _openStoreFinancialHistory,
-          ),
-          IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
-        ],
-      ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadOrders,
-              child: Column(
-                children: [
-                  // Dashboard Stats Header
-                  Container(
-                    color: primaryColor,
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Column(
-                      children: [
-                        _buildDashboardStats(),
-                        const SizedBox(height: 10),
-                        TabBar(
-                          controller: _tabController,
-                          labelColor: Colors.white,
-                          unselectedLabelColor: Colors.white70,
-                          indicatorColor: Colors.white,
-                          indicatorSize: TabBarIndicatorSize.tab,
-                          indicatorWeight: 3,
-                          tabs: const [
-                            Tab(text: 'New Orders'),
-                            Tab(text: 'Active'),
-                            Tab(text: 'History'),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Order Lists
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildOrderList(_pendingOrders, showActions: true),
-                        _buildOrderList(_activeOrders, showActions: true),
-                        _buildOrderList(_historyOrders, showActions: false),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+    return Directionality(
+      textDirection: CustomerLanguage.textDirection(_isUrdu),
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          elevation: 0, // Remove shadow to blend with body container
+          title: Text(_tr('Store Dashboard')),
+          actions: [
+            const NotificationBellWidget(),
+            IconButton(
+              icon: const Icon(Icons.query_stats),
+              tooltip: _tr('Financial History'),
+              onPressed: _openStoreFinancialHistory,
             ),
+            IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
+          ],
+        ),
+        bottomNavigationBar: _buildBottomNavigationBar(),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : RefreshIndicator(
+                onRefresh: _loadOrders,
+                child: Column(
+                  children: [
+                    // Dashboard Stats Header
+                    Container(
+                      color: primaryColor,
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Column(
+                        children: [
+                          _buildDashboardStats(),
+                          const SizedBox(height: 10),
+                          TabBar(
+                            controller: _tabController,
+                            labelColor: Colors.white,
+                            unselectedLabelColor: Colors.white70,
+                            indicatorColor: Colors.white,
+                            indicatorSize: TabBarIndicatorSize.tab,
+                            indicatorWeight: 3,
+                            tabs: [
+                              Tab(text: _tr('New Orders')),
+                              Tab(text: _tr('Active')),
+                              Tab(text: _tr('History')),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Order Lists
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildOrderList(_pendingOrders, showActions: true),
+                          _buildOrderList(_activeOrders, showActions: true),
+                          _buildOrderList(_historyOrders, showActions: false),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+      ),
     );
   }
 
