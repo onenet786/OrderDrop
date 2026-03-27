@@ -37,9 +37,9 @@
                 <i class="fas fa-bars"></i>
             </button>
             <div class="header-right">
-                <div class="user-profile">
+                <div class="user-profile profile-header-bar">
                     <span id="welcomeName">Welcome</span>
-                    <button id="logoutBtn" class="btn btn-small" style="margin-left: 1rem; color: var(--danger);" title="Logout" aria-label="Logout"><i class="fas fa-sign-out-alt"></i></button>
+                    <button id="logoutBtn" class="header-icon-btn" title="Logout" aria-label="Logout"><i class="fas fa-sign-out-alt"></i></button>
                 </div>
             </div>
         </header>
@@ -48,24 +48,27 @@
         <main class="app-content">
             <div id="toastContainer" class="toast-container"></div>
 
-            <div class="container" style="max-width: 800px; margin: 0 auto; padding: 2rem;">
-                <h2 style="margin-bottom: 2rem;"><i class="fas fa-user-circle"></i> My Profile</h2>
+            <div class="page-shell page-shell--narrow">
+                <div class="page-header section-gap-lg">
+                    <h2 class="page-title"><i class="fas fa-user-circle"></i> My Profile</h2>
+                    <p class="page-subtitle">Manage your account basics and keep your password updated from one clean settings view.</p>
+                </div>
 
                 <!-- Change Password Section -->
-                <div class="card" style="background: white; padding: 2rem; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 2rem;">
-                    <h3 style="margin-bottom: 1.5rem;"><i class="fas fa-lock"></i> Change Password</h3>
+                <div class="surface-card surface-card--padded section-gap-lg">
+                    <h3 class="section-gap-lg"><i class="fas fa-lock"></i> Change Password</h3>
                     <form id="changePasswordForm">
-                        <div class="form-group" style="margin-bottom: 1rem;">
+                        <div class="form-group">
                             <label for="currentPassword">Current Password</label>
-                            <input type="password" id="currentPassword" name="currentPassword" required placeholder="Enter current password" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                            <input type="password" id="currentPassword" name="currentPassword" required placeholder="Enter current password">
                         </div>
-                        <div class="form-group" style="margin-bottom: 1rem;">
+                        <div class="form-group">
                             <label for="newPassword">New Password</label>
-                            <input type="password" id="newPassword" name="newPassword" required placeholder="Minimum 6 characters" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                            <input type="password" id="newPassword" name="newPassword" required placeholder="Minimum 6 characters">
                         </div>
-                        <div class="form-group" style="margin-bottom: 1.5rem;">
+                        <div class="form-group section-gap-lg">
                             <label for="confirmNewPassword">Confirm New Password</label>
-                            <input type="password" id="confirmNewPassword" name="confirmNewPassword" required placeholder="Repeat new password" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--border-radius);">
+                            <input type="password" id="confirmNewPassword" name="confirmNewPassword" required placeholder="Repeat new password">
                         </div>
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-key"></i> Update Password

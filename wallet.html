@@ -48,64 +48,71 @@
         <main class="app-content">
             <div id="toastContainer" class="toast-container"></div>
 
-            <div class="wallet-container">
-                <div class="wallet-header">
-                    <div class="balance-card">
-                        <h3>Available Balance</h3>
-                        <div class="balance-amount">PKR <span id="walletBalance">0.00</span></div>
-                        <div class="balance-stats">
-                            <div class="stat-item">
-                                <strong>Last Topup</strong>
-                                <span id="lastTopup">-</span>
-                            </div>
-                            <div class="stat-item">
-                                <strong>Total Spent</strong>
-                                <span id="totalSpent">PKR 0.00</span>
+            <div class="page-shell">
+                <div class="page-header">
+                    <h2 class="page-title">Wallet</h2>
+                    <p class="page-subtitle">Review your available balance, top up securely, and keep an eye on recent wallet activity.</p>
+                </div>
+
+                <div class="wallet-container">
+                    <div class="wallet-header">
+                        <div class="balance-card">
+                            <h3>Available Balance</h3>
+                            <div class="balance-amount">PKR <span id="walletBalance">0.00</span></div>
+                            <div class="balance-stats">
+                                <div class="stat-item">
+                                    <strong>Last Topup</strong>
+                                    <span id="lastTopup">-</span>
+                                </div>
+                                <div class="stat-item">
+                                    <strong>Total Spent</strong>
+                                    <span id="totalSpent">PKR 0.00</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="topup-section">
-                    <h3>Top Up Wallet</h3>
-                    <div class="form-group">
-                        <label>Select Amount</label>
-                        <div class="topup-options" id="topupOptions">
-                            <div class="topup-amount-btn" data-amount="500">PKR 500</div>
-                            <div class="topup-amount-btn" data-amount="1000">PKR 1000</div>
-                            <div class="topup-amount-btn" data-amount="2000">PKR 2000</div>
-                            <div class="topup-amount-btn" data-amount="5000">PKR 5000</div>
+                    <div class="topup-section">
+                        <h3>Top Up Wallet</h3>
+                        <div class="form-group">
+                            <label>Select Amount</label>
+                            <div class="topup-options" id="topupOptions">
+                                <div class="topup-amount-btn" data-amount="500">PKR 500</div>
+                                <div class="topup-amount-btn" data-amount="1000">PKR 1000</div>
+                                <div class="topup-amount-btn" data-amount="2000">PKR 2000</div>
+                                <div class="topup-amount-btn" data-amount="5000">PKR 5000</div>
+                            </div>
+                            <label>Or Enter Amount</label>
+                            <input type="number" id="topupAmount" placeholder="Enter amount (Min PKR 100)">
                         </div>
-                        <label>Or Enter Amount</label>
-                        <input type="number" id="topupAmount" placeholder="Enter amount (Min PKR 100)">
+
+                        <div id="card-element" class="form-group">
+                            <!-- Stripe Element -->
+                        </div>
+                        <div id="card-errors" role="alert" class="error"></div>
+
+                        <button id="submitTopup" class="btn btn-primary btn-block">
+                            Top Up Now
+                        </button>
                     </div>
 
-                    <div id="card-element" class="form-group">
-                        <!-- Stripe Element -->
-                    </div>
-                    <div id="card-errors" role="alert" class="error"></div>
-
-                    <button id="submitTopup" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
-                        Top Up Now
-                    </button>
-                </div>
-
-                <div class="transactions-section">
-                    <h3>Recent Transactions</h3>
-                    <div class="table-container">
-                        <table class="transaction-table">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Description</th>
-                                    <th>Amount</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="transactionsList">
-                                <!-- Loaded dynamically -->
-                            </tbody>
-                        </table>
+                    <div class="transactions-section">
+                        <h3>Recent Transactions</h3>
+                        <div class="table-container">
+                            <table class="transaction-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Description</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transactionsList">
+                                    <!-- Loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>

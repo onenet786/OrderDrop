@@ -16,6 +16,9 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
+  static const double _defaultDeliveryFeeBase = 70;
+  static const double _defaultDeliveryFeeAdditional = 30;
+
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -24,13 +27,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _paymentMethod = 'cash';
   String? _selectedDeliveryTime;
   bool _isLoading = false;
+  bool _isDeliveryFeeConfigLoading = true;
   double? _walletBalance;
   bool _isUrdu = false;
+  double _deliveryFeeBase = _defaultDeliveryFeeBase;
+  double _deliveryFeeAdditional = _defaultDeliveryFeeAdditional;
 
   @override
   void initState() {
     super.initState();
     _loadLanguagePreference();
+    _loadDeliveryFeeConfig();
     final user = Provider.of<AuthProvider>(context, listen: false).user;
     if (user != null) {
       _nameController.text = '${user.firstName} ${user.lastName}'.trim();
@@ -51,6 +58,51 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
+
+  Future<void> _loadDeliveryFeeConfig() async {
+    try {
+      final data = await ApiService.getDeliveryFeeConfig();
+      final base = _parseAmount(data['base_fee']);
+      final additional = _parseAmount(data['additional_per_store']);
+      if (!mounted) return;
+      setState(() {
+        if (base != null && base >= 0) {
+          _deliveryFeeBase = base;
+        }
+        if (additional != null && additional >= 0) {
+          _deliveryFeeAdditional = additional;
+        }
+        _isDeliveryFeeConfigLoading = false;
+      });
+    } catch (e) {
+      debugPrint('Error loading delivery fee config: $e');
+      if (!mounted) return;
+      setState(() {
+        _isDeliveryFeeConfigLoading = false;
+      });
+    }
+  }
+
+  double? _parseAmount(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  int _getStoreCount(CartProvider cart) {
+    return cart.items
+        .map((item) => item.product.storeId ?? item.product.storeName ?? item.product.id)
+        .toSet()
+        .length;
+  }
+
+  double _calculateDeliveryFee(int storeCount) {
+    if (storeCount <= 0) return 0;
+    return _deliveryFeeBase + ((storeCount - 1) * _deliveryFeeAdditional);
+  }
+
+  double _calculateGrandTotal(CartProvider cart) {
+    return cart.totalAmount + _calculateDeliveryFee(_getStoreCount(cart));
+  }
 
   Future<void> _loadWalletBalance() async {
     try {
@@ -217,6 +269,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     if (cart.items.isEmpty) return;
 
+    final grandTotal = _calculateGrandTotal(cart);
+
     setState(() {
       _isLoading = true;
     });
@@ -295,11 +349,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     if (_paymentMethod == 'wallet' && _walletBalance != null) {
-      if (_walletBalance! < cart.totalAmount) {
+      if (_walletBalance! < grandTotal) {
         if (!mounted) return;
         Notifier.error(
           context,
-          '${_tr('Insufficient wallet balance. Need')} ${_tr('PKR')} ${(cart.totalAmount - _walletBalance!).toStringAsFixed(2)} ${_tr('more.')}',
+          '${_tr('Insufficient wallet balance. Need')} ${_tr('PKR')} ${(grandTotal - _walletBalance!).toStringAsFixed(2)} ${_tr('more.')}',
           sanitize: false,
         );
         return;
@@ -397,7 +451,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       child: Scaffold(
       appBar: AppBar(title: Text(_tr('Checkout'))),
       resizeToAvoidBottomInset: true,
-      body: _isLoading
+      body: (_isLoading || _isDeliveryFeeConfigLoading)
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
               child: LayoutBuilder(
@@ -452,22 +506,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     }
 
                                     final numStores = itemsByStore.length;
-
-                                    double getDeliveryFee(int stores) {
-                                      if (stores == 1) {
-                                        return 70;
-                                      } else if (stores == 2) {
-                                        return 100;
-                                      } else if (stores >= 3) {
-                                        return 130 + (stores - 3) * 30;
-                                      } else {
-                                        return 70;
-                                      }
-                                    }
-
-                                    final deliveryFee = getDeliveryFee(
-                                      numStores,
-                                    );
+                                    final deliveryFee =
+                                        _calculateDeliveryFee(numStores);
                                     double grandTotal =
                                         cart.totalAmount + deliveryFee;
 
@@ -917,13 +957,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(12),
                                         color:
-                                            _walletBalance! >= cart.totalAmount
+                                            _walletBalance! >=
+                                                _calculateGrandTotal(cart)
                                             ? Colors.green.shade50
                                             : Colors.red.shade50,
                                         border: Border.all(
                                           color:
                                               _walletBalance! >=
-                                                  cart.totalAmount
+                                                  _calculateGrandTotal(cart)
                                               ? Colors.green
                                               : Colors.red,
                                         ),
@@ -931,12 +972,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       child: Row(
                                         children: [
                                           Icon(
-                                            _walletBalance! >= cart.totalAmount
+                                            _walletBalance! >=
+                                                    _calculateGrandTotal(cart)
                                                 ? Icons.check_circle
                                                 : Icons.error,
                                             color:
                                                 _walletBalance! >=
-                                                    cart.totalAmount
+                                                    _calculateGrandTotal(cart)
                                                 ? Colors.green
                                                 : Colors.red,
                                           ),
@@ -952,20 +994,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                     fontWeight: FontWeight.bold,
                                                     color:
                                                         _walletBalance! >=
-                                                            cart.totalAmount
+                                                            _calculateGrandTotal(
+                                                              cart,
+                                                            )
                                                         ? Colors.green
                                                         : Colors.red,
                                                   ),
                                                 ),
                                                 if (_walletBalance! <
-                                                    cart.totalAmount)
+                                                    _calculateGrandTotal(cart))
                                                   Padding(
                                                     padding:
                                                         const EdgeInsets.only(
                                                           top: 4,
                                                         ),
                                                     child: Text(
-                                                      '${_tr('Insufficient wallet balance. Need')} ${_tr('PKR')} ${(cart.totalAmount - _walletBalance!).toStringAsFixed(2)} ${_tr('more.')}',
+                                                      '${_tr('Insufficient wallet balance. Need')} ${_tr('PKR')} ${(_calculateGrandTotal(cart) - _walletBalance!).toStringAsFixed(2)} ${_tr('more.')}',
                                                       style: const TextStyle(
                                                         fontSize: 12,
                                                         color: Colors.red,

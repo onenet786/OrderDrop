@@ -25,7 +25,8 @@ class AuthProvider with ChangeNotifier {
   String? get refreshToken => _refreshToken;
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _token != null;
-  bool get isAdmin => _user?.userType == 'admin';
+  bool get isAdmin =>
+      _user?.userType == 'admin' || _user?.userType == 'standard_user';
   bool get isRider => _user?.userType == 'rider';
   bool get isStoreOwner => _user?.userType == 'store_owner';
   bool get sessionExpired => _sessionExpired;

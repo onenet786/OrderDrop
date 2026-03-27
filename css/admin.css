@@ -2123,12 +2123,48 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.orders-customer-cell.is-attention {
+  padding-left: 0.55rem;
+  border-left: 3px solid color-mix(in srgb, var(--order-indicator-color) 68%, white);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--order-indicator-color) 8%, white);
+  animation: customerCellAttentionPulse 1.2s ease-in-out infinite;
+}
+
+.orders-customer-name.is-attention,
+.orders-cell-meta.is-attention {
+  color: color-mix(in srgb, var(--order-indicator-color) 78%, #0f172a);
+  animation: customerCellAttentionBlink 1.2s ease-in-out infinite;
+}
+
 .orders-cell-meta {
   font-size: 11px;
   color: #64748b;
   white-space: normal;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+@keyframes customerCellAttentionPulse {
+  0%, 100% {
+    background: color-mix(in srgb, var(--order-indicator-color) 8%, white);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--order-indicator-color) 0%, transparent);
+  }
+
+  50% {
+    background: color-mix(in srgb, var(--order-indicator-color) 16%, white);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--order-indicator-color) 14%, transparent);
+  }
+}
+
+@keyframes customerCellAttentionBlink {
+  0%, 100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.58;
+  }
 }
 
 .orders-location-cell,

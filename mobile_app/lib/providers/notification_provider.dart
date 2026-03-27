@@ -126,9 +126,13 @@ class NotificationProvider with ChangeNotifier {
     }
     _lastNotificationKey = key;
     _lastNotificationAt = now;
+    final notificationId =
+        payload == null || payload.isEmpty
+            ? now.millisecondsSinceEpoch.remainder(2147483647)
+            : (jsonEncode(payload).hashCode & 0x7fffffff);
 
     final notification = Notification(
-      id: now.millisecondsSinceEpoch,
+      id: notificationId,
       title: title,
       message: message,
       type: type,
@@ -146,6 +150,7 @@ class NotificationProvider with ChangeNotifier {
 
     notifyListeners();
     _showForegroundNotification(
+      notificationId,
       title,
       message,
       persistUntilDismissed: persistUntilDismissed,
@@ -156,6 +161,22 @@ class NotificationProvider with ChangeNotifier {
   void clearNotifications() {
     _notifications.clear();
     notifyListeners();
+  }
+
+  Future<void> removeNotificationsWhere(
+    bool Function(Notification notification) test,
+  ) async {
+    final removed = _notifications.where(test).toList(growable: false);
+    if (removed.isEmpty) return;
+
+    _notifications.removeWhere(test);
+    notifyListeners();
+
+    for (final notification in removed) {
+      try {
+        await _localNotifications.cancel(notification.id);
+      } catch (_) {}
+    }
   }
 
   void markAsRead(int notificationId) {
@@ -523,6 +544,13 @@ class NotificationProvider with ChangeNotifier {
       }
     });
 
+    _socket!.on('rider_location_update', (data) {
+      _emitSocketEvent('rider_location_update', data);
+      debugPrint(
+        'Socket: rider_location_update received for rider ${data['rider_id']}',
+      );
+    });
+
     _socket!.on('notification', (data) {
       _emitSocketEvent('notification', data);
       debugPrint('Socket: notification received: $data');
@@ -662,6 +690,7 @@ class NotificationProvider with ChangeNotifier {
   }
 
   Future<void> _showForegroundNotification(
+    int notificationId,
     String title,
     String message, {
     bool persistUntilDismissed = false,
@@ -684,7 +713,7 @@ class NotificationProvider with ChangeNotifier {
       );
 
       await _localNotifications.show(
-        DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
+        notificationId,
         title,
         message,
         details,

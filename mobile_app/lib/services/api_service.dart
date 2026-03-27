@@ -9,10 +9,7 @@ class ApiServiceException implements Exception {
   final String message;
   final bool isServiceUnavailable;
 
-  const ApiServiceException(
-    this.message, {
-    this.isServiceUnavailable = false,
-  });
+  const ApiServiceException(this.message, {this.isServiceUnavailable = false});
 
   @override
   String toString() => message;
@@ -34,6 +31,18 @@ class ApiService {
     final configured = _configuredBaseUrl.trim();
     if (configured.isNotEmpty) {
       return configured.replaceFirst(RegExp(r'\/+$'), '');
+    }
+
+    if (kIsWeb) {
+      final host = Uri.base.host.trim().toLowerCase();
+      final isLocalWebHost =
+          host == 'localhost' || host == '127.0.0.1' || host == '0.0.0.0';
+
+      if (!isLocalWebHost && Uri.base.host.trim().isNotEmpty) {
+        return Uri.base.origin.replaceFirst(RegExp(r'\/+$'), '');
+      }
+
+      return _defaultBaseUrl;
     }
 
     if (kDebugMode && !kIsWeb) {
@@ -137,37 +146,35 @@ class ApiService {
     }
   }
 
-  static Future<http.Response> _get(
-    Uri uri, {
-    Map<String, String>? headers,
-  }) => _send(() => http.get(uri, headers: headers), headers: headers);
+  static Future<http.Response> _get(Uri uri, {Map<String, String>? headers}) =>
+      _send(() => http.get(uri, headers: headers), headers: headers);
 
   static Future<http.Response> _post(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
   }) => _send(
-        () => http.post(uri, headers: headers, body: body),
-        headers: headers,
-      );
+    () => http.post(uri, headers: headers, body: body),
+    headers: headers,
+  );
 
   static Future<http.Response> _put(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
   }) => _send(
-        () => http.put(uri, headers: headers, body: body),
-        headers: headers,
-      );
+    () => http.put(uri, headers: headers, body: body),
+    headers: headers,
+  );
 
   static Future<http.Response> _delete(
     Uri uri, {
     Map<String, String>? headers,
     Object? body,
   }) => _send(
-        () => http.delete(uri, headers: headers, body: body),
-        headers: headers,
-      );
+    () => http.delete(uri, headers: headers, body: body),
+    headers: headers,
+  );
 
   static Map<String, dynamic> _handleResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -389,6 +396,8 @@ class ApiService {
     double? latitude,
     double? longitude,
     String? city,
+    String? token,
+    bool admin = false,
   }) async {
     final query = <String, String>{};
     if (categoryId != null) {
@@ -401,12 +410,19 @@ class ApiService {
     if (city != null && city.trim().isNotEmpty) {
       query['city'] = city.trim();
     }
+    if (admin) {
+      query['admin'] = '1';
+    }
 
-    final uri = Uri.parse('$baseUrl/api/stores').replace(
-      queryParameters: query.isEmpty ? null : query,
-    );
+    final uri = Uri.parse(
+      '$baseUrl/api/stores',
+    ).replace(queryParameters: query.isEmpty ? null : query);
     _logger.d('ApiService: GET $uri');
-    final response = await _get(uri);
+    final headers = <String, String>{};
+    if (token != null && token.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${token.trim()}';
+    }
+    final response = await _get(uri, headers: headers.isEmpty ? null : headers);
     return _handleResponse(response);
   }
 
@@ -418,10 +434,24 @@ class ApiService {
     return data['categories'] ?? [];
   }
 
-  static Future<Map<String, dynamic>> getStoreDetails(int id) async {
-    final uri = Uri.parse('$baseUrl/api/stores/$id');
+  static Future<Map<String, dynamic>> getStoreDetails(
+    int id, {
+    String? token,
+    bool admin = false,
+  }) async {
+    final query = <String, String>{};
+    if (admin) {
+      query['admin'] = '1';
+    }
+    final uri = Uri.parse(
+      '$baseUrl/api/stores/$id',
+    ).replace(queryParameters: query.isEmpty ? null : query);
     _logger.d('ApiService: GET $uri');
-    final response = await _get(uri);
+    final headers = <String, String>{};
+    if (token != null && token.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${token.trim()}';
+    }
+    final response = await _get(uri, headers: headers.isEmpty ? null : headers);
     return _handleResponse(response);
   }
 
@@ -612,7 +642,9 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  static Future<Map<String, dynamic>> getCustomerSupportContact(String token) async {
+  static Future<Map<String, dynamic>> getCustomerSupportContact(
+    String token,
+  ) async {
     final uri = Uri.parse('$baseUrl/api/orders/customer-support-contact');
     _logger.d('ApiService: GET $uri');
     final response = await _get(
@@ -620,7 +652,16 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     final data = _handleResponse(response);
-    return (data['support'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    return (data['support'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+  }
+
+  static Future<Map<String, dynamic>> getDeliveryFeeConfig() async {
+    final uri = Uri.parse('$baseUrl/api/orders/delivery-fee-config');
+    _logger.d('ApiService: GET $uri');
+    final response = await _get(uri);
+    final data = _handleResponse(response);
+    return data;
   }
 
   static Future<Map<String, dynamic>> getAppUpdateStatus(String token) async {
@@ -631,7 +672,8 @@ class ApiService {
       headers: {'Authorization': 'Bearer $token'},
     );
     final data = _handleResponse(response);
-    return (data['app_update'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    return (data['app_update'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
   }
 
   static Future<Map<String, dynamic>> createOrder(
@@ -734,9 +776,9 @@ class ApiService {
     final query = <String, String>{};
     if (from != null && from.trim().isNotEmpty) query['from'] = from.trim();
     if (to != null && to.trim().isNotEmpty) query['to'] = to.trim();
-    final uri = Uri.parse('$baseUrl/api/orders/rider/financial-history').replace(
-      queryParameters: query.isEmpty ? null : query,
-    );
+    final uri = Uri.parse(
+      '$baseUrl/api/orders/rider/financial-history',
+    ).replace(queryParameters: query.isEmpty ? null : query);
     _logger.d('ApiService: GET $uri');
     final response = await _get(
       uri,
@@ -788,8 +830,9 @@ class ApiService {
     final query = <String, String>{};
     if (from != null && from.trim().isNotEmpty) query['from'] = from.trim();
     if (to != null && to.trim().isNotEmpty) query['to'] = to.trim();
-    final uri = Uri.parse('$baseUrl/api/orders/store-owner/financial-history')
-        .replace(queryParameters: query.isEmpty ? null : query);
+    final uri = Uri.parse(
+      '$baseUrl/api/orders/store-owner/financial-history',
+    ).replace(queryParameters: query.isEmpty ? null : query);
     _logger.d('ApiService: GET $uri');
     final response = await _get(
       uri,
@@ -1148,9 +1191,7 @@ class ApiService {
     if (includeInactive) query.add('admin=1');
     if (lite) query.add('lite=1');
     final qs = query.isEmpty ? '' : '?${query.join('&')}';
-    final uri = Uri.parse(
-      '$baseUrl/api/stores$qs',
-    );
+    final uri = Uri.parse('$baseUrl/api/stores$qs');
     _logger.d('ApiService: GET $uri');
     final response = await _get(
       uri,
@@ -1240,8 +1281,9 @@ class ApiService {
   ) async {
     // Load all stores and filter by owner
     final stores = await getStoresForAdmin(token);
-    final ownerStores =
-        stores.where((s) => (s['owner_id']?.toString() ?? '') == ownerId.toString()).toList();
+    final ownerStores = stores
+        .where((s) => (s['owner_id']?.toString() ?? '') == ownerId.toString())
+        .toList();
     if (ownerStores.isEmpty) return [];
 
     // Fetch products for each store
@@ -1253,10 +1295,7 @@ class ApiService {
         '$baseUrl/api/products?store=$sid&admin=1&include_variants=1',
       );
       _logger.d('ApiService: GET $uri');
-      final resp = await _get(
-        uri,
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      final resp = await _get(uri, headers: {'Authorization': 'Bearer $token'});
       final data = _handleResponse(resp);
       final list = (data['products'] as List<dynamic>? ?? []);
       products.addAll(list);
@@ -1312,16 +1351,25 @@ class ApiService {
     String token, {
     required double latitude,
     required double longitude,
+    String? location,
   }) async {
     final uri = Uri.parse('$baseUrl/api/orders/rider/location');
     _logger.d('ApiService: PUT $uri');
+    final body = <String, dynamic>{
+      'latitude': latitude,
+      'longitude': longitude,
+    };
+    final trimmedLocation = location?.trim();
+    if (trimmedLocation != null && trimmedLocation.isNotEmpty) {
+      body['location'] = trimmedLocation;
+    }
     final response = await _put(
       uri,
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       },
-      body: jsonEncode({'latitude': latitude, 'longitude': longitude}),
+      body: jsonEncode(body),
     );
     return _handleResponse(response);
   }
@@ -1393,7 +1441,9 @@ class ApiService {
     String channel = 'mobile',
   }) async {
     final safeChannel = channel.toLowerCase() == 'web' ? 'web' : 'mobile';
-    final uri = Uri.parse('$baseUrl/api/stores/grace-alerts?channel=$safeChannel');
+    final uri = Uri.parse(
+      '$baseUrl/api/stores/grace-alerts?channel=$safeChannel',
+    );
     _logger.d('ApiService: GET $uri');
     final response = await _get(
       uri,
@@ -1420,4 +1470,3 @@ class ApiService {
     return _handleResponse(response);
   }
 }
-

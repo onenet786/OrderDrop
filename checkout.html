@@ -47,13 +47,16 @@
         <main class="app-content">
             <div id="toastContainer" class="toast-container"></div>
 
-            <h2 style="margin-bottom: 2rem; font-size: 1.75rem; font-weight: 700;">Checkout</h2>
+            <div class="page-header section-gap-lg">
+                <h2 class="page-title">Checkout</h2>
+                <p class="page-subtitle">Confirm delivery details, choose payment, and review your total before placing the order.</p>
+            </div>
 
             <div class="checkout-container">
                 <div class="checkout-form">
                     <h3>Delivery Information</h3>
                     <form id="checkoutForm" action="/api/orders" method="post">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-grid-two">
                             <div class="form-group">
                                 <label for="fullName">Full Name</label>
                                 <input type="text" id="fullName" name="fullName" required>
@@ -70,7 +73,7 @@
                             <textarea id="deliveryAddress" name="deliveryAddress" rows="2" required></textarea>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-grid-two">
                             <div class="form-group">
                                 <label for="deliveryTime">Preferred Delivery Time</label>
                                 <select id="deliveryTime" name="deliveryTime" required>
@@ -97,7 +100,7 @@
                             <label for="cardNumber">Card Number</label>
                             <input type="text" id="cardNumber" name="cardNumber" placeholder="1234 5678 9012 3456">
 
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                            <div class="form-grid-two form-grid-two--offset">
                                 <div>
                                     <label for="expiryDate">Expiry Date</label>
                                     <input type="text" id="expiryDate" name="expiryDate" placeholder="MM/YY">
@@ -109,7 +112,7 @@
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Place Order</button>
+                        <button type="submit" class="btn btn-primary btn-block">Place Order</button>
                     </form>
                 </div>
 
@@ -117,7 +120,7 @@
                     <h3>Order Summary</h3>
                     <div id="checkoutItems">
                         <!-- Order items will be loaded dynamically -->
-                        <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Loading cart items...</p>
+                        <p class="section-loading-copy">Loading cart items...</p>
                     </div>
                     <div class="checkout-total" id="checkoutTotal">
                         <span>Total</span>

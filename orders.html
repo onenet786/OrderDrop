@@ -6,40 +6,6 @@
     <title>Orders - ServeNow</title>
     <link rel="stylesheet" href="css/user.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        .tabs {
-            display: flex;
-            gap: 2px;
-            background: #e2e8f0;
-            padding: 4px;
-            border-radius: 8px;
-        }
-        .tab-btn {
-            min-height: 44px;
-            padding: 0.5rem 1rem;
-            border-radius: 10px;
-            font-weight: 600;
-            font-size: 0.9rem;
-            transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-            border: none;
-            background: transparent;
-            color: #64748b;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-        }
-        .tab-btn.active {
-            background: white;
-            color: #667eea;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .tab-btn:hover:not(.active) {
-            background: rgba(255,255,255,0.5);
-            color: #475569;
-        }
-    </style>
     <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
 </head>
 <body>
@@ -81,10 +47,13 @@
         <main class="app-content">
             <div id="toastContainer" class="toast-container"></div>
 
-            <div class="page-header" style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
-                <h2>My Orders</h2>
-                <div class="filters" style="display: flex; gap: 1rem; align-items: center;">
-                    <select id="assignmentFilter" class="form-control" onchange="refreshOrders()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #ddd;">
+            <div class="page-header page-header--split section-gap-lg">
+                <div>
+                    <h2 class="page-title">My Orders</h2>
+                    <p class="page-subtitle">Track active deliveries, check assignment state, and review completed orders in one cleaner workflow.</p>
+                </div>
+                <div class="filters toolbar-inline">
+                    <select id="assignmentFilter" class="toolbar-select" onchange="refreshOrders()">
                         <option value="unassigned">Unassigned</option>
                         <option value="all">All Assignments</option>
                         <option value="assigned">Assigned</option>
@@ -96,7 +65,7 @@
                 </div>
             </div>
 
-            <div id="ordersContainer" class="stats-grid" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div id="ordersContainer" class="orders-list">
                 <!-- Orders will be loaded dynamically -->
                 <p>Loading orders...</p>
             </div>

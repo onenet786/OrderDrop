@@ -7,6 +7,48 @@ const { sendVerificationEmail, sendDeletionRequestEmail } = require('../services
 
 const router = express.Router();
 
+function normalizePositiveInt(value) {
+    if (value === '' || value === null || value === undefined) return null;
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) return null;
+    return parsed;
+}
+
+async function syncStoreOwnerAssignment(db, {
+    userId,
+    nextUserType,
+    nextStoreId,
+    previousUserType,
+    previousStoreId
+}) {
+    const normalizedUserId = normalizePositiveInt(userId);
+    if (!normalizedUserId) return;
+
+    const normalizedNextStoreId = nextUserType === 'store_owner'
+        ? normalizePositiveInt(nextStoreId)
+        : null;
+    const normalizedPreviousStoreId = previousUserType === 'store_owner'
+        ? normalizePositiveInt(previousStoreId)
+        : null;
+
+    if (
+        normalizedPreviousStoreId &&
+        normalizedPreviousStoreId !== normalizedNextStoreId
+    ) {
+        await db.execute(
+            'UPDATE stores SET owner_id = NULL WHERE id = ? AND owner_id = ?',
+            [normalizedPreviousStoreId, normalizedUserId]
+        );
+    }
+
+    if (normalizedNextStoreId) {
+        await db.execute(
+            'UPDATE stores SET owner_id = ? WHERE id = ?',
+            [normalizedUserId, normalizedNextStoreId]
+        );
+    }
+}
+
 // Middleware to allow standard_user with menu_users permission
 const requireUserManagement = async (req, res, next) => {
     // If admin, allow
@@ -102,6 +144,7 @@ router.post('/', authenticateToken, requireAdmin, [
         const { firstName, lastName, email, password, phone, address, user_type, is_verified, is_active, store_id } = req.body;
         const normalizedEmail = String(email || '').trim().toLowerCase();
         const normalizedPhone = phone === undefined || phone === null ? '' : String(phone).trim();
+        const normalizedStoreId = normalizePositiveInt(store_id);
 
         const [existing] = await req.db.execute('SELECT id FROM users WHERE LOWER(email) = ?', [normalizedEmail]);
         if (existing.length > 0) {
@@ -126,8 +169,16 @@ router.post('/', authenticateToken, requireAdmin, [
 
         const [result] = await req.db.execute(
             'INSERT INTO users (first_name, last_name, email, phone, password, address, user_type, verification_code, verification_expires_at, is_verified, is_active, store_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [firstName, lastName, normalizedEmail, normalizedPhone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, verified, active, store_id || null]
+            [firstName, lastName, normalizedEmail, normalizedPhone || null, hashedPassword, address || null, user_type || 'customer', verificationCode, verificationExpiresAt, verified, active, normalizedStoreId]
         );
+
+        await syncStoreOwnerAssignment(req.db, {
+            userId: result.insertId,
+            nextUserType: user_type || 'customer',
+            nextStoreId: normalizedStoreId,
+            previousUserType: null,
+            previousStoreId: null
+        });
 
         try {
             await sendVerificationEmail(normalizedEmail, verificationCode);
@@ -192,6 +243,19 @@ router.put('/:id', authenticateToken, requireAdmin, [
         } = req.body;
         const normalizedEmail = email === undefined ? undefined : String(email || '').trim().toLowerCase();
         const normalizedPhone = phone === undefined ? undefined : String(phone || '').trim();
+        const normalizedStoreId = store_id === undefined ? undefined : normalizePositiveInt(store_id);
+
+        const [existingUsers] = await req.db.execute(
+            'SELECT id, user_type, store_id FROM users WHERE id = ? LIMIT 1',
+            [id]
+        );
+        if (!existingUsers.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        const existingUser = existingUsers[0];
 
         const updateFields = [];
         const updateValues = [];
@@ -209,7 +273,7 @@ router.put('/:id', authenticateToken, requireAdmin, [
             updateValues.push(null);
         } else if (store_id !== undefined) {
             updateFields.push('store_id = ?');
-            updateValues.push(store_id || null);
+            updateValues.push(normalizedStoreId);
         }
 
         // Handle password separately (hash)
@@ -247,6 +311,14 @@ router.put('/:id', authenticateToken, requireAdmin, [
             `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`,
             updateValues
         );
+
+        await syncStoreOwnerAssignment(req.db, {
+            userId: id,
+            nextUserType: user_type !== undefined ? user_type : existingUser.user_type,
+            nextStoreId: store_id !== undefined ? normalizedStoreId : existingUser.store_id,
+            previousUserType: existingUser.user_type,
+            previousStoreId: existingUser.store_id
+        });
 
         res.json({ success: true, message: 'User updated successfully' });
     } catch (error) {

@@ -121,8 +121,8 @@
                         <input type="text" id="storeSearch" class="search-input" placeholder="Search products (e.g., Pizza, Milk)">
                     </div>
                     <div class="search-select-wrapper">
-                        <i class="fas fa-filter select-icon" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-muted);"></i>
-                        <select id="storeCategoryFilter" class="search-select" style="padding-left: 2.5rem;">
+                        <i class="fas fa-filter select-icon"></i>
+                        <select id="storeCategoryFilter" class="search-select search-select--with-icon">
                             <option value="">All Categories</option>
                             <!-- Populated dynamically -->
                         </select>
@@ -176,7 +176,7 @@
             </div>
 
             <div id="searchResultsSection" class="hidden" style="display: none;">
-                <section class="featured-stores" style="margin-top: 3rem;">
+                <section class="featured-stores section-offset-top">
                     <div class="section-heading">
                         <span class="section-eyebrow">Results</span>
                         <h3>Matching Results</h3>
@@ -188,7 +188,7 @@
                 </section>
             </div>
 
-            <section class="featured-stores" id="allStoresSection" style="margin-top: 3rem;">
+            <section class="featured-stores section-offset-top" id="allStoresSection">
                 <div class="section-heading">
                     <span class="section-eyebrow">Discover</span>
                     <h3>All Stores</h3>
@@ -210,7 +210,7 @@
     </div>
 
     <!-- Scroll to Top Button -->
-    <button class="scroll-to-top" id="scrollToTop" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" style="position: fixed; bottom: 20px; right: 20px; width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; border: none; box-shadow: var(--shadow); cursor: pointer; display: none; align-items: center; justify-content: center; z-index: 100;">
+    <button class="scroll-to-top" id="scrollToTop" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
         <i class="fas fa-arrow-up"></i>
     </button>
 

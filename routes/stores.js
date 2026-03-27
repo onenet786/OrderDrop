@@ -896,11 +896,64 @@ router.get('/bank-options', authenticateToken, requireStoreOwner, async (req, re
         if (!banksTableExists) {
             return res.json({ success: true, banks: [] });
         }
-        const [banks] = await req.db.execute(
-            `SELECT id, name, account_number, bank_code, branch_name, account_title
-             FROM banks
-             ORDER BY name ASC`
-        );
+
+        const requestedStoreId = parseInt(String(req.query.store_id || ''), 10);
+        const requestedIncludeBankId = parseInt(String(req.query.include_bank_id || ''), 10);
+        const hasStoreFilter = Number.isInteger(requestedStoreId) && requestedStoreId > 0;
+
+        let banks = [];
+        if (hasStoreFilter) {
+            const storeQuery = req.user.user_type === 'admin'
+                ? 'SELECT id, bank_id FROM stores WHERE id = ? LIMIT 1'
+                : 'SELECT id, bank_id FROM stores WHERE id = ? AND owner_id = ? LIMIT 1';
+            const storeParams = req.user.user_type === 'admin'
+                ? [requestedStoreId]
+                : [requestedStoreId, req.user.id];
+            const [storeRows] = await req.db.execute(storeQuery, storeParams);
+
+            if (!storeRows.length) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Store not found'
+                });
+            }
+
+            const bankIds = [];
+            const storeBankId = parseInt(String(storeRows[0].bank_id || ''), 10);
+            if (Number.isInteger(storeBankId) && storeBankId > 0) {
+                bankIds.push(storeBankId);
+            }
+
+            if (
+                Number.isInteger(requestedIncludeBankId) &&
+                requestedIncludeBankId > 0 &&
+                !bankIds.includes(requestedIncludeBankId)
+            ) {
+                bankIds.push(requestedIncludeBankId);
+            }
+
+            if (!bankIds.length) {
+                return res.json({ success: true, banks: [] });
+            }
+
+            const placeholders = bankIds.map(() => '?').join(', ');
+            const [filteredBanks] = await req.db.execute(
+                `SELECT id, name, account_number, bank_code, branch_name, account_title
+                 FROM banks
+                 WHERE id IN (${placeholders})
+                 ORDER BY name ASC`,
+                bankIds
+            );
+            banks = filteredBanks || [];
+        } else {
+            const [allBanks] = await req.db.execute(
+                `SELECT id, name, account_number, bank_code, branch_name, account_title
+                 FROM banks
+                 ORDER BY name ASC`
+            );
+            banks = allBanks || [];
+        }
+
         return res.json({
             success: true,
             banks: (banks || []).map((b) => ({
@@ -1144,7 +1197,21 @@ router.get('/global-delivery-status', async (req, res) => {
 router.get('/notification-customers', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const [rows] = await req.db.execute(
-            `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.address
+            `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.address,
+                    (
+                        SELECT o.delivery_address
+                        FROM orders o
+                        WHERE o.user_id = u.id
+                        ORDER BY o.created_at DESC, o.id DESC
+                        LIMIT 1
+                    ) AS recent_delivery_address,
+                    (
+                        SELECT o.special_instructions
+                        FROM orders o
+                        WHERE o.user_id = u.id
+                        ORDER BY o.created_at DESC, o.id DESC
+                        LIMIT 1
+                    ) AS recent_special_instructions
              FROM users u
              WHERE (u.user_type IS NULL OR u.user_type = '' OR LOWER(u.user_type) IN ('customer', 'standard_user'))
                AND (u.is_active IS NULL OR u.is_active = 1)
@@ -2223,16 +2290,38 @@ router.get('/grace-alerts', authenticateToken, requireAdmin, async (req, res) =>
         const hasStoreSettlements = await tableExists(req.db, 'store_settlements');
         const alerts = [];
         for (const row of rows || []) {
-            const [grossRows] = await req.db.execute(
-                `SELECT COALESCE(SUM(oi.quantity * oi.price), 0) as gross_amount
+            const [payableRows] = await req.db.execute(
+                `SELECT COALESCE(SUM(
+                        GREATEST(
+                            0,
+                            (oi.price * oi.quantity) -
+                            (
+                                oi.quantity * (
+                                    CASE
+                                        WHEN LOWER(TRIM(COALESCE(s.payment_term, ''))) LIKE '%discount%'
+                                             AND COALESCE(s.store_discount_apply_all_products, 0) = 1
+                                             AND COALESCE(s.store_discount_percent, 0) > 0
+                                            THEN oi.price * (COALESCE(s.store_discount_percent, 0) / 100)
+                                        WHEN oi.discount_type = 'percent' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN oi.price * (COALESCE(oi.discount_value, 0) / 100)
+                                        WHEN oi.discount_type = 'amount' AND COALESCE(oi.discount_value, 0) > 0
+                                            THEN COALESCE(oi.discount_value, 0)
+                                        ELSE 0
+                                    END
+                                )
+                            )
+                        )
+                    ), 0) as payable_amount
                  FROM order_items oi
                  JOIN orders o ON o.id = oi.order_id
+                 JOIN products p ON p.id = oi.product_id
+                 JOIN stores s ON s.id = COALESCE(oi.store_id, p.store_id)
                  WHERE oi.store_id = ?
                    AND o.status = 'delivered'
                    AND DATE(o.created_at) >= ?`,
                 [row.id, row.payment_grace_start_date]
             );
-            const grossAmount = Number(grossRows?.[0]?.gross_amount || 0);
+            const payableAmount = Number(payableRows?.[0]?.payable_amount || 0);
 
             let paidAmount = 0;
             if (hasStoreSettlements) {
@@ -2246,7 +2335,7 @@ router.get('/grace-alerts', authenticateToken, requireAdmin, async (req, res) =>
                 );
                 paidAmount = Number(paidRows?.[0]?.paid_amount || 0);
             }
-            const pendingAmount = Math.max(0, Math.round((grossAmount - paidAmount) * 100) / 100);
+            const pendingAmount = Math.max(0, Math.round((payableAmount - paidAmount) * 100) / 100);
             if (pendingAmount <= 0) continue;
 
             const daysLeft = Number(row.days_left);

@@ -69,6 +69,45 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+let __scheduledOrdersRefresh = null;
+
+function scheduleOrdersRefresh(delay = 700) {
+    if (__scheduledOrdersRefresh) return;
+    __scheduledOrdersRefresh = window.setTimeout(() => {
+        __scheduledOrdersRefresh = null;
+        if (typeof window.loadOrders === 'function') {
+            window.loadOrders();
+        }
+    }, delay);
+}
+
+function formatRiderCoordinateLabel(order) {
+    const latitude = Number.parseFloat(order?.rider_latitude);
+    const longitude = Number.parseFloat(order?.rider_longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return '';
+    }
+    return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+}
+
+function buildRiderLocationHtml(order) {
+    const locationLabel = String(order?.rider_location || '').trim();
+    const coordinateLabel = formatRiderCoordinateLabel(order);
+
+    if (locationLabel) {
+        return `
+            <span class="orders-location-line">${escapeHtml(locationLabel)}</span>
+            ${coordinateLabel ? `<span class="orders-cell-meta">${escapeHtml(coordinateLabel)}</span>` : ''}
+        `;
+    }
+
+    if (coordinateLabel) {
+        return `<span class="orders-location-line">${escapeHtml(coordinateLabel)}</span>`;
+    }
+
+    return `<span class="orders-location-line">N/A</span>`;
+}
+
 function toDateTimeLocalValue(rawValue) {
     if (!rawValue) return '';
     const dt = new Date(rawValue);
@@ -1121,9 +1160,108 @@ function showInfo(title, message, duration = 2000) {
     showToast(title, message, 'info', duration);
 }
 
+function registerAdminRealtimeNotifications() {
+    if (!window.ServeNowNotifications || typeof window.ServeNowNotifications.addEventListener !== 'function') {
+        return;
+    }
+
+    window.__serveNowSystemNotifyDedup = window.__serveNowSystemNotifyDedup || new Map();
+    window.__serveNowSystemNotifyHandler = function(title, body) {
+        try {
+            const safeTitle = String(title || '').trim();
+            const safeBody = String(body || '').trim();
+            const key = _buildAdminSystemNotifyClaimKey(safeTitle, safeBody, 'shared');
+            const now = Date.now();
+            const lastShownAt = window.__serveNowSystemNotifyDedup.get(key) || 0;
+            if ((now - lastShownAt) < 10000) {
+                return true;
+            }
+            window.__serveNowSystemNotifyDedup.set(key, now);
+            const safeTag = `rt-${Math.abs(key.split('').reduce((a, c) => ((a * 31) + c.charCodeAt(0)) | 0, 7))}`;
+            showStoreGraceSystemNotification(safeTitle || 'Notification', safeBody, safeTag, null).catch(() => {});
+            return true;
+        } catch (_e) {
+            return false;
+        }
+    };
+
+    window.ServeNowNotifications.removeEventListener('admin-dashboard');
+    window.ServeNowNotifications.addEventListener('admin-dashboard', (data) => {
+        const type = String(data.type || data.event || '').toLowerCase();
+
+        if (type === 'connect') {
+            showInfo('System', 'Connected to real-time server.');
+            return;
+        }
+
+        if (type === 'heartbeat') {
+            console.debug('Heartbeat received:', data.time);
+            window._adminDiag.lastHeartbeat = new Date();
+            return;
+        }
+
+        if (type === 'connect_error') {
+            console.error('Socket connection error:', data.message || data);
+            return;
+        }
+
+        if (type === 'new_user') {
+            const activeTab = document.querySelector('.tab-link.active');
+            if (activeTab) {
+                const tabId = activeTab.getAttribute('data-tab');
+                if (tabId === 'dashboard') {
+                    if (typeof loadDashboardStats === 'function') loadDashboardStats();
+                    if (typeof loadRecentActivity === 'function') loadRecentActivity();
+                } else if (tabId === 'accounts') {
+                    if (typeof loadAccounts === 'function') loadAccounts();
+                }
+            }
+            return;
+        }
+
+        if (type === 'new_order') {
+            const activeTab = document.querySelector('.tab-link.active');
+            if (activeTab) {
+                const tabId = activeTab.getAttribute('data-tab');
+                if (tabId === 'dashboard') {
+                    const todayTotalOrders = document.getElementById('todayTotalOrders');
+                    if (todayTotalOrders) {
+                        todayTotalOrders.textContent = parseInt(todayTotalOrders.textContent) + 1;
+                    }
+                    const allTotalOrders = document.getElementById('allTotalOrders');
+                    if (allTotalOrders) {
+                        allTotalOrders.textContent = parseInt(allTotalOrders.textContent) + 1;
+                    }
+                } else if (tabId === 'orders') {
+                    if (typeof window.loadOrders === 'function') window.loadOrders();
+                }
+            }
+            return;
+        }
+
+        if (type === 'order_assigned' || type === 'order_status_update' || type === 'payment_status_update') {
+            if (typeof window.loadOrders === 'function') window.loadOrders();
+            if (type === 'order_status_update' && document.getElementById('todayTotalOrders')) {
+                loadDashboardStats();
+            }
+            return;
+        }
+
+        if (type === 'rider_location_update') {
+            scheduleOrdersRefresh();
+            return;
+        }
+
+        if (type === 'order_completed') {
+            if (typeof window.loadOrders === 'function') window.loadOrders();
+            if (typeof loadDashboardStats === 'function') loadDashboardStats();
+        }
+    });
+}
+
 // ===== REAL-TIME NOTIFICATIONS =====
 let socket;
-if (typeof io !== 'undefined') {
+if (false && typeof io !== 'undefined') {
     socket = io();
     
     let __notifyRequested = false;
@@ -1260,6 +1398,7 @@ if (typeof io !== 'undefined') {
 
 // Initialize admin dashboard
 document.addEventListener('DOMContentLoaded', function() {
+    registerAdminRealtimeNotifications();
     // Apply saved theme and bind theme controls immediately.
     initializeThemeSettings();
 
@@ -1295,7 +1434,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data && data.success && data.user) {
                 if (data.user.user_type === 'admin' || data.user.user_type === 'standard_user') {
                     currentUser = data.user;
-                    try { window._adminIdentifySocket && window._adminIdentifySocket(); } catch (_) {}
+                    try { window.ServeNowNotifications?.identifyCurrentUser?.(); } catch (_) {}
                     initializeAdmin();
                 } else if (data.user.user_type === 'rider') {
                     window.location.href = 'rider.html';
@@ -1684,6 +1823,9 @@ function initializeAdmin() {
     }
     updateStoreGraceControls();
     startStoreGraceAlertsPolling();
+    processPendingStoreGraceUrlAction().catch((error) => {
+        console.warn('Pending store grace tray action failed:', error);
+    });
 
     // Store priority button
     const savePriorityBtn = document.getElementById('savePriorityBtn');
@@ -2079,30 +2221,6 @@ function initializeAdmin() {
 
     if (typeof initializeFinancialForms === 'function') {
         initializeFinancialForms();
-    }
-
-    // Listen for socket events to auto-refresh
-    if (socket) {
-        socket.on('order_status_update', (data) => {
-            console.log('Order status update received:', data);
-            // If we are on the dashboard or orders page, refresh data
-            // Simple check: if loadOrders function exists and we have an orders table
-            if (document.getElementById('ordersTableBody')) {
-                // Update local state and re-render without full reload if possible, 
-                // but loadOrders() is safer to sync everything.
-                loadOrders();
-            }
-            // Also update dashboard stats if they exist
-            if (document.getElementById('todayTotalOrders')) {
-                loadDashboardStats();
-            }
-        });
-        
-        socket.on('new_order', (data) => {
-             if (document.getElementById('ordersTableBody')) loadOrders();
-             if (document.getElementById('todayTotalOrders')) loadDashboardStats();
-             showInfo('New Order', `Order #${data.order_number} received!`);
-        });
     }
 
     // Load default tab
@@ -4711,6 +4829,7 @@ function getOrderIndicatorColor(status) {
 
 function buildOrderCustomerAlertSummary(order) {
     const flags = [];
+    if (order?.delivery_address) flags.push('Delivery address');
     if (order?.delivery_time) flags.push('Preferred delivery time');
     if (order?.special_instructions) flags.push('Special instructions');
     return flags.join(' and ');
@@ -4718,7 +4837,7 @@ function buildOrderCustomerAlertSummary(order) {
 
 function shouldAnimateOrderIndicator(status) {
     const normalized = String(status || '').trim().toLowerCase();
-    return !['delivered', 'cancelled'].includes(normalized);
+    return !['delivered', 'completed', 'cancelled'].includes(normalized);
 }
 
 function displayOrders(orders = AppState.orders) {
@@ -4769,32 +4888,28 @@ function displayOrders(orders = AppState.orders) {
             : 'Not Assigned';
         const row = document.createElement('tr');
         const preferredDeliveryTime = order.delivery_time ? escapeHtml(String(order.delivery_time)) : '';
+        const deliveryAddress = order.delivery_address ? escapeHtml(String(order.delivery_address)) : '';
         const specialInstructions = order.special_instructions ? escapeHtml(String(order.special_instructions)) : '';
-        const riderLocationHtml = order.rider_latitude && order.rider_longitude
-            ? `
-                <span class="orders-location-line">${Number(order.rider_latitude).toFixed(4)},</span>
-                <span class="orders-location-line">${Number(order.rider_longitude).toFixed(4)}</span>
-              `
-            : `
-                <span class="orders-location-line">${escapeHtml(String(order.rider_location || 'N/A'))}</span>
-              `;
+        const riderLocationHtml = buildRiderLocationHtml(order);
         const orderDateTime = formatOrderDateTime(order.created_at);
-        const hasCustomerAlert = Boolean(preferredDeliveryTime || specialInstructions);
+        const hasCustomerAlert = Boolean(deliveryAddress || preferredDeliveryTime || specialInstructions);
         const indicatorColor = getOrderIndicatorColor(order.status);
-        const indicatorClass = shouldAnimateOrderIndicator(order.status)
+        const shouldBlinkCustomerDetails = hasCustomerAlert && shouldAnimateOrderIndicator(order.status);
+        const indicatorClass = shouldBlinkCustomerDetails
             ? 'order-note-indicator'
             : 'order-note-indicator is-static';
         const alertSummary = hasCustomerAlert
             ? escapeHtml(buildOrderCustomerAlertSummary(order))
             : '';
         const customerHtml = `
-            <div class="orders-customer-cell">
-                <span class="orders-customer-name">
+            <div class="orders-customer-cell${shouldBlinkCustomerDetails ? ' is-attention' : ''}" style="--order-indicator-color:${indicatorColor};">
+                <span class="orders-customer-name${shouldBlinkCustomerDetails ? ' is-attention' : ''}">
                     ${hasCustomerAlert ? `<span class="${indicatorClass}" style="--order-indicator-color:${indicatorColor};" title="${alertSummary}"></span>` : ''}
                     <span>${order.first_name} ${order.last_name}</span>
                 </span>
-                ${preferredDeliveryTime ? `<span class="orders-cell-meta">Preferred Time: ${preferredDeliveryTime}</span>` : ''}
-                ${specialInstructions ? `<span class="orders-cell-meta">Instructions: ${specialInstructions}</span>` : ''}
+                ${deliveryAddress ? `<span class="orders-cell-meta${shouldBlinkCustomerDetails ? ' is-attention' : ''}">Address: ${deliveryAddress}</span>` : ''}
+                ${preferredDeliveryTime ? `<span class="orders-cell-meta${shouldBlinkCustomerDetails ? ' is-attention' : ''}">Preferred Time: ${preferredDeliveryTime}</span>` : ''}
+                ${specialInstructions ? `<span class="orders-cell-meta${shouldBlinkCustomerDetails ? ' is-attention' : ''}">Instructions: ${specialInstructions}</span>` : ''}
             </div>
         `;
 
@@ -5243,6 +5358,113 @@ async function loadManualOrderCustomers() {
         opt.textContent = suffix ? `${name} (${suffix})` : name;
         sel.appendChild(opt);
     });
+}
+
+async function loadEditOrderCustomers(selectedCustomerId, currentOrder = null) {
+    const sel = document.getElementById('editOrderCustomer');
+    if (!sel) return;
+
+    sel.innerHTML = '<option value="">Loading customers...</option>';
+    try {
+        await loadNotificationCustomersIfNeeded();
+    } catch (error) {
+        console.error('Error loading customers for edit order:', error);
+    }
+
+    const customers = Array.isArray(AppState.notificationCustomers) ? AppState.notificationCustomers : [];
+    AppState.manualOrderCustomersById = AppState.manualOrderCustomersById || {};
+    sel.innerHTML = '<option value="">Select customer</option>';
+
+    customers.forEach((c) => {
+        const id = Number(c.id);
+        if (!Number.isInteger(id) || id <= 0) return;
+        AppState.manualOrderCustomersById[id] = c;
+        const name = `${c.first_name || ''} ${c.last_name || ''}`.trim() || `Customer ${id}`;
+        const phone = String(c.phone || '').trim();
+        const email = String(c.email || '').trim();
+        const suffix = [phone, email].filter(Boolean).join(' | ');
+        const opt = document.createElement('option');
+        opt.value = String(id);
+        opt.textContent = suffix ? `${name} (${suffix})` : name;
+        sel.appendChild(opt);
+    });
+
+    const wantedId = Number(selectedCustomerId || 0);
+    if (Number.isInteger(wantedId) && wantedId > 0 && !customers.some((c) => Number(c.id) === wantedId)) {
+        const fallbackName = `${currentOrder?.first_name || ''} ${currentOrder?.last_name || ''}`.trim() || `Customer ${wantedId}`;
+        const fallbackPhone = String(currentOrder?.phone || '').trim();
+        const fallbackEmail = String(currentOrder?.email || '').trim();
+        const fallbackSuffix = [fallbackPhone, fallbackEmail].filter(Boolean).join(' | ');
+        const opt = document.createElement('option');
+        opt.value = String(wantedId);
+        opt.textContent = fallbackSuffix ? `${fallbackName} (${fallbackSuffix})` : fallbackName;
+        sel.appendChild(opt);
+    }
+
+    if (wantedId > 0) {
+        sel.value = String(wantedId);
+    }
+}
+
+function autofillEditOrderFieldsFromCustomer(force = false) {
+    const customerId = Number(document.getElementById('editOrderCustomer')?.value || 0);
+    const addressEl = document.getElementById('editOrderDeliveryAddress');
+    const instructionsEl = document.getElementById('editOrderSpecialInstructions');
+    if ((!addressEl && !instructionsEl) || !Number.isInteger(customerId) || customerId <= 0) return;
+    const customer = (AppState.manualOrderCustomersById || {})[customerId];
+    if (!customer) return;
+
+    const customerAddress = String(customer?.address || '').trim() || String(customer?.recent_delivery_address || '').trim();
+    const customerInstructions = String(customer?.recent_special_instructions || '').trim();
+
+    if (addressEl && customerAddress && (force || !String(addressEl.value || '').trim())) {
+        addressEl.value = customerAddress;
+    }
+    if (instructionsEl && customerInstructions && (force || !String(instructionsEl.value || '').trim())) {
+        instructionsEl.value = customerInstructions;
+    }
+}
+
+function primeEditOrderCustomerField(order) {
+    let customerSelect = document.getElementById('editOrderCustomer');
+    if (!customerSelect) return null;
+    const selectedCustomerId = Number(order?.user_id || 0);
+    const fallbackName = `${order?.first_name || ''} ${order?.last_name || ''}`.trim() || (selectedCustomerId > 0 ? `Customer ${selectedCustomerId}` : 'Select customer');
+    const fallbackPhone = String(order?.phone || '').trim();
+    const fallbackEmail = String(order?.email || '').trim();
+    const fallbackSuffix = [fallbackPhone, fallbackEmail].filter(Boolean).join(' | ');
+    const fallbackLabel = fallbackSuffix ? `${fallbackName} (${fallbackSuffix})` : fallbackName;
+
+    const customerClone = customerSelect.cloneNode(true);
+    customerClone.innerHTML = '<option value="">Select customer</option>';
+    if (selectedCustomerId > 0) {
+        const opt = document.createElement('option');
+        opt.value = String(selectedCustomerId);
+        opt.textContent = fallbackLabel;
+        customerClone.appendChild(opt);
+        customerClone.value = String(selectedCustomerId);
+    }
+
+    customerSelect.parentNode.replaceChild(customerClone, customerSelect);
+    customerClone.addEventListener('change', () => {
+        autofillEditOrderFieldsFromCustomer(true);
+    });
+    return customerClone;
+}
+
+function bindEditOrderCustomerField(selectedCustomerId) {
+    let customerSelect = document.getElementById('editOrderCustomer');
+    if (!customerSelect) return null;
+    const customerClone = customerSelect.cloneNode(true);
+    customerClone.innerHTML = customerSelect.innerHTML;
+    if (selectedCustomerId) {
+        customerClone.value = String(selectedCustomerId);
+    }
+    customerSelect.parentNode.replaceChild(customerClone, customerSelect);
+    customerClone.addEventListener('change', () => {
+        autofillEditOrderFieldsFromCustomer(true);
+    });
+    return customerClone;
 }
 
 async function loadManualOrderStores() {
@@ -5789,13 +6011,14 @@ async function viewOrderDetails(orderId) {
         `;
 
         if (order.rider_id) {
+            const riderLocationLine = String(order.rider_location || '').trim() || formatRiderCoordinateLabel(order);
             html += `
                 <hr>
                 <div class="info-group">
                     <h4>Rider Information</h4>
                     <p><strong>Name:</strong> ${order.rider_first_name} ${order.rider_last_name || ''}</p>
                     <p><strong>Phone:</strong> ${order.rider_phone || 'N/A'}</p>
-                    ${order.rider_location ? `<p><strong>Last Location:</strong> ${order.rider_location}</p>` : ''}
+                    ${riderLocationLine ? `<p><strong>Last Location:</strong> ${escapeHtml(riderLocationLine)}</p>` : ''}
                 </div>
             `;
         }
@@ -6025,6 +6248,17 @@ async function editOrder(orderId) {
             console.warn('Access denied to fetch riders');
         }
 
+        primeEditOrderCustomerField(freshOrder);
+
+        const deliveryAddressInput = document.getElementById('editOrderDeliveryAddress');
+        if (deliveryAddressInput) {
+            deliveryAddressInput.value = freshOrder.delivery_address || '';
+        }
+        const specialInstructionsInput = document.getElementById('editOrderSpecialInstructions');
+        if (specialInstructionsInput) {
+            specialInstructionsInput.value = freshOrder.special_instructions || '';
+        }
+
         const riderSelect = document.getElementById('orderRider');
         riderSelect.innerHTML = '<option value="">Select Rider</option>';
         if (ridersData.success) {
@@ -6069,6 +6303,7 @@ async function editOrder(orderId) {
                 <div style="display: grid; grid-template-columns: 1fr 80px 100px 80px; gap: 1rem; align-items: center; padding: 0.75rem; border-bottom: 1px solid #e2e8f0; background: #fff;">
                     <div>
                         <strong>${item.product_name}</strong>
+                        ${item.variant_label ? `<p style="font-size: 0.875rem; color: #475569; margin: 0.25rem 0 0 0;">Variant: ${escapeHtml(String(item.variant_label))}</p>` : ''}
                         <p style="font-size: 0.875rem; color: #718096; margin: 0.25rem 0 0 0;">Price: PKR ${Number(item.price).toFixed(2)}</p>
                         ${item.store_name ? `<p style="font-size: 0.875rem; color: #718096; margin: 0.25rem 0 0 0;">Store: ${item.store_name}</p>` : ''}
                     </div>
@@ -6200,7 +6435,11 @@ async function editOrder(orderId) {
                 if (productsData.success && productsData.products) {
                     productSelect.innerHTML = '<option value="">Choose product...</option>';
                     productsData.products.forEach(product => {
-                        productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}">${product.name} - PKR ${Number(product.price).toFixed(2)} (${product.store_name})</option>`;
+                        const variantLabel = product.variant_label ? String(product.variant_label) : '';
+                        const optionLabel = variantLabel
+                            ? `${product.name} (${variantLabel}) - PKR ${Number(product.price).toFixed(2)} (${product.store_name})`
+                            : `${product.name} - PKR ${Number(product.price).toFixed(2)} (${product.store_name})`;
+                        productSelect.innerHTML += `<option value="${product.id}" data-price="${product.price}" data-size-id="${product.size_id ?? ''}" data-unit-id="${product.unit_id ?? ''}" data-variant-label="${escapeHtml(variantLabel)}">${escapeHtml(optionLabel)}</option>`;
                     });
                 }
             } catch (error) {
@@ -6224,6 +6463,16 @@ async function editOrder(orderId) {
         document.getElementById('editOrderForm').dataset.orderId = orderId;
 
         showModal('editOrderModal');
+        loadEditOrderCustomers(freshOrder.user_id, freshOrder)
+            .then(() => {
+                const hydratedCustomerSelect = bindEditOrderCustomerField(freshOrder.user_id);
+                if (hydratedCustomerSelect && freshOrder.user_id) {
+                    hydratedCustomerSelect.value = String(freshOrder.user_id);
+                }
+            })
+            .catch((error) => {
+                console.error('Failed to hydrate edit-order customers:', error);
+            });
         if (productSelect && itemsData.success) {
             loadProducts(storeSelect?.value || '');
         }
@@ -6239,6 +6488,9 @@ async function saveOrder() {
     const formData = new FormData(form);
 
     const status = formData.get('status');
+    const customerId = formData.get('customer_id');
+    const deliveryAddress = String(formData.get('delivery_address') || '').trim();
+    const specialInstructions = String(formData.get('special_instructions') || '').trim();
     const originalStatus = formData.get('original_status');
     const riderId = formData.get('rider_id') || null;
     const riderLocation = formData.get('rider_location') || null;
@@ -6260,6 +6512,26 @@ async function saveOrder() {
         }
 
         console.log(`[saveOrder] Starting save for order ${orderId}`);
+
+        if (customerId) {
+            const customerRes = await fetch(`${API_BASE}/api/orders/${orderId}/customer`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    customer_id: parseInt(customerId, 10),
+                    delivery_address: deliveryAddress,
+                    special_instructions: specialInstructions || null
+                })
+            });
+            const customerJson = await customerRes.json();
+            if (!customerJson.success) {
+                showError('Error', customerJson.message || 'Failed to update customer');
+                return;
+            }
+        }
         
         const itemQuantityInputs = document.querySelectorAll('.item-quantity-input');
         let itemsUpdated = false;
@@ -6368,8 +6640,12 @@ async function addOrderItem(orderId) {
     const storeSelect = document.getElementById('orderItemStore');
     
     const productId = productSelect.value;
+    const selectedOption = productSelect.options[productSelect.selectedIndex];
     const quantity = parseInt(quantityInput.value);
     const storeId = storeSelect?.value || null;
+    const sizeId = selectedOption?.dataset?.sizeId ? parseInt(selectedOption.dataset.sizeId, 10) : null;
+    const unitId = selectedOption?.dataset?.unitId ? parseInt(selectedOption.dataset.unitId, 10) : null;
+    const variantLabel = selectedOption?.dataset?.variantLabel ? String(selectedOption.dataset.variantLabel).trim() : null;
     
     if (!productId) {
         showError('Validation Error', 'Please select a product');
@@ -6388,7 +6664,14 @@ async function addOrderItem(orderId) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`
             },
-            body: JSON.stringify({ product_id: parseInt(productId), quantity, store_id: storeId ? parseInt(storeId) : null })
+            body: JSON.stringify({
+                product_id: parseInt(productId),
+                quantity,
+                store_id: storeId ? parseInt(storeId) : null,
+                size_id: Number.isInteger(sizeId) ? sizeId : null,
+                unit_id: Number.isInteger(unitId) ? unitId : null,
+                variant_label: variantLabel || null
+            })
         });
         
         const data = await response.json();
@@ -6978,6 +7261,7 @@ function hideModal(modalId) {
 }
 
 async function showAddStoreModal() {
+    AppState.editing.storeId = null;
     try {
         await populateStoreCategorySelect();
         await populateStoreBankSelect();
@@ -7367,7 +7651,18 @@ async function populateStoreBankSelect(selectedId = null) {
     if (!bankSelect) return;
     bankSelect.innerHTML = '<option value="">Select Bank (Optional)</option>';
     try {
-        const resp = await fetch(`${API_BASE}/api/stores/bank-options`, {
+        const activeStoreId = parseInt(String(AppState?.editing?.storeId || ''), 10);
+        const hasActiveStoreId = Number.isInteger(activeStoreId) && activeStoreId > 0;
+        const query = new URLSearchParams();
+        if (hasActiveStoreId) {
+            query.set('store_id', String(activeStoreId));
+            const parsedSelectedId = parseInt(String(selectedId || ''), 10);
+            if (Number.isInteger(parsedSelectedId) && parsedSelectedId > 0) {
+                query.set('include_bank_id', String(parsedSelectedId));
+            }
+        }
+        const url = `${API_BASE}/api/stores/bank-options${query.toString() ? `?${query.toString()}` : ''}`;
+        const resp = await fetch(url, {
             headers: { 'Authorization': `Bearer ${authToken}` },
             cache: 'no-store'
         });
@@ -7430,12 +7725,103 @@ let _storeGraceAlertTimer = null;
 let _storeGraceAlertBusy = false;
 let _storeGracePermissionRequested = false;
 let _storeGraceSwRegistration = null;
+const _adminSystemNotifyClaims = new Map();
+let _adminSystemNotifyChannel = null;
+
+function _normalizeAdminSystemNotifyText(raw) {
+    return String(raw || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function _extractAdminOrderNumber(title, body) {
+    const haystack = `${String(title || '')}\n${String(body || '')}`;
+    const patterns = [
+        /order\s+#?\s*([a-z0-9-]+)/i,
+        /#\s*([a-z0-9-]+)/i
+    ];
+    for (const pattern of patterns) {
+        const match = haystack.match(pattern);
+        if (match && match[1]) {
+            return String(match[1]).trim().toUpperCase();
+        }
+    }
+    return '';
+}
+
+function _getAdminSystemNotifyCategory(title, body) {
+    const text = `${_normalizeAdminSystemNotifyText(title)} ${_normalizeAdminSystemNotifyText(body)}`.trim();
+    if (!text) return 'generic';
+    if (text.includes('new order received') || text.includes('new order')) return 'new-order';
+    if (text.includes('order assigned') || text.includes('new assignment')) return 'order-assigned';
+    if (text.includes('payment received') || text.includes('payment confirmed')) return 'payment-received';
+    if (text.includes('order completed') || text.includes('fully completed')) return 'order-completed';
+    if (text.includes('order delivered') || text.includes(' delivered')) return 'order-delivered';
+    if (text.includes('order update')) return 'order-update';
+    return 'generic';
+}
+
+function _buildAdminSystemNotifyClaimKey(title, body, storeId) {
+    const category = _getAdminSystemNotifyCategory(title, body);
+    const orderNumber = _extractAdminOrderNumber(title, body);
+    if (orderNumber && category !== 'generic') {
+        return `${category}|${orderNumber}`;
+    }
+    return `${String(title || '').trim()}|${String(body || '').trim()}|${String(storeId || '').trim()}`;
+}
+
+try {
+    _adminSystemNotifyChannel = new BroadcastChannel('servenow-admin-system-notify');
+    _adminSystemNotifyChannel.onmessage = (event) => {
+        const key = String(event?.data?.key || '').trim();
+        const timestamp = Number(event?.data?.timestamp || 0);
+        if (!key || !Number.isFinite(timestamp) || timestamp <= 0) return;
+        _adminSystemNotifyClaims.set(key, timestamp);
+    };
+} catch (_) {
+    _adminSystemNotifyChannel = null;
+}
+
+function _rememberAdminSystemNotifyClaim(key, timestamp) {
+    _adminSystemNotifyClaims.set(key, timestamp);
+    try {
+        localStorage.setItem(`servenow:admin-system-notify:${key}`, String(timestamp));
+    } catch (_) {}
+    try {
+        _adminSystemNotifyChannel?.postMessage({ key, timestamp });
+    } catch (_) {}
+}
+
+function _hasRecentAdminSystemNotifyClaim(key, windowMs = 15000) {
+    const now = Date.now();
+    const memoryTimestamp = Number(_adminSystemNotifyClaims.get(key) || 0);
+    if (Number.isFinite(memoryTimestamp) && memoryTimestamp > 0 && (now - memoryTimestamp) < windowMs) {
+        return true;
+    }
+    try {
+        const storageTimestamp = Number(localStorage.getItem(`servenow:admin-system-notify:${key}`) || 0);
+        if (Number.isFinite(storageTimestamp) && storageTimestamp > 0 && (now - storageTimestamp) < windowMs) {
+            _adminSystemNotifyClaims.set(key, storageTimestamp);
+            return true;
+        }
+    } catch (_) {}
+    return false;
+}
 
 async function ensureAdminNotificationSw() {
     if (!('serviceWorker' in navigator)) return null;
     if (_storeGraceSwRegistration) return _storeGraceSwRegistration;
     try {
         _storeGraceSwRegistration = await navigator.serviceWorker.register('/admin-sw.js');
+        if (!_storeGraceSwRegistration.__servenowBoundMessageHandler) {
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                handleStoreGraceNotificationActionMessage(event?.data).catch((error) => {
+                    console.warn('Store grace notification action handling failed:', error);
+                });
+            });
+            _storeGraceSwRegistration.__servenowBoundMessageHandler = '1';
+        }
         return _storeGraceSwRegistration;
     } catch (e) {
         console.warn('Admin notification service worker registration failed:', e);
@@ -7445,15 +7831,31 @@ async function ensureAdminNotificationSw() {
 
 async function showStoreGraceSystemNotification(title, body, storeId, onClick) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+    const dedupKey = _buildAdminSystemNotifyClaimKey(title, body, storeId);
+    if (_hasRecentAdminSystemNotifyClaim(dedupKey)) {
+        return true;
+    }
+    _rememberAdminSystemNotifyClaim(dedupKey, Date.now());
+    const notificationTag = `store-due-${Math.abs(dedupKey.split('').reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) | 0, 17))}`;
     try {
         const reg = await ensureAdminNotificationSw();
         if (reg && typeof reg.showNotification === 'function') {
             await reg.showNotification(title, {
                 body,
                 requireInteraction: true,
-                tag: `store-due-${storeId}`,
+                tag: notificationTag,
                 renotify: true,
-                data: { store_id: storeId }
+                actions: [
+                    { action: 'mute_1h', title: 'Mute 1 Hour' },
+                    { action: 'mute_custom', title: 'Mute...' }
+                ],
+                data: {
+                    store_id: storeId,
+                    store_name: String(window.__lastStoreGraceAlert?.storeName || '').trim(),
+                    due_date: String(window.__lastStoreGraceAlert?.dueDate || '').trim(),
+                    pending_amount: window.__lastStoreGraceAlert?.pending ?? null,
+                    days_left: window.__lastStoreGraceAlert?.daysLeft ?? null
+                }
             });
             return true;
         }
@@ -7464,7 +7866,7 @@ async function showStoreGraceSystemNotification(title, body, storeId, onClick) {
         const notif = new Notification(title, {
             body,
             requireInteraction: true,
-            tag: `store-due-${storeId}`,
+            tag: notificationTag,
             renotify: true
         });
         if (typeof onClick === 'function') notif.onclick = onClick;
@@ -7473,6 +7875,84 @@ async function showStoreGraceSystemNotification(title, body, storeId, onClick) {
         console.warn('Notification API failed:', e);
     }
     return false;
+}
+
+async function handleStoreGraceNotificationActionMessage(message) {
+    const type = String(message?.type || '').trim();
+    if (type !== 'store-grace-alert-action') return;
+
+    const action = String(message?.action || 'open').trim().toLowerCase();
+    const storeId = parseInt(String(message?.store_id || ''), 10);
+    const storeName = String(message?.store_name || '').trim() || `Store #${storeId || '?'}`;
+    const dueDate = String(message?.due_date || '-').trim() || '-';
+    const pending = Number(message?.pending_amount || 0).toFixed(2);
+    const daysLeft = Number(message?.days_left);
+    const lead =
+        Number.isFinite(daysLeft) && daysLeft < 0
+            ? `Overdue by ${Math.abs(daysLeft)} day(s)`
+            : (Number.isFinite(daysLeft) ? `Due in ${daysLeft} day(s)` : 'Payment due');
+
+    try { window.focus(); } catch (_) {}
+
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+        if (action === 'open') {
+            showInfo('Store Due Alert', `${storeName}: ${lead} (Due ${dueDate})`);
+        }
+        return;
+    }
+
+    if (action === 'mute_1h') {
+        await muteStoreGraceAlert(storeId, 1);
+        showInfo('Alert Muted', `${storeName} due alert muted for 1 hour.`);
+        return;
+    }
+
+    if (action === 'mute_24h') {
+        await muteStoreGraceAlert(storeId, 24);
+        showInfo('Alert Muted', `${storeName} due alert muted for 24 hours.`);
+        return;
+    }
+
+    if (action === 'mute_custom') {
+        const hours = promptMuteHours(storeName, lead, dueDate, pending);
+        if (!hours) return;
+        await muteStoreGraceAlert(storeId, hours);
+        showInfo('Alert Muted', `${storeName} due alert muted for ${hours} hours.`);
+        return;
+    }
+
+    const doMute = window.confirm(
+        `[Store Due Alert]\n${storeName}\n${lead}\nDue Date: ${dueDate}\nPending: PKR ${pending}\n\nMute this alert for a specific time?`
+    );
+    if (!doMute) return;
+    const hours = promptMuteHours(storeName, lead, dueDate, pending);
+    if (!hours) return;
+    await muteStoreGraceAlert(storeId, hours);
+    showInfo('Alert Muted', `${storeName} due alert muted for ${hours} hours.`);
+}
+
+async function processPendingStoreGraceUrlAction() {
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        const action = String(params.get('notification_action') || '').trim().toLowerCase();
+        if (!action) return;
+
+        const payload = {
+            type: 'store-grace-alert-action',
+            action,
+            store_id: parseInt(String(params.get('store_id') || ''), 10),
+            store_name: String(params.get('store_name') || '').trim(),
+            due_date: String(params.get('due_date') || '').trim(),
+            pending_amount: String(params.get('pending_amount') || '').trim(),
+            days_left: String(params.get('days_left') || '').trim()
+        };
+
+        const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
+        window.history.replaceState({}, document.title, cleanUrl);
+        await handleStoreGraceNotificationActionMessage(payload);
+    } catch (error) {
+        console.warn('Failed to process pending store grace URL action:', error);
+    }
 }
 
 window._adminDiag = window._adminDiag || {};
@@ -7580,6 +8060,13 @@ async function checkStoreGraceAlerts() {
                 ? `Overdue by ${Math.abs(daysLeft)} day(s)`
                 : (Number.isFinite(daysLeft) ? `Due in ${daysLeft} day(s)` : 'Payment due');
         const body = `${storeName}\n${lead}\nDue Date: ${dueDate}\nPending: PKR ${pending}`;
+        window.__lastStoreGraceAlert = {
+            storeId: top.store_id,
+            storeName,
+            dueDate,
+            pending,
+            daysLeft
+        };
         let shownBySystemTray = false;
         try {
             if ('Notification' in window) {
@@ -7592,26 +8079,15 @@ async function checkStoreGraceAlerts() {
                         'Store Due Alert',
                         body,
                         top.store_id,
-                        async () => {
-                        try { window.focus(); } catch (_) {}
-                        const doMute = window.confirm(
-                            `[Store Due Alert]\n${storeName}\n${lead}\nDue Date: ${dueDate}\nPending: PKR ${pending}\n\nMute this alert for a specific time?`
-                        );
-                        if (doMute) {
-                            const hours = promptMuteHours(storeName, lead, dueDate, pending);
-                            if (!hours) return;
-                            await muteStoreGraceAlert(top.store_id, hours);
-                            const undo = window.confirm(
-                                `${storeName} alert muted for ${hours} hours.\n\nClick OK to undo and re-enable notification now.`
-                            );
-                            if (undo) {
-                                await unmuteStoreGraceAlert(top.store_id);
-                                showInfo('Alert Re-enabled', `${storeName} due alert is active again.`);
-                            } else {
-                                showInfo('Alert Muted', `${storeName} due alert muted for ${hours} hours.`);
-                            }
-                        }
-                        }
+                        () => handleStoreGraceNotificationActionMessage({
+                            type: 'store-grace-alert-action',
+                            action: 'open',
+                            store_id: top.store_id,
+                            store_name: storeName,
+                            due_date: dueDate,
+                            pending_amount: pending,
+                            days_left: daysLeft
+                        })
                     );
                 }
             }
@@ -7645,7 +8121,7 @@ function startStoreGraceAlertsPolling() {
         }
     } catch (_) {}
     checkStoreGraceAlerts();
-    _storeGraceAlertTimer = setInterval(checkStoreGraceAlerts, 60000);
+    _storeGraceAlertTimer = setInterval(checkStoreGraceAlerts, 30 * 60 * 1000);
 }
 
 function roundToNearest10(value) {

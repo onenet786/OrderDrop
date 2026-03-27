@@ -1,4 +1,5 @@
 const express = require("express");
+const axios = require("axios");
 const { body, validationResult } = require("express-validator");
 const {
   authenticateToken,
@@ -15,6 +16,8 @@ const router = express.Router();
 
 const DEFAULT_BASE_DELIVERY_FEE = 70;
 const DEFAULT_ADDITIONAL_STORE_FEE = 30;
+const riderReverseGeocodeCache = new Map();
+const riderReverseGeocodePending = new Map();
 
 async function ensureSystemSettingsTable(db) {
   await db.execute(`
@@ -80,6 +83,66 @@ function calculateDeliveryFeeByStoreCount(storeCount, feeConfig) {
     (storeCount - 1) *
       (Number(cfg.additional_per_store) || DEFAULT_ADDITIONAL_STORE_FEE)
   );
+}
+
+async function loadProductSizeVariants(db, productIds) {
+  try {
+    const ids = (Array.isArray(productIds) ? productIds : [])
+      .map((x) => parseInt(String(x), 10))
+      .filter((x) => Number.isInteger(x) && x > 0);
+    if (!ids.length) return {};
+
+    const placeholders = ids.map(() => "?").join(",");
+    const [rows] = await db.execute(
+      `
+        SELECT psp.product_id, psp.size_id, psp.unit_id, psp.price, psp.cost_price,
+               sz.label as size_label, u.name as unit_name, u.abbreviation as unit_abbreviation
+        FROM product_size_prices psp
+        LEFT JOIN sizes sz ON psp.size_id = sz.id
+        LEFT JOIN units u ON psp.unit_id = u.id
+        WHERE psp.product_id IN (${placeholders})
+        ORDER BY psp.product_id ASC, psp.sort_order ASC, psp.id ASC
+      `,
+      ids
+    );
+
+    const out = {};
+    for (const row of rows || []) {
+      const productId = Number(row.product_id);
+      if (!out[productId]) out[productId] = [];
+      out[productId].push({
+        size_id:
+          row.size_id === null || row.size_id === undefined
+            ? null
+            : Number(row.size_id),
+        unit_id:
+          row.unit_id === null || row.unit_id === undefined
+            ? null
+            : Number(row.unit_id),
+        size_label: row.size_label || null,
+        unit_name: row.unit_name || null,
+        unit_abbreviation: row.unit_abbreviation || null,
+        price: Number(row.price),
+        cost_price:
+          row.cost_price === null || row.cost_price === undefined
+            ? null
+            : Number(row.cost_price),
+      });
+    }
+
+    return out;
+  } catch (error) {
+    return {};
+  }
+}
+
+function formatVariantLabel(sizeLabel, unitName, unitAbbreviation) {
+  const safeSize = sizeLabel ? String(sizeLabel).trim() : "";
+  const safeUnit = unitAbbreviation || unitName
+    ? String(unitAbbreviation || unitName).trim()
+    : "";
+  if (safeSize && safeUnit) return `${safeSize} ${safeUnit}`;
+  return safeSize || safeUnit || null;
 }
 
 async function getCustomerSupportContact(db) {
@@ -430,6 +493,133 @@ async function ensureRiderLocationLogsTable(db) {
   }
 }
 
+function buildRiderLocationUpdatePayload({
+  riderId,
+  latitude,
+  longitude,
+  location,
+  orderIds = [],
+}) {
+  return {
+    type: "rider_location_update",
+    rider_id: riderId,
+    latitude: Number.parseFloat(latitude),
+    longitude: Number.parseFloat(longitude),
+    location: location || null,
+    order_ids: orderIds,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function emitRiderLocationUpdate(io, payload) {
+  if (!io || !payload) return;
+  io.to("admins").emit("rider_location_update", payload);
+  if (payload.rider_id) {
+    io.to(`rider_${payload.rider_id}`).emit("rider_location_update", payload);
+  }
+}
+
+function formatCoordinateLocationLabel(latitude, longitude) {
+  const lat = Number.parseFloat(latitude);
+  const lng = Number.parseFloat(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return "";
+  }
+  return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+}
+
+function isCoordinateOnlyLocationLabel(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /^-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?$/.test(text);
+}
+
+function buildRiderReverseGeocodeKey(latitude, longitude) {
+  const lat = Number.parseFloat(latitude);
+  const lng = Number.parseFloat(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return "";
+  }
+  return `${lat.toFixed(4)},${lng.toFixed(4)}`;
+}
+
+function formatReverseGeocodeLabel(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const address = payload.address || {};
+  const parts = [
+    address.road,
+    address.suburb,
+    address.neighbourhood,
+    address.city || address.town || address.village,
+    address.state,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const deduped = [];
+  for (const part of parts) {
+    if (!deduped.includes(part)) {
+      deduped.push(part);
+    }
+  }
+  if (deduped.length > 0) {
+    return deduped.slice(0, 3).join(", ");
+  }
+  return String(payload.display_name || "").trim();
+}
+
+async function reverseGeocodeRiderLocation(latitude, longitude) {
+  const fallback = formatCoordinateLocationLabel(latitude, longitude);
+  const key = buildRiderReverseGeocodeKey(latitude, longitude);
+  if (!key) return fallback;
+
+  const cached = riderReverseGeocodeCache.get(key);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return cached.label;
+  }
+
+  if (riderReverseGeocodePending.has(key)) {
+    return riderReverseGeocodePending.get(key);
+  }
+
+  const request = axios
+    .get("https://nominatim.openstreetmap.org/reverse", {
+      params: {
+        format: "jsonv2",
+        lat: Number.parseFloat(latitude),
+        lon: Number.parseFloat(longitude),
+        zoom: 18,
+        addressdetails: 1,
+      },
+      timeout: 5000,
+      headers: {
+        "User-Agent": "ServeNow/1.0 rider-location",
+      },
+    })
+    .then((response) => {
+      const label = formatReverseGeocodeLabel(response.data) || fallback;
+      riderReverseGeocodeCache.set(key, {
+        label,
+        expiresAt: now + 1000 * 60 * 60 * 12,
+      });
+      return label;
+    })
+    .catch((error) => {
+      console.warn("Reverse geocoding rider location failed:", error.message);
+      riderReverseGeocodeCache.set(key, {
+        label: fallback,
+        expiresAt: now + 1000 * 60 * 10,
+      });
+      return fallback;
+    })
+    .finally(() => {
+      riderReverseGeocodePending.delete(key);
+    });
+
+  riderReverseGeocodePending.set(key, request);
+  return request;
+}
+
 function compressLocationHistory(rows, maxPoints) {
   if (!Array.isArray(rows) || rows.length <= maxPoints) return rows;
   if (maxPoints <= 2) {
@@ -536,13 +726,86 @@ function normalizeDateOnlyInput(value) {
 
 async function ensureStoreFinancialColumns(db) {
   try {
-    const exists = await hasColumn(db, "stores", "payment_grace_days");
-    if (!exists) {
+    const hasGraceDays = await hasColumn(db, "stores", "payment_grace_days");
+    if (!hasGraceDays) {
       await db.execute(
         "ALTER TABLE stores ADD COLUMN payment_grace_days INT NULL"
       );
     }
+    const hasGraceStartDate = await hasColumn(
+      db,
+      "stores",
+      "payment_grace_start_date",
+    );
+    if (!hasGraceStartDate) {
+      await db.execute(
+        "ALTER TABLE stores ADD COLUMN payment_grace_start_date DATE NULL",
+      );
+    }
+    const hasGraceAlertMutedUntil = await hasColumn(
+      db,
+      "stores",
+      "grace_alert_muted_until",
+    );
+    if (!hasGraceAlertMutedUntil) {
+      await db.execute(
+        "ALTER TABLE stores ADD COLUMN grace_alert_muted_until DATETIME NULL",
+      );
+    }
+    const hasStoreDiscountApply = await hasColumn(
+      db,
+      "stores",
+      "store_discount_apply_all_products",
+    );
+    if (!hasStoreDiscountApply) {
+      await db.execute(
+        "ALTER TABLE stores ADD COLUMN store_discount_apply_all_products TINYINT(1) NOT NULL DEFAULT 0",
+      );
+    }
+    const hasStoreDiscountPercent = await hasColumn(
+      db,
+      "stores",
+      "store_discount_percent",
+    );
+    if (!hasStoreDiscountPercent) {
+      await db.execute(
+        "ALTER TABLE stores ADD COLUMN store_discount_percent DECIMAL(10, 2) NULL",
+      );
+    }
   } catch (_) {}
+}
+
+async function getStoreOwnerScopedStores(db, user) {
+  const userId = Number(user?.id || 0);
+  if (!Number.isInteger(userId) || userId <= 0) return [];
+
+  let fallbackStoreId = null;
+  if (user?.user_type === "store_owner") {
+    try {
+      const [userRows] = await db.execute(
+        "SELECT store_id FROM users WHERE id = ? LIMIT 1",
+        [userId],
+      );
+      const candidate = Number(userRows?.[0]?.store_id || 0);
+      if (Number.isInteger(candidate) && candidate > 0) {
+        fallbackStoreId = candidate;
+      }
+    } catch (_) {}
+  }
+
+  if (fallbackStoreId) {
+    const [stores] = await db.execute(
+      "SELECT DISTINCT id, name, owner_id, payment_term, payment_grace_days FROM stores WHERE owner_id = ? OR id = ?",
+      [userId, fallbackStoreId],
+    );
+    return stores || [];
+  }
+
+  const [stores] = await db.execute(
+    "SELECT id, name, owner_id, payment_term, payment_grace_days FROM stores WHERE owner_id = ?",
+    [userId],
+  );
+  return stores || [];
 }
 
 async function getOrCreateRiderWallet(db, riderId) {
@@ -1768,6 +2031,7 @@ router.put(
   [
     body("latitude").isFloat().withMessage("Invalid latitude"),
     body("longitude").isFloat().withMessage("Invalid longitude"),
+    body("location").optional().isString().withMessage("Invalid location"),
   ],
   async (req, res) => {
     try {
@@ -1788,16 +2052,40 @@ router.put(
       }
 
       const { latitude, longitude } = req.body;
+      const location = String(req.body.location || "").trim() || null;
+      const resolvedLocation =
+        (!location || isCoordinateOnlyLocationLabel(location))
+          ? await reverseGeocodeRiderLocation(latitude, longitude)
+          : location;
       const riderId = req.user.id;
 
       await ensureRiderLocationColumns(req.db);
 
-      // Update rider location in database
-      await req.db.execute(
-        `UPDATE orders SET rider_latitude = ?, rider_longitude = ?
-             WHERE rider_id = ? AND status = 'out_for_delivery'`,
-        [latitude, longitude, riderId],
+      const [activeOrders] = await req.db.execute(
+        `SELECT id
+         FROM orders
+         WHERE rider_id = ? AND status = 'out_for_delivery'`,
+        [riderId],
       );
+
+      const orderIds = activeOrders.map((order) => Number(order.id)).filter(
+        (id) => Number.isInteger(id) && id > 0,
+      );
+
+      // Update rider location in database
+      if (orderIds.length > 0) {
+        const updateSql = resolvedLocation
+          ? `UPDATE orders
+             SET rider_latitude = ?, rider_longitude = ?, rider_location = ?
+             WHERE rider_id = ? AND status = 'out_for_delivery'`
+          : `UPDATE orders
+             SET rider_latitude = ?, rider_longitude = ?
+             WHERE rider_id = ? AND status = 'out_for_delivery'`;
+        const updateParams = resolvedLocation
+          ? [latitude, longitude, resolvedLocation, riderId]
+          : [latitude, longitude, riderId];
+        await req.db.execute(updateSql, updateParams);
+      }
 
       // Also store in a rider location log table if available
       try {
@@ -1809,10 +2097,21 @@ router.put(
         // Table might not exist yet, that's okay
       }
 
+      emitRiderLocationUpdate(
+        req.io,
+        buildRiderLocationUpdatePayload({
+          riderId,
+          latitude,
+          longitude,
+          location: resolvedLocation,
+          orderIds,
+        }),
+      );
+
       res.json({
         success: true,
         message: "Location updated successfully",
-        location: { latitude, longitude },
+        location: { latitude, longitude, label: resolvedLocation },
       });
     } catch (error) {
       console.error("Error updating rider location:", error);
@@ -2297,10 +2596,7 @@ router.get("/store-owner/financial-history", authenticateToken, requireStoreOwne
     const hasFrom = !!from;
     const hasTo = !!to;
 
-    const [stores] = await req.db.execute(
-      "SELECT id, name, payment_term, payment_grace_days FROM stores WHERE owner_id = ?",
-      [ownerId]
-    );
+    const stores = await getStoreOwnerScopedStores(req.db, req.user);
     if (!stores.length) {
       return res.json({ success: true, summary: {}, entries: [], stores: [] });
     }
@@ -2389,13 +2685,11 @@ router.get(
   async (req, res) => {
     try {
       await ensureOrderItemsSchema(req.db);
+      await ensureStoreFinancialColumns(req.db);
       const { status } = req.query;
 
       // Find stores owned by this user
-      const [myStores] = await req.db.execute(
-        "SELECT id, name, owner_id FROM stores WHERE owner_id = ?",
-        [req.user.id],
-      );
+      const myStores = await getStoreOwnerScopedStores(req.db, req.user);
 
       if (myStores.length === 0) {
         return res.json({ success: true, orders: [] });
@@ -3842,7 +4136,14 @@ router.put(
       }
 
       const { id } = req.params;
-      const { location, latitude, longitude } = req.body;
+      const { latitude, longitude } = req.body;
+      const location = String(req.body.location || "").trim() || null;
+      const resolvedLocation =
+        latitude !== undefined &&
+        longitude !== undefined &&
+        (!location || isCoordinateOnlyLocationLabel(location))
+          ? await reverseGeocodeRiderLocation(latitude, longitude)
+          : location;
 
       // Check if order exists and user has permission (rider or admin)
       const [orders] = await req.db.execute(
@@ -3874,9 +4175,25 @@ router.put(
       await ensureRiderLocationColumns(req.db);
 
       if (latitude !== undefined && longitude !== undefined) {
-        await req.db.execute(
-          "UPDATE orders SET rider_latitude = ?, rider_longitude = ? WHERE id = ?",
-          [latitude, longitude, id],
+        const updateSql = resolvedLocation
+          ? "UPDATE orders SET rider_latitude = ?, rider_longitude = ?, rider_location = ? WHERE id = ?"
+          : "UPDATE orders SET rider_latitude = ?, rider_longitude = ? WHERE id = ?";
+        const updateParams = resolvedLocation
+          ? [latitude, longitude, resolvedLocation, id]
+          : [latitude, longitude, id];
+        await req.db.execute(updateSql, updateParams);
+
+        emitRiderLocationUpdate(
+          req.io,
+          buildRiderLocationUpdatePayload({
+            riderId: order.rider_id,
+            latitude,
+            longitude,
+            location: resolvedLocation,
+            orderIds: [Number.parseInt(String(id), 10)].filter(
+              (value) => Number.isInteger(value) && value > 0,
+            ),
+          }),
         );
       }
 
@@ -4543,7 +4860,13 @@ router.get(
       const { id } = req.params;
 
       const [orders] = await req.db.execute(
-        "SELECT id, status, store_id, total_amount, delivery_fee, rider_id, rider_location, rider_latitude, rider_longitude FROM orders WHERE id = ?",
+        `SELECT o.id, o.user_id, o.status, o.store_id, o.total_amount, o.delivery_fee,
+                o.rider_id, o.rider_location, o.rider_latitude, o.rider_longitude,
+                o.delivery_address, o.special_instructions,
+                u.first_name, u.last_name, u.email, u.phone
+           FROM orders o
+           JOIN users u ON o.user_id = u.id
+          WHERE o.id = ?`,
         [id],
       );
 
@@ -4556,7 +4879,7 @@ router.get(
 
       const [items] = await req.db.execute(
         `
-            SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.store_id,
+            SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.store_id, oi.variant_label,
                    p.name as product_name, p.image_url,
                    s.name as store_name
             FROM order_items oi
@@ -4593,6 +4916,122 @@ router.get(
   },
 );
 
+router.put(
+  "/:id(\\d+)/customer",
+  authenticateToken,
+  requireStaffAccess,
+  [
+    body("customer_id").isInt({ min: 1 }).withMessage("Valid customer is required"),
+    body("delivery_address")
+      .optional({ nullable: true })
+      .isString()
+      .withMessage("Delivery address must be text"),
+    body("special_instructions")
+      .optional({ nullable: true })
+      .isString()
+      .withMessage("Special instructions must be text"),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: errors.array(),
+        });
+      }
+
+      const { id } = req.params;
+      const customerId = parseInt(String(req.body.customer_id), 10);
+      const specialInstructionsRaw =
+        req.body.special_instructions === undefined ||
+        req.body.special_instructions === null
+          ? null
+          : String(req.body.special_instructions).trim();
+
+      const [orders] = await req.db.execute(
+        "SELECT id, status, delivery_address FROM orders WHERE id = ?",
+        [id]
+      );
+      if (!orders.length) {
+        return res.status(404).json({
+          success: false,
+          message: "Order not found",
+        });
+      }
+
+      const order = orders[0];
+      if (order.status === "delivered" || order.status === "cancelled") {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot change customer for ${order.status} orders`,
+        });
+      }
+
+      const [customers] = await req.db.execute(
+        `SELECT id, first_name, last_name, phone, email, address
+           FROM users
+          WHERE id = ? AND user_type = 'customer'
+          LIMIT 1`,
+        [customerId]
+      );
+      if (!customers.length) {
+        return res.status(404).json({
+          success: false,
+          message: "Customer not found",
+        });
+      }
+
+      const customer = customers[0];
+      const deliveryAddress =
+        String(req.body.delivery_address || "").trim() ||
+        String(customer.address || "").trim() ||
+        String(order.delivery_address || "").trim();
+
+      if (!deliveryAddress) {
+        return res.status(400).json({
+          success: false,
+          message: "Delivery address is required",
+        });
+      }
+
+      await req.db.execute(
+        `UPDATE orders
+            SET user_id = ?, delivery_address = ?, special_instructions = ?
+          WHERE id = ?`,
+        [
+          customerId,
+          deliveryAddress,
+          specialInstructionsRaw || null,
+          id,
+        ]
+      );
+
+      res.json({
+        success: true,
+        message: "Order customer updated successfully",
+        customer: {
+          id: customer.id,
+          first_name: customer.first_name,
+          last_name: customer.last_name,
+          phone: customer.phone,
+          email: customer.email,
+        },
+        delivery_address: deliveryAddress,
+        special_instructions: specialInstructionsRaw || null,
+      });
+    } catch (error) {
+      console.error("Error updating order customer:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to update order customer",
+        error: error.message,
+      });
+    }
+  }
+);
+
 router.post(
   "/:id(\\d+)/items/add",
   authenticateToken,
@@ -4602,6 +5041,17 @@ router.post(
       await ensureProductsProfitSchema(req.db);
       const { id } = req.params;
       const { product_id, quantity, store_id } = req.body;
+      const sizeId =
+        req.body.size_id === null || req.body.size_id === undefined
+          ? null
+          : parseInt(String(req.body.size_id), 10);
+      const unitId =
+        req.body.unit_id === null || req.body.unit_id === undefined
+          ? null
+          : parseInt(String(req.body.unit_id), 10);
+      const providedVariantLabel = req.body.variant_label
+        ? String(req.body.variant_label)
+        : null;
 
       if (!product_id || !quantity || quantity < 1) {
         return res.status(400).json({
@@ -4632,7 +5082,8 @@ router.post(
       }
 
       const [products] = await req.db.execute(
-        `SELECT p.id, p.price, p.cost_price, p.store_id, p.discount_type, p.discount_value, p.profit_type, p.profit_value, s.payment_term
+        `SELECT p.id, p.name, p.price, p.cost_price, p.store_id, p.size_id, p.unit_id,
+                p.discount_type, p.discount_value, p.profit_type, p.profit_value, s.payment_term
            FROM products p
            LEFT JOIN stores s ON s.id = p.store_id
           WHERE p.id = ? AND p.is_available = true`,
@@ -4647,7 +5098,69 @@ router.post(
       }
 
       const product = products[0];
-      const price = product.price;
+      let price = Number(product.price);
+      const parsedBaseCost = Number(product.cost_price);
+      let costPrice = Number.isFinite(parsedBaseCost) ? parsedBaseCost : null;
+      let variantLabel = providedVariantLabel;
+
+      if (sizeId || unitId) {
+        let query = `
+          SELECT psp.price, psp.cost_price, sz.label as size_label,
+                 u.name as unit_name, u.abbreviation as unit_abbreviation
+          FROM product_size_prices psp
+          LEFT JOIN sizes sz ON psp.size_id = sz.id
+          LEFT JOIN units u ON psp.unit_id = u.id
+          WHERE psp.product_id = ?
+        `;
+        const params = [product_id];
+
+        if (sizeId && unitId) {
+          query += " AND psp.size_id = ? AND psp.unit_id = ?";
+          params.push(sizeId, unitId);
+        } else if (sizeId) {
+          query += " AND psp.size_id = ? AND psp.unit_id IS NULL";
+          params.push(sizeId);
+        } else if (unitId) {
+          query += " AND psp.unit_id = ? AND psp.size_id IS NULL";
+          params.push(unitId);
+        }
+
+        query += " LIMIT 1";
+
+        const [variantRows] = await req.db.execute(query, params);
+        if (variantRows && variantRows.length > 0) {
+          price = Number(variantRows[0].price);
+          const parsedVariantCost = Number(variantRows[0].cost_price);
+          if (Number.isFinite(parsedVariantCost)) {
+            costPrice = parsedVariantCost;
+          }
+          if (!variantLabel) {
+            variantLabel = formatVariantLabel(
+              variantRows[0].size_label,
+              variantRows[0].unit_name,
+              variantRows[0].unit_abbreviation
+            );
+          }
+        } else {
+          const productSizeId =
+            product.size_id === null || product.size_id === undefined
+              ? null
+              : parseInt(String(product.size_id), 10);
+          const productUnitId =
+            product.unit_id === null || product.unit_id === undefined
+              ? null
+              : parseInt(String(product.unit_id), 10);
+
+          if (sizeId === productSizeId && unitId === productUnitId) {
+            price = Number(product.price);
+          } else {
+            return res.status(400).json({
+              success: false,
+              message: "Selected variant not found for this product",
+            });
+          }
+        }
+      }
 
       const itemStoreId =
         store_id || order.store_id || product.store_id || null;
@@ -4655,7 +5168,7 @@ router.post(
       const financialSnapshot = deriveOrderItemAdjustmentSnapshot({
         paymentTerm: product.payment_term,
         unitPrice: price,
-        productCostPrice: product.cost_price,
+        productCostPrice: costPrice,
         discountType: product.discount_type,
         discountValue: product.discount_value,
         profitType: product.profit_type,
@@ -4664,15 +5177,19 @@ router.post(
 
       const [result] = await req.db.execute(
         `
-            INSERT INTO order_items (order_id, product_id, quantity, price, store_id, discount_type, discount_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO order_items (order_id, product_id, quantity, price, cost_price, store_id, size_id, unit_id, variant_label, discount_type, discount_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           id,
           product_id,
           quantity,
           price,
+          costPrice,
           itemStoreId,
+          sizeId,
+          unitId,
+          variantLabel,
           financialSnapshot.type,
           financialSnapshot.value,
         ],
@@ -4831,7 +5348,7 @@ router.get(
       const filterStoreId = store_id || orderStoreId;
 
       let query = `
-            SELECT p.id, p.name, p.price
+            SELECT p.id, p.name, p.price, p.store_id, s.name as store_name
             FROM products p
             INNER JOIN stores s ON p.store_id = s.id
             WHERE p.is_available = true AND s.is_active = true
@@ -4847,10 +5364,50 @@ router.get(
       query += " ORDER BY p.name ASC LIMIT 1000";
 
       const [products] = await req.db.execute(query, params);
+      const variantsByProductId = await loadProductSizeVariants(
+        req.db,
+        (products || []).map((product) => product.id)
+      );
+      const expandedProducts = [];
+
+      for (const product of products || []) {
+        const variants = variantsByProductId[product.id] || [];
+        if (variants.length) {
+          for (const variant of variants) {
+            const variantLabel = formatVariantLabel(
+              variant.size_label,
+              variant.unit_name,
+              variant.unit_abbreviation
+            );
+            expandedProducts.push({
+              id: product.id,
+              name: product.name,
+              price: Number(variant.price),
+              store_id: product.store_id,
+              store_name: product.store_name,
+              size_id: variant.size_id,
+              unit_id: variant.unit_id,
+              variant_label: variantLabel,
+            });
+          }
+          continue;
+        }
+
+        expandedProducts.push({
+          id: product.id,
+          name: product.name,
+          price: Number(product.price),
+          store_id: product.store_id,
+          store_name: product.store_name,
+          size_id: null,
+          unit_id: null,
+          variant_label: null,
+        });
+      }
 
       res.json({
         success: true,
-        products: products || [],
+        products: expandedProducts,
         order_store_id: orderStoreId,
       });
     } catch (error) {

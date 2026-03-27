@@ -50,14 +50,14 @@
             <div id="toastContainer" class="toast-container"></div>
 
             <div class="auth-wrapper">
-                <div class="auth-card" style="max-width: 600px;"> <!-- Wider card for register -->
+                <div class="auth-card auth-card--wide">
                     <div class="auth-header">
                         <img src="images/servenow_brand_logo.png" alt="ServeNow Logo">
                         <h2>Create Account</h2>
                     </div>
                     
                     <form id="registerForm" action="/api/auth/register" method="post">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-grid-two">
                             <div class="form-group">
                                 <label for="firstName">First Name</label>
                                 <input type="text" id="firstName" name="firstName" required placeholder="First Name">
@@ -83,7 +83,7 @@
                             <textarea id="address" name="address" required placeholder="Full delivery address" rows="3"></textarea>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-grid-two">
                             <div class="form-group">
                                 <label for="password">Password</label>
                                 <input type="password" id="password" name="password" required placeholder="Create password">
@@ -94,7 +94,7 @@
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+                        <button type="submit" class="btn btn-primary btn-block">
                             <i class="fas fa-user-plus"></i> Create Account
                         </button>
                     </form>

@@ -56,6 +56,10 @@ let currentLocation = null;
 let currentLat = null;
 let currentLng = null;
 let locationWatchId = null;
+let lastLocationPushAt = 0;
+let lastPushedLat = null;
+let lastPushedLng = null;
+let locationPushInFlight = false;
 window._riderDeliveries = {};
 window._deliveryFeeBase = Number(window._deliveryFeeBase ?? 70);
 window._deliveryFeeAdditional = Number(window._deliveryFeeAdditional ?? 30);
@@ -251,11 +255,12 @@ function startLocationTracking() {
     }
 
     locationWatchId = navigator.geolocation.watchPosition(
-        (position) => {
+        async (position) => {
             currentLat = position.coords.latitude;
             currentLng = position.coords.longitude;
             currentLocation = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`;
             updateLocationDisplay();
+            await pushCurrentLocation(false);
         },
         (error) => {
             console.error('Location tracking error:', error);
@@ -273,6 +278,94 @@ function stopLocationTracking() {
     if (locationWatchId) {
         navigator.geolocation.clearWatch(locationWatchId);
         locationWatchId = null;
+    }
+}
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+    const toRad = (value) => (value * Math.PI) / 180;
+    const earthRadius = 6371000;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
+}
+
+function getTrackedActiveDeliveryIds() {
+    const activeStatuses = new Set(['assigned', 'out_for_delivery', 'picked_up', 'ready_for_pickup']);
+    return Object.values(window._riderDeliveries || {})
+        .filter((delivery) => {
+            const status = String(delivery?.status || '').trim().toLowerCase();
+            return delivery?.id && activeStatuses.has(status);
+        })
+        .map((delivery) => Number(delivery.id))
+        .filter((id) => Number.isInteger(id) && id > 0);
+}
+
+function shouldPushCurrentLocation(force = false) {
+    if (force) return true;
+    if (!Number.isFinite(currentLat) || !Number.isFinite(currentLng)) return false;
+    const now = Date.now();
+    const enoughTimePassed = (now - lastLocationPushAt) >= 10000;
+    const enoughMovement =
+        lastPushedLat == null ||
+        lastPushedLng == null ||
+        haversineMeters(lastPushedLat, lastPushedLng, currentLat, currentLng) >= 10;
+    return enoughTimePassed && enoughMovement;
+}
+
+async function pushCurrentLocation(force = false) {
+    if (!currentLocation || !shouldPushCurrentLocation(force) || locationPushInFlight) {
+        return;
+    }
+
+    locationPushInFlight = true;
+    try {
+        let deliveryIds = getTrackedActiveDeliveryIds();
+
+        if (deliveryIds.length === 0) {
+            const response = await fetchWithBackoff(`${API_BASE}/api/orders/rider/deliveries?status=assigned`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+                },
+                cache: 'no-store'
+            });
+            const data = await response.json();
+            if (data.success && Array.isArray(data.deliveries)) {
+                data.deliveries.forEach((delivery) => {
+                    window._riderDeliveries[delivery.id] = delivery;
+                });
+                deliveryIds = data.deliveries
+                    .map((delivery) => Number(delivery.id))
+                    .filter((id) => Number.isInteger(id) && id > 0);
+            }
+        }
+
+        if (deliveryIds.length === 0) return;
+
+        await Promise.all(deliveryIds.map((deliveryId) => fetchWithBackoff(`${API_BASE}/api/orders/${deliveryId}/rider-location`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
+            },
+            body: JSON.stringify({
+                location: currentLocation,
+                latitude: currentLat,
+                longitude: currentLng
+            })
+        })));
+
+        lastLocationPushAt = Date.now();
+        lastPushedLat = currentLat;
+        lastPushedLng = currentLng;
+    } catch (error) {
+        console.error('Error pushing rider location:', error);
+    } finally {
+        locationPushInFlight = false;
     }
 }
 
@@ -297,6 +390,9 @@ function refreshLocation() {
         .then((location) => {
             currentLocation = location;
             updateLocationDisplay();
+            pushCurrentLocation(true).catch((error) => {
+                console.error('Failed to push refreshed location:', error);
+            });
             console.log('Location refreshed:', location);
             showSuccess('Location Updated', 'Location updated successfully!');
         })
@@ -312,37 +408,7 @@ function refreshLocation() {
 
 // Auto-update location for active deliveries
 async function autoUpdateLocation() {
-    if (!currentLocation) return;
-
-    try {
-        // Get active deliveries
-        const response = await fetchWithBackoff(`${API_BASE}/api/orders/rider/deliveries?status=assigned`, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
-            }
-        });
-
-        const data = await response.json();
-        if (data.success && data.deliveries.length > 0) {
-            // Update location for all active deliveries
-            for (const delivery of data.deliveries) {
-                await fetchWithBackoff(`${API_BASE}/api/orders/${delivery.id}/rider-location`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('serveNowToken')}`
-                    },
-                    body: JSON.stringify({ 
-                        location: currentLocation,
-                        latitude: currentLat,
-                        longitude: currentLng
-                    })
-                });
-            }
-        }
-    } catch (error) {
-        console.error('Error auto-updating location:', error);
-    }
+    await pushCurrentLocation(true);
 }
 
 // Switch delivery tab
@@ -848,12 +914,14 @@ document.addEventListener('DOMContentLoaded', function() {
     switchTab('assigned');
     createOrGetOrderInfoModal();
 
-    /* Location tracking disabled
     // Try to get initial location
     getCurrentLocation()
         .then((location) => {
             currentLocation = location;
             updateLocationDisplay();
+            pushCurrentLocation(true).catch((error) => {
+                console.error('Failed to push initial location:', error);
+            });
             console.log('Initial location obtained:', location);
         })
         .catch((error) => {
@@ -869,43 +937,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Start location tracking (will handle errors internally)
     startLocationTracking();
 
-    // Auto-update location every 2 minutes
-    setInterval(autoUpdateLocation, 120000); // 2 minutes
-    */
+    // Fallback push in case watchPosition events slow down on some devices/browsers
+    setInterval(autoUpdateLocation, 30000);
 
     // Cleanup on page unload
-    // window.addEventListener('beforeunload', stopLocationTracking);
+    window.addEventListener('beforeunload', stopLocationTracking);
 });
 
-// Minimal socket fallback to auto-refresh assignments if notifications.js isn't loaded
-(function () {
-    if (window.__serveNowNotificationsInitialized || window.__riderInlineSocketInitialized) return;
-    if (typeof io === 'undefined') return;
-    try {
-        const userStr = localStorage.getItem('serveNowUser');
-        const user = userStr ? JSON.parse(userStr) : null;
-        if (!user || user.user_type !== 'rider') return;
-        window.__riderInlineSocketInitialized = true;
-        const socket = io(API_BASE || window.location.origin, {
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            reconnectionAttempts: 5,
-            transports: ['websocket', 'polling']
-        });
-        socket.on('connect', () => {
-            try {
-                socket.emit('identify_user', { user_id: user.id, user_type: user.user_type });
-            } catch (_) {}
-        });
-        socket.on('rider_notification', (data) => {
-            if (!data) return;
-            if (String(data.rider_id) !== String(user.id)) return;
-            if (typeof switchTab === 'function') {
-                switchTab('assigned');
-            } else if (typeof displayRiderDeliveries === 'function') {
-                displayRiderDeliveries('assigned', 'deliveriesContainer');
-            }
-        });
-    } catch (_) {}
-})();

@@ -31,6 +31,11 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   double _walletBalance = 0.0;
   Timer? _locationTrackingTimer;
   Timer? _assignmentRefreshTimer;
+  StreamSubscription<Position>? _locationStreamSubscription;
+  final Map<String, String> _locationLabelCache = {};
+  Position? _lastSentPosition;
+  DateTime? _lastLocationSentAt;
+  bool _isSendingLocation = false;
   String _selectedStatsPeriod = 'daily';
   Map<String, dynamic>? _walletStats;
   bool _isLoadingStats = false;
@@ -251,6 +256,7 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     _blinkController.dispose();
     _locationTrackingTimer?.cancel();
     _assignmentRefreshTimer?.cancel();
+    _locationStreamSubscription?.cancel();
     Provider.of<NotificationProvider>(
       context,
       listen: false,
@@ -350,6 +356,9 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
           _completedDeliveries = deliveries;
         }
       });
+      if (status == 'assigned' && deliveries.isNotEmpty) {
+        unawaited(_sendLocationToServer(force: true));
+      }
     } catch (e) {
       _logger.e('Error loading $status deliveries: $e');
     }
@@ -910,6 +919,76 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
     }
   }
 
+  String _formatCoordinateLabel(Position position) {
+    return '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+  }
+
+  String _locationCacheKeyForPosition(Position position) {
+    return '${position.latitude.toStringAsFixed(4)},${position.longitude.toStringAsFixed(4)}';
+  }
+
+  Future<String> _resolveLocationLabel(Position position) async {
+    final fallback = _formatCoordinateLabel(position);
+    final cacheKey = _locationCacheKeyForPosition(position);
+    final cached = _locationLabelCache[cacheKey];
+    if (cached != null && cached.trim().isNotEmpty) {
+      return cached;
+    }
+
+    try {
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+        final parts = <String>[
+          if ((place.street ?? '').trim().isNotEmpty) place.street!.trim(),
+          if ((place.subLocality ?? '').trim().isNotEmpty)
+            place.subLocality!.trim(),
+          if ((place.locality ?? '').trim().isNotEmpty) place.locality!.trim(),
+          if ((place.administrativeArea ?? '').trim().isNotEmpty)
+            place.administrativeArea!.trim(),
+        ];
+
+        final label = parts.toSet().take(3).join(', ');
+        if (label.isNotEmpty) {
+          _locationLabelCache[cacheKey] = label;
+          return label;
+        }
+      }
+    } catch (e) {
+      _logger.w('Reverse geocoding skipped: $e');
+    }
+
+    _locationLabelCache[cacheKey] = fallback;
+    return fallback;
+  }
+
+  Future<void> _updateCurrentLocationFromPosition(Position position) async {
+    if (!mounted) return;
+    final fallback = _formatCoordinateLabel(position);
+    if (_currentLocation != fallback) {
+      setState(() => _currentLocation = fallback);
+    }
+
+    final label = await _resolveLocationLabel(position);
+    if (!mounted) return;
+    if (_currentLocation != label) {
+      setState(() => _currentLocation = label);
+    }
+  }
+
+  double _distanceBetweenMeters(Position a, Position b) {
+    return Geolocator.distanceBetween(
+      a.latitude,
+      a.longitude,
+      b.latitude,
+      b.longitude,
+    );
+  }
+
   Future<void> _getCurrentLocation() async {
     try {
       bool serviceEnabled;
@@ -943,47 +1022,13 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         return;
       }
 
-      Position position = await Geolocator.getCurrentPosition();
-
-      try {
-        List<Placemark> placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
-
-        if (mounted && placemarks.isNotEmpty) {
-          Placemark place = placemarks[0];
-          String address = '';
-          if (place.street != null && place.street!.isNotEmpty) {
-            address += place.street!;
-          }
-          if (place.locality != null && place.locality!.isNotEmpty) {
-            if (address.isNotEmpty) address += ', ';
-            address += place.locality!;
-          }
-
-          if (address.isEmpty) {
-            address =
-                '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
-          }
-
-          setState(() {
-            _currentLocation = address;
-          });
-        } else if (mounted) {
-          setState(() {
-            _currentLocation =
-                '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
-          });
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _currentLocation =
-                '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
-          });
-        }
-      }
+      const currentLocationSettings = LocationSettings(
+        accuracy: LocationAccuracy.best,
+      );
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: currentLocationSettings,
+      );
+      await _updateCurrentLocationFromPosition(position);
     } catch (e) {
       _logger.e('Error getting location: $e');
       if (mounted) setState(() => _currentLocation = 'Error getting location');
@@ -991,17 +1036,35 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
   }
 
   void _startLocationTracking() {
-    _locationTrackingTimer = Timer.periodic(const Duration(seconds: 30), (
-      timer,
+    _locationStreamSubscription?.cancel();
+    _locationTrackingTimer?.cancel();
+
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 2,
+    );
+
+    _locationStreamSubscription = Geolocator.getPositionStream(
+      locationSettings: locationSettings,
+    ).listen((position) async {
+      await _updateCurrentLocationFromPosition(position);
+      await _sendLocationToServer(position: position);
+    });
+
+    _locationTrackingTimer = Timer.periodic(const Duration(seconds: 5), (
+      _,
     ) async {
-      if (_assignedDeliveries.isNotEmpty) {
-        await _sendLocationToServer();
-      }
+      await _sendLocationToServer(force: true);
     });
   }
 
-  Future<void> _sendLocationToServer() async {
+  Future<void> _sendLocationToServer({
+    Position? position,
+    bool force = false,
+  }) async {
     try {
+      if (_assignedDeliveries.isEmpty || _isSendingLocation) return;
+
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null) return;
 
@@ -1014,19 +1077,47 @@ class _RiderDashboardScreenState extends State<RiderDashboardScreen>
         return;
       }
 
-      Position position = await Geolocator.getCurrentPosition();
+      final nextPosition =
+          position ??
+          await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.best,
+            ),
+          );
+
+      final lastSentAt = _lastLocationSentAt;
+      final lastPosition = _lastSentPosition;
+      final movedEnough =
+          lastPosition == null ||
+          _distanceBetweenMeters(lastPosition, nextPosition) >= 2;
+      final staleEnough =
+          lastSentAt == null ||
+          DateTime.now().difference(lastSentAt) >= const Duration(seconds: 5);
+
+      if (!force && !movedEnough && !staleEnough) {
+        return;
+      }
+
+      _isSendingLocation = true;
+      final locationLabel = await _resolveLocationLabel(nextPosition);
 
       await ApiService.updateRiderLocation(
         token,
-        latitude: position.latitude,
-        longitude: position.longitude,
+        latitude: nextPosition.latitude,
+        longitude: nextPosition.longitude,
+        location: locationLabel,
       );
 
+      _lastSentPosition = nextPosition;
+      _lastLocationSentAt = DateTime.now();
+
       _logger.d(
-        'Location sent to server: ${position.latitude}, ${position.longitude}',
+        'Location sent to server: ${nextPosition.latitude}, ${nextPosition.longitude} ($locationLabel)',
       );
     } catch (e) {
       _logger.e('Error sending location to server: $e');
+    } finally {
+      _isSendingLocation = false;
     }
   }
 

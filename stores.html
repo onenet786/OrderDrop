@@ -47,20 +47,21 @@
         <main class="app-content">
             <div id="toastContainer" class="toast-container"></div>
 
-            <div class="page-header" style="margin-bottom: 2rem;">
-                <h2>Find Stores Near You</h2>
+            <div class="page-header">
+                <h2 class="page-title">Find Stores Near You</h2>
+                <p class="page-subtitle">Search by location, compare nearby options, and jump into the stores that can actually serve your area.</p>
             </div>
 
             <section id="globalDeliveryWidget" class="global-delivery-widget" style="display: none;"></section>
 
-            <section class="location-filter" style="margin-bottom: 2rem;">
-                <div class="search-container" style="flex-direction: column; align-items: stretch;">
-                    <form id="locationForm" style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end;">
-                        <div class="form-group" style="flex: 1; min-width: 250px; margin-bottom: 0;">
+            <section class="location-filter section-gap-lg">
+                <div class="search-container search-container--stacked">
+                    <form id="locationForm" class="location-filter-form">
+                        <div class="form-group location-filter-field">
                             <label for="location">Enter your location or use current location:</label>
                             <input type="text" id="location" name="location" placeholder="Enter city, zip code, or address" class="form-control">
                         </div>
-                        <div style="display: flex; gap: 0.5rem;">
+                        <div class="page-actions">
                             <button type="button" id="getLocation" class="btn btn-primary">
                                 <i class="fas fa-location-arrow"></i> Use My Location
                             </button>
@@ -73,7 +74,7 @@
             </section>
 
             <section class="stores-list">
-                <h3 style="margin-bottom: 1.5rem; font-size: 1.5rem; font-weight: 700;">All Stores</h3>
+                <h3 class="page-title">All Stores</h3>
                 <div class="store-grid" id="allStores">
                     <!-- Stores will be loaded dynamically -->
                 </div>

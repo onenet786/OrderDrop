@@ -18,12 +18,100 @@
         reconnectionDelayMax: 5000,
         reconnectionAttempts: 5
     });
+    const eventListeners = new Map();
 
     // Notification bell management
     const notificationsStore = [];
     const MAX_NOTIFICATIONS = 20;
     let notifyPermissionRequested = false;
     const systemNotifyDedup = new Map();
+    const recentSocketEvents = new Map();
+
+    function pruneOldEntries(store, maxAgeMs) {
+        const now = Date.now();
+        for (const [key, timestamp] of Array.from(store.entries())) {
+            if ((now - timestamp) > maxAgeMs) {
+                store.delete(key);
+            }
+        }
+    }
+
+    function buildSocketEventKey(eventName, data) {
+        if (!data || typeof data !== 'object') return '';
+        const fields = [
+            data.event_id,
+            data.notification_id,
+            data.id,
+            data.order_id,
+            data.order_number,
+            data.user_id,
+            data.rider_id,
+            data.store_id,
+            data.status,
+            data.payment_status,
+            data.type,
+            data.title,
+            data.message
+        ]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean);
+        if (!fields.length) return '';
+        return [eventName, ...fields.slice(0, 8)].join('|');
+    }
+
+    function shouldProcessSocketEvent(eventName, data, windowMs = 10000) {
+        if (
+            eventName === 'heartbeat' ||
+            eventName === 'connect' ||
+            eventName === 'reconnect' ||
+            eventName === 'connect_error' ||
+            eventName === 'rider_location_update'
+        ) {
+            return true;
+        }
+        const key = buildSocketEventKey(eventName, data);
+        if (!key) return true;
+        pruneOldEntries(recentSocketEvents, windowMs * 2);
+        const now = Date.now();
+        const lastSeenAt = recentSocketEvents.get(key) || 0;
+        if ((now - lastSeenAt) < windowMs) {
+            console.debug('[Notifications] Duplicate socket event suppressed:', key);
+            return false;
+        }
+        recentSocketEvents.set(key, now);
+        return true;
+    }
+
+    function addEventListener(owner, listener) {
+        if (!owner || typeof listener !== 'function') return;
+        eventListeners.set(owner, listener);
+    }
+
+    function removeEventListener(owner) {
+        if (!owner) return;
+        eventListeners.delete(owner);
+    }
+
+    function emitEvent(eventName, data) {
+        if (eventListeners.size === 0) return;
+        const payload = (data && typeof data === 'object') ? { ...data } : { value: data };
+        const event = {
+            ...payload,
+            event: eventName,
+            socket_event: eventName,
+            data: { ...payload }
+        };
+        if (!event.type) {
+            event.type = eventName;
+        }
+        for (const listener of Array.from(eventListeners.values())) {
+            try {
+                listener({ ...event });
+            } catch (error) {
+                console.warn('[Notifications] Event listener failed for', eventName, error);
+            }
+        }
+    }
 
     function canSystemNotify() {
         return 'Notification' in window && Notification.permission === 'granted';
@@ -38,13 +126,27 @@
     }
 
     function systemNotify(title, body) {
-        if (window.__serveNowDisableSystemNotify) return false;
-        ensureNotifyPermission();
-        if (!canSystemNotify()) return false;
         const key = `${String(title || '').trim()}|${String(body || '').trim()}`;
         const now = Date.now();
         const last = systemNotifyDedup.get(key) || 0;
-        if ((now - last) < 3000) return true;
+        if ((now - last) < 10000) return true;
+        if (typeof window.__serveNowSystemNotifyHandler === 'function') {
+            try {
+                const handled = window.__serveNowSystemNotifyHandler(title, body, { socket });
+                if (handled && typeof handled.then === 'function') {
+                    systemNotifyDedup.set(key, now);
+                    handled.catch(() => {});
+                    return true;
+                }
+                if (handled) {
+                    systemNotifyDedup.set(key, now);
+                    return true;
+                }
+            } catch (_) {}
+        }
+        if (window.__serveNowDisableSystemNotify) return false;
+        ensureNotifyPermission();
+        if (!canSystemNotify()) return false;
         systemNotifyDedup.set(key, now);
         try {
             new Notification(title, { body });
@@ -65,16 +167,33 @@
         }
     }
 
+    function isAdminLikeUser(user) {
+        if (!user) return false;
+        return user.user_type === 'admin' || user.user_type === 'standard_user';
+    }
+
     socket.on('connect', () => {
         console.log('[Socket] Connected to server. Socket ID:', socket.id);
         emitUserIdentification();
         ensureNotifyPermission();
+        emitEvent('connect', { socket_id: socket.id });
     });
 
     socket.on('reconnect', () => {
         console.log('[Socket] Reconnected to server. Socket ID:', socket.id);
         emitUserIdentification();
         ensureNotifyPermission();
+        emitEvent('reconnect', { socket_id: socket.id });
+    });
+
+    socket.on('connect_error', (error) => {
+        emitEvent('connect_error', {
+            message: error && error.message ? error.message : String(error || '')
+        });
+    });
+
+    socket.on('heartbeat', (data) => {
+        emitEvent('heartbeat', data);
     });
 
     function playNotificationSound() {
@@ -243,11 +362,14 @@
     socket.off('order_status_update');
     socket.off('payment_status_update');
     socket.off('order_completed');
+    socket.off('rider_location_update');
 
     // Admin Notifications: New Order
     socket.on('new_order', (data) => {
+        if (!shouldProcessSocketEvent('new_order', data)) return;
+        emitEvent('new_order', data);
         const user = getCurrentUser();
-        if (user && user.user_type === 'admin') {
+        if (isAdminLikeUser(user)) {
             addNotification(
                 'New Order Received',
                 `Order ${data.order_number} - PKR ${data.total_amount}`,
@@ -266,6 +388,8 @@
 
     // Rider Notifications
     socket.on('rider_notification', (data) => {
+        if (!shouldProcessSocketEvent('rider_notification', data)) return;
+        emitEvent('rider_notification', data);
         const user = getCurrentUser();
         if (user && user.user_type === 'rider' && user.id == data.rider_id) {
             addNotification(
@@ -290,8 +414,10 @@
 
     // User Notifications
     socket.on('user_notification', (data) => {
+        if (!shouldProcessSocketEvent('user_notification', data)) return;
+        emitEvent('user_notification', data);
         const user = getCurrentUser();
-        if (user && (user.id == data.user_id || user.user_type === 'admin')) {
+        if (user && (user.id == data.user_id || isAdminLikeUser(user))) {
             if (!data || data.type === 'refresh_orders' || !data.message) {
                 if (typeof displayOrders === 'function') displayOrders();
                 if (typeof loadOrders === 'function') loadOrders();
@@ -314,6 +440,8 @@
 
     // Generic Notification events (server may emit for picked_up/ready)
     socket.on('notification', (data) => {
+        if (!shouldProcessSocketEvent('notification', data)) return;
+        emitEvent('notification', data);
         const user = getCurrentUser();
         if (!user) return;
         const title = data.title || 'Notification';
@@ -330,8 +458,10 @@
 
     // Order Status Updates (Generic)
     socket.on('order_status_update', (data) => {
+        if (!shouldProcessSocketEvent('order_status_update', data)) return;
+        emitEvent('order_status_update', data);
         const user = getCurrentUser();
-        if (user && (user.id == data.user_id || user.user_type === 'admin')) {
+        if (user && (user.id == data.user_id || isAdminLikeUser(user))) {
             // Add to bell notifications
             let icon = 'fa-clock';
             if (data.status === 'delivered') icon = 'fa-check-circle';
@@ -348,7 +478,7 @@
             if (typeof displayOrders === 'function') displayOrders();
             if (typeof loadOrders === 'function') loadOrders();
             
-            if (user.user_type === 'admin' && data.status === 'delivered') {
+            if (isAdminLikeUser(user) && data.status === 'delivered') {
                 if (!systemNotify('Order Delivered', `Order ${data.order_number} delivered`)) {
                     if (typeof showToast === 'function') showToast('Order Delivered', `Order ${data.order_number} delivered`, 'info', 2000);
                 }
@@ -356,10 +486,16 @@
         }
     });
 
+    socket.on('rider_location_update', (data) => {
+        emitEvent('rider_location_update', data);
+    });
+
     // Payment Status Updates
     socket.on('payment_status_update', (data) => {
+        if (!shouldProcessSocketEvent('payment_status_update', data)) return;
+        emitEvent('payment_status_update', data);
         const user = getCurrentUser();
-        if (user && (user.id == data.user_id || user.user_type === 'admin')) {
+        if (user && (user.id == data.user_id || isAdminLikeUser(user))) {
             addNotification(
                 'Payment ' + (data.payment_status === 'paid' ? 'Received' : 'Update'),
                 `Order ${data.order_number}`,
@@ -370,7 +506,7 @@
             if (typeof displayOrders === 'function') displayOrders();
             if (typeof loadOrders === 'function') loadOrders();
             
-            if (user.user_type === 'admin' && data.payment_status === 'paid') {
+            if (isAdminLikeUser(user) && data.payment_status === 'paid') {
                 if (!systemNotify('Payment Received', `Order ${data.order_number} payment confirmed`)) {
                     if (typeof showToast === 'function') showToast('Payment Received', `Order ${data.order_number} payment confirmed`, 'success', 2000);
                 }
@@ -380,6 +516,8 @@
 
     // Order Completed
     socket.on('order_completed', (data) => {
+        if (!shouldProcessSocketEvent('order_completed', data)) return;
+        emitEvent('order_completed', data);
         const user = getCurrentUser();
         if (user && user.id == data.user_id) {
             addNotification(
@@ -394,7 +532,7 @@
             if (typeof displayOrders === 'function') displayOrders();
         }
         
-        if (user && user.user_type === 'admin') {
+        if (isAdminLikeUser(user)) {
             addNotification(
                 'Order Fully Completed',
                 `Order ${data.order_number}`,
@@ -414,5 +552,18 @@
     } else {
         initNotificationBell();
     }
+
+    window.ServeNowNotifications = Object.assign(
+        window.ServeNowNotifications || {},
+        {
+            addEventListener,
+            removeEventListener,
+            identifyCurrentUser: emitUserIdentification,
+            getCurrentUser,
+            getSocket: () => socket,
+            isConnected: () => !!socket.connected,
+            addNotification
+        }
+    );
 
 })();

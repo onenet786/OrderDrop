@@ -31,6 +31,7 @@ import 'screens/change_password_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/ui_test_home_screen.dart';
 import 'screens/customer_dashboard_test_screen.dart';
+import 'screens/customer_tile_demo_screen.dart';
 import 'theme/customer_palette.dart';
 import 'services/notifier.dart';
 
@@ -234,6 +235,7 @@ class MyApp extends StatelessWidget {
           '/ui-test-home': (context) => const UiTestHomeScreen(),
           '/customer-test-dashboard': (context) =>
               const CustomerDashboardTestScreen(),
+          '/customer-tile-demo': (context) => const CustomerTileDemoScreen(),
         },
       ),
     );

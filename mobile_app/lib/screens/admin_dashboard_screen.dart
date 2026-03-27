@@ -13,7 +13,18 @@ import '../services/api_service.dart';
 import '../services/notifier.dart';
 import '../utils/customer_language.dart';
 import '../widgets/notification_bell_widget.dart';
+import 'customer_tile_demo_screen.dart';
 import 'offer_campaigns_screen.dart';
+
+class _LiveRiderTrackerPayload {
+  const _LiveRiderTrackerPayload({
+    required this.trails,
+    required this.speedsMph,
+  });
+
+  final Map<String, List<latlng.LatLng>> trails;
+  final Map<String, double> speedsMph;
+}
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -28,8 +39,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     'admin@servenow.com',
     'nazir@servenow.pk',
   };
-  static const Duration _liveRiderRefreshInterval = Duration(seconds: 8);
-  static const Duration _riderMotionDuration = Duration(milliseconds: 2600);
+  static const Duration _liveRiderRefreshInterval = Duration(seconds: 4);
+  static const Duration _riderMotionDuration = Duration(milliseconds: 3600);
+  static const Duration _liveRiderStaleAfter = Duration(minutes: 10);
   static const List<Color> _riderRoutePalette = [
     Color(0xFF2563EB),
     Color(0xFFDC2626),
@@ -53,6 +65,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   final Map<String, latlng.LatLng> _motionStartPositions = {};
   final Map<String, latlng.LatLng> _motionTargetPositions = {};
   final Map<String, String> _liveLocationNameByRider = {};
+  final Map<String, double> _liveRiderSpeedsMphById = {};
   final Map<String, String> _reverseGeocodeCache = {};
   final Set<String> _pendingReverseGeocodeKeys = {};
 
@@ -132,12 +145,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   List<Map<String, dynamic>> _extractLiveRiderLocations(List<dynamic> orders) {
     final latestPerRider = <String, Map<String, dynamic>>{};
+    final now = DateTime.now();
 
     for (final raw in orders) {
       if (raw is! Map) continue;
       final order = raw.cast<String, dynamic>();
       final status = (order['status'] ?? '').toString().toLowerCase();
-      if (status == 'delivered' || status == 'cancelled') continue;
+      if (status != 'out_for_delivery' && status != 'picked_up') continue;
 
       final riderId = (order['rider_id'] ?? '').toString().trim();
       if (riderId.isEmpty) continue;
@@ -150,8 +164,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
       DateTime createdAt = DateTime.fromMillisecondsSinceEpoch(0);
       try {
-        createdAt = DateTime.parse((order['created_at'] ?? '').toString());
+        createdAt = DateTime.parse(
+          (order['updated_at'] ?? order['created_at'] ?? '').toString(),
+        );
       } catch (_) {}
+      if (now.difference(createdAt.toLocal()) > _liveRiderStaleAfter) {
+        continue;
+      }
 
       final riderName =
           '${order['rider_first_name'] ?? ''} ${order['rider_last_name'] ?? ''}'
@@ -170,6 +189,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         'riderName': riderName.isEmpty ? 'Rider #$riderId' : riderName,
         'orderNumber': (order['order_number'] ?? '').toString(),
         'storeName': (order['store_name'] ?? '').toString(),
+        'locationLabel': (order['rider_location'] ?? '').toString().trim(),
         'storeLatitude': double.tryParse(
           (order['store_latitude'] ?? '').toString(),
         ),
@@ -194,7 +214,57 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     return items;
   }
 
-  Future<Map<String, List<latlng.LatLng>>> _fetchLiveRiderTrails(
+  bool _isRiderFresh(Map<String, dynamic> rider) {
+    final updatedAt = rider['createdAt'] as DateTime?;
+    if (updatedAt == null) return false;
+    return DateTime.now().difference(updatedAt.toLocal()) <=
+        _liveRiderStaleAfter;
+  }
+
+  DateTime? _parseLiveTrackingTime(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value.toLocal();
+    final text = value.toString().trim();
+    if (text.isEmpty) return null;
+    try {
+      return DateTime.parse(text).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  double? _estimateRiderSpeedMph(List<Map<String, dynamic>> telemetry) {
+    if (telemetry.length < 2) return null;
+
+    final distance = latlng.Distance();
+    for (var index = telemetry.length - 1; index > 0; index--) {
+      final current = telemetry[index];
+      final previous = telemetry[index - 1];
+      final currentPoint = current['point'] as latlng.LatLng?;
+      final previousPoint = previous['point'] as latlng.LatLng?;
+      final currentTime = current['timestamp'] as DateTime?;
+      final previousTime = previous['timestamp'] as DateTime?;
+      if (currentPoint == null ||
+          previousPoint == null ||
+          currentTime == null ||
+          previousTime == null) {
+        continue;
+      }
+
+      final seconds = currentTime.difference(previousTime).inSeconds;
+      if (seconds <= 0 || seconds > 20 * 60) continue;
+
+      final meters = distance(previousPoint, currentPoint);
+      if (meters < 10) continue;
+
+      final mph = (meters / seconds) * 2.23693629;
+      if (!mph.isFinite || mph <= 0) continue;
+      return mph.clamp(0, 80).toDouble();
+    }
+    return null;
+  }
+
+  Future<_LiveRiderTrackerPayload> _fetchLiveRiderTrails(
     String token,
     List<Map<String, dynamic>> riders,
   ) async {
@@ -202,7 +272,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         .map((rider) => (rider['riderId'] ?? '').toString().trim())
         .where((id) => id.isNotEmpty)
         .toList(growable: false);
-    if (riderIds.isEmpty) return {};
+    if (riderIds.isEmpty) {
+      return const _LiveRiderTrackerPayload(
+        trails: <String, List<latlng.LatLng>>{},
+        speedsMph: <String, double>{},
+      );
+    }
 
     final response = await ApiService.getRiderLocationHistory(
       token,
@@ -215,11 +290,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         const <String, dynamic>{};
 
     final trails = <String, List<latlng.LatLng>>{};
+    final speedsMph = <String, double>{};
     for (final rider in riders) {
       final riderId = (rider['riderId'] ?? '').toString().trim();
       if (riderId.isEmpty) continue;
 
       final points = <latlng.LatLng>[];
+      final telemetry = <Map<String, dynamic>>[];
       final entries = rawHistories[riderId];
       if (entries is List) {
         for (final raw in entries) {
@@ -230,25 +307,39 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           final longitude =
               double.tryParse((entry['longitude'] ?? '').toString());
           if (latitude == null || longitude == null) continue;
-          _appendTrailPoint(points, latlng.LatLng(latitude, longitude));
+          final point = latlng.LatLng(latitude, longitude);
+          _appendTrailPoint(points, point);
+          telemetry.add({
+            'point': point,
+            'timestamp': _parseLiveTrackingTime(entry['created_at']),
+          });
         }
       }
 
       final currentLatitude = rider['latitude'] as double?;
       final currentLongitude = rider['longitude'] as double?;
       if (currentLatitude != null && currentLongitude != null) {
+        final point = latlng.LatLng(currentLatitude, currentLongitude);
         _appendTrailPoint(
           points,
-          latlng.LatLng(currentLatitude, currentLongitude),
+          point,
         );
+        telemetry.add({
+          'point': point,
+          'timestamp': rider['createdAt'] as DateTime?,
+        });
       }
 
       if (points.isNotEmpty) {
         trails[riderId] = points;
       }
+      final speedMph = _estimateRiderSpeedMph(telemetry);
+      if (speedMph != null) {
+        speedsMph[riderId] = speedMph;
+      }
     }
 
-    return trails;
+    return _LiveRiderTrackerPayload(trails: trails, speedsMph: speedsMph);
   }
 
   void _appendTrailPoint(List<latlng.LatLng> points, latlng.LatLng point) {
@@ -324,6 +415,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     return '$minutes mins';
   }
 
+  String _formatLiveUpdatedLabel(DateTime? value) {
+    if (value == null) return 'Last updated recently';
+    final local = value.toLocal();
+    final now = DateTime.now();
+    final diff = now.difference(local);
+    if (diff.inSeconds.abs() <= 75) {
+      return 'Last updated now';
+    }
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'pm' : 'am';
+    return 'Last updated $hour:$minute $suffix';
+  }
+
+  String? _speedLabelForRider(Map<String, dynamic> rider) {
+    final riderId = (rider['riderId'] ?? '').toString().trim();
+    final speedMph = _liveRiderSpeedsMphById[riderId];
+    if (speedMph == null || !speedMph.isFinite || speedMph <= 0) return null;
+    return '${speedMph.round()} mph';
+  }
+
   String _coordinateKey(latlng.LatLng point) {
     return '${point.latitude.toStringAsFixed(4)},${point.longitude.toStringAsFixed(4)}';
   }
@@ -360,6 +472,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   String _liveLocationLabelForRider(Map<String, dynamic> rider) {
     final riderId = (rider['riderId'] ?? '').toString().trim();
     final livePoint = _displayPointForRider(rider);
+    final serverLabel = (rider['locationLabel'] ?? '').toString().trim();
+    if (serverLabel.isNotEmpty) {
+      return serverLabel;
+    }
     if (riderId.isNotEmpty) {
       final cached = _liveLocationNameByRider[riderId];
       if (cached != null && cached.trim().isNotEmpty) {
@@ -535,6 +651,49 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     }
   }
 
+  void _handleLiveRiderSocketEvent(Map<String, dynamic> data) {
+    final riderId = (data['rider_id'] ?? data['riderId'] ?? '')
+        .toString()
+        .trim();
+    if (riderId.isEmpty) return;
+
+    final latitude =
+        double.tryParse((data['latitude'] ?? '').toString());
+    final longitude =
+        double.tryParse((data['longitude'] ?? '').toString());
+    if (latitude == null || longitude == null) return;
+
+    final updatedAt = _parseLiveTrackingTime(data['updated_at']) ?? DateTime.now();
+    final locationLabel = (data['location'] ?? '').toString().trim();
+    final existingIndex = _liveRiderLocations.indexWhere(
+      (rider) => (rider['riderId'] ?? '').toString() == riderId,
+    );
+    if (existingIndex < 0) return;
+
+    final updatedRiders = List<Map<String, dynamic>>.from(_liveRiderLocations);
+    final rider = Map<String, dynamic>.from(updatedRiders[existingIndex]);
+    rider['latitude'] = latitude;
+    rider['longitude'] = longitude;
+    rider['createdAt'] = updatedAt;
+    if (locationLabel.isNotEmpty) {
+      rider['locationLabel'] = locationLabel;
+      _liveLocationNameByRider[riderId] = locationLabel;
+    }
+    updatedRiders[existingIndex] = rider;
+
+    final trails = Map<String, List<latlng.LatLng>>.from(_liveRiderTrails);
+    final riderTrail = List<latlng.LatLng>.from(trails[riderId] ?? const []);
+    _appendTrailPoint(riderTrail, latlng.LatLng(latitude, longitude));
+    trails[riderId] = riderTrail;
+
+    if (!mounted) return;
+    setState(() {
+      _liveRiderLocations = updatedRiders.where(_isRiderFresh).toList(growable: false);
+      _liveRiderTrails = trails;
+      _syncAnimatedRiderLocations(_liveRiderLocations);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -578,6 +737,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             type.contains('new')) {
           _loadVisitorStatsOnly();
         }
+        if (type.contains('rider_location')) {
+          _handleLiveRiderSocketEvent(data);
+        }
+        if (type == 'order_status_update' || type == 'order_completed') {
+          _loadLiveRiderLocationsOnly();
+        }
       },
     );
 
@@ -607,12 +772,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     try {
       final token = Provider.of<AuthProvider>(context, listen: false).token;
       if (token == null || token.trim().isEmpty) return;
+      final notificationProvider = Provider.of<NotificationProvider>(
+        context,
+        listen: false,
+      );
       final data = await ApiService.getStoreGraceAlerts(
         token,
         channel: 'mobile',
       );
       final alerts = (data['alerts'] as List?) ?? const [];
-      if (alerts.isEmpty || !mounted) return;
+      if (alerts.isEmpty || !mounted) {
+        await notificationProvider.removeNotificationsWhere(
+          (notification) =>
+              notification.payload?['type']?.toString() == 'store_due_alert',
+        );
+        return;
+      }
       final alert = (alerts.first as Map?)?.cast<String, dynamic>() ?? {};
       final storeId = int.tryParse((alert['store_id'] ?? '').toString());
       if (storeId == null || storeId <= 0) return;
@@ -633,10 +808,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         return;
       }
       _lastGraceAlertAt[key] = now;
-
-      final notificationProvider = Provider.of<NotificationProvider>(
-        context,
-        listen: false,
+      await notificationProvider.removeNotificationsWhere(
+        (notification) =>
+            notification.payload?['type']?.toString() == 'store_due_alert' &&
+            notification.payload?['store_id']?.toString() != storeId.toString(),
       );
       notificationProvider.addNotification(
         title: 'Store Due Alert',
@@ -678,11 +853,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       final visitorStats = results[1] as Map<String, dynamic>;
       final recentActivityData = results[2] as Map<String, dynamic>;
       final liveRiders = allowLiveTracker
-          ? _extractLiveRiderLocations(orders)
+          ? _extractLiveRiderLocations(
+              orders.where((o) {
+                if (o is! Map) return false;
+                final status = (o['status'] ?? '').toString().toLowerCase();
+                return status == 'out_for_delivery' || status == 'picked_up';
+              }).toList(growable: false),
+            )
           : const <Map<String, dynamic>>[];
-      final liveRiderTrails = allowLiveTracker
+      final liveRiderTrackerPayload = allowLiveTracker
           ? await _fetchLiveRiderTrails(token, liveRiders)
-          : const <String, List<latlng.LatLng>>{};
+          : const _LiveRiderTrackerPayload(
+              trails: <String, List<latlng.LatLng>>{},
+              speedsMph: <String, double>{},
+            );
 
       final now = DateTime.now();
       final todayOrders = orders.where((o) {
@@ -779,10 +963,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         _recentUsersList = recentActivityData['recent_users'] ?? [];
         _recentStoresList = recentActivityData['recent_stores'] ?? [];
         _assignableOrdersList = assignableOrders;
-        _liveRiderLocations = liveRiders;
+        _liveRiderLocations =
+            liveRiders.where(_isRiderFresh).toList(growable: false);
         _liveRiderTrails = Map<String, List<latlng.LatLng>>.from(
-          liveRiderTrails,
+          liveRiderTrackerPayload.trails,
         );
+        _liveRiderSpeedsMphById
+          ..clear()
+          ..addAll(liveRiderTrackerPayload.speedsMph);
         _syncAnimatedRiderLocations(_liveRiderLocations);
         _liveLocationNameByRider.removeWhere(
           (key, _) => !_liveRiderLocations.any(
@@ -817,11 +1005,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         includeStoreStatuses: false,
       );
       final riders = _extractLiveRiderLocations(orders);
-      final trails = await _fetchLiveRiderTrails(token, riders);
+      final trackerPayload = await _fetchLiveRiderTrails(token, riders);
       if (!mounted) return;
       setState(() {
-        _liveRiderLocations = riders;
-        _liveRiderTrails = trails;
+        _liveRiderLocations =
+            riders.where(_isRiderFresh).toList(growable: false);
+        _liveRiderTrails = trackerPayload.trails;
+        _liveRiderSpeedsMphById
+          ..clear()
+          ..addAll(trackerPayload.speedsMph);
         _syncAnimatedRiderLocations(_liveRiderLocations);
         _liveLocationNameByRider.removeWhere(
           (key, _) => !_liveRiderLocations.any(
@@ -1056,6 +1248,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             },
           ),
           ListTile(
+            leading: const Icon(Icons.view_carousel),
+            title: Text(_tr('Customer Tile Demo')),
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).pushNamed('/customer-tile-demo');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.people),
             title: Text(_tr('Manage Users')),
             onTap: () {
@@ -1195,6 +1395,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
             )
             .toList(growable: false)
         : allRiders;
+    final focusedRider = riders.length == 1 ? riders.first : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1329,7 +1530,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 )
               else
                 _buildLiveMapSurface(riders),
-              if (riders.isNotEmpty) ...[
+              if (focusedRider != null) ...[
+                const SizedBox(height: 12),
+                _buildFocusedRiderTrackingCard(focusedRider),
+              ],
+              if (_selectedLiveRiderId == null && riders.length > 1) ...[
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 10,
@@ -1345,6 +1550,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   }
 
   Widget _buildLiveMapSurface(List<Map<String, dynamic>> riders) {
+    final focusedRider = riders.length == 1 ? riders.first : null;
+    final isFocusedTrackingMode = focusedRider != null;
     final selectedRiderName = _selectedLiveRiderId == null
         ? null
         : _liveRiderLocations
@@ -1401,21 +1608,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: SizedBox(
-        height: 280,
+        height: isFocusedTrackingMode ? 430 : 280,
         child: Stack(
           children: [
             FlutterMap(
-              key: ValueKey('live-rider-map-$mapKey-${_selectedLiveRiderId ?? 'all'}'),
+              key: ValueKey(
+                'live-rider-map-$mapKey-${_selectedLiveRiderId ?? 'all'}',
+              ),
               mapController: _liveRiderMapController,
               options: MapOptions(
                 initialCenter: fallbackCenter,
-                initialZoom: mapCoordinates.length == 1 ? 14 : 6,
+                initialZoom: isFocusedTrackingMode ? 15 : 6,
                 initialCameraFit: mapCoordinates.isEmpty
                     ? null
                     : CameraFit.coordinates(
                         coordinates: mapCoordinates,
-                        padding: const EdgeInsets.all(48),
-                        maxZoom: 15,
+                        padding: EdgeInsets.fromLTRB(
+                          44,
+                          56,
+                          44,
+                          48,
+                        ),
+                        maxZoom: isFocusedTrackingMode ? 16 : 15,
                       ),
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.drag |
@@ -1432,6 +1646,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                 MarkerLayer(
                   markers: riders
                       .map((rider) {
+                        if (isFocusedTrackingMode) return null;
                         final riderId = (rider['riderId'] ?? '').toString();
                         final routeColor = _routeColorForRider(riderId);
                         final startPoint = _resolveRiderStartPoint(rider);
@@ -1472,7 +1687,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                                 : routeColor.withValues(
                                     alpha: 0.52,
                                   ),
-                            strokeWidth: isSelected ? 5 : 3.5,
+                            strokeWidth: isFocusedTrackingMode
+                                ? 6
+                                : (isSelected ? 5 : 3.5),
                           );
                         })
                         .whereType<Polyline>()
@@ -1490,8 +1707,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                         );
                     return Marker(
                       point: displayPoint,
-                      width: 110,
-                      height: 76,
+                      width: isFocusedTrackingMode ? 160 : 110,
+                      height: isFocusedTrackingMode ? 170 : 76,
                       child: GestureDetector(
                         onTap: () {
                           setState(() {
@@ -1502,11 +1719,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           });
                           _showLiveRiderDetails(rider);
                         },
-                        child: _buildMapMarker(
-                          rider,
-                          isSelected: isSelected,
-                          accentColor: routeColor,
-                        ),
+                        child: isFocusedTrackingMode
+                            ? _buildTrackingHeroMarker(
+                                rider,
+                                accentColor: routeColor,
+                              )
+                            : _buildMapMarker(
+                                rider,
+                                isSelected: isSelected,
+                                accentColor: routeColor,
+                              ),
                       ),
                     );
                   }).toList(),
@@ -1578,52 +1800,360 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                     )
                   : const SizedBox.shrink(),
             ),
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 10,
-              child: Row(
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFFD7E3F4)),
-                    ),
-                    child: const Text(
-                      'Map data OpenStreetMap contributors',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
+            if (focusedRider == null)
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 10,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: const Color(0xFFD7E3F4)),
+                      ),
+                      child: const Text(
+                        'Map data OpenStreetMap contributors',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
                       ),
                     ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: const Color(0xFFD7E3F4)),
+                      ),
+                      child: const Text(
+                        'Tap a rider pin',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrackingHeroMarker(
+    Map<String, dynamic> rider, {
+    required Color accentColor,
+  }) {
+    final riderName = (rider['riderName'] ?? 'Rider').toString().trim();
+    final initial = riderName.isEmpty ? 'R' : String.fromCharCode(riderName.runes.first);
+    final speedLabel = _speedLabelForRider(rider);
+
+    return SizedBox(
+      width: 160,
+      height: 170,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            top: 0,
+            child: AnimatedOpacity(
+              opacity: speedLabel == null ? 0 : 1,
+              duration: const Duration(milliseconds: 220),
+              child: IgnorePointer(
+                ignoring: true,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
                   ),
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFFD7E3F4)),
-                    ),
-                    child: const Text(
-                      'Tap a rider pin',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.96),
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
                       ),
-                    ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.local_shipping_rounded,
+                        size: 16,
+                        color: Color(0xFF0F766E),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        speedLabel ?? '',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 24,
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.20),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 18,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                color: accentColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.28),
+                    blurRadius: 12,
+                    spreadRadius: 2,
                   ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+          Positioned(
+            top: 34,
+            child: Container(
+              width: 92,
+              height: 92,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFA000), Color(0xFFFF6F00)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(
+                  color: accentColor.withValues(alpha: 0.92),
+                  width: 4,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.22),
+                    blurRadius: 22,
+                    spreadRadius: 3,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  initial.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 32,
+            bottom: 34,
+            child: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+              ),
+              child: const Icon(
+                Icons.bolt_rounded,
+                size: 13,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFocusedRiderTrackingCard(Map<String, dynamic> rider) {
+    final riderId = (rider['riderId'] ?? '').toString();
+    final riderName = (rider['riderName'] ?? 'Rider').toString();
+    final routeColor = _routeColorForRider(riderId);
+    final locationLabel = _liveLocationLabelForRider(rider);
+    final storeName = (rider['storeName'] ?? '').toString().trim();
+    final orderNumber = (rider['orderNumber'] ?? '').toString().trim();
+    final distanceKm = _distanceKmForRider(rider);
+    final etaMinutes = _etaMinutesForRider(rider);
+    final trailPoints = _liveRiderTrails[riderId]?.length ?? 1;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.98),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      riderName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatLiveUpdatedLabel(rider['createdAt'] as DateTime?),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: routeColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  _speedLabelForRider(rider) ?? 'Live',
+                  style: TextStyle(
+                    color: routeColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            locationLabel,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            storeName.isEmpty ? _tr('Location') : storeName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildTrackingMetricPill(
+                icon: Icons.pin_outlined,
+                label: orderNumber.isEmpty ? 'Order unassigned' : orderNumber,
+              ),
+              _buildTrackingMetricPill(
+                icon: Icons.timeline_rounded,
+                label: '${trailPoints.toString()} points',
+              ),
+              _buildTrackingMetricPill(
+                icon: Icons.social_distance_rounded,
+                label: _formatDistanceKm(distanceKm),
+              ),
+              _buildTrackingMetricPill(
+                icon: Icons.schedule_rounded,
+                label: _formatEtaMinutes(etaMinutes),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrackingMetricPill({
+    required IconData icon,
+    required String label,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF475569)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1F2937),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2608,6 +3138,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => OfferCampaignsScreen(isAdmin: true),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _buildQuickMenuItem(
+              context: context,
+              icon: Icons.view_carousel_outlined,
+              label: _tr('Tile Demo'),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const CustomerTileDemoScreen(),
                 ),
               ),
             ),
