@@ -52,11 +52,9 @@ class ApiService {
     }
 
     if (kDebugMode && !kIsWeb) {
-      if (Platform.isAndroid) {
-        return 'http://10.0.2.2:3002';
-      } else if (Platform.isIOS) {
-        return 'http://127.0.0.1:3002';
-      } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      // Keep desktop debug pointed at a local backend, but avoid emulator-only
+      // loopback addresses on physical mobile devices.
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         return 'http://127.0.0.1:3002';
       }
     }
