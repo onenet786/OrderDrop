@@ -215,6 +215,17 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  static Future<Map<String, dynamic>> guestLogin() async {
+    final uri = Uri.parse('$baseUrl/api/auth/guest-login');
+    _logger.d('ApiService: POST $uri');
+    final response = await _post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(<String, dynamic>{}),
+    );
+    return _handleResponse(response);
+  }
+
   static Future<Map<String, dynamic>> register({
     required String firstName,
     required String lastName,

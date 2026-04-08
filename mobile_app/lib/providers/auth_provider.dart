@@ -29,6 +29,7 @@ class AuthProvider with ChangeNotifier {
       _user?.userType == 'admin' || _user?.userType == 'standard_user';
   bool get isRider => _user?.userType == 'rider';
   bool get isStoreOwner => _user?.userType == 'store_owner';
+  bool get isGuest => _user?.isGuest == true || _user?.userType == 'guest';
   bool get sessionExpired => _sessionExpired;
 
   bool _isUnauthorizedError(Object error) {
@@ -100,7 +101,9 @@ class AuthProvider with ChangeNotifier {
         _sessionExpired = false;
 
         // Initialize Stripe with public key
-        await _initializeStripe(_token!);
+        if (!isGuest) {
+          await _initializeStripe(_token!);
+        }
       } else {
         throw Exception(data['message'] ?? 'Login failed');
       }
@@ -384,6 +387,40 @@ class AuthProvider with ChangeNotifier {
       if (_refreshingToken == future) {
         _refreshingToken = null;
       }
+    }
+  }
+
+  Future<void> guestLogin() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final data = await ApiService.guestLogin();
+      if (data['success'] == true || data['token'] != null) {
+        _token = data['token'];
+        _refreshToken = data['refresh_token'];
+        if (data['user'] != null) {
+          _user = User.fromJson(data['user']);
+        }
+
+        final prefs = await SharedPreferences.getInstance();
+        if (_token != null) {
+          await prefs.setString('token', _token!);
+        }
+        await prefs.remove('refresh_token');
+        if (_user != null) {
+          await prefs.setString('user', jsonEncode(_user!.toJson()));
+        }
+
+        _sessionExpired = false;
+      } else {
+        throw Exception(data['message'] ?? 'Guest login failed');
+      }
+    } catch (e) {
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 

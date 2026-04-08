@@ -7,6 +7,7 @@ class User {
   final String? phone;
   final String? address;
   final String? dateOfBirth;
+  final bool isGuest;
 
   User({
     required this.id,
@@ -17,18 +18,24 @@ class User {
     this.phone,
     this.address,
     this.dateOfBirth,
+    this.isGuest = false,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
+    final rawIsGuest = json['is_guest'];
+    final guestFromFlag =
+        rawIsGuest == true || rawIsGuest == 1 || rawIsGuest == '1';
+    final userType = json['user_type'] ?? 'customer';
     return User(
       id: json['id'],
       firstName: json['first_name'] ?? '',
       lastName: json['last_name'] ?? '',
       email: json['email'] ?? '',
-      userType: json['user_type'] ?? 'customer',
+      userType: userType,
       phone: json['phone'],
       address: json['address'],
       dateOfBirth: json['date_of_birth'],
+      isGuest: guestFromFlag || userType == 'guest',
     );
   }
 
@@ -42,6 +49,7 @@ class User {
       'phone': phone,
       'address': address,
       'date_of_birth': dateOfBirth,
+      'is_guest': isGuest,
     };
   }
 }

@@ -18,8 +18,25 @@ if (dotenvResult.parsed) {
   );
 }
 
+function getPortFromArgs(argv) {
+  const equalsStyle = argv.find((arg) => arg.startsWith("--port="));
+  if (equalsStyle) {
+    return equalsStyle.split("=")[1];
+  }
+
+  const portFlagIndex = argv.findIndex((arg) => arg === "--port");
+  if (portFlagIndex !== -1) {
+    const nextArg = argv[portFlagIndex + 1];
+    if (nextArg && !nextArg.startsWith("--")) {
+      return nextArg;
+    }
+  }
+
+  return undefined;
+}
+
 // Force the PORT value to the one declared in .env (or fallback to 3002), unless already set
-const forcedPortFromArg = process.argv.find(arg => arg.startsWith('--port='))?.split('=')[1];
+const forcedPortFromArg = getPortFromArgs(process.argv);
 const forcedPort =
   forcedPortFromArg ||
   process.env.PORT ||
@@ -31,9 +48,9 @@ console.log(`Force-set process.env.PORT => ${process.env.PORT}`);
 
 // Provide a safe default JWT_SECRET in development to avoid accidental 401s
 if (process.env.NODE_ENV === "development" && !process.env.JWT_SECRET) {
-  process.env.JWT_SECRET = "servenow-dev-secret";
+  process.env.JWT_SECRET = "orderdrop-dev-secret";
   console.warn(
-    "WARNING: No JWT_SECRET found in .env — using development fallback secret. Do NOT use this in production."
+    "WARNING: No JWT_SECRET found in .env - using development fallback secret. Do NOT use this in production."
   );
 }
 

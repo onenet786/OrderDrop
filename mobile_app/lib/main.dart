@@ -685,15 +685,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Future<void> _checkAuth() async {
-    final startTime = DateTime.now();
     final auth = Provider.of<AuthProvider>(context, listen: false);
     await auth.tryAutoLogin();
-
-    final endTime = DateTime.now();
-    final elapsed = endTime.difference(startTime).inMilliseconds;
-    if (elapsed < 2000) {
-      await Future.delayed(Duration(milliseconds: 2000 - elapsed));
-    }
 
     if (!mounted) return;
 

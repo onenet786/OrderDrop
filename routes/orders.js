@@ -1015,6 +1015,14 @@ router.get("/test-notification", (req, res) => {
 // Create new order
 router.post("/", authenticateToken, async (req, res) => {
   try {
+    if (req.user?.user_type === "guest" || req.user?.is_guest === true) {
+      return res.status(403).json({
+        success: false,
+        message: "Please register your account before placing an order.",
+        requires_registration: true,
+      });
+    }
+
     const globalBlock = await getGlobalDeliveryBlockState(req.db);
     if (globalBlock.blocked) {
       return res.status(403).json({
@@ -4858,17 +4866,39 @@ router.get(
   async (req, res) => {
     try {
       const { id } = req.params;
-
-      const [orders] = await req.db.execute(
-        `SELECT o.id, o.user_id, o.status, o.store_id, o.total_amount, o.delivery_fee,
-                o.rider_id, o.rider_location, o.rider_latitude, o.rider_longitude,
-                o.delivery_address, o.special_instructions,
-                u.first_name, u.last_name, u.email, u.phone
-           FROM orders o
-           JOIN users u ON o.user_id = u.id
-          WHERE o.id = ?`,
-        [id],
-      );
+      const [ordersResult, itemsResult, storesResult] = await Promise.all([
+        req.db.execute(
+          `SELECT o.id, o.user_id, o.status, o.store_id, o.total_amount, o.delivery_fee,
+                  o.rider_id, o.rider_location, o.rider_latitude, o.rider_longitude,
+                  o.delivery_address, o.special_instructions,
+                  u.first_name, u.last_name, u.email, u.phone
+             FROM orders o
+             JOIN users u ON o.user_id = u.id
+            WHERE o.id = ?`,
+          [id],
+        ),
+        req.db.execute(
+          `
+              SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.store_id, oi.variant_label,
+                     p.name as product_name, p.image_url,
+                     s.name as store_name
+              FROM order_items oi
+              JOIN products p ON oi.product_id = p.id
+              LEFT JOIN stores s ON oi.store_id = s.id
+              WHERE oi.order_id = ?
+              ORDER BY oi.id ASC
+          `,
+          [id],
+        ),
+        req.db.execute(`
+              SELECT DISTINCT s.id, s.name
+              FROM stores s
+              INNER JOIN products p ON s.id = p.store_id
+              WHERE s.is_active = true AND p.is_available = true
+              ORDER BY s.name ASC
+          `),
+      ]);
+      const [orders] = ordersResult;
 
       if (orders.length === 0) {
         return res.status(404).json({
@@ -4876,28 +4906,8 @@ router.get(
           message: "Order not found",
         });
       }
-
-      const [items] = await req.db.execute(
-        `
-            SELECT oi.id, oi.product_id, oi.quantity, oi.price, oi.store_id, oi.variant_label,
-                   p.name as product_name, p.image_url,
-                   s.name as store_name
-            FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            LEFT JOIN stores s ON oi.store_id = s.id
-            WHERE oi.order_id = ?
-            ORDER BY oi.id ASC
-        `,
-        [id],
-      );
-
-      const [stores] = await req.db.execute(`
-            SELECT DISTINCT s.id, s.name
-            FROM stores s
-            INNER JOIN products p ON s.id = p.store_id
-            WHERE s.is_active = true AND p.is_available = true
-            ORDER BY s.name ASC
-        `);
+      const [items] = itemsResult;
+      const [stores] = storesResult;
 
       res.json({
         success: true,

@@ -6179,6 +6179,47 @@ function updateOrderSummary(items, deliveryFee) {
     }
 }
 
+function normalizeOrderEditText(value) {
+    return String(value || '').trim();
+}
+
+function normalizeOrderEditNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+}
+
+function captureOrderEditSnapshot(order, items) {
+    AppState.editing.orderSnapshot = {
+        customerId: Number(order?.user_id || 0) || null,
+        deliveryAddress: normalizeOrderEditText(order?.delivery_address),
+        specialInstructions: normalizeOrderEditText(order?.special_instructions),
+        status: normalizeOrderEditText(order?.status).toLowerCase(),
+        riderId: Number(order?.rider_id || 0) || null,
+        riderLocation: normalizeOrderEditText(order?.rider_location),
+        riderLatitude: normalizeOrderEditNumber(order?.rider_latitude),
+        riderLongitude: normalizeOrderEditNumber(order?.rider_longitude),
+        deliveryFee: Number(order?.delivery_fee || 0),
+        items: (Array.isArray(items) ? items : []).map((item) => ({
+            id: Number(item.id),
+            quantity: Number(item.quantity || 0)
+        }))
+    };
+}
+
+function haveOrderItemsChanged(nextItems, snapshotItems) {
+    const previousMap = new Map((Array.isArray(snapshotItems) ? snapshotItems : []).map((item) => [
+        String(item.id),
+        Number(item.quantity || 0)
+    ]));
+    if ((Array.isArray(nextItems) ? nextItems.length : 0) !== previousMap.size) {
+        return true;
+    }
+    return (Array.isArray(nextItems) ? nextItems : []).some((item) => {
+        const itemId = String(item.id);
+        return !previousMap.has(itemId) || previousMap.get(itemId) !== Number(item.quantity || 0);
+    });
+}
+
 async function editOrder(orderId) {
     try {
         // Permission check
@@ -6242,6 +6283,8 @@ async function editOrder(orderId) {
             showWarning('Cannot Edit', 'Cancelled orders cannot be edited.');
             return;
         }
+
+        captureOrderEditSnapshot(freshOrder, itemsData.items || []);
 
         const ridersData = await ridersPromise;
         if (ridersData?.status === 403) {
@@ -6483,6 +6526,202 @@ async function editOrder(orderId) {
 }
 
 async function saveOrder() {
+    const form = document.getElementById('editOrderForm');
+    const orderId = form.dataset.orderId;
+    const formData = new FormData(form);
+    const snapshot = AppState.editing.orderSnapshot || {};
+
+    const status = formData.get('status');
+    const customerId = formData.get('customer_id');
+    const deliveryAddress = normalizeOrderEditText(formData.get('delivery_address'));
+    const specialInstructions = normalizeOrderEditText(formData.get('special_instructions'));
+    const originalStatus = formData.get('original_status');
+    const riderId = formData.get('rider_id') || null;
+    const riderLocation = formData.get('rider_location') || null;
+    const riderLatitude = formData.get('rider_latitude') || null;
+    const riderLongitude = formData.get('rider_longitude') || null;
+    const storeId = formData.get('store_id') || null;
+
+    try {
+        console.log(`[saveOrder] Starting optimized save for order ${orderId}`);
+
+        const normalizedCustomerId = Number(customerId || 0) || null;
+        const normalizedStatus = normalizeOrderEditText(status).toLowerCase();
+        const normalizedStoreId = Number(storeId || 0) || null;
+        const normalizedRiderId = Number(riderId || 0) || null;
+        const normalizedRiderLocation = normalizeOrderEditText(riderLocation);
+        const normalizedRiderLatitude = normalizeOrderEditNumber(riderLatitude);
+        const normalizedRiderLongitude = normalizeOrderEditNumber(riderLongitude);
+        const normalizedDeliveryFee = Number(document.getElementById('orderDeliveryFee').value || 0);
+
+        const itemQuantityInputs = document.querySelectorAll('.item-quantity-input');
+        const items = Array.from(itemQuantityInputs).map(input => ({
+            id: parseInt(input.dataset.itemId, 10),
+            quantity: parseInt(input.value, 10)
+        }));
+
+        const customerChanged =
+            normalizedCustomerId !== (snapshot.customerId || null) ||
+            deliveryAddress !== (snapshot.deliveryAddress || '') ||
+            specialInstructions !== (snapshot.specialInstructions || '');
+        const itemsChanged =
+            items.length > 0 &&
+            (haveOrderItemsChanged(items, snapshot.items) || normalizedStoreId !== null);
+        const statusChanged =
+            !!normalizedStatus &&
+            normalizedStatus !== (snapshot.status || normalizeOrderEditText(originalStatus).toLowerCase());
+        const deliveryFeeChanged =
+            Math.abs(normalizedDeliveryFee - Number(snapshot.deliveryFee || 0)) > 0.009;
+        const riderChanged = normalizedRiderId !== (snapshot.riderId || null);
+        const riderLocationChanged =
+            normalizedRiderLocation !== (snapshot.riderLocation || '') ||
+            normalizedRiderLatitude !== (snapshot.riderLatitude ?? null) ||
+            normalizedRiderLongitude !== (snapshot.riderLongitude ?? null);
+
+        if (
+            !customerChanged &&
+            !itemsChanged &&
+            !statusChanged &&
+            !deliveryFeeChanged &&
+            !riderChanged &&
+            !riderLocationChanged
+        ) {
+            showSuccess('No Changes', 'No order changes detected.');
+            hideModal('editOrderModal');
+            return;
+        }
+
+        if (customerChanged && normalizedCustomerId) {
+            const customerRes = await fetch(`${API_BASE}/api/orders/${orderId}/customer`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({
+                    customer_id: normalizedCustomerId,
+                    delivery_address: deliveryAddress,
+                    special_instructions: specialInstructions || null
+                })
+            });
+            const customerJson = await customerRes.json();
+            if (!customerRes.ok || !customerJson.success) {
+                showError('Error', customerJson.message || 'Failed to update customer');
+                return;
+            }
+        }
+
+        if (itemsChanged) {
+            const itemsRes = await fetch(`${API_BASE}/api/orders/${orderId}/items`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ items, store_id: normalizedStoreId })
+            });
+            const itemsJson = await itemsRes.json();
+            if (!itemsRes.ok || !itemsJson.success) {
+                showError('Error', itemsJson.message || 'Failed to update order items');
+                return;
+            }
+        }
+
+        if (statusChanged) {
+            const statusRes = await fetch(`${API_BASE}/api/orders/${orderId}/status`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ status: normalizedStatus })
+            });
+            const statusJson = await statusRes.json();
+            if (!statusRes.ok || !statusJson.success) {
+                showError('Error', statusJson.message || 'Failed to update order status');
+                return;
+            }
+        }
+
+        if (deliveryFeeChanged) {
+            const feeRes = await fetch(`${API_BASE}/api/orders/${orderId}/delivery-fee`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ delivery_fee: normalizedDeliveryFee })
+            });
+            const feeData = await feeRes.json();
+            if (!feeRes.ok || !feeData.success) {
+                showError('Warning', feeData.message || 'Delivery fee may not have been updated. Please check.');
+                return;
+            }
+        }
+
+        if (riderChanged && normalizedRiderId) {
+            const riderRes = await fetch(`${API_BASE}/api/orders/${orderId}/assign-rider`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ rider_id: normalizedRiderId })
+            });
+            const riderJson = await riderRes.json();
+            if (!riderRes.ok || !riderJson.success) {
+                showError('Error', riderJson.message || 'Failed to assign rider');
+                return;
+            }
+        }
+
+        if (riderLocationChanged && (normalizedRiderLocation || (normalizedRiderLatitude !== null && normalizedRiderLongitude !== null))) {
+            const locationBody = { location: normalizedRiderLocation };
+            if (normalizedRiderLatitude !== null && normalizedRiderLongitude !== null) {
+                locationBody.latitude = normalizedRiderLatitude;
+                locationBody.longitude = normalizedRiderLongitude;
+            }
+
+            const locationRes = await fetch(`${API_BASE}/api/orders/${orderId}/rider-location`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: JSON.stringify(locationBody)
+            });
+            const locationJson = await locationRes.json();
+            if (!locationRes.ok || !locationJson.success) {
+                showError('Error', locationJson.message || 'Failed to update rider location');
+                return;
+            }
+        }
+
+        captureOrderEditSnapshot(
+            {
+                user_id: normalizedCustomerId,
+                delivery_address: deliveryAddress,
+                special_instructions: specialInstructions,
+                status: normalizedStatus,
+                rider_id: normalizedRiderId,
+                rider_location: normalizedRiderLocation,
+                rider_latitude: normalizedRiderLatitude,
+                rider_longitude: normalizedRiderLongitude,
+                delivery_fee: normalizedDeliveryFee
+            },
+            items
+        );
+
+        showSuccess('Order Updated', 'Order updated successfully!');
+        hideModal('editOrderModal');
+        loadOrders();
+    } catch (error) {
+        console.error('Error updating order:', error);
+        showError('Error', 'Failed to update order');
+    }
+}
+
+async function saveOrderLegacy() {
     const form = document.getElementById('editOrderForm');
     const orderId = form.dataset.orderId;
     const formData = new FormData(form);

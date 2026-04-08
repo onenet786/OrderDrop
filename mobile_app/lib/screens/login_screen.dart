@@ -137,6 +137,19 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _continueAsGuest() async {
+    try {
+      await Provider.of<AuthProvider>(context, listen: false).guestLogin();
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/home');
+    } catch (e) {
+      if (mounted) {
+        Notifier.error(context, e.toString());
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -331,6 +344,37 @@ class _LoginScreenState extends State<LoginScreen> {
                                         letterSpacing: 1.2,
                                       ),
                                     ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: Selector<AuthProvider, bool>(
+                          selector: (_, auth) => auth.isLoading,
+                          builder: (context, isLoading, child) {
+                            return OutlinedButton.icon(
+                              onPressed: isLoading ? null : _continueAsGuest,
+                              icon: const Icon(Icons.person_outline),
+                              label: Text(
+                                _tr('Continue as Guest'),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: CustomerPalette.primaryDark,
+                                side: BorderSide(
+                                  color: CustomerPalette.primary.withValues(
+                                    alpha: 0.45,
+                                  ),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
                             );
                           },
                         ),

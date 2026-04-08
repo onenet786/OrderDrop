@@ -270,6 +270,7 @@ class NotificationProvider with ChangeNotifier {
       }
       if (!_isFirebaseMessagingReady || _firebaseMessaging == null) return;
       if (_authProvider == null || !_authProvider!.isAuthenticated) return;
+      if (_authProvider!.isGuest) return;
       final authToken = _authProvider!.token;
       if (authToken == null || authToken.trim().isEmpty) return;
 
@@ -304,7 +305,9 @@ class NotificationProvider with ChangeNotifier {
 
   void _updateSocketConnection() {
     // Connect if user is authenticated (Admin, Rider, or User)
-    if (_authProvider != null && _authProvider!.isAuthenticated) {
+    if (_authProvider != null &&
+        _authProvider!.isAuthenticated &&
+        !_authProvider!.isGuest) {
       if (_socket == null) {
         _initSocket();
       } else if (_socket!.connected) {

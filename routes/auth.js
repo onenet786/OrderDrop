@@ -100,6 +100,42 @@ function buildAccessTokenPayload(account) {
     user_type: account.user_type,
     first_name: account.first_name,
     last_name: account.last_name,
+    is_guest: isTrue(account.is_guest),
+  };
+}
+
+function buildGuestSession() {
+  const guestId = crypto.randomInt(100000000, 999999999);
+  return {
+    id: guestId,
+    email: `guest-${guestId}@guest.servenow.local`,
+    user_type: "guest",
+    first_name: "Guest",
+    last_name: "User",
+    is_guest: true,
+  };
+}
+
+function buildGuestProfileFromToken(user) {
+  const firstName = String(user?.first_name || "Guest").trim() || "Guest";
+  const lastName = String(user?.last_name || "User").trim() || "User";
+  const fallbackId = Number.parseInt(String(user?.id || ""), 10);
+  const guestId = Number.isInteger(fallbackId) && fallbackId > 0
+    ? fallbackId
+    : crypto.randomInt(100000000, 999999999);
+
+  return {
+    id: guestId,
+    first_name: firstName,
+    last_name: lastName,
+    email:
+      String(user?.email || "").trim() ||
+      `guest-${guestId}@guest.servenow.local`,
+    user_type: "guest",
+    is_guest: true,
+    phone: null,
+    address: null,
+    date_of_birth: null,
   };
 }
 
@@ -488,6 +524,47 @@ router.post(
 
 // Login user (handles both users and riders)
 router.post(
+  "/guest-login",
+  async (req, res) => {
+    try {
+      const guest = buildGuestSession();
+      const token = jwt.sign(
+        buildAccessTokenPayload(guest),
+        process.env.JWT_SECRET,
+        { expiresIn: ACCESS_TOKEN_EXPIRE }
+      );
+
+      try {
+        const ip =
+          req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+        await req.db.execute(
+          "INSERT INTO login_logs (user_id, user_type, ip_address) VALUES (?, ?, ?)",
+          [guest.id, "guest", ip]
+        );
+      } catch (e) {
+        console.error("Guest login log error:", e);
+      }
+
+      return res.json({
+        success: true,
+        message: "Guest login successful",
+        token,
+        refresh_token: null,
+        user: buildGuestProfileFromToken(guest),
+      });
+    } catch (error) {
+      console.error("Guest login error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Guest login failed",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Login user (handles both users and riders)
+router.post(
   "/login",
   [
     body("email")
@@ -693,6 +770,13 @@ router.get("/me", authenticateToken, async (req, res) => {
           email: req.user.email,
           user_type: req.user.user_type || "admin",
         },
+      });
+    }
+
+    if (req.user.user_type === "guest" || isTrue(req.user.is_guest)) {
+      return res.json({
+        success: true,
+        user: buildGuestProfileFromToken(req.user),
       });
     }
 
@@ -942,6 +1026,13 @@ router.get("/profile", authenticateToken, async (req, res) => {
           email: req.user.email,
           user_type: req.user.user_type || "admin",
         },
+      });
+    }
+
+    if (req.user.user_type === "guest" || isTrue(req.user.is_guest)) {
+      return res.json({
+        success: true,
+        user: buildGuestProfileFromToken(req.user),
       });
     }
 

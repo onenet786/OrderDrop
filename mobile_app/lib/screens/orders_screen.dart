@@ -82,7 +82,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
 
     try {
-      final token = Provider.of<AuthProvider>(context, listen: false).token;
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      if (auth.isGuest) {
+        if (!mounted) return;
+        setState(() {
+          _orders = [];
+          _isLoading = false;
+          _error = _tr(
+            'Guest users need to register before they can view order history.',
+          );
+        });
+        return;
+      }
+
+      final token = auth.token;
       if (token == null) return;
 
       final orders = await ApiService.getMyOrders(token);

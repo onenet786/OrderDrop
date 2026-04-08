@@ -1,10 +1,10 @@
 {
-  "name": "servenow-backend",
+  "name": "orderdrop-backend",
   "version": "1.0.0",
-  "description": "Backend API for ServeNow grocery delivery platform",
+  "description": "Backend API for the OrderDrop local delivery platform",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js --port 3003",
+    "start": "node server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
@@ -68,6 +68,6 @@
     "mysql",
     "express"
   ],
-  "author": "ServeNow Team",
+  "author": "OrderDrop Team",
   "license": "MIT"
 }

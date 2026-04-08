@@ -59,6 +59,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
 
+  Future<void> _promptGuestRegistration() async {
+    final shouldRegister = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_tr('Register Required')),
+        content: Text(
+          _tr(
+            'You are using guest mode. Please register your account before placing an order.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(_tr('Cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(_tr('Register')),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRegister == true && mounted) {
+      Navigator.of(context).pushNamed('/register');
+    }
+  }
+
   Future<void> _loadDeliveryFeeConfig() async {
     try {
       final data = await ApiService.getDeliveryFeeConfig();
@@ -268,6 +296,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
     if (cart.items.isEmpty) return;
+    if (auth.isGuest) {
+      await _promptGuestRegistration();
+      return;
+    }
 
     final grandTotal = _calculateGrandTotal(cart);
 
@@ -466,6 +498,50 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Selector<AuthProvider, bool>(
+                          selector: (_, auth) => auth.isGuest,
+                          builder: (context, isGuest, child) {
+                            if (!isGuest) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.orange.shade200,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: Colors.orange.shade800,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        _tr(
+                                          'Guest mode is for browsing only. Register to place your order.',
+                                        ),
+                                        style: TextStyle(
+                                          color: Colors.orange.shade900,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: _promptGuestRegistration,
+                                      child: Text(_tr('Register')),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                         // Order Summary Card
                         Card(
                           elevation: 2,

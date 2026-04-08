@@ -24,7 +24,6 @@ class _StoreScreenState extends State<StoreScreen> {
   final Map<int, String> _selectedVariantKeyByProductId = {};
   Map<String, dynamic>? _globalStatus;
   Timer? _globalStatusRefreshTimer;
-  Timer? _globalStatusPollTimer;
   bool _isUrdu = false;
 
   String _variantKey(ProductVariant v) {
@@ -45,9 +44,6 @@ class _StoreScreenState extends State<StoreScreen> {
     _loadLanguagePreference();
     _storeDetailsFuture = ApiService.getStoreDetails(widget.storeId);
     _loadGlobalStatus();
-    _globalStatusPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _loadGlobalStatus();
-    });
   }
 
   Future<void> _loadLanguagePreference() async {
@@ -80,7 +76,6 @@ class _StoreScreenState extends State<StoreScreen> {
   @override
   void dispose() {
     _globalStatusRefreshTimer?.cancel();
-    _globalStatusPollTimer?.cancel();
     super.dispose();
   }
 

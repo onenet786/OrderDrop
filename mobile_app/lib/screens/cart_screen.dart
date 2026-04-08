@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
 import '../theme/customer_palette.dart';
 import '../utils/customer_language.dart';
@@ -29,6 +30,34 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
+
+  Future<void> _promptGuestRegistration() async {
+    final shouldRegister = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_tr('Register Required')),
+        content: Text(
+          _tr(
+            'Guest users can add items to cart, but registration is required before placing an order.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(_tr('Later')),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(_tr('Register')),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRegister == true && mounted) {
+      Navigator.of(context).pushNamed('/register');
+    }
+  }
 
   Future<void> _refresh() async {
     await Future.delayed(const Duration(milliseconds: 500));
@@ -302,6 +331,14 @@ class _CartScreenState extends State<CartScreen> {
                             foregroundColor: Colors.white,
                           ),
                           onPressed: () {
+                            final auth = Provider.of<AuthProvider>(
+                              context,
+                              listen: false,
+                            );
+                            if (auth.isGuest) {
+                              _promptGuestRegistration();
+                              return;
+                            }
                             Navigator.of(context).pushNamed('/checkout');
                           },
                           child: Text(

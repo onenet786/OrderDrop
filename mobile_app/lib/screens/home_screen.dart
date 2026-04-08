@@ -33,7 +33,6 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _supportContact;
   Timer? _globalStatusRefreshTimer;
   Timer? _livePromotionsRefreshTimer;
-  Timer? _globalStatusPollTimer;
   Timer? _promoCarouselTimer;
   final TextEditingController _searchController = TextEditingController();
   final PageController _promoController = PageController();
@@ -48,9 +47,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _fetchData();
-    _globalStatusPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _refreshGlobalStatusOnly();
-    });
     _startPromoAutoScroll();
     _searchController.addListener(_onSearchChanged);
   }
@@ -59,7 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _globalStatusRefreshTimer?.cancel();
     _livePromotionsRefreshTimer?.cancel();
-    _globalStatusPollTimer?.cancel();
     _promoCarouselTimer?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
@@ -295,6 +290,32 @@ class _HomeScreenState extends State<HomeScreen> {
       _scheduleLivePromotionsRefresh(promotions);
       _tryShowLaunchFlash();
     } catch (_) {}
+  }
+
+  Future<void> _promptGuestRegistration() async {
+    final shouldRegister = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Register Required'),
+        content: const Text(
+          'Guest mode lets you browse stores and add items to cart. Please register to view your orders or place one.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Later'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Register'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRegister == true && mounted) {
+      Navigator.of(context).pushNamed('/register');
+    }
   }
 
   Future<void> _makeCall(String phoneNumber) async {
@@ -994,12 +1015,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
     final crossAxisCount = isLandscape ? 4 : 2;
+    final auth = Provider.of<AuthProvider>(context);
+    final isGuest = auth.isGuest;
 
     return Scaffold(
         appBar: AppBar(
           title: const Text('ServeNow'),
           actions: [
-            const NotificationBellWidget(),
+            if (!isGuest) const NotificationBellWidget(),
             Consumer<CartProvider>(
               builder: (ctx, cart, child) => Stack(
                 alignment: Alignment.center,
@@ -1037,7 +1060,13 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             TextButton.icon(
-              onPressed: () => Navigator.of(context).pushNamed('/orders'),
+              onPressed: () {
+                if (isGuest) {
+                  _promptGuestRegistration();
+                  return;
+                }
+                Navigator.of(context).pushNamed('/orders');
+              },
               style: TextButton.styleFrom(
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1100,7 +1129,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Column(
                         children: [
                           Text(
-                            'Welcome, ${user.firstName} ${user.lastName}!',
+                            user.isGuest
+                                ? 'Welcome, Guest User!'
+                                : 'Welcome, ${user.firstName} ${user.lastName}!',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -1108,6 +1139,27 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
+                          if (user.isGuest) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Browse freely now, then register before checkout.',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.92),
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 10),
+                            OutlinedButton(
+                              onPressed: () =>
+                                  Navigator.of(context).pushNamed('/register'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.white70),
+                              ),
+                              child: const Text('Register to Order'),
+                            ),
+                          ],
                           const SizedBox(height: 12),
                           Row(
                             children: [
