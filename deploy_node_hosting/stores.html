@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stores - OrderDrop</title>
+    <link rel="stylesheet" href="css/user.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="images/servenow_brand_logo.png" alt="OrderDrop" onerror="this.src='https://placehold.co/32x32/667eea/ffffff?text=OD'">
+                    <span>OrderDrop</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="stores.html" class="active"><i class="fas fa-store"></i> Stores</a></li>
+                    <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+                    <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
+                    <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount" class="badge badge-credit" style="display: none;">0</span></a></li>
+                    <li><a href="login.html"><i class="fas fa-sign-in-alt"></i> Login</a></li>
+                    <li><a href="register.html"><i class="fas fa-user-plus"></i> Register</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Header -->
+        <header class="app-header">
+            <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar navigation" title="Toggle sidebar navigation">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-right">
+                <div class="user-profile">
+                    <span>Welcome</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-content">
+            <div id="toastContainer" class="toast-container"></div>
+
+            <div class="page-header">
+                <h2 class="page-title">Find Stores Near You</h2>
+                <p class="page-subtitle">Search by location, compare nearby options, and jump into the stores that can actually serve your area.</p>
+            </div>
+
+            <section id="globalDeliveryWidget" class="global-delivery-widget" style="display: none;"></section>
+
+            <section class="location-filter section-gap-lg">
+                <div class="search-container search-container--stacked">
+                    <form id="locationForm" class="location-filter-form">
+                        <div class="form-group location-filter-field">
+                            <label for="location">Enter your location or use current location:</label>
+                            <input type="text" id="location" name="location" placeholder="Enter city, zip code, or address" class="form-control">
+                        </div>
+                        <div class="page-actions">
+                            <button type="button" id="getLocation" class="btn btn-primary">
+                                <i class="fas fa-location-arrow"></i> Use My Location
+                            </button>
+                            <button type="submit" class="btn btn-secondary">
+                                <i class="fas fa-search"></i> Search
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <section class="stores-list">
+                <h3 class="page-title">All Stores</h3>
+                <div class="store-grid" id="allStores">
+                    <!-- Stores will be loaded dynamically -->
+                </div>
+            </section>
+
+            <footer class="app-footer">
+                <p>&copy; 2026 OrderDrop. All rights reserved. Powered by OneNet Solutions Pakistan.</p>
+            </footer>
+        </main>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/app.js?v=20"></script>
+    <script src="js/notifications.js"></script>
+    <script src="js/stores.js?v=2"></script>
+    <script>
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const appSidebar = document.getElementById('appSidebar');
+
+        if (sidebarToggle && appSidebar) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appSidebar.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 1024 && 
+                    appSidebar.classList.contains('active') && 
+                    !appSidebar.contains(e.target) && 
+                    e.target !== sidebarToggle) {
+                    appSidebar.classList.remove('active');
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+
+
+

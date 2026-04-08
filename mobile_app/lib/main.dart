@@ -13,7 +13,6 @@ import 'providers/notification_provider.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
-import 'screens/home_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'screens/rider_dashboard_screen.dart';
 import 'screens/store_owner_dashboard_screen.dart';
@@ -31,6 +30,7 @@ import 'screens/change_password_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/ui_test_home_screen.dart';
 import 'screens/customer_dashboard_test_screen.dart';
+import 'screens/customer_reference_screen.dart';
 import 'screens/customer_tile_demo_screen.dart';
 import 'theme/customer_palette.dart';
 import 'services/notifier.dart';
@@ -220,7 +220,7 @@ class MyApp extends StatelessWidget {
         routes: {
           '/login': (context) => const LoginScreen(),
           '/register': (context) => const RegisterScreen(),
-          '/home': (context) => const CustomerDashboardTestScreen(),
+          '/home': (context) => const CustomerReferenceScreen(),
           '/admin': (context) => const AdminDashboardScreen(),
           '/store-balances': (context) => const StoreBalancesScreen(),
           '/rider': (context) => const RiderDashboardScreen(),
@@ -228,7 +228,7 @@ class MyApp extends StatelessWidget {
           '/orders': (context) => const OrdersScreen(),
           '/cart': (context) => const CartScreen(),
           '/checkout': (context) => const CheckoutScreen(),
-          '/wallet': (context) => const HomeScreen(), // Redirect to home
+          '/wallet': (context) => const CustomerReferenceScreen(),
           '/inventory-report': (context) => const InventoryReportScreen(),
           '/manage-stores': (context) => const ManageStoresScreen(),
           '/manage-products': (context) => const ManageProductsScreen(),

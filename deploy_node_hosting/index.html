@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OrderDrop - Local Delivery</title>
+    <link rel="stylesheet" href="css/user.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="images/servenow_brand_logo.png" alt="OrderDrop" onerror="this.src='https://placehold.co/32x32/667eea/ffffff?text=OD'">
+                    <span>OrderDrop</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li><a href="index.html" class="active"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
+                    <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+                    <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
+                    <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount" class="badge badge-credit" style="display: none;">0</span></a></li>
+                    <li><a href="login.html"><i class="fas fa-sign-in-alt"></i> Login</a></li>
+                    <li><a href="register.html"><i class="fas fa-user-plus"></i> Register</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Header -->
+        <header class="app-header">
+            <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar navigation" title="Toggle sidebar navigation">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-right">
+                <!-- Notification Bell Icon -->
+                <div class="notification-bell-container">
+                    <button type="button" class="notification-bell" id="notificationBellBtn" title="Notifications">
+                        <i class="fas fa-bell"></i>
+                        <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+                    </button>
+                    <!-- Notification Dropdown Panel -->
+                    <div class="notification-dropdown" id="notificationDropdown">
+                        <div class="notification-header">
+                            <h3>Notifications</h3>
+                            <button type="button" class="btn-small" id="clearNotificationsBtn" title="Clear all">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                        <div class="notification-list" id="notificationList">
+                            <div class="notification-empty">
+                                <i class="fas fa-bell-slash"></i>
+                                <p>No notifications</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="user-profile">
+                    <span>Welcome</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-content">
+            <div id="toastContainer" class="toast-container"></div>
+
+            <section class="hero">
+                <div class="hero-shell">
+                    <div class="hero-copy">
+                        <span class="hero-kicker">Fast local delivery, one clean dashboard</span>
+                        <h2>Everything your neighborhood needs, delivered with less friction.</h2>
+                        <p>Order fresh groceries, cooked food, and household essentials from registered stores near you, with live availability and a smoother ordering experience from search to checkout.</p>
+                        <div class="hero-actions">
+                            <button id="getLocation">Find Stores Near Me</button>
+                            <a href="stores.html" class="hero-secondary-link">
+                                <i class="fas fa-store"></i>
+                                Browse All Stores
+                            </a>
+                        </div>
+                        <div class="hero-stats" aria-label="OrderDrop highlights">
+                            <div class="hero-stat">
+                                <strong>Live stores</strong>
+                                <span>Real-time listings from your area</span>
+                            </div>
+                            <div class="hero-stat">
+                                <strong>Flexible orders</strong>
+                                <span>Groceries, cooked food, and daily needs</span>
+                            </div>
+                            <div class="hero-stat">
+                                <strong>Faster repeat buying</strong>
+                                <span>Wallet, cart, and order history in one place</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hero-panel">
+                        <div class="hero-panel-card">
+                            <span class="hero-panel-label">Today on OrderDrop</span>
+                            <h3>Search quickly. Compare confidently. Order locally.</h3>
+                            <ul class="hero-panel-list">
+                                <li><i class="fas fa-location-dot"></i><span>Use location to find nearby stores faster.</span></li>
+                                <li><i class="fas fa-basket-shopping"></i><span>Mix essentials and prepared food from trusted sellers.</span></li>
+                                <li><i class="fas fa-receipt"></i><span>Track orders and payments without leaving your account.</span></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="globalDeliveryWidget" class="global-delivery-widget" style="display: none;"></section>
+
+            <section class="store-filters-section">
+                <div class="search-container">
+                    <div class="search-input-wrapper">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" id="storeSearch" class="search-input" placeholder="Search products (e.g., Pizza, Milk)">
+                    </div>
+                    <div class="search-select-wrapper">
+                        <i class="fas fa-filter select-icon"></i>
+                        <select id="storeCategoryFilter" class="search-select search-select--with-icon">
+                            <option value="">All Categories</option>
+                            <!-- Populated dynamically -->
+                        </select>
+                        <i class="fas fa-chevron-down dropdown-icon"></i>
+                    </div>
+                    <button class="btn btn-secondary search-clear-btn" id="clearStoreFiltersBtn">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+            </section>
+
+            <div id="categoriesSection">
+                <section class="categories">
+                    <div class="section-heading">
+                        <span class="section-eyebrow">Explore</span>
+                        <h3>Shop by Category</h3>
+                        <p class="section-copy">Jump straight into the kind of order you want to place today.</p>
+                    </div>
+                    <div class="category-grid">
+                        <!-- Static Fallback Categories -->
+                        <div class="category-card">
+                            <img src="images/vegetables.jpg" alt="Vegetables" onerror="this.src='https://placehold.co/300x200?text=Vegetables'">
+                            <div class="category-card-content">
+                                <h4>Vegetables</h4>
+                                <a href="stores.html?category=vegetables">Shop Now</a>
+                            </div>
+                        </div>
+                        <div class="category-card">
+                            <img src="images/cooked-food.jpg" alt="Cooked Food" onerror="this.src='https://placehold.co/300x200?text=Cooked+Food'">
+                            <div class="category-card-content">
+                                <h4>Cooked Food</h4>
+                                <a href="stores.html?category=cooked-food">Shop Now</a>
+                            </div>
+                        </div>
+                        <div class="category-card">
+                            <img src="images/pizza.jpg" alt="Household Items" onerror="this.src='https://placehold.co/300x200?text=Household'">
+                            <div class="category-card-content">
+                                <h4>Household Items</h4>
+                                <a href="stores.html?category=household">Shop Now</a>
+                            </div>
+                        </div>
+                        <div class="category-card">
+                            <img src="images/burgers.jpg" alt="Groceries" onerror="this.src='https://placehold.co/300x200?text=Groceries'">
+                            <div class="category-card-content">
+                                <h4>Groceries</h4>
+                                <a href="stores.html?category=groceries">Shop Now</a>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div id="searchResultsSection" class="hidden" style="display: none;">
+                <section class="featured-stores section-offset-top">
+                    <div class="section-heading">
+                        <span class="section-eyebrow">Results</span>
+                        <h3>Matching Results</h3>
+                        <p class="section-copy">Stores and products that match your current search and filter choices.</p>
+                    </div>
+                    <div class="store-grid" id="searchResultsGrid">
+                        <!-- Search results will be loaded here -->
+                    </div>
+                </section>
+            </div>
+
+            <section class="featured-stores section-offset-top" id="allStoresSection">
+                <div class="section-heading">
+                    <span class="section-eyebrow">Discover</span>
+                    <h3>All Stores</h3>
+                    <p class="section-copy">Browse the latest registered stores and scroll through everything currently available.</p>
+                </div>
+                <div class="scroll-wrapper">
+                    <button id="scrollLeftBtn" class="scroll-arrow left-arrow" style="display: none;"><i class="fas fa-chevron-left"></i></button>
+                    <div class="horizontal-scroll-container" id="allStoresHorizontal">
+                        <!-- All stores will be loaded dynamically here -->
+                    </div>
+                    <button id="scrollRightBtn" class="scroll-arrow right-arrow"><i class="fas fa-chevron-right"></i></button>
+                </div>
+            </section>
+
+            <footer class="app-footer">
+                <p>&copy; 2026 OrderDrop. All rights reserved. Powered by OneNet Solutions Pakistan.</p>
+            </footer>
+        </main>
+    </div>
+
+    <!-- Scroll to Top Button -->
+    <button class="scroll-to-top" id="scrollToTop" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
+        <i class="fas fa-arrow-up"></i>
+    </button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/app.js?v=20"></script>
+    <script src="js/notifications.js"></script>
+    <script>
+        // Sidebar Toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const appSidebar = document.getElementById('appSidebar');
+
+        if (sidebarToggle && appSidebar) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appSidebar.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 1024 && 
+                    appSidebar.classList.contains('active') && 
+                    !appSidebar.contains(e.target) && 
+                    e.target !== sidebarToggle) {
+                    appSidebar.classList.remove('active');
+                }
+            });
+        }
+
+        // Scroll to Top functionality
+        const scrollToTopBtn = document.getElementById('scrollToTop');
+        const appContent = document.querySelector('.app-content');
+
+        if (scrollToTopBtn && appContent) {
+            appContent.addEventListener('scroll', function() {
+                if (appContent.scrollTop > 300) {
+                    scrollToTopBtn.style.display = 'flex';
+                } else {
+                    scrollToTopBtn.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+
+
+

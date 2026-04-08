@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - OrderDrop</title>
+    <link rel="stylesheet" href="css/user.css?v=4">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="icon" type="image/png" href="images/servenow_brand_logo.png">
+    <link rel="stylesheet" href="css/aginv-theme.css?v=1" />
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="app-sidebar" id="appSidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="images/servenow_brand_logo.png" alt="OrderDrop" onerror="this.src='https://placehold.co/32x32/667eea/ffffff?text=OD'">
+                    <span>OrderDrop</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li><a href="index.html"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="stores.html"><i class="fas fa-store"></i> Stores</a></li>
+                    <li><a href="orders.html"><i class="fas fa-box"></i> Orders</a></li>
+                    <li><a href="wallet.html"><i class="fas fa-wallet"></i> Wallet</a></li>
+                    <li><a href="cart.html"><i class="fas fa-shopping-cart"></i> Cart <span id="cartCount" class="badge badge-credit" style="display: none;">0</span></a></li>
+                    <li><a href="login.html"><i class="fas fa-sign-in-alt"></i> Login</a></li>
+                    <li><a href="register.html" class="active"><i class="fas fa-user-plus"></i> Register</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Header -->
+        <header class="app-header">
+            <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar navigation" title="Toggle sidebar navigation">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-right">
+                <div class="user-profile">
+                    <span>Register</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-content">
+            <!-- Toast Notification Container -->
+            <div id="toastContainer" class="toast-container"></div>
+
+            <div class="auth-wrapper">
+                <div class="auth-card auth-card--wide">
+                    <div class="auth-header">
+                        <img src="images/servenow_brand_logo.png" alt="OrderDrop Logo">
+                        <h2>Create Account</h2>
+                    </div>
+                    
+                    <form id="registerForm" action="/api/auth/register" method="post">
+                        <div class="form-grid-two">
+                            <div class="form-group">
+                                <label for="firstName">First Name</label>
+                                <input type="text" id="firstName" name="firstName" required placeholder="First Name">
+                            </div>
+                            <div class="form-group">
+                                <label for="lastName">Last Name</label>
+                                <input type="text" id="lastName" name="lastName" required placeholder="Last Name">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="email">Email Address</label>
+                            <input type="email" id="email" name="email" required placeholder="name@example.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="phone">Phone Number</label>
+                            <input type="tel" id="phone" name="phone" required placeholder="0300 1234567">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="address">Delivery Address</label>
+                            <textarea id="address" name="address" required placeholder="Full delivery address" rows="3"></textarea>
+                        </div>
+
+                        <div class="form-grid-two">
+                            <div class="form-group">
+                                <label for="password">Password</label>
+                                <input type="password" id="password" name="password" required placeholder="Create password">
+                            </div>
+                            <div class="form-group">
+                                <label for="confirmPassword">Confirm Password</label>
+                                <input type="password" id="confirmPassword" name="confirmPassword" required placeholder="Confirm password">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block">
+                            <i class="fas fa-user-plus"></i> Create Account
+                        </button>
+                    </form>
+
+                    <div class="auth-footer">
+                        <p>Already have an account? <a href="login.html">Login here</a></p>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="app-footer">
+                <p>&copy; 2026 OrderDrop. All rights reserved. Powered by OneNet Solutions Pakistan.</p>
+            </footer>
+        </main>
+    </div>
+
+    <script src="js/app.js?v=20"></script>
+    <script>
+        // Sidebar Toggle Logic
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const appSidebar = document.getElementById('appSidebar');
+        const appContent = document.querySelector('.app-content');
+
+        if (sidebarToggle && appSidebar) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                appSidebar.classList.toggle('active');
+            });
+
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', (e) => {
+                if (window.innerWidth <= 1024) {
+                    if (!appSidebar.contains(e.target) && !sidebarToggle.contains(e.target)) {
+                        appSidebar.classList.remove('active');
+                    }
+                }
+            });
+        }
+
+        // Update cart count if available
+        document.addEventListener('DOMContentLoaded', () => {
+             if (typeof updateCartCount === 'function') {
+                updateCartCount();
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+

@@ -1,13 +1,14 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:servenow/services/notifier.dart';
+
+import '../models/cart_item.dart';
 import '../models/product.dart';
-import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
-import '../models/cart_item.dart';
-import 'package:servenow/services/notifier.dart';
+import '../services/api_service.dart';
 import '../utils/customer_language.dart';
 
 class StoreScreen extends StatefulWidget {
@@ -25,25 +26,20 @@ class _StoreScreenState extends State<StoreScreen> {
   Map<String, dynamic>? _globalStatus;
   Timer? _globalStatusRefreshTimer;
   bool _isUrdu = false;
-
-  String _variantKey(ProductVariant v) {
-    return '${v.sizeId ?? 'n'}:${v.unitId ?? 'n'}';
-  }
-
-  int _crossAxisCountFor(double width, Orientation orientation) {
-    if (orientation == Orientation.landscape) {
-      if (width >= 1000) return 3;
-      return 2;
-    }
-    return 2;
-  }
+  int? _selectedProductId;
 
   @override
   void initState() {
     super.initState();
-    _loadLanguagePreference();
     _storeDetailsFuture = ApiService.getStoreDetails(widget.storeId);
+    _loadLanguagePreference();
     _loadGlobalStatus();
+  }
+
+  @override
+  void dispose() {
+    _globalStatusRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadLanguagePreference() async {
@@ -51,8 +47,6 @@ class _StoreScreenState extends State<StoreScreen> {
     if (!mounted) return;
     setState(() => _isUrdu = isUrdu);
   }
-
-  String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
 
   Future<void> _refresh() async {
     setState(() {
@@ -73,28 +67,6 @@ class _StoreScreenState extends State<StoreScreen> {
     } catch (_) {}
   }
 
-  @override
-  void dispose() {
-    _globalStatusRefreshTimer?.cancel();
-    super.dispose();
-  }
-
-  bool _toBool(dynamic value) {
-    if (value is bool) return value;
-    if (value is num) return value != 0;
-    if (value is String) {
-      final normalized = value.trim().toLowerCase();
-      return normalized == 'true' || normalized == '1' || normalized == 'yes';
-    }
-    return false;
-  }
-
-  DateTime? _parseDateTime(dynamic raw) {
-    final value = (raw ?? '').toString().trim();
-    if (value.isEmpty) return null;
-    return DateTime.tryParse(value)?.toLocal();
-  }
-
   void _scheduleGlobalStatusRefresh(Map<String, dynamic>? status) {
     _globalStatusRefreshTimer?.cancel();
     if (status == null) return;
@@ -109,32 +81,60 @@ class _StoreScreenState extends State<StoreScreen> {
     if (candidates.isEmpty) return;
 
     candidates.sort();
-    final nextTick = candidates.first;
-    final delay = nextTick.difference(now) + const Duration(seconds: 1);
-    _globalStatusRefreshTimer = Timer(delay, _loadGlobalStatus);
+    _globalStatusRefreshTimer = Timer(
+      candidates.first.difference(now) + const Duration(seconds: 1),
+      _loadGlobalStatus,
+    );
+  }
+
+  String _tr(String text) => CustomerLanguage.tr(_isUrdu, text);
+
+  String _variantKey(ProductVariant variant) {
+    return '${variant.sizeId ?? 'n'}:${variant.unitId ?? 'n'}';
+  }
+
+  ProductVariant? _selectedVariantFor(Product product) {
+    if (product.sizeVariants.isEmpty) return null;
+    final selectedKey = _selectedVariantKeyByProductId[product.id];
+    if (selectedKey == null) return product.sizeVariants.first;
+    return product.sizeVariants.firstWhere(
+      (variant) => _variantKey(variant) == selectedKey,
+      orElse: () => product.sizeVariants.first,
+    );
+  }
+
+  bool _toBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      return normalized == 'true' || normalized == '1' || normalized == 'yes';
+    }
+    return false;
+  }
+
+  DateTime? _parseDateTime(dynamic raw) {
+    final text = (raw ?? '').toString().trim();
+    if (text.isEmpty) return null;
+    return DateTime.tryParse(text)?.toLocal();
   }
 
   bool _isGlobalWindowActive(Map<String, dynamic> status) {
     if (_toBool(status['is_window_active'])) return true;
-    final startRaw = (status['start_at'] ?? '').toString().trim();
-    final endRaw = (status['end_at'] ?? '').toString().trim();
-    if (startRaw.isEmpty || endRaw.isEmpty) return true;
-    final start = DateTime.tryParse(startRaw);
-    final end = DateTime.tryParse(endRaw);
+    final start = DateTime.tryParse((status['start_at'] ?? '').toString());
+    final end = DateTime.tryParse((status['end_at'] ?? '').toString());
     if (start == null || end == null) return true;
     final now = DateTime.now();
     return now.isAfter(start) && now.isBefore(end);
   }
 
   bool _isGlobalStatusVisible(Map<String, dynamic>? status) {
-    if (status == null) return false;
-    if (!_toBool(status['is_enabled'])) return false;
+    if (status == null || !_toBool(status['is_enabled'])) return false;
     return _isGlobalWindowActive(status);
   }
 
   bool _isGlobalOrderingBlocked(Map<String, dynamic>? status) {
-    if (!_isGlobalStatusVisible(status)) return false;
-    if (status == null) return false;
+    if (!_isGlobalStatusVisible(status) || status == null) return false;
     if (_toBool(status['block_ordering_active'])) return true;
     return _toBool(status['block_ordering']) && _isGlobalWindowActive(status);
   }
@@ -142,100 +142,83 @@ class _StoreScreenState extends State<StoreScreen> {
   String _globalStatusMessage(Map<String, dynamic>? status) {
     if (status == null) return _tr('Ordering is temporarily unavailable.');
     final message = (status['status_message'] ?? '').toString().trim();
-    final when = _formatDeliveryWindow(status['start_at'], status['end_at']);
-    if (message.isNotEmpty && when.isNotEmpty) return '$message ($when)';
-    if (message.isNotEmpty) return message;
-    if (when.isNotEmpty) return '${_tr('Delivery update')}: $when';
     final title = (status['title'] ?? '').toString().trim();
+    if (message.isNotEmpty) return message;
     if (title.isNotEmpty) return title;
     return _tr('Ordering is temporarily unavailable.');
   }
 
-  String _formatDeliveryWindow(dynamic startRaw, dynamic endRaw) {
-    final start = DateTime.tryParse((startRaw ?? '').toString());
-    final end = DateTime.tryParse((endRaw ?? '').toString());
-    if (start == null || end == null) return '';
-    final startLocal = start.toLocal();
-    final endLocal = end.toLocal();
-    return '${startLocal.toString().substring(0, 16)} - ${endLocal.toString().substring(0, 16)}';
+  String _formatPrice(double value) {
+    return value.toStringAsFixed(value % 1 == 0 ? 0 : 2);
   }
 
-  List<List<T>> _chunk<T>(List<T> list, int size) {
-    return List.generate(
-      (list.length / size).ceil(),
-      (i) => list.sublist(
-        i * size,
-        (i + 1) * size > list.length ? list.length : (i + 1) * size,
-      ),
-    );
+  String _formatTimeOnly(dynamic time) {
+    if (time == null) return '--:--';
+    final parts = time.toString().split(':');
+    if (parts.length >= 2) return '${parts[0]}:${parts[1]}';
+    return time.toString();
   }
 
-  void _addToCart(
-    BuildContext context,
-    Product product,
-    ProductVariant? variant, {
-    required bool isOpen,
-    required bool isGlobalBlocked,
-  }) {
+  int? _discountPercent(Product product, ProductVariant? variant) {
+    final current = variant?.effectivePrice ?? product.effectivePrice;
+    final original = variant?.price ?? product.price;
+    if (original <= 0 || current >= original) return null;
+    return (((original - current) / original) * 100).round();
+  }
+
+  List<String> _productFacts(Product product, ProductVariant? variant, Map<String, dynamic> store) {
+    final facts = <String>[];
+    final description = (product.description ?? '').trim();
+    if (description.isNotEmpty) {
+      facts.addAll(description.split(RegExp(r'[\r\n]+')).map((line) => line.replaceFirst(RegExp(r'^[\s\-•]+'), '').trim()).where((line) => line.isNotEmpty));
+    }
+    if ((variant?.displayLabel ?? '').trim().isNotEmpty) {
+      facts.add('Pack size: ${variant!.displayLabel}');
+    }
+    if ((product.categoryName ?? '').trim().isNotEmpty) {
+      facts.add('Category: ${product.categoryName!.trim()}');
+    }
+    if ((store['location'] ?? '').toString().trim().isNotEmpty) {
+      facts.add('Prepared and delivered from ${store['location']}');
+    }
+    if (product.stockQuantity > 0) {
+      facts.add(product.stockQuantity > 10 ? 'Fresh stock available today' : 'Only ${product.stockQuantity} left in stock');
+    }
+    if (facts.isEmpty) {
+      facts.addAll(['Fresh and ready for delivery', 'Quality checked before dispatch', 'Packed with care by the store']);
+    }
+    return facts.take(5).toList();
+  }
+
+  void _addToCart(BuildContext context, Product product, ProductVariant? variant, {required bool isOpen, required bool isGlobalBlocked}) {
     if (isGlobalBlocked) {
-      Notifier.error(
-        context,
-        _globalStatusMessage(_globalStatus),
-        duration: const Duration(seconds: 4),
-        sanitize: false,
-      );
+      Notifier.error(context, _globalStatusMessage(_globalStatus));
       return;
     }
-
     if (!isOpen) {
-      if (!mounted) return;
-      Notifier.error(
-        context,
-        _tr('This store is currently closed. You cannot place orders at this time.'),
-        duration: const Duration(seconds: 4),
-        sanitize: false,
-      );
-      Navigator.of(context).pop(); // Go back to main home screen
+      Notifier.error(context, _tr('This store is currently closed. You cannot place orders at this time.'));
       return;
     }
-
-    final cart = Provider.of<CartProvider>(context, listen: false);
-
     if (product.stockQuantity <= 0) {
       Notifier.info(context, _tr('Out of stock'));
       return;
     }
 
-    // Check if adding more exceeds stock
+    final cart = Provider.of<CartProvider>(context, listen: false);
     final existingItem = cart.items.firstWhere(
-      (item) =>
-          item.product.id == product.id &&
-          item.variant?.sizeId == variant?.sizeId &&
-          item.variant?.unitId == variant?.unitId,
+      (item) => item.product.id == product.id && item.variant?.sizeId == variant?.sizeId && item.variant?.unitId == variant?.unitId,
       orElse: () => CartItem(product: product, quantity: 0),
     );
-
     if (existingItem.quantity >= product.stockQuantity) {
-      Notifier.info(
-        context,
-        '${_tr('Only')} ${product.stockQuantity} ${_tr('available')}',
-      );
+      Notifier.info(context, '${_tr('Only')} ${product.stockQuantity} ${_tr('available')}');
       return;
     }
 
-    try {
-      final warning = cart.addItem(product, 1, variant: variant);
-      if (warning != null) {
-        Notifier.info(context, warning);
-      } else {
-        Notifier.success(
-          context,
-          _tr('Added to cart'),
-          duration: const Duration(seconds: 1),
-        );
-      }
-    } catch (e) {
-      Notifier.error(context, e.toString());
+    final warning = cart.addItem(product, 1, variant: variant);
+    if (warning != null) {
+      Notifier.info(context, warning);
+    } else {
+      Notifier.success(context, _tr('Added to cart'));
     }
   }
 
@@ -244,749 +227,261 @@ class _StoreScreenState extends State<StoreScreen> {
     return Directionality(
       textDirection: CustomerLanguage.textDirection(_isUrdu),
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(_tr('Store Details')),
-        actions: [
-          Consumer<CartProvider>(
-            builder: (ctx, cart, child) => Stack(
-              alignment: Alignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.shopping_cart),
-                  onPressed: () {
-                    Navigator.of(context).pushNamed('/cart');
-                  },
-                ),
-                if (cart.itemCount > 0)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
-                      child: Text(
-                        '${cart.itemCount}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _storeDetailsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('${_tr('Error')}: ${snapshot.error}'));
-          }
+        backgroundColor: const Color(0xFFD7ECD7),
+        body: Stack(
+          children: [
+            const _StoreBackdrop(),
+            FutureBuilder<Map<String, dynamic>>(
+              future: _storeDetailsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('${_tr('Error')}: ${snapshot.error}'));
+                }
 
-          final data = snapshot.data;
-          if (data == null || data['success'] != true) {
-            return Center(child: Text(_tr('Store not found')));
-          }
+                final data = snapshot.data;
+                if (data == null || data['success'] != true) {
+                  return Center(child: Text(_tr('Store not found')));
+                }
 
-          final store = data['store'];
-          final bool isOpen = store['is_open'] == true || store['is_open'] == 1;
-          final String closedReason =
-              (store['status_message'] ?? '').toString().trim();
-          final productsList = data['products'] as List<dynamic>? ?? [];
-          final products = productsList
-              .map((json) => Product.fromJson(json))
-              .toList();
-          final media = MediaQuery.of(context);
-          final crossAxisCount = _crossAxisCountFor(
-            media.size.width,
-            media.orientation,
-          );
+                final store = (data['store'] as Map).cast<String, dynamic>();
+                final products = (data['products'] as List<dynamic>? ?? []).map((json) => Product.fromJson(json)).toList();
+                final isOpen = store['is_open'] == true || store['is_open'] == 1;
+                final closedReason = (store['status_message'] ?? '').toString().trim();
+                final featuredProduct = products.isEmpty ? null : products.firstWhere((product) => product.id == _selectedProductId, orElse: () => products.first);
+                final featuredVariant = featuredProduct == null ? null : _selectedVariantFor(featuredProduct);
+                final suggestions = featuredProduct == null ? <Product>[] : products.where((product) => product.id != featuredProduct.id).take(6).toList();
+                final isGlobalBlocked = _isGlobalOrderingBlocked(_globalStatus);
+                final showGlobalBanner = _isGlobalStatusVisible(_globalStatus);
 
-          final chunkedProducts = _chunk(products, crossAxisCount);
-          final isGlobalBlocked = _isGlobalOrderingBlocked(_globalStatus);
-          final showGlobalBanner = _isGlobalStatusVisible(_globalStatus);
-
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        if (showGlobalBanner)
-                          Container(
-                            width: double.infinity,
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
+                return SafeArea(
+                  child: RefreshIndicator(
+                    onRefresh: _refresh,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 760),
+                          child: Container(
                             decoration: BoxDecoration(
-                              color: isGlobalBlocked
-                                  ? Colors.red.shade50
-                                  : Colors.orange.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isGlobalBlocked
-                                    ? Colors.red.shade200
-                                    : Colors.orange.shade200,
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  isGlobalBlocked
-                                      ? Icons.block
-                                      : Icons.info_outline,
-                                  color: isGlobalBlocked
-                                      ? Colors.red.shade700
-                                      : Colors.orange.shade800,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _globalStatusMessage(_globalStatus),
-                                    style: TextStyle(
-                                      color: isGlobalBlocked
-                                          ? Colors.red.shade800
-                                          : Colors.orange.shade900,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                              color: Colors.white.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(32),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF3C7B74).withValues(alpha: 0.14),
+                                  blurRadius: 28,
+                                  offset: const Offset(0, 18),
                                 ),
                               ],
                             ),
-                          ),
-                        Card(
-                          elevation: 4,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Status indicator on a separate row inside the card
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isOpen
-                                      ? Colors.green.shade100
-                                      : Colors.red.shade100,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    isOpen ? '🟢 ${_tr('OPEN')}' : '🔴 ${_tr('CLOSED')}',
-                                    style: TextStyle(
-                                      color: isOpen
-                                          ? Colors.green.shade800
-                                          : Colors.red.shade800,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (!isOpen && closedReason.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                                  child: Text(
-                                    closedReason,
-                                    style: TextStyle(
-                                      color: Colors.red.shade700,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              if (ApiService.getImageUrl(
-                                store['image_url'],
-                              ).isNotEmpty)
-                                Image.network(
-                                  ApiService.getImageUrl(store['image_url']),
-                                  height: 200,
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (ctx, err, _) => Container(
-                                    height: 200,
-                                    color: Colors.grey[300],
-                                    child: const Icon(
-                                      Icons.store,
-                                      size: 80,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      store['name'],
-                                      style: const TextStyle(
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.location_on,
-                                          size: 16,
-                                          color: Colors.grey,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            store['location'],
-                                            style: const TextStyle(
-                                              color: Colors.grey,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.access_time,
-                                          size: 16,
-                                          color: Colors.green,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Open: ${_formatTimeOnly(store['opening_time'])}',
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        const Icon(
-                                          Icons.timer_off,
-                                          size: 16,
-                                          color: Colors.red,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Close: ${_formatTimeOnly(store['closing_time'])}',
-                                          style: const TextStyle(
-                                            color: Colors.grey,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    if (store['rating'] != null)
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.star,
-                                            size: 16,
-                                            color: Colors.amber,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '${store['rating']}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildTopBar(context),
+                                  const SizedBox(height: 16),
+                                  if (showGlobalBanner) ...[
+                                    _StatusBanner(message: _globalStatusMessage(_globalStatus), blocked: isGlobalBlocked),
+                                    const SizedBox(height: 14),
                                   ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Text(
-                      _tr('Products'),
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 10)),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate((context, rowIndex) {
-                      final rowItems = chunkedProducts[rowIndex];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ...rowItems.map((product) {
-                              return Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                  ),
-                                  child: _buildProductCard(
-                                    context,
-                                    product,
-                                    crossAxisCount,
-                                    isOpen,
-                                    isGlobalBlocked,
-                                  ),
-                                ),
-                              );
-                            }),
-                            // Fill empty slots in the last row
-                            if (rowItems.length < crossAxisCount)
-                              ...List.generate(
-                                crossAxisCount - rowItems.length,
-                                (index) => const Expanded(child: SizedBox()),
-                              ),
-                          ],
-                        ),
-                      );
-                    }, childCount: chunkedProducts.length),
-                  ),
-                ),
-                const SliverPadding(padding: EdgeInsets.only(bottom: 50)),
-              ],
-            ),
-          );
-        },
-      ),
-    ));
-  }
-
-  String _formatTimeOnly(dynamic time) {
-    if (time == null) return '--:--';
-    final parts = time.toString().split(':');
-    if (parts.length >= 2) {
-      return '${parts[0]}:${parts[1]}';
-    }
-    return time.toString();
-  }
-
-
-  Widget _buildProductCard(
-    BuildContext context,
-    Product product,
-    int crossAxisCount,
-    bool isOpen,
-    bool isGlobalBlocked,
-  ) {
-    final variants = product.sizeVariants;
-    final selectedVariant = variants.isNotEmpty
-        ? (() {
-            final selectedKey = _selectedVariantKeyByProductId[product.id];
-            if (selectedKey == null) return variants.first;
-            return variants.firstWhere(
-              (v) => _variantKey(v) == selectedKey,
-              orElse: () => variants.first,
-            );
-          })()
-        : null;
-    final displayPrice = selectedVariant?.effectivePrice ?? product.effectivePrice;
-    final displayOriginalPrice = selectedVariant?.price ?? product.price;
-    final hasPromo =
-        displayPrice >= 0 && displayPrice + 0.001 < displayOriginalPrice;
-
-    if (crossAxisCount == 1) {
-      return Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Product Image
-              SizedBox(
-                width: 110,
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.horizontal(
-                    left: Radius.circular(12),
-                  ),
-                  child: ApiService.getImageUrl(product.imageUrl).isNotEmpty
-                      ? Image.network(
-                          ApiService.getImageUrl(product.imageUrl),
-                          fit: BoxFit.cover,
-                          errorBuilder: (ctx, err, _) =>
-                              const Icon(Icons.image_not_supported, size: 30),
-                        )
-                      : Container(
-                          color: Colors.grey[200],
-                          child: const Center(
-                            child: Icon(
-                              Icons.fastfood,
-                              size: 30,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-              // Product Details
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(10.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        product.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      if (hasPromo)
-                        Row(
-                          children: [
-                            Text(
-                              'PKR ${displayOriginalPrice.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                color: Colors.grey,
-                                fontSize: 12,
-                                decoration: TextDecoration.lineThrough,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'PKR ${displayPrice.toStringAsFixed(0)}',
-                              style: TextStyle(
-                                color: Colors.red[700],
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        )
-                      else
-                        Text(
-                          'PKR ${displayPrice.toStringAsFixed(0)}',
-                          style: TextStyle(
-                            color: Colors.green[700],
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                      if (variants.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        if (variants.length == 1)
-                          Text(
-                            variants.first.displayLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 11,
-                            ),
-                          )
-                        else
-                          RadioGroup<String>(
-                            groupValue: selectedVariant == null
-                                ? null
-                                : _variantKey(selectedVariant),
-                            onChanged: (value) {
-                              if (value != null) {
-                                setState(() {
-                                  _selectedVariantKeyByProductId[product.id] =
-                                      value;
-                                });
-                              }
-                            },
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              children: variants.map((v) {
-                                final key = _variantKey(v);
-                                final isSelected =
-                                    selectedVariant != null &&
-                                    _variantKey(selectedVariant) == key;
-                                return InkWell(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedVariantKeyByProductId[product
-                                              .id] =
-                                          key;
-                                    });
-                                  },
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        height: 24,
-                                        width: 24,
-                                        child: Radio<String>(
-                                          value: key,
-                                          materialTapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                      ),
-                                      Text(
-                                        v.displayLabel,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: isSelected
-                                              ? Colors.blue
-                                              : Colors.black87,
-                                        ),
-                                      ),
+                                  if (featuredProduct == null)
+                                    const _EmptyStoreCard()
+                                  else ...[
+                                    _buildFeaturedCard(context, store, featuredProduct, featuredVariant, isOpen: isOpen, isGlobalBlocked: isGlobalBlocked),
+                                    const SizedBox(height: 14),
+                                    _buildDetailsCard(store, featuredProduct, featuredVariant, isOpen: isOpen, closedReason: closedReason),
+                                    if (suggestions.isNotEmpty) ...[
+                                      const SizedBox(height: 14),
+                                      _buildSuggestionsRow(context, suggestions, isOpen: isOpen, isGlobalBlocked: isGlobalBlocked),
                                     ],
-                                  ),
-                                );
-                              }).toList(),
+                                  ],
+                                ],
+                              ),
                             ),
-                          ),
-                      ],
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        height: 32,
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: (isGlobalBlocked || !product.isAvailable)
-                              ? null
-                              : () => _addToCart(
-                                    context,
-                                    product,
-                                    selectedVariant,
-                                    isOpen: isOpen,
-                                    isGlobalBlocked: isGlobalBlocked,
-                                  ),
-                          style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            backgroundColor: Colors.blueAccent,
-                            foregroundColor: Colors.white,
-                            textStyle: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          child: Text(
-                            isGlobalBlocked
-                                ? _tr('Unavailable')
-                                : _tr('Add to Cart'),
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar(BuildContext context) {
+    return Row(
+      children: [
+        _CircleButton(icon: Icons.arrow_back_ios_new_rounded, onTap: () => Navigator.of(context).maybePop()),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Image.asset(
+            'assets/icon/logo_w.png',
+            height: 46,
+            fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
+            errorBuilder: (_, _, _) => const Text(
+              'OrderDrop',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF13201B)),
+            ),
           ),
         ),
-      );
-    }
+        const SizedBox(width: 8),
+        Consumer<CartProvider>(
+          builder: (context, cart, _) {
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _CircleButton(icon: Icons.shopping_cart_outlined, onTap: () => Navigator.of(context).pushNamed('/cart')),
+                if (cart.itemCount > 0)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(color: const Color(0xFF88C84A), borderRadius: BorderRadius.circular(999)),
+                      child: Text(
+                        '${cart.itemCount}',
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(width: 8),
+        const _CircleButton(icon: Icons.person_rounded),
+      ],
+    );
+  }
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  Widget _buildFeaturedCard(BuildContext context, Map<String, dynamic> store, Product product, ProductVariant? variant, {required bool isOpen, required bool isGlobalBlocked}) {
+    final imageUrl = ApiService.getImageUrl(product.imageUrl);
+    final currentPrice = variant?.effectivePrice ?? product.effectivePrice;
+    final originalPrice = variant?.price ?? product.price;
+    final discount = _discountPercent(product, variant);
+    final subtitle = [(store['name'] ?? '').toString().trim(), if ((variant?.displayLabel ?? '').trim().isNotEmpty) variant!.displayLabel].where((part) => part.isNotEmpty).join(' | ');
+
+    return Container(
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.95), borderRadius: BorderRadius.circular(24)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Fixed height image container
-          SizedBox(
-            height: 90,
-            width: double.infinity,
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(8),
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: Container(
+              height: 250,
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFFF7FBF8), Color(0xFFE8F3ED)]),
               ),
-              child: ApiService.getImageUrl(product.imageUrl).isNotEmpty
-                  ? Image.network(
-                      ApiService.getImageUrl(product.imageUrl),
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (ctx, err, _) =>
-                          const Icon(Icons.image_not_supported, size: 30),
-                    )
-                  : Container(
-                      color: Colors.grey[200],
-                      child: const Center(
-                        child: Icon(
-                          Icons.fastfood,
-                          size: 24,
-                          color: Colors.grey,
+              child: Stack(
+                children: [
+                  if (discount != null)
+                    Positioned(
+                      top: 14,
+                      left: 14,
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: const BoxDecoration(color: Color(0xFF88C84A), shape: BoxShape.circle),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '$discount%\nOFF',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800, height: 1.05),
                         ),
                       ),
                     ),
+                  Center(
+                    child: imageUrl.isNotEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Image.network(
+                              imageUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) => const Icon(Icons.fastfood_rounded, size: 72, color: Color(0xFFA6B6AD)),
+                            ),
+                          )
+                        : const Icon(Icons.fastfood_rounded, size: 72, color: Color(0xFFA6B6AD)),
+                  ),
+                ],
+              ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(4.0),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  product.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                if (hasPromo)
+                Text(product.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF252826))),
+                const SizedBox(height: 4),
+                Text(subtitle, style: const TextStyle(fontSize: 13, color: Color(0xFF7E8781), fontWeight: FontWeight.w500)),
+                if (product.sizeVariants.length > 1) ...[
+                  const SizedBox(height: 12),
                   Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 4,
-                    children: [
-                      Text(
-                        'PKR ${displayOriginalPrice.toStringAsFixed(0)}',
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 9,
-                          decoration: TextDecoration.lineThrough,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: product.sizeVariants.map((item) {
+                      final isSelected = _variantKey(item) == _variantKey(variant ?? item);
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            _selectedVariantKeyByProductId[product.id] = _variantKey(item);
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(color: isSelected ? const Color(0xFF88C84A) : const Color(0xFFF1F5EF), borderRadius: BorderRadius.circular(999)),
+                          child: Text(item.displayLabel, style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF405148), fontWeight: FontWeight.w700)),
                         ),
-                      ),
-                      Text(
-                        'PKR ${displayPrice.toStringAsFixed(0)}',
-                        style: TextStyle(
-                          color: Colors.red[700],
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  Text(
-                    'PKR ${displayPrice.toStringAsFixed(0)}',
-                    style: TextStyle(
-                      color: Colors.green[700],
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                if (variants.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  RadioGroup<String>(
-                    groupValue: selectedVariant == null
-                        ? null
-                        : _variantKey(selectedVariant),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _selectedVariantKeyByProductId[product.id] = value;
-                        });
-                      }
-                    },
-                    child: Wrap(
-                      spacing: 4,
-                      runSpacing: 2,
-                      alignment: WrapAlignment.start,
-                      children: variants.map((v) {
-                        final key = _variantKey(v);
-                        final isSelected =
-                            selectedVariant != null &&
-                            _variantKey(selectedVariant) == key;
-                        return InkWell(
-                          onTap: () {
-                            setState(() {
-                              _selectedVariantKeyByProductId[product.id] = key;
-                            });
-                          },
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: Radio<String>(
-                                  value: key,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  visualDensity: const VisualDensity(
-                                    horizontal: VisualDensity.minimumDensity,
-                                    vertical: VisualDensity.minimumDensity,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                v.displayLabel,
-                                style: TextStyle(
-                                  fontSize: 8,
-                                  fontWeight: isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  color: isSelected
-                                      ? Colors.blue
-                                      : Colors.grey[700],
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
+                      );
+                    }).toList(),
                   ),
                 ],
-                const SizedBox(height: 4),
-                SizedBox(
-                  width: double.infinity,
-                  height: 28,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      backgroundColor: Colors.blueAccent,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      elevation: 0,
-                    ),
-                    onPressed: product.isAvailable
-                        ? () => _addToCart(
-                            context,
-                            product,
-                            selectedVariant,
-                            isOpen: isOpen,
-                            isGlobalBlocked: isGlobalBlocked,
-                          )
-                        : null,
-                    child: Text(
-                      isGlobalBlocked
-                          ? 'BLOCKED'
-                          : (product.isAvailable ? 'ADD' : 'N/A'),
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.end,
+                        children: [
+                          Text('PKR ${_formatPrice(currentPrice)}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF181A18))),
+                          if (originalPrice > currentPrice)
+                            Text('PKR ${_formatPrice(originalPrice)}', style: const TextStyle(fontSize: 14, color: Color(0xFF8A8A8A), decoration: TextDecoration.lineThrough)),
+                        ],
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: (isGlobalBlocked || !product.isAvailable) ? null : () => _addToCart(context, product, variant, isOpen: isOpen, isGlobalBlocked: isGlobalBlocked),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF88C84A),
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: const Color(0xFFC7D5C1),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                          ),
+                          child: Text(isGlobalBlocked ? _tr('Unavailable') : _tr('Add to Cart')),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -995,4 +490,294 @@ class _StoreScreenState extends State<StoreScreen> {
       ),
     );
   }
+
+  Widget _buildDetailsCard(Map<String, dynamic> store, Product product, ProductVariant? variant, {required bool isOpen, required String closedReason}) {
+    final facts = _productFacts(product, variant, store);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(24)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Product Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF252826))),
+          const SizedBox(height: 10),
+          ...facts.map(
+            (fact) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Icon(Icons.circle, size: 6, color: Color(0xFF6B756F)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(fact, style: const TextStyle(fontSize: 15, color: Color(0xFF6B756F), height: 1.35)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _InfoPill(icon: isOpen ? Icons.check_circle : Icons.schedule, label: isOpen ? 'Open now' : 'Currently closed', color: isOpen ? const Color(0xFF88C84A) : const Color(0xFFE36A6A)),
+              _InfoPill(icon: Icons.location_on_outlined, label: (store['location'] ?? 'Store location').toString(), color: const Color(0xFF74A8C7)),
+              _InfoPill(icon: Icons.access_time_rounded, label: '${_formatTimeOnly(store['opening_time'])} - ${_formatTimeOnly(store['closing_time'])}', color: const Color(0xFFA2B57B)),
+            ],
+          ),
+          if (!isOpen && closedReason.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(closedReason, style: const TextStyle(color: Color(0xFFC45454), fontWeight: FontWeight.w700)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuggestionsRow(BuildContext context, List<Product> products, {required bool isOpen, required bool isGlobalBlocked}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(24)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('You Might Also Like', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF252826))),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 190,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: products.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final product = products[index];
+                final variant = _selectedVariantFor(product);
+                final price = variant?.effectivePrice ?? product.effectivePrice;
+                final discount = _discountPercent(product, variant);
+                final imageUrl = ApiService.getImageUrl(product.imageUrl);
+
+                return InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => setState(() => _selectedProductId = product.id),
+                  child: Container(
+                    width: 145,
+                    decoration: BoxDecoration(color: const Color(0xFFF8FAF7), borderRadius: BorderRadius.circular(18)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Container(
+                                  decoration: const BoxDecoration(
+                                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFFF7FAF8), Color(0xFFE8F1EC)]),
+                                  ),
+                                ),
+                                if (discount != null)
+                                  Positioned(
+                                    top: 10,
+                                    left: 10,
+                                    child: Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: const BoxDecoration(color: Color(0xFF88C84A), shape: BoxShape.circle),
+                                      alignment: Alignment.center,
+                                      child: Text('$discount%', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                                    ),
+                                  ),
+                                Center(
+                                  child: imageUrl.isNotEmpty
+                                      ? Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: Image.network(imageUrl, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(Icons.fastfood_rounded, size: 44, color: Color(0xFFA0B4AA))),
+                                        )
+                                      : const Icon(Icons.fastfood_rounded, size: 44, color: Color(0xFFA0B4AA)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(product.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF2B322E))),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text('PKR ${_formatPrice(price)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF181A18))),
+                                  ),
+                                  InkWell(
+                                    onTap: () => _addToCart(context, product, variant, isOpen: isOpen, isGlobalBlocked: isGlobalBlocked),
+                                    child: Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: const BoxDecoration(color: Color(0xFF88C84A), shape: BoxShape.circle),
+                                      child: const Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
+
+class _StoreBackdrop extends StatelessWidget {
+  const _StoreBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: const [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFD3EEB8), Color(0xFFD3EFE3), Color(0xFFAFD9F7)],
+            ),
+          ),
+        ),
+        _BackdropOrb(alignment: Alignment(-1.15, -0.88), size: 260, color: Color(0x40BCE08A)),
+        _BackdropOrb(alignment: Alignment(1.05, -0.15), size: 220, color: Color(0x30E2B6AE)),
+        _BackdropOrb(alignment: Alignment(0.95, 0.78), size: 240, color: Color(0x3089B8F1)),
+        _BackdropOrb(alignment: Alignment(-1.1, 0.72), size: 180, color: Color(0x38CDE7CC)),
+      ],
+    );
+  }
+}
+
+class _BackdropOrb extends StatelessWidget {
+  final Alignment alignment;
+  final double size;
+  final Color color;
+
+  const _BackdropOrb({required this.alignment, required this.size, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: alignment,
+      child: IgnorePointer(
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color,
+            boxShadow: [BoxShadow(color: color, blurRadius: 80, spreadRadius: 10)],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  const _CircleButton({required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      icon: Icon(icon),
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.white.withValues(alpha: 0.84),
+        foregroundColor: const Color(0xFF12221A),
+      ),
+    );
+  }
+}
+
+class _StatusBanner extends StatelessWidget {
+  final String message;
+  final bool blocked;
+
+  const _StatusBanner({required this.message, required this.blocked});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: blocked ? const Color(0xFFFFF0EF) : const Color(0xFFFFF8E8),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: blocked ? const Color(0xFFF2B5AE) : const Color(0xFFE8D3A1)),
+      ),
+      child: Row(
+        children: [
+          Icon(blocked ? Icons.block_rounded : Icons.info_outline_rounded, color: blocked ? const Color(0xFFD75B4D) : const Color(0xFF9C7A20)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message, style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF364239)))),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _InfoPill({required this.icon, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 7),
+          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyStoreCard extends StatelessWidget {
+  const _EmptyStoreCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(24)),
+      child: const Text('No products are available in this store right now.', style: TextStyle(fontSize: 16, color: Color(0xFF5F6A64), fontWeight: FontWeight.w600)),
+    );
+  }
+}
+

@@ -1,0 +1,647 @@
+/* AGINV Theme Overlay for OrderDrop Admin
+   Loaded after css/admin.css to override design tokens safely. */
+
+:root {
+  --primary-gradient: linear-gradient(135deg, #d9783a 0%, #c86425 48%, #e9b44c 100%);
+  --secondary-gradient: linear-gradient(135deg, #f6d085 0%, #e9b44c 55%, #d9783a 100%);
+  --success-gradient: linear-gradient(135deg, #29b36b 0%, #138a57 100%);
+  --warning-gradient: linear-gradient(135deg, #f0c05a 0%, #d9901a 100%);
+  --danger-gradient: linear-gradient(135deg, #ef7f6d 0%, #dc5c47 100%);
+  --dark-gradient: linear-gradient(135deg, #6d3b1f 0%, #5a2e16 45%, #8d4a21 100%);
+
+  --primary: #d9783a;
+  --primary-dark: #b75b27;
+  --primary-light: #fff1de;
+
+  --success: #138a57;
+  --warning: #d9901a;
+  --danger: #dc5c47;
+  --info: #1b86a8;
+
+  --bg-body: #fdf6ee;
+  --bg-surface: #fffdfa;
+  --border-color: #ead8c6;
+  --text-main: #3a2a1f;
+  --text-muted: #7c6552;
+
+  --shadow-sm: 0 8px 18px rgba(72, 43, 24, 0.07);
+  --shadow: 0 18px 38px rgba(72, 43, 24, 0.12);
+  --shadow-lg: 0 26px 52px rgba(72, 43, 24, 0.18);
+  --border-radius: 1rem;
+}
+
+body {
+  font-family: "Plus Jakarta Sans", "Inter", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(217, 120, 58, 0.10), transparent 18%),
+    radial-gradient(circle at 88% 14%, rgba(233, 180, 76, 0.12), transparent 22%),
+    linear-gradient(160deg, #fff9f3 0%, #fdf6ee 45%, #f7ede2 100%);
+  color: var(--text-main);
+}
+
+h1,
+h2,
+h3,
+h4,
+.page-title,
+.section-title,
+.logo span {
+  font-family: "Plus Jakarta Sans", "Inter", "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
+  color: #55311c;
+}
+
+.app-header,
+.card,
+.stat-card,
+.table-wrapper,
+.modal-content {
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.card,
+.stat-card,
+.summary-card {
+  border-top: 4px solid var(--primary);
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,248,241,0.98));
+}
+
+.btn-primary,
+.theme-save-btn {
+  background: var(--primary-gradient);
+  border: none;
+}
+
+.btn-primary:hover,
+.theme-save-btn:hover {
+  filter: brightness(0.96);
+}
+
+.table thead,
+.table-dark {
+  background: var(--dark-gradient) !important;
+  color: #fff !important;
+}
+
+.badge.bg-success {
+  background: var(--success-gradient) !important;
+}
+
+.badge.bg-warning {
+  background: var(--warning-gradient) !important;
+  color: #fff !important;
+}
+
+.badge.bg-danger {
+  background: var(--danger-gradient) !important;
+}
+
+/* Shared app-shell polish for admin/user/rider layouts */
+.app-sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.04), transparent 24%),
+    linear-gradient(180deg, #4e3426 0%, #39251a 55%, #2f1e15 100%) !important;
+}
+
+.app-header {
+  background: linear-gradient(180deg, rgba(255, 253, 250, 0.96), rgba(250, 242, 232, 0.92));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.app-content {
+  background:
+    radial-gradient(circle at top right, rgba(217, 120, 58, 0.08), transparent 22%),
+    linear-gradient(180deg, rgba(255, 249, 243, 0.72) 0%, rgba(253, 246, 238, 0.92) 26%, rgba(255, 253, 250, 0.98) 100%);
+}
+
+/* Cross-page card polish */
+.store-card,
+.category-card,
+.product-card,
+.summary-card,
+.table-container,
+.modal-content {
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+  border: 1px solid rgba(234, 216, 198, 0.9);
+}
+
+.store-card:hover,
+.category-card:hover,
+.product-card:hover,
+.summary-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow);
+}
+
+/* Form and input consistency */
+input,
+select,
+textarea,
+.search-input,
+.search-select,
+.form-control {
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.search-input:focus,
+.search-select:focus,
+.form-control:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(217, 120, 58, 0.14);
+}
+
+/* Button consistency while preserving existing semantic colors */
+.btn {
+  border-radius: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: var(--transition);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+/* Table readability */
+.table th {
+  letter-spacing: 0.02em;
+  font-weight: 700;
+}
+
+.table td,
+.table th {
+  vertical-align: middle;
+}
+
+/* Recent Activity aesthetic styling */
+#dashboard .recent-activity-section {
+  background: linear-gradient(135deg, rgba(233, 180, 76, 0.12), rgba(255, 255, 255, 1));
+  border: 1px solid var(--border-color);
+}
+
+#dashboard .activity-column h4 {
+  color: #55311c;
+  border-bottom: 2px solid rgba(217, 120, 58, 0.18);
+}
+
+.activity-item {
+  position: relative;
+  border: 1px solid rgba(217, 120, 58, 0.14);
+  background: linear-gradient(135deg, #fffdfa, #ffffff);
+  box-shadow: 0 8px 18px rgba(72, 43, 24, 0.06);
+  border-radius: 14px;
+  padding: 1rem 1rem 1rem 1.1rem;
+  overflow: hidden;
+}
+
+.activity-item .activity-accent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  border-radius: 14px 0 0 14px;
+  background: linear-gradient(180deg, #d9783a, #e9b44c);
+}
+
+.activity-item .activity-content .title {
+  font-weight: 700;
+  color: #3a2a1f;
+  margin-bottom: 0.2rem;
+}
+
+.activity-item .activity-content .subtitle {
+  color: #6d5642;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.activity-item .activity-content .meta {
+  display: flex;
+  gap: 0.75rem;
+  color: #8c735e;
+  font-size: 0.8rem;
+}
+
+.activity-item--blue {
+  border-color: rgba(59, 130, 246, 0.25);
+  background: linear-gradient(135deg, #eff6ff, #ffffff);
+}
+.activity-item--blue .activity-accent { background: #3b82f6; }
+
+.activity-item--green {
+  border-color: rgba(34, 197, 94, 0.25);
+  background: linear-gradient(135deg, #f0fdf4, #ffffff);
+}
+.activity-item--green .activity-accent { background: #22c55e; }
+
+.activity-item--orange {
+  border-color: rgba(249, 115, 22, 0.25);
+  background: linear-gradient(135deg, #fff7ed, #ffffff);
+}
+.activity-item--orange .activity-accent { background: #f97316; }
+
+.activity-item--red {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: linear-gradient(135deg, #fef2f2, #ffffff);
+}
+.activity-item--red .activity-accent { background: #ef4444; }
+
+.activity-item--purple {
+  border-color: rgba(147, 51, 234, 0.25);
+  background: linear-gradient(135deg, #f5f3ff, #ffffff);
+}
+.activity-item--purple .activity-accent { background: #9333ea; }
+
+.activity-item--teal {
+  border-color: rgba(20, 184, 166, 0.25);
+  background: linear-gradient(135deg, #f0fdfa, #ffffff);
+}
+.activity-item--teal .activity-accent { background: #14b8a6; }
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.22;
+  background:
+    linear-gradient(120deg, rgba(255,255,255,0.16) 0%, transparent 30%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  right: -8vw;
+  bottom: -16vh;
+  width: 26rem;
+  height: 26rem;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.12;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #e9b44c 0%, #d9783a 58%, transparent 62%);
+  filter: blur(28px);
+}
+
+.app-content > * {
+  position: relative;
+  z-index: 1;
+}
+
+.logo img {
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.18));
+}
+
+.nav-menu li a,
+.sidebar-nav a,
+.dropdown-menu li a {
+  border-radius: 16px !important;
+  font-weight: 700;
+}
+
+.nav-menu li a:hover,
+.nav-menu li a.active,
+.sidebar-nav a:hover,
+.sidebar-nav a.active {
+  background: linear-gradient(135deg, #d9783a 0%, #c86425 55%, #e9b44c 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 10px 22px rgba(217, 120, 58, 0.22);
+}
+
+.table tbody tr:nth-child(even) {
+  background: rgba(233, 180, 76, 0.10);
+}
+
+.table tbody tr:hover {
+  background: rgba(217, 120, 58, 0.07);
+}
+
+/* Push status panel */
+.push-status-card {
+  margin: 1.25rem 0;
+  padding: 1rem 1.2rem;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.push-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.push-status-head h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.push-status-pill {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.push-status-pill.ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.push-status-pill.error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.push-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.push-status-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.push-status-value {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.push-status-actions {
+  margin-top: 0.9rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Sales-by-payment report styling */
+#salesByPaymentReportSection .aginv-report-group-row td {
+  background: rgba(102, 126, 234, 0.12);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#salesByPaymentReportSection .aginv-report-subgroup-row td {
+  background: rgba(102, 126, 234, 0.08);
+  font-weight: 700;
+}
+
+#salesByPaymentReportSection .aginv-report-subtotal-row td {
+  background: #eef2ff;
+  font-weight: 700;
+}
+
+#salesByPaymentReportSection .aginv-report-total-row td {
+  background: #f8fafc;
+  font-weight: 800;
+}
+
+#salesByPaymentReportSection .aginv-report-grand-row td {
+  background: #e2e8f0;
+  font-weight: 800;
+  border-top: 2px solid #94a3b8;
+}
+
+#salesByPaymentSimpleReportSection .aginv-report-group-row td {
+  background: rgba(16, 185, 129, 0.16);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#salesByPaymentSimpleReportSection .aginv-report-total-row td {
+  background: #ecfdf5;
+  font-weight: 800;
+}
+
+#salesByPaymentSimpleReportSection .aginv-report-grand-row td {
+  background: #d1fae5;
+  font-weight: 800;
+  border-top: 2px solid #86efac;
+}
+
+/* Hero + highlight sections on public pages */
+.hero {
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+/* Modal header styling */
+.modal-header {
+  background: var(--primary-gradient);
+  color: #fff;
+  border-bottom: none;
+}
+
+.modal-header .btn-close {
+  filter: invert(1);
+}
+
+/* Mobile refinements */
+@media (max-width: 768px) {
+  .hero {
+    border-radius: 14px;
+  }
+
+  .store-card,
+  .category-card,
+  .product-card,
+  .summary-card {
+    border-radius: 12px;
+  }
+
+  .btn {
+    min-height: 40px;
+  }
+}
+
+/* ---------- Role-specific tuning pass (admin/user/rider/auth/utility) ---------- */
+
+:root {
+  --transition: all 0.25s ease;
+}
+
+/* Admin-heavy screens */
+#dashboard .stat-card,
+#orders .stat-card,
+#products .stat-card,
+#stores .stat-card,
+#users .stat-card,
+#riders .stat-card {
+  border-top-width: 4px;
+}
+
+#dashboard .dash-card {
+  border-left: 4px solid transparent;
+  background: var(--bg-surface);
+}
+
+#dashboard .dash-card h3 {
+  font-weight: 800;
+}
+
+#dashboard .dash-card-info {
+  border-left-color: #2563eb;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+}
+
+#dashboard .dash-card-info h3 {
+  color: #2563eb;
+}
+
+#dashboard .dash-card-success {
+  border-left-color: #16a34a;
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+}
+
+#dashboard .dash-card-success h3 {
+  color: #16a34a;
+}
+
+#dashboard .dash-card-warning {
+  border-left-color: #d97706;
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+}
+
+#dashboard .dash-card-warning h3 {
+  color: #d97706;
+}
+
+#dashboard .dash-card-danger {
+  border-left-color: #dc2626;
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
+}
+
+#dashboard .dash-card-danger h3 {
+  color: #dc2626;
+}
+
+.table-container,
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.nav-menu a.active,
+.tab-link.active,
+.dropdown-menu .tab-link.active {
+  background: rgba(102, 126, 234, 0.14);
+  border-radius: 10px;
+}
+
+/* Customer storefront pages */
+.page-header,
+.store-banner,
+.wallet-header,
+.checkout-container,
+.orders-container,
+.cart-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.search-container,
+.location-filter,
+.topup-section,
+.transactions-section,
+.order-summary,
+.cart-summary {
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.product-grid,
+.store-grid,
+.categories-grid {
+  gap: 1.1rem;
+}
+
+/* Rider workspace */
+#assigned .tabs,
+#completed .tabs,
+#walletContent,
+#profileContent {
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.tab-btn {
+  border-radius: 10px;
+}
+
+.delivery-card,
+.order-card {
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Auth + policy pages */
+.auth-card,
+.deletion-container,
+.container {
+  border-radius: 16px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow);
+}
+
+/* Utility quality-of-life */
+.toast,
+.alert,
+.status {
+  border-radius: 10px;
+}
+
+/* Better spacing on narrow screens */
+@media (max-width: 992px) {
+  .app-content {
+    padding: 0.75rem;
+  }
+
+  .page-header,
+  .store-banner,
+  .wallet-header,
+  .checkout-container,
+  .orders-container,
+  .cart-section {
+    padding: 0.85rem;
+  }
+}

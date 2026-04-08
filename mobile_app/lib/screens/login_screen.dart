@@ -197,30 +197,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Image.asset(
-                                    'assets/icon/logo_w_transparent.png',
+                                    'assets/icon/logo_w.png',
                                     height: 128,
                                     fit: BoxFit.contain,
                                     errorBuilder: (ctx, err, stack) =>
                                         const Text(
-                                      'OrderDrop',
-                                      style: TextStyle(
-                                        fontSize: 40,
-                                        fontWeight: FontWeight.w900,
-                                        color: Color(0xFF121212),
-                                      ),
-                                    ),
+                                          'OrderDrop',
+                                          style: TextStyle(
+                                            fontSize: 40,
+                                            fontWeight: FontWeight.w900,
+                                            color: Color(0xFF121212),
+                                          ),
+                                        ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(
-                                    _tr('GROCERY DELIVERY'),
-                                    style: const TextStyle(
-                                      color: Color(0xFF2F3A3D),
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w500,
-                                      letterSpacing: 0.4,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
+
                                   const SizedBox(height: 34),
                                   _RoundedInput(
                                     controller: _emailController,
@@ -228,7 +219,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     textInputAction: TextInputAction.next,
                                     keyboardType: TextInputType.emailAddress,
                                     validator: (value) {
-                                      if (value == null || value.trim().isEmpty) {
+                                      if (value == null ||
+                                          value.trim().isEmpty) {
                                         return _tr('Please enter email');
                                       }
                                       if (!value.contains('@')) {
@@ -259,8 +251,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                     validator: (value) =>
                                         value == null || value.isEmpty
-                                            ? _tr('Please enter password')
-                                            : null,
+                                        ? _tr('Please enter password')
+                                        : null,
                                   ),
                                   const SizedBox(height: 24),
                                   Selector<AuthProvider, bool>(
@@ -271,20 +263,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                         height: 58,
                                         child: DecoratedBox(
                                           decoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(29),
+                                            borderRadius: BorderRadius.circular(
+                                              29,
+                                            ),
                                             boxShadow: [
                                               BoxShadow(
-                                                color: const Color(0xFF7DBD38)
-                                                    .withValues(alpha: 0.32),
+                                                color: const Color(
+                                                  0xFF7DBD38,
+                                                ).withValues(alpha: 0.32),
                                                 blurRadius: 20,
                                                 offset: const Offset(0, 12),
                                               ),
                                             ],
                                           ),
                                           child: ElevatedButton(
-                                            onPressed:
-                                                isLoading ? null : _submit,
+                                            onPressed: isLoading
+                                                ? null
+                                                : _submit,
                                             style: ElevatedButton.styleFrom(
                                               elevation: 0,
                                               foregroundColor: Colors.white,
@@ -317,9 +312,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                                         width: 24,
                                                         child:
                                                             CircularProgressIndicator(
-                                                          strokeWidth: 2.6,
-                                                          color: Colors.white,
-                                                        ),
+                                                              strokeWidth: 2.6,
+                                                              color:
+                                                                  Colors.white,
+                                                            ),
                                                       )
                                                     : Text(
                                                         _tr('LOG IN'),
@@ -357,13 +353,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                     offset: const Offset(0, -4),
                                     child: TextButton(
                                       onPressed: () {
-                                        Navigator.of(context).pushNamed(
-                                          '/register',
-                                        );
+                                        Navigator.of(
+                                          context,
+                                        ).pushNamed('/register');
                                       },
                                       style: TextButton.styleFrom(
-                                        foregroundColor:
-                                            const Color(0xFFF8F9FB),
+                                        foregroundColor: const Color(
+                                          0xFFF8F9FB,
+                                        ),
                                         textStyle: const TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w500,
@@ -407,11 +404,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                     selector: (_, auth) => auth.isLoading,
                                     builder: (context, isLoading, child) {
                                       return TextButton(
-                                        onPressed:
-                                            isLoading ? null : _continueAsGuest,
+                                        onPressed: isLoading
+                                            ? null
+                                            : _continueAsGuest,
                                         style: TextButton.styleFrom(
-                                          foregroundColor:
-                                              const Color(0xFF516167),
+                                          foregroundColor: const Color(
+                                            0xFF516167,
+                                          ),
                                         ),
                                         child: Text(_tr('Continue as Guest')),
                                       );
@@ -448,11 +447,7 @@ class _LoginBackground extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0xFFD5EBA8),
-                Color(0xFFBEDFD3),
-                Color(0xFF9EC7F1),
-              ],
+              colors: [Color(0xFFD5EBA8), Color(0xFFBEDFD3), Color(0xFF9EC7F1)],
             ),
           ),
         ),
@@ -549,9 +544,7 @@ class _GlassCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(34),
             color: Colors.white.withValues(alpha: 0.28),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.35),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
             boxShadow: [
               BoxShadow(
                 color: const Color(0xFF6A8CA1).withValues(alpha: 0.18),
@@ -616,39 +609,26 @@ class _RoundedInput extends StatelessWidget {
           horizontal: 16,
           vertical: 20,
         ),
-        errorStyle: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
+        errorStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: Colors.white.withValues(alpha: 0.75),
-          ),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.75)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: Color(0xFF81C93C),
-            width: 1.4,
-          ),
+          borderSide: const BorderSide(color: Color(0xFF81C93C), width: 1.4),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: Color(0xFFC75353),
-          ),
+          borderSide: const BorderSide(color: Color(0xFFC75353)),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(
-            color: Color(0xFFC75353),
-            width: 1.2,
-          ),
+          borderSide: const BorderSide(color: Color(0xFFC75353), width: 1.2),
         ),
       ),
     );
@@ -685,7 +665,8 @@ class _SocialButton extends StatelessWidget {
         ],
       ),
       child: Center(
-        child: icon ??
+        child:
+            icon ??
             Text(
               label ?? '',
               style: TextStyle(
@@ -700,10 +681,7 @@ class _SocialButton extends StatelessWidget {
 }
 
 class _LanguageChip extends StatelessWidget {
-  const _LanguageChip({
-    required this.label,
-    required this.onTap,
-  });
+  const _LanguageChip({required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;
@@ -720,18 +698,12 @@ class _LanguageChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.24),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.35),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.language,
-                color: Colors.white,
-                size: 18,
-              ),
+              const Icon(Icons.language, color: Colors.white, size: 18),
               const SizedBox(width: 8),
               Text(
                 label,
