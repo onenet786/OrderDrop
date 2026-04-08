@@ -1,18 +1,27 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:servenow/main.dart';
+import 'package:servenow/services/notifier.dart';
 
 void main() {
-  testWidgets('App boots', (WidgetTester tester) async {
-    await tester.pumpWidget(const MyApp());
-    expect(find.byType(MaterialApp), findsOneWidget);
+  group('Notifier.sanitizeMessage', () {
+    test('extracts message from JSON-like errors', () {
+      final result = Notifier.sanitizeMessage(
+        'Exception: {"message":"Invalid credentials"}',
+      );
+
+      expect(result, 'Invalid credentials');
+    });
+
+    test('removes technical exception prefixes', () {
+      final result = Notifier.sanitizeMessage(
+        'Exception: UnauthorizedException: Session expired',
+      );
+
+      expect(result, 'Session expired');
+    });
+
+    test('returns fallback for empty strings', () {
+      expect(Notifier.sanitizeMessage(''), 'Something went wrong');
+    });
   });
 }

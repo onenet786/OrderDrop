@@ -415,7 +415,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
           ),
           child: Image.asset(
-            'assets/icon/servenow_brand_logo.png',
+            'assets/icon/logo_w.png',
             height: 84,
             fit: BoxFit.contain,
             errorBuilder: (ctx, err, stack) => const Text(

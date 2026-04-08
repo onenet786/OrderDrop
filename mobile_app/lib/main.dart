@@ -97,7 +97,7 @@ class MyApp extends StatelessWidget {
               child: _AppUpdateOverlay(
                 child: Stack(
                   children: [
-                    if (child != null) child,
+                    ?child,
                     const Positioned(
                       right: 6,
                       bottom: 4,

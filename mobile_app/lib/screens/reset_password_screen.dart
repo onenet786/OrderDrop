@@ -86,7 +86,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       ],
                     ),
                     child: Image.asset(
-                      'assets/icon/servenow.png',
+                      'assets/icon/logo_w.png',
                       height: 80,
                       width: 80,
                       errorBuilder: (ctx, err, stack) => const Icon(

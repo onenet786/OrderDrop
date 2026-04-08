@@ -107,7 +107,7 @@ class _SplashScreenState extends State<SplashScreen>
                         );
                       },
                       child: Image.asset(
-                        'assets/icon/servenow_brand_logo.png',
+                        'assets/icon/logo_w.png',
                         width: 360,
                         fit: BoxFit.contain,
                         errorBuilder: (ctx, err, stack) => Text(

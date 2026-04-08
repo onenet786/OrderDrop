@@ -32,10 +32,9 @@ class ApiService {
   static Future<String?>? _refreshInFlight;
 
   static String get baseUrl {
-    final configured =
-        _configuredBaseUrl.trim().isNotEmpty
-            ? _configuredBaseUrl.trim()
-            : _legacyConfiguredBaseUrl.trim();
+    final configured = _configuredBaseUrl.trim().isNotEmpty
+        ? _configuredBaseUrl.trim()
+        : _legacyConfiguredBaseUrl.trim();
     if (configured.isNotEmpty) {
       return configured.replaceFirst(RegExp(r'\/+$'), '');
     }
@@ -713,7 +712,7 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
-        if (storeId != null) 'store_id': storeId,
+        'store_id': ?storeId,
         'items': items,
         'delivery_address': deliveryAddress,
         'payment_method': paymentMethod,
@@ -1059,8 +1058,8 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
-        if (recipientId != null) 'recipient_id': recipientId,
-        if (email != null) 'email': email,
+        'recipient_id': ?recipientId,
+        'email': ?email,
         'amount': amount,
         'description': description,
       }),

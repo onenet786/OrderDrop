@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../main.dart';
 
 class Notifier {
   Notifier._();
@@ -116,8 +115,6 @@ class Notifier {
     Color? fg,
     Duration? duration,
   }) {
-    final currentContext = navigatorKey.currentContext ?? context;
-
     final snackBar = SnackBar(
       content: Row(
         children: [
@@ -134,8 +131,8 @@ class Notifier {
 
     // Use addPostFrameCallback to ensure the widget tree is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (currentContext.mounted) {
-        ScaffoldMessenger.of(currentContext)
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(snackBar);
       }

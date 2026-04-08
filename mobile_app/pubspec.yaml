@@ -69,9 +69,14 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/servenow_brand_logo_v2.png"
-  adaptive_icon_background: "#FFF9F4"
-  adaptive_icon_foreground: "assets/icon/servenow_brand_logo_v2.png"
+  image_path: "assets/icon/logo_w.png"
+  adaptive_icon_background: "#00000000"
+  adaptive_icon_foreground: "assets/icon/logo_w.png"
+  web:
+    generate: true
+    image_path: "assets/icon/logo_w.png"
+    background_color: "#00000000"
+    theme_color: "#00000000"
 
 # The following section is specific to Flutter packages.
 flutter:
@@ -83,14 +88,8 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/icon/servenow.jpeg
-    - assets/icon/servenow.png
-    - assets/icon/servenow_food_theme.png
-    - assets/icon/servenow_food_delivery.png
-    - assets/icon/servenow_brand_logo.png
-    - assets/icon/servenow_brand_logo_v2.png
-    - assets/images/pizza.jpg
-    - assets/images/login.png
+    - assets/icon/logo_w.png
+    - assets/icon/logo_w_transparent.png
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
