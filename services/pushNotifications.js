@@ -1,5 +1,8 @@
 const admin = require("firebase-admin");
 
+const APP_NAME = process.env.APP_NAME || "OrderDrop";
+const PUSH_CHANNEL_ID = "orderdrop_channel";
+
 let firebaseReady = false;
 let firebaseInitAttempted = false;
 let firebaseInitError = null;
@@ -186,7 +189,7 @@ async function sendPushToUser(
 
   const payload = {
     notification: {
-      title: normalizeString(title, 120) || "ServeNow",
+      title: normalizeString(title, 120) || APP_NAME,
       body: normalizeString(message, 500),
     },
     data: toStringMap(data),
@@ -194,7 +197,7 @@ async function sendPushToUser(
       priority: "high",
       collapseKey: collapseKey || undefined,
       notification: {
-        channelId: "servenow_channel",
+        channelId: PUSH_CHANNEL_ID,
         sound: "default",
       },
     },

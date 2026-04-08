@@ -43,7 +43,7 @@ function displayStoreInfo(store) {
         return;
     }
 
-    document.getElementById('storeTitle').textContent = `${store.name} - ServeNow`;
+    document.getElementById('storeTitle').textContent = `${store.name} - OrderDrop`;
     
     let logoSrc = API_BASE.replace(/\/$/, '') + '/images/servenow_brand_logo.png';
     if (store.image_url) {

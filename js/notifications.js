@@ -526,8 +526,8 @@
                 'success',
                 'fa-check-circle'
             );
-            if (!systemNotify('Order Completed', data.message || 'Thanks for ordering with ServeNow.')) {
-                if (typeof showToast === 'function') showToast('Order Completed', data.message || 'Thanks for ordering with ServeNow.', 'success', 2000);
+            if (!systemNotify('Order Completed', data.message || 'Thanks for ordering with OrderDrop.')) {
+                if (typeof showToast === 'function') showToast('Order Completed', data.message || 'Thanks for ordering with OrderDrop.', 'success', 2000);
             }
             if (typeof displayOrders === 'function') displayOrders();
         }

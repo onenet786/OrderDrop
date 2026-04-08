@@ -85,7 +85,7 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         navigatorKey: navigatorKey,
-        title: 'ServeNow',
+        title: 'OrderDrop',
         debugShowCheckedModeBanner: false,
         builder: (context, child) {
           return SafeArea(
@@ -113,18 +113,19 @@ class MyApp extends StatelessWidget {
           colorScheme: baseScheme,
           fontFamily: 'Roboto',
           scaffoldBackgroundColor: CustomerPalette.background,
+          canvasColor: CustomerPalette.background,
           useMaterial3: true,
           appBarTheme: const AppBarTheme(
-            backgroundColor: CustomerPalette.primary,
+            backgroundColor: CustomerPalette.primaryDark,
             foregroundColor: Colors.white,
             elevation: 0,
             centerTitle: false,
           ),
           cardTheme: CardThemeData(
             color: CustomerPalette.card,
-            elevation: 1,
+            elevation: 2,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(18),
             ),
           ),
           elevatedButtonTheme: ElevatedButtonThemeData(
@@ -132,8 +133,10 @@ class MyApp extends StatelessWidget {
               backgroundColor: CustomerPalette.primary,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
+              elevation: 1.5,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
             ),
           ),
           filledButtonTheme: FilledButtonThemeData(
@@ -141,38 +144,39 @@ class MyApp extends StatelessWidget {
               backgroundColor: CustomerPalette.primary,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
+              elevation: 1.5,
             ),
           ),
           inputDecorationTheme: InputDecorationTheme(
             filled: true,
-            fillColor: Colors.white,
+            fillColor: CustomerPalette.card,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
               vertical: 12,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.orange.shade200),
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.orange.shade300),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.orange.shade200),
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.orange.shade300),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               borderSide: const BorderSide(
                 color: CustomerPalette.primary,
-                width: 1.4,
+                width: 1.8,
               ),
             ),
           ),
           chipTheme: ChipThemeData(
-            backgroundColor: Colors.white,
+            backgroundColor: CustomerPalette.card,
             selectedColor: CustomerPalette.primaryDark,
             secondarySelectedColor: CustomerPalette.primaryDark,
-            side: BorderSide(color: Colors.orange.shade200),
+            side: BorderSide(color: Colors.orange.shade300),
             labelStyle: const TextStyle(
               color: CustomerPalette.textDark,
               fontWeight: FontWeight.w600,
@@ -182,13 +186,13 @@ class MyApp extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
             ),
           ),
           bottomNavigationBarTheme: BottomNavigationBarThemeData(
-            backgroundColor: Colors.white,
+            backgroundColor: CustomerPalette.card,
             selectedItemColor: CustomerPalette.primaryDark,
-            unselectedItemColor: Colors.brown.shade300,
+            unselectedItemColor: const Color(0xFF9A5F1A),
             selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700),
             unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
             type: BottomNavigationBarType.fixed,
@@ -536,7 +540,7 @@ class _AppUpdateOverlayState extends State<_AppUpdateOverlay>
     if (!mounted || _dialogOpen) return;
     _dialogOpen = true;
     final forceUpdate = status['force_update_active'] == true;
-    final message = (status['message'] ?? 'A new version of ServeNow is available.')
+    final message = (status['message'] ?? 'A new version of OrderDrop is available.')
         .toString()
         .trim();
 
@@ -638,7 +642,7 @@ class _AppUpdateOverlayState extends State<_AppUpdateOverlay>
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      (status['message'] ?? 'A newer version of ServeNow is available.')
+                      (status['message'] ?? 'A newer version of OrderDrop is available.')
                           .toString(),
                       style: const TextStyle(
                         fontSize: 12.8,

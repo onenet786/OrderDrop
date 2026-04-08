@@ -19,6 +19,12 @@ const {
 } = require('../utils/offerCampaigns');
 
 const router = express.Router();
+const APP_NAME = process.env.APP_NAME || "OrderDrop";
+const APP_PLAY_STORE_URL =
+    process.env.APP_PLAY_STORE_URL ||
+    "https://play.google.com/store/apps/details?id=com.onenetsol.servenow";
+const APP_ANDROID_PACKAGE =
+    process.env.APP_ANDROID_PACKAGE || "com.onenetsol.servenow";
 
 async function ensureStoreStatusMessagesTable(db) {
     await db.execute(`
@@ -125,8 +131,8 @@ async function saveAppUpdateSettings(db, {
     const entries = [
         ['app_update_latest_version', version || ''],
         ['app_update_title', title || 'App Update Available'],
-        ['app_update_message', message || 'A new version of ServeNow is available on Play Store.'],
-        ['app_update_play_store_url', playStoreUrl || 'https://play.google.com/store/apps/details?id=com.onenetsol.servenow'],
+        ['app_update_message', message || `A new version of ${APP_NAME} is available on Play Store.`],
+        ['app_update_play_store_url', playStoreUrl || APP_PLAY_STORE_URL],
         ['app_update_minimum_supported_version', minimumSupportedVersion || ''],
         ['app_update_force_update', forceUpdate ? '1' : '0'],
         ['app_update_customer_reminder_hour', String(Number.isFinite(Number(reminderHour)) ? Number(reminderHour) : 12)]
@@ -167,8 +173,8 @@ async function getAppUpdateSettings(db) {
     return {
         latest_version: String(settings.get('app_update_latest_version') || '').trim(),
         title: String(settings.get('app_update_title') || 'App Update Available').trim(),
-        message: String(settings.get('app_update_message') || 'A new version of ServeNow is available on Play Store.').trim(),
-        play_store_url: String(settings.get('app_update_play_store_url') || 'https://play.google.com/store/apps/details?id=com.onenetsol.servenow').trim(),
+        message: String(settings.get('app_update_message') || `A new version of ${APP_NAME} is available on Play Store.`).trim(),
+        play_store_url: String(settings.get('app_update_play_store_url') || APP_PLAY_STORE_URL).trim(),
         minimum_supported_version: String(settings.get('app_update_minimum_supported_version') || '').trim(),
         force_update: String(settings.get('app_update_force_update') || '0').trim() === '1',
         reminder_hour: reminderHour
@@ -1330,7 +1336,7 @@ router.post('/app-update-notification', authenticateToken, requireAdmin, async (
         const title = (req.body.title || '').toString().trim() || 'App Update Available';
         const message = (req.body.message || '').toString().trim();
         const playStoreUrl = (req.body.play_store_url || '').toString().trim() ||
-            'https://play.google.com/store/apps/details?id=com.onenetsol.servenow';
+            APP_PLAY_STORE_URL;
         const minimumSupportedVersion = (req.body.minimum_supported_version || '').toString().trim();
         const forceUpdate = !!req.body.force_update;
 
@@ -1393,7 +1399,7 @@ router.post('/app-update-notification', authenticateToken, requireAdmin, async (
                     type: 'app_update_available',
                     version,
                     play_store_url: playStoreUrl,
-                    android_package: 'com.onenetsol.servenow',
+                    android_package: APP_ANDROID_PACKAGE,
                     minimum_supported_version: minimumSupportedVersion,
                     force_update: forceUpdate ? '1' : '0',
                     reminder_hour: '12'
@@ -2207,7 +2213,7 @@ router.put('/customer-flash-message', authenticateToken, requireAdmin, async (re
         let pushed = 0;
         if (sendPush) {
             const recipients = await getTargetCustomers(req.db, notificationTarget, customCustomerIds);
-            const notifTitle = pushTitle || (title || 'ServeNow Update');
+            const notifTitle = pushTitle || (title || `${APP_NAME} Update`);
             const notifMessage = pushMessageRaw || (statusMessage || 'Please check latest customer updates.');
             for (const recipient of recipients) {
                 await sendPushToUser(req.db, {

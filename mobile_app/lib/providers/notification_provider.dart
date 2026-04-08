@@ -219,7 +219,7 @@ class NotificationProvider with ChangeNotifier {
         final title =
             n?.title ??
             message.data['title']?.toString() ??
-            'ServeNow Notification';
+            'OrderDrop Notification';
         final body =
             n?.body ?? message.data['message']?.toString() ?? '';
         addNotification(
@@ -701,8 +701,8 @@ class NotificationProvider with ChangeNotifier {
   }) async {
     try {
       final androidDetails = AndroidNotificationDetails(
-        'servenow_channel',
-        'ServeNow Notifications',
+        'orderdrop_channel',
+        'OrderDrop Notifications',
         importance: Importance.max,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',

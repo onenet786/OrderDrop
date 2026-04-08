@@ -1,7 +1,7 @@
--- ServeNow Database Performance Optimizations
+-- OrderDrop Database Performance Optimizations
 -- This file contains additional indexes and optimizations for better query performance
 
-USE servenow;
+USE orderdrop;
 
 -- ==========================================
 -- USERS TABLE INDEXES

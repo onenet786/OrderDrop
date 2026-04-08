@@ -1,7 +1,7 @@
 // API Base URL - dynamically determine based on current location
 const API_BASE = window.location.protocol + "//" + window.location.host;
 const SERVICE_UNAVAILABLE_MESSAGE =
-  "ServeNow is temporarily unavailable. The site is under maintenance. Please try again shortly.";
+  "OrderDrop is temporarily unavailable. The site is under maintenance. Please try again shortly.";
 
 function getServiceUnavailableMessage() {
   return SERVICE_UNAVAILABLE_MESSAGE;

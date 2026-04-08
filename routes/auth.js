@@ -17,6 +17,7 @@ const REFRESH_TOKEN_EXPIRE_DAYS = parseInt(
   process.env.REFRESH_TOKEN_EXPIRE_DAYS || "30",
   10
 );
+const APP_DOMAIN = "orderdrop.flaura.pk";
 
 // Helper: safe boolean check
 function isTrue(v) {
@@ -108,7 +109,7 @@ function buildGuestSession() {
   const guestId = crypto.randomInt(100000000, 999999999);
   return {
     id: guestId,
-    email: `guest-${guestId}@guest.servenow.local`,
+    email: `guest-${guestId}@guest.orderdrop.local`,
     user_type: "guest",
     first_name: "Guest",
     last_name: "User",
@@ -130,7 +131,7 @@ function buildGuestProfileFromToken(user) {
     last_name: lastName,
     email:
       String(user?.email || "").trim() ||
-      `guest-${guestId}@guest.servenow.local`,
+      `guest-${guestId}@guest.orderdrop.local`,
     user_type: "guest",
     is_guest: true,
     phone: null,
@@ -684,7 +685,7 @@ router.post(
         if (
           !passOk &&
           process.env.NODE_ENV === "development" &&
-          rider.email === "ahmed.rider@servenow.com" &&
+          rider.email === `ahmed.rider@${APP_DOMAIN}` &&
           password === "rider123"
         ) {
           passOk = true;
@@ -759,7 +760,7 @@ router.get("/me", authenticateToken, async (req, res) => {
       process.env.NODE_ENV === "development" &&
       req.user &&
       req.user.id === 0 &&
-      req.user.email === "admin@servenow.com"
+      req.user.email === `admin@${APP_DOMAIN}`
     ) {
       return res.json({
         success: true,
@@ -1015,7 +1016,7 @@ router.get("/profile", authenticateToken, async (req, res) => {
       process.env.NODE_ENV === "development" &&
       req.user &&
       req.user.id === 0 &&
-      req.user.email === "admin@servenow.com"
+      req.user.email === `admin@${APP_DOMAIN}`
     ) {
       return res.json({
         success: true,

@@ -46,6 +46,9 @@ const forcedPort =
 process.env.PORT = forcedPort;
 console.log(`Force-set process.env.PORT => ${process.env.PORT}`);
 
+const APP_NAME = process.env.APP_NAME || "OrderDrop";
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+
 // Provide a safe default JWT_SECRET in development to avoid accidental 401s
 if (process.env.NODE_ENV === "development" && !process.env.JWT_SECRET) {
   process.env.JWT_SECRET = "orderdrop-dev-secret";
@@ -515,8 +518,12 @@ async function startServer() {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`Server accessible at: http://0.0.0.0:${PORT}`);
-    console.log(`External access URL: http://23.137.84.249:${PORT}`);
-    console.log("Server startup complete. Ready to accept connections.");
+    console.log(
+      `External access URL: ${
+        PUBLIC_BASE_URL || `http://localhost:${PORT}`
+      }`
+    );
+    console.log(`${APP_NAME} server startup complete. Ready to accept connections.`);
   });
 }
 

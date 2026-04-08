@@ -111,7 +111,7 @@ class _SplashScreenState extends State<SplashScreen>
                         width: 360,
                         fit: BoxFit.contain,
                         errorBuilder: (ctx, err, stack) => Text(
-                          'ServeNow',
+                          'OrderDrop',
                           style: TextStyle(
                             fontSize: 34,
                             fontWeight: FontWeight.w900,

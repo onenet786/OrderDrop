@@ -1,8 +1,8 @@
--- ServeNow P2P Transfers Migration
+-- OrderDrop P2P Transfers Migration
 -- Date: December 25, 2025
 -- Feature: Enable users to send money to other users via wallet
 
-USE servenow;
+USE orderdrop;
 
 -- 1. Create Transfer Requests Table
 CREATE TABLE IF NOT EXISTS wallet_transfers (

@@ -20,12 +20,12 @@ async function setupDatabase() {
         console.log('Connected to MySQL server');
 
         // Drop and create database
-        await connection.query('DROP DATABASE IF EXISTS servenow');
-        await connection.query('CREATE DATABASE servenow');
+        await connection.query('DROP DATABASE IF EXISTS orderdrop');
+        await connection.query('CREATE DATABASE orderdrop');
         console.log('Database created');
 
         // Switch to the database
-        await connection.query('USE servenow');
+        await connection.query('USE orderdrop');
 
         // Read and execute schema
         const schemaPath = path.join(__dirname, 'database', 'schema.sql');
@@ -44,7 +44,7 @@ async function setupDatabase() {
         console.log('Sample data inserted');
         console.log('');
         console.log('Admin login credentials:');
-        console.log('Email: admin@servenow.com');
+        console.log('Email: admin@orderdrop.flaura.pk');
         console.log('Password: admin123');
         console.log('');
         console.log('Database setup complete!');

@@ -1422,7 +1422,7 @@ function exportInventoryReportPdf() {
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
-    doc.text("ServeNow", 14, 14);
+    doc.text("OrderDrop", 14, 14);
     doc.setFontSize(14);
     doc.text(reportName, 14, 22);
     doc.setFont("helvetica", "normal");

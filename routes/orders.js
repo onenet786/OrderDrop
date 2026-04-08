@@ -178,7 +178,7 @@ async function getCustomerSupportContact(db) {
   }
 
   if (!whatsapp) whatsapp = phone;
-  if (!name) name = "ServeNow Support";
+  if (!name) name = "OrderDrop Support";
 
   return {
     name,
@@ -593,7 +593,7 @@ async function reverseGeocodeRiderLocation(latitude, longitude) {
       },
       timeout: 5000,
       headers: {
-        "User-Agent": "ServeNow/1.0 rider-location",
+        "User-Agent": "OrderDrop/1.0 rider-location",
       },
     })
     .then((response) => {
@@ -4388,7 +4388,7 @@ router.put("/:id(\\d+)/deliver", authenticateToken, async (req, res) => {
             order_number: order.order_number,
             user_id: order.user_id,
             total_amount: order.total_amount,
-            message: `Thank you for choosing ServeNow! Your order ${order.order_number} has been completed and delivered.`,
+            message: `Thank you for choosing OrderDrop! Your order ${order.order_number} has been completed and delivered.`,
             timestamp: new Date(),
           };
           // Send to user room only (not to all)
@@ -4700,7 +4700,7 @@ router.put(
               order_number: order.order_number,
               user_id: order.user_id,
               total_amount: order.total_amount,
-              message: `Thank you for choosing ServeNow! Your order ${order.order_number} has been completed and delivered.`,
+              message: `Thank you for choosing OrderDrop! Your order ${order.order_number} has been completed and delivered.`,
               timestamp: new Date(),
             };
             // Send to user room only (not to all)

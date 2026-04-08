@@ -1,6 +1,6 @@
 -- Migration 005: Add extra fields to riders (father_name, image_url, id_card_url)
 -- Safe for MySQL 8+ using IF NOT EXISTS. For older versions, run conditional checks manually.
-USE servenow;
+USE orderdrop;
 
 ALTER TABLE `riders`
   ADD COLUMN IF NOT EXISTS `father_name` VARCHAR(100) NULL;

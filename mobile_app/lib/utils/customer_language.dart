@@ -145,7 +145,7 @@ class CustomerLanguage {
       "Don't have an account? ": 'اکاؤنٹ نہیں ہے؟ ',
       'Register Here': 'یہاں رجسٹر کریں',
 
-      'Register for ServeNow': 'سروناؤ کے لیے رجسٹر کریں',
+      'Register for OrderDrop': 'آرڈر ڈراپ کے لیے رجسٹر کریں',
       'Create your account': 'اپنا اکاؤنٹ بنائیں',
       'Register': 'رجسٹر کریں',
       'Already have an account? Login here':

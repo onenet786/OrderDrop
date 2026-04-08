@@ -1965,12 +1965,12 @@ router.post(
     }
 
     const dbName =
-      process.env.DB_NAME || process.env.MYSQL_DATABASE || "servenow";
+      process.env.DB_NAME || process.env.MYSQL_DATABASE || "orderdrop";
 
     const outStream = fs.createWriteStream(filepath, { flags: "w" });
     // write header
     outStream.write(
-      `-- ServeNow database dump\n-- Database: ${dbName}\n-- Generated: ${new Date().toISOString()}\n\n`
+      `-- OrderDrop database dump\n-- Database: ${dbName}\n-- Generated: ${new Date().toISOString()}\n\n`
     );
 
     // Get list of tables
@@ -2271,7 +2271,7 @@ router.post(
         process.env.MYSQL_USERNAME;
       const dbPass = process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD;
       const dbName =
-        process.env.DB_NAME || process.env.MYSQL_DATABASE || "servenow";
+        process.env.DB_NAME || process.env.MYSQL_DATABASE || "orderdrop";
 
       if (!dbUser) {
         try {

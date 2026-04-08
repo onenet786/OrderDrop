@@ -81,22 +81,22 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
 
   String _tr(String english) {
     const translations = <String, String>{
-      'ServeNow Support': 'سروناؤ سپورٹ',
+      'OrderDrop Support': 'آرڈر ڈراپ سپورٹ',
       'Contact Us': 'ہم سے رابطہ کریں',
       'Support contact is not configured yet.': 'ابھی سپورٹ رابطہ معلومات شامل نہیں کی گئی ہیں۔',
       'Choose how you want to contact us.': 'رابطے کا طریقہ منتخب کریں۔',
       'Email': 'ای میل',
       'Update Required': 'اپ ڈیٹ ضروری ہے',
       'Update Available': 'اپ ڈیٹ دستیاب ہے',
-      'A new version of ServeNow is available.': 'سروناؤ کا نیا ورژن دستیاب ہے۔',
-      'A newer version of ServeNow is available.': 'سروناؤ کا نیا ورژن دستیاب ہے۔',
+      'A new version of OrderDrop is available.': 'آرڈر ڈراپ کا نیا ورژن دستیاب ہے۔',
+      'A newer version of OrderDrop is available.': 'آرڈر ڈراپ کا نیا ورژن دستیاب ہے۔',
       'Installed': 'انسٹال شدہ',
       'Latest': 'تازہ ترین',
       'Unknown': 'نامعلوم',
       'Update Now': 'ابھی اپ ڈیٹ کریں',
       'Hide': 'چھپائیں',
-      'ServeNow Flash Message': 'سروناؤ اہم پیغام',
-      'Check latest updates in ServeNow.': 'سروناؤ کی تازہ ترین معلومات دیکھیں۔',
+      'OrderDrop Flash Message': 'آرڈر ڈراپ اہم پیغام',
+      'Check latest updates in OrderDrop.': 'آرڈر ڈراپ کی تازہ ترین معلومات دیکھیں۔',
       'Check latest promotions and events.': 'تازہ پروموشنز اور ایونٹس دیکھیں۔',
       'Flash Message': 'اہم پیغام',
       'OK': 'ٹھیک ہے',
@@ -104,7 +104,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       'My Cart': 'میری کارٹ',
       'Welcome': 'خوش آمدید',
       'Ref Area': 'حوالہ علاقہ',
-      'ServeNow Customer': 'سروناؤ کسٹمر',
+      'OrderDrop Customer': 'آرڈر ڈراپ کسٹمر',
       'Live Promotions': 'لائیو پروموشنز',
       'Live: Promotions / Events': 'لائیو: پروموشنز / ایونٹس',
       'live widgets': 'لائیو ویجٹس',
@@ -387,7 +387,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final uri = Uri(
       scheme: 'mailto',
       path: cleaned,
-      queryParameters: {'subject': _tr('ServeNow Support')},
+      queryParameters: {'subject': _tr('OrderDrop Support')},
     );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -582,7 +582,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     final latestVersion = (status['latest_version'] ?? '').toString().trim();
     final installedVersion = (status['installed_version'] ?? '').toString().trim();
     final forceUpdate = status['force_update_active'] == true;
-    final message = (status['message'] ?? _tr('A new version of ServeNow is available.'))
+    final message = (status['message'] ?? _tr('A new version of OrderDrop is available.'))
         .toString()
         .trim();
 
@@ -611,7 +611,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
           ),
           const SizedBox(height: 8),
           Text(
-            message.isNotEmpty ? message : _tr('A newer version of ServeNow is available.'),
+            message.isNotEmpty ? message : _tr('A newer version of OrderDrop is available.'),
             style: const TextStyle(fontSize: 12.8, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
@@ -756,7 +756,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                   (flash['notification_target'] ?? 'all').toString() == 'all'));
       if (isVisible) {
         final title =
-            (flash['title'] ?? _tr('ServeNow Flash Message')).toString().trim();
+            (flash['title'] ?? _tr('OrderDrop Flash Message')).toString().trim();
         final message = (flash['status_message'] ?? '').toString().trim();
         final imageUrl = ApiService.getImageUrl(
           (flash['image_url'] ?? '').toString().trim(),
@@ -764,10 +764,10 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         final signature =
             '${flash['updated_at'] ?? ''}|$title|$message|$imageUrl|${flash['start_at'] ?? ''}|${flash['end_at'] ?? ''}';
         return {
-          'title': title.isNotEmpty ? title : _tr('ServeNow Flash Message'),
+          'title': title.isNotEmpty ? title : _tr('OrderDrop Flash Message'),
           'message': message.isNotEmpty
               ? message
-              : _tr('Check latest updates in ServeNow.'),
+              : _tr('Check latest updates in OrderDrop.'),
           'imageUrl': imageUrl,
           'signature': signature,
         };
@@ -780,7 +780,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
     if (!_toBool(promo['is_window_active']) && !_isGlobalWindowActive(promo)) {
       return null;
     }
-    final title = (promo['title'] ?? _tr('ServeNow Flash Message')).toString().trim();
+    final title = (promo['title'] ?? _tr('OrderDrop Flash Message')).toString().trim();
     final message = _livePromotionMessage().trim();
     final images = _promotionImages();
     final imageUrl =
@@ -789,7 +789,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
         '${promo['id'] ?? ''}|${promo['updated_at'] ?? ''}|$title|$message|$imageUrl';
 
     return {
-      'title': title.isNotEmpty ? title : _tr('ServeNow Flash Message'),
+      'title': title.isNotEmpty ? title : _tr('OrderDrop Flash Message'),
       'message': message.isNotEmpty
           ? message
           : _tr('Check latest promotions and events.'),
@@ -810,7 +810,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
       try {
         Provider.of<app_notif.NotificationProvider>(context, listen: false)
             .addNotification(
-              title: (flash['title'] ?? _tr('ServeNow Flash Message')).toString(),
+              title: (flash['title'] ?? _tr('OrderDrop Flash Message')).toString(),
               message: (flash['message'] ?? '').toString(),
               type: 'promotion',
               icon: 'campaign',
@@ -825,7 +825,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   }
 
   void _showLaunchFlashDialog(Map<String, dynamic> flash) {
-    final title = (flash['title'] ?? _tr('ServeNow Flash Message')).toString();
+    final title = (flash['title'] ?? _tr('OrderDrop Flash Message')).toString();
     final message = (flash['message'] ?? '').toString();
     final imageUrl = (flash['imageUrl'] ?? '').toString();
 
@@ -1274,7 +1274,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
                 Text(
                   _userCity?.isNotEmpty == true
                       ? '${_tr('Ref Area')}: $_userCity'
-                      : _tr('ServeNow Customer'),
+                      : _tr('OrderDrop Customer'),
                   style: const TextStyle(
                     color: Colors.white70,
                     fontWeight: FontWeight.w600,

@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const APP_NAME = process.env.APP_NAME || 'OrderDrop';
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || process.env.EMAIL_USER || 'support@orderdrop.flaura.pk';
 
 // Create transporter only if credentials exist
 let transporter = null;
@@ -19,11 +21,11 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
  * @param {string} code 
  */
 async function sendVerificationEmail(email, code) {
-    const subject = 'Your Verification Code - ServeNow';
+    const subject = `Your Verification Code - ${APP_NAME}`;
     const text = `Your verification code is: ${code}. It will expire in 10 minutes.`;
     const html = `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2>Welcome to ServeNow!</h2>
+            <h2>Welcome to ${APP_NAME}!</h2>
             <p>Please use the following code to verify your email address:</p>
             <h1 style="color: #4CAF50; letter-spacing: 5px;">${code}</h1>
             <p>This code will expire in 10 minutes.</p>
@@ -34,7 +36,7 @@ async function sendVerificationEmail(email, code) {
     if (transporter) {
         try {
             await transporter.sendMail({
-                from: `"ServeNow" <${process.env.EMAIL_USER}>`,
+                from: `"${APP_NAME}" <${process.env.EMAIL_USER}>`,
                 to: email,
                 subject: subject,
                 text: text,
@@ -67,8 +69,8 @@ async function sendVerificationEmail(email, code) {
  * @param {string} reason 
  */
 async function sendDeletionRequestEmail(userEmail, reason) {
-    const supportEmail = 'onenetpk@gmail.com'; // User specified email
-    const subject = 'Account Deletion Request - ServeNow';
+    const supportEmail = SUPPORT_EMAIL;
+    const subject = `Account Deletion Request - ${APP_NAME}`;
     const text = `A new account deletion request has been received.\n\nUser Email: ${userEmail}\nReason: ${reason || 'Not provided'}`;
     const html = `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -83,7 +85,7 @@ async function sendDeletionRequestEmail(userEmail, reason) {
     if (transporter) {
         try {
             await transporter.sendMail({
-                from: `"ServeNow System" <${process.env.EMAIL_USER}>`,
+                from: `"${APP_NAME} System" <${process.env.EMAIL_USER}>`,
                 to: supportEmail,
                 subject: subject,
                 text: text,
@@ -114,7 +116,7 @@ async function sendDeletionRequestEmail(userEmail, reason) {
  */
 async function sendOrderThanksEmail(email, userName, orderNumber) {
     const subject = `Thank You for Your Order! - ${orderNumber}`;
-    const text = `Hi ${userName},\n\nThank you for choosing ServeNow! Your order ${orderNumber} has been successfully delivered and payment received. We hope you enjoyed our service.\n\nBest regards,\nThe ServeNow Team`;
+    const text = `Hi ${userName},\n\nThank you for choosing ${APP_NAME}! Your order ${orderNumber} has been successfully delivered and payment received. We hope you enjoyed our service.\n\nBest regards,\nThe ${APP_NAME} Team`;
     const html = `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
             <div style="text-align: center; margin-bottom: 30px;">
@@ -128,7 +130,7 @@ async function sendOrderThanksEmail(email, userName, orderNumber) {
             </div>
             <div style="margin-top: 30px; text-align: center; color: #777; font-size: 14px;">
                 <p>Best regards,</p>
-                <p><strong>The ServeNow Team</strong></p>
+                <p><strong>The ${APP_NAME} Team</strong></p>
             </div>
         </div>
     `;
@@ -136,7 +138,7 @@ async function sendOrderThanksEmail(email, userName, orderNumber) {
     if (transporter) {
         try {
             await transporter.sendMail({
-                from: `"ServeNow" <${process.env.EMAIL_USER}>`,
+                from: `"${APP_NAME}" <${process.env.EMAIL_USER}>`,
                 to: email,
                 subject: subject,
                 text: text,
@@ -164,7 +166,7 @@ async function sendOrderThanksEmail(email, userName, orderNumber) {
  * @param {string} otp 
  */
 async function sendPasswordResetOTP(email, otp) {
-    const subject = 'Your Password Reset OTP - ServeNow';
+    const subject = `Your Password Reset OTP - ${APP_NAME}`;
     const text = `Your password reset OTP is: ${otp}. It will expire in 10 minutes.`;
     const html = `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -179,7 +181,7 @@ async function sendPasswordResetOTP(email, otp) {
     if (transporter) {
         try {
             await transporter.sendMail({
-                from: `"ServeNow" <${process.env.EMAIL_USER}>`,
+                from: `"${APP_NAME}" <${process.env.EMAIL_USER}>`,
                 to: email,
                 subject: subject,
                 text: text,

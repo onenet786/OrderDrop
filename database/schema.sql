@@ -1,7 +1,7 @@
--- ServeNow Database Schema
+-- OrderDrop Database Schema
 -- Create database
-CREATE DATABASE IF NOT EXISTS servenow;
-USE servenow;
+CREATE DATABASE IF NOT EXISTS orderdrop;
+USE orderdrop;
 
 -- Users table
 CREATE TABLE users (
@@ -195,7 +195,7 @@ INSERT INTO categories (name, description) VALUES
 
 -- Insert sample admin user (password: admin123)
 INSERT INTO users (first_name, last_name, email, phone, password, user_type) VALUES
-('Admin', 'User', 'admin@servenow.com', '+1234567890', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin');
+('Admin', 'User', 'admin@orderdrop.flaura.pk', '+1234567890', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin');
 
 -- Insert sample stores
 INSERT INTO stores (name, location, latitude, longitude, rating, delivery_time, phone, email, owner_id) VALUES
@@ -219,9 +219,9 @@ INSERT INTO products (name, price, category_id, store_id, stock_quantity) VALUES
 ('Rice', 5.99, 4, 3, 60);
 
 INSERT INTO riders (first_name, last_name, email, phone, password, vehicle_type, license_number) VALUES
-('Ahmed', 'Khan', 'ahmed.rider@servenow.com', '+1234567894', 'rider123', 'Motorcycle', 'LIC123456'),
-('Fatima', 'Ali', 'fatima.rider@servenow.com', '+1234567895', 'rider456', 'Bicycle', 'LIC123457'),
-('Omar', 'Hassan', 'omar.rider@servenow.com', '+1234567896', 'rider789', 'Scooter', 'LIC123458');
+('Ahmed', 'Khan', 'ahmed.rider@orderdrop.flaura.pk', '+1234567894', 'rider123', 'Motorcycle', 'LIC123456'),
+('Fatima', 'Ali', 'fatima.rider@orderdrop.flaura.pk', '+1234567895', 'rider456', 'Bicycle', 'LIC123457'),
+('Omar', 'Hassan', 'omar.rider@orderdrop.flaura.pk', '+1234567896', 'rider789', 'Scooter', 'LIC123458');
 
 CREATE INDEX idx_products_store_id ON products(store_id);
 CREATE INDEX idx_products_category_id ON products(category_id);

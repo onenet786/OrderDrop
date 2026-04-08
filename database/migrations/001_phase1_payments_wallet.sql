@@ -1,8 +1,8 @@
--- ServeNow Phase 1: Payments & Wallet System Migration
+-- OrderDrop Phase 1: Payments & Wallet System Migration
 -- Date: December 25, 2025
 -- Tables: payments, wallets, wallet_transactions
 
-USE servenow;
+USE orderdrop;
 
 -- 1. Payments Table
 CREATE TABLE IF NOT EXISTS payments (
@@ -153,9 +153,9 @@ CREATE INDEX IF NOT EXISTS idx_wallet_txn_user_date ON wallet_transactions(walle
 CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders(id, payment_status);
 
 -- 11. Grant Permissions (adjust for your user)
--- GRANT ALL PRIVILEGES ON servenow.payments TO 'servenow'@'localhost';
--- GRANT ALL PRIVILEGES ON servenow.wallets TO 'servenow'@'localhost';
--- GRANT ALL PRIVILEGES ON servenow.wallet_transactions TO 'servenow'@'localhost';
+-- GRANT ALL PRIVILEGES ON orderdrop.payments TO 'orderdrop'@'localhost';
+-- GRANT ALL PRIVILEGES ON orderdrop.wallets TO 'orderdrop'@'localhost';
+-- GRANT ALL PRIVILEGES ON orderdrop.wallet_transactions TO 'orderdrop'@'localhost';
 -- FLUSH PRIVILEGES;
 
 -- Migration completed successfully

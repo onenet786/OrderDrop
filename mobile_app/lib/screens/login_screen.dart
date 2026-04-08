@@ -210,7 +210,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           height: 150,
                           fit: BoxFit.contain,
                           errorBuilder: (ctx, err, stack) => const Text(
-                            'ServeNow',
+                            'OrderDrop',
                             style: TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,

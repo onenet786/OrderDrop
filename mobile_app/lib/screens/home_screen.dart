@@ -345,7 +345,7 @@ class _HomeScreenState extends State<HomeScreen> {
       scheme: 'mailto',
       path: cleaned,
       queryParameters: const {
-        'subject': 'ServeNow Support',
+        'subject': 'OrderDrop Support',
       },
     );
     if (await canLaunchUrl(uri)) {
@@ -370,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
       } catch (_) {}
     }
 
-    final name = (contact['name'] ?? 'ServeNow Support').toString().trim();
+    final name = (contact['name'] ?? 'OrderDrop Support').toString().trim();
     final phone = (contact['phone'] ?? '').toString().trim();
     final whatsapp = (contact['whatsapp'] ?? phone).toString().trim();
     final email = (contact['email'] ?? '').toString().trim();
@@ -457,7 +457,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSupportCard() {
     final contact = _supportContact ?? const <String, dynamic>{};
-    final name = (contact['name'] ?? 'ServeNow Support').toString().trim();
+    final name = (contact['name'] ?? 'OrderDrop Support').toString().trim();
     final phone = (contact['phone'] ?? '').toString().trim();
     final whatsapp = (contact['whatsapp'] ?? phone).toString().trim();
     final email = (contact['email'] ?? '').toString().trim();
@@ -580,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   (flash['notification_target'] ?? 'all').toString() == 'all'));
       if (isVisible) {
         final title =
-            (flash['title'] ?? 'ServeNow Flash Message').toString().trim();
+            (flash['title'] ?? 'OrderDrop Flash Message').toString().trim();
         final message = (flash['status_message'] ?? '').toString().trim();
         final imageUrl = ApiService.getImageUrl(
           (flash['image_url'] ?? '').toString().trim(),
@@ -588,10 +588,10 @@ class _HomeScreenState extends State<HomeScreen> {
         final signature =
             '${flash['updated_at'] ?? ''}|$title|$message|$imageUrl|${flash['start_at'] ?? ''}|${flash['end_at'] ?? ''}';
         return {
-          'title': title.isNotEmpty ? title : 'ServeNow Flash Message',
+          'title': title.isNotEmpty ? title : 'OrderDrop Flash Message',
           'message': message.isNotEmpty
               ? message
-              : 'Check latest updates in ServeNow.',
+              : 'Check latest updates in OrderDrop.',
           'imageUrl': imageUrl,
           'signature': signature,
         };
@@ -604,7 +604,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!_toBool(promo['is_window_active']) && !_isGlobalWindowActive(promo)) {
       return null;
     }
-    final title = (promo['title'] ?? 'ServeNow Flash Message').toString().trim();
+    final title = (promo['title'] ?? 'OrderDrop Flash Message').toString().trim();
     final message = _livePromotionMessage().trim();
     final images = _promotionImages();
     final imageUrl =
@@ -613,7 +613,7 @@ class _HomeScreenState extends State<HomeScreen> {
         '${promo['id'] ?? ''}|${promo['updated_at'] ?? ''}|$title|$message|$imageUrl';
 
     return {
-      'title': title.isNotEmpty ? title : 'ServeNow Flash Message',
+      'title': title.isNotEmpty ? title : 'OrderDrop Flash Message',
       'message': message.isNotEmpty
           ? message
           : 'Check latest promotions and events.',
@@ -634,7 +634,7 @@ class _HomeScreenState extends State<HomeScreen> {
       try {
         Provider.of<app_notif.NotificationProvider>(context, listen: false)
             .addNotification(
-              title: (flash['title'] ?? 'ServeNow Flash Message').toString(),
+              title: (flash['title'] ?? 'OrderDrop Flash Message').toString(),
               message: (flash['message'] ?? '').toString(),
               type: 'promotion',
               icon: 'campaign',
@@ -649,7 +649,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showLaunchFlashDialog(Map<String, dynamic> flash) {
-    final title = (flash['title'] ?? 'ServeNow Flash Message').toString();
+    final title = (flash['title'] ?? 'OrderDrop Flash Message').toString();
     final message = (flash['message'] ?? '').toString();
     final imageUrl = (flash['imageUrl'] ?? '').toString();
 
@@ -1020,7 +1020,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
         appBar: AppBar(
-          title: const Text('ServeNow'),
+          title: const Text('OrderDrop'),
           actions: [
             if (!isGuest) const NotificationBellWidget(),
             Consumer<CartProvider>(

@@ -257,7 +257,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
             height: 84,
             fit: BoxFit.contain,
             errorBuilder: (ctx, err, stack) => const Text(
-              'ServeNow',
+              'OrderDrop',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,

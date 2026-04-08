@@ -36,7 +36,7 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     with TickerProviderStateMixin {
   static const Set<String> _liveRiderTrackerEmails = {
-    'admin@servenow.com',
+    'admin@orderdrop.flaura.pk',
     'nazir@servenow.pk',
   };
   static const Duration _liveRiderRefreshInterval = Duration(seconds: 4);

@@ -3005,7 +3005,7 @@ function generatePDF(reportId) {
 
     // Title
     doc.setFontSize(20);
-    doc.text('ServeNow Financial Report', 14, 22);
+    doc.text('OrderDrop Financial Report', 14, 22);
     
     // Metadata
     doc.setFontSize(10);
@@ -3502,7 +3502,7 @@ function generatePDF(reportId) {
             }
             doc.autoTable({
                 startY: startY + 5,
-                head: [['Order #', 'Date', 'Store', 'Store Gross', 'Store Payable', 'ServeNow Share', 'Collected', 'Submitted', 'Gap']],
+                head: [['Order #', 'Date', 'Store', 'Store Gross', 'Store Payable', 'OrderDrop Share', 'Collected', 'Submitted', 'Gap']],
                 body: (data.details || []).map(d => [
                     d.order_number || '-',
                     d.order_date ? new Date(d.order_date).toLocaleDateString() : '-',
@@ -4167,7 +4167,7 @@ function viewReport(reportId) {
             extraDetails += '</tbody></table></div>';
         }
     } else if (data && data.type === 'cash_discrepancy_report') {
-        extraDetails = '<h3>Cash Discrepancy Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.82em"><thead><tr><th>Order #</th><th>Date</th><th>Store</th><th>Payment Term</th><th>Rider</th><th>Store Gross</th><th>Store Payable</th><th>ServeNow Share</th><th>Collected</th><th>Submitted</th><th>Gap</th><th>Software Cash</th></tr></thead><tbody>';
+        extraDetails = '<h3>Cash Discrepancy Report</h3><div class="report-detail-table-wrapper"><table class="report-detail-table" style="font-size:0.82em"><thead><tr><th>Order #</th><th>Date</th><th>Store</th><th>Payment Term</th><th>Rider</th><th>Store Gross</th><th>Store Payable</th><th>OrderDrop Share</th><th>Collected</th><th>Submitted</th><th>Gap</th><th>Software Cash</th></tr></thead><tbody>';
         (data.details || []).forEach(d => {
             extraDetails += `<tr>
                 <td>${d.order_number || '-'}</td>
@@ -4191,7 +4191,7 @@ function viewReport(reportId) {
                 Orders: ${parseInt(data.summary.total_orders || 0)} |
                 Store Gross: Rs ${parseFloat(data.summary.store_gross || 0).toFixed(2)} |
                 Store Payable: Rs ${parseFloat(data.summary.store_payable || 0).toFixed(2)} |
-                ServeNow Share: Rs ${parseFloat(data.summary.servenow_share || 0).toFixed(2)} |
+                OrderDrop Share: Rs ${parseFloat(data.summary.servenow_share || 0).toFixed(2)} |
                 Collected: Rs ${parseFloat(data.summary.rider_collected_cash || 0).toFixed(2)} |
                 Submitted: Rs ${parseFloat(data.summary.rider_submitted_cash || 0).toFixed(2)} |
                 Fuel Paid: Rs ${parseFloat(data.summary.fuel_paid || 0).toFixed(2)} |

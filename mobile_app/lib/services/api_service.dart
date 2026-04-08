@@ -17,18 +17,25 @@ class ApiServiceException implements Exception {
 
 class ApiService {
   static final Logger _logger = Logger();
-  static const String _defaultBaseUrl = 'https://servenow.pk';
+  static const String _defaultBaseUrl = 'https://orderdrop.flaura.pk';
   static const String _configuredBaseUrl = String.fromEnvironment(
+    'ORDERDROP_API_BASE_URL',
+    defaultValue: '',
+  );
+  static const String _legacyConfiguredBaseUrl = String.fromEnvironment(
     'SERVENOW_API_BASE_URL',
     defaultValue: '',
   );
   static const String serviceUnavailableMessage =
-      'ServeNow is temporarily unavailable. The site is under maintenance. Please try again shortly.';
+      'OrderDrop is temporarily unavailable. The site is under maintenance. Please try again shortly.';
   static Future<String?> Function()? refreshAccessToken;
   static Future<String?>? _refreshInFlight;
 
   static String get baseUrl {
-    final configured = _configuredBaseUrl.trim();
+    final configured =
+        _configuredBaseUrl.trim().isNotEmpty
+            ? _configuredBaseUrl.trim()
+            : _legacyConfiguredBaseUrl.trim();
     if (configured.isNotEmpty) {
       return configured.replaceFirst(RegExp(r'\/+$'), '');
     }
@@ -80,7 +87,8 @@ class ApiService {
         lower.contains('socketexception') ||
         lower.contains('clientexception') ||
         lower.contains('23.137.84.249') ||
-        lower.contains('servenow.pk');
+        lower.contains('servenow.pk') ||
+        lower.contains('orderdrop.flaura.pk');
   }
 
   static Future<String?> _refreshAccessTokenOnce() async {

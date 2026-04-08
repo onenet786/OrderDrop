@@ -178,7 +178,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  _tr('Register for ServeNow'),
+                                  _tr('Register for OrderDrop'),
                                   style: const TextStyle(
                                     fontSize: 24,
                                     fontWeight: FontWeight.bold,
@@ -419,7 +419,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             height: 84,
             fit: BoxFit.contain,
             errorBuilder: (ctx, err, stack) => const Text(
-              'ServeNow',
+              'OrderDrop',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
