@@ -18,7 +18,7 @@ val hasReleaseKeystore = keystorePropertiesFile.exists() &&
         (keystoreProperties.getProperty("storeFile")?.isNotBlank() == true)
 
 android {
-    namespace = "com.onenetsol.servenow"
+    namespace = "com.onenetsol.orderdrop"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
@@ -34,7 +34,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.onenetsol.servenow"
+        applicationId = "com.onenetsol.orderdrop"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

@@ -1,4 +1,4 @@
-# Flutter/Android Proguard rules
+﻿# Flutter/Android Proguard rules
 # Keep Flutter classes
 -keep class io.flutter.app.** { *; }
 -keep class io.flutter.plugins.** { *; }
@@ -26,4 +26,5 @@
 -dontwarn com.google.android.play.core.**
 
 # Keep model classes in your app package (adjust package name)
--keep class com.onenetsol.servenow.** { *; }
+-keep class com.onenetsol.orderdrop.** { *; }
+

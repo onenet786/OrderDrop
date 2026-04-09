@@ -1,12 +1,12 @@
-# Play Store Upload Requirements and Release Guide
+﻿# Play Store Upload Requirements and Release Guide
 
-This document lists everything required to produce and upload a signed Android App Bundle (AAB) for the ServeNow Flutter app, along with a step‑by‑step checklist.
+This document lists everything required to produce and upload a signed Android App Bundle (AAB) for the ServeNow Flutter app, along with a stepâ€‘byâ€‘step checklist.
 
 ## 1) Technical Requirements
 
 - Android package name (applicationId): must be globally unique and immutable after publishing.
-  - Current: `com.onenetsol.servenow`
-  - Recommended: `com.yourcompany.servenow`
+  - Current: `com.onenetsol.orderdrop`
+  - Recommended: `com.yourcompany.orderdrop`
   - Update in: `android/app/build.gradle.kts` under `defaultConfig { applicationId = "..." }`
 
 - Versioning:
@@ -35,7 +35,7 @@ This document lists everything required to produce and upload a signed Android A
 
 ## 2) Keystore and Signing Setup (one-time)
 
-1. Generate a keystore (if you don’t have one):
+1. Generate a keystore (if you donâ€™t have one):
 
    ```sh
    keytool -genkeypair -v \
@@ -77,8 +77,8 @@ Output:
 Prepare the following before creating your production listing:
 
 - App name and short description (up to 80 chars) and full description.
-- App icon (512 × 512 px, PNG), feature graphic (1024 × 500 px), and screenshots:
-  - Phone screenshots: at least 2 (recommended 1080 × 1920 or device resolution)
+- App icon (512 Ã— 512 px, PNG), feature graphic (1024 Ã— 500 px), and screenshots:
+  - Phone screenshots: at least 2 (recommended 1080 Ã— 1920 or device resolution)
   - Optional: 7-inch and 10-inch tablet screenshots
 - Category: Application type and category.
 - Contact details: Email (and optional website, phone).
@@ -166,3 +166,5 @@ Prepare the following before creating your production listing:
 ---
 
 This guide is tailored to the current project setup and Play policies commonly required for production releases. If you need iOS/App Store guidance, create a separate release checklist for Xcode signing, provisioning, and App Store Connect submission.
+
+

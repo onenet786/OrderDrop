@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:servenow/screens/store_screen.dart';
+import 'package:orderdrop/screens/store_screen.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
@@ -414,3 +414,4 @@ class _RoundIcon extends StatelessWidget {
     return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(999), child: child);
   }
 }
+

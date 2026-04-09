@@ -5,7 +5,7 @@ import '../providers/cart_provider.dart';
 import '../models/cart_item.dart';
 import '../providers/wallet_provider.dart';
 import '../services/api_service.dart';
-import 'package:servenow/services/notifier.dart';
+import 'package:orderdrop/services/notifier.dart';
 import '../utils/customer_language.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -958,3 +958,4 @@ class _SharedBackdropOrb extends StatelessWidget {
     );
   }
 }
+

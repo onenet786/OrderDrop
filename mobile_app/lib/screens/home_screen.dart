@@ -1,10 +1,10 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
-import 'package:servenow/screens/store_screen.dart';
+import 'package:orderdrop/screens/store_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../providers/auth_provider.dart';
@@ -1344,7 +1344,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: Center(
                 child: Text(
-                  isOpen ? '🟢 OPEN' : '🔴 CLOSED',
+                  isOpen ? 'ðŸŸ¢ OPEN' : 'ðŸ”´ CLOSED',
                   style: TextStyle(
                     color: isOpen ? Colors.green.shade800 : Colors.red.shade800,
                     fontWeight: FontWeight.bold,
@@ -1634,3 +1634,4 @@ class _HeaderCircleButton extends StatelessWidget {
     );
   }
 }
+

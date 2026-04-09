@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -509,7 +509,7 @@ class _AppUpdateOverlayState extends State<_AppUpdateOverlay>
     final status = _appUpdateStatus;
     if (status == null) return;
     final url = (status['play_store_url'] ??
-            'https://play.google.com/store/apps/details?id=com.onenetsol.servenow')
+            'https://play.google.com/store/apps/details?id=com.onenetsol.orderdrop')
         .toString()
         .trim();
     if (url.isEmpty) return;
@@ -714,3 +714,4 @@ class _AuthWrapperState extends State<AuthWrapper> {
     return const SplashScreen();
   }
 }
+

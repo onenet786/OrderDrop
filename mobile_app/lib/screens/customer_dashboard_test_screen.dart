@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
-import 'package:servenow/screens/store_screen.dart';
+import 'package:orderdrop/screens/store_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/user.dart';
@@ -559,7 +559,7 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   Future<void> _openAppUpdateLink([Map<String, dynamic>? status]) async {
     final update = status ?? _appUpdateStatus ?? const <String, dynamic>{};
     final url = (update['play_store_url'] ??
-            'https://play.google.com/store/apps/details?id=com.onenetsol.servenow')
+            'https://play.google.com/store/apps/details?id=com.onenetsol.orderdrop')
         .toString()
         .trim();
     if (url.isEmpty) return;
@@ -1932,4 +1932,5 @@ class _CustomerDashboardTestScreenState extends State<CustomerDashboardTestScree
   }
 
 }
+
 

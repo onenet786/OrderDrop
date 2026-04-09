@@ -1,6 +1,6 @@
-import 'package:flutter_test/flutter_test.dart';
+﻿import 'package:flutter_test/flutter_test.dart';
 
-import 'package:servenow/services/notifier.dart';
+import 'package:orderdrop/services/notifier.dart';
 
 void main() {
   group('Notifier.sanitizeMessage', () {
@@ -25,3 +25,4 @@ void main() {
     });
   });
 }
+

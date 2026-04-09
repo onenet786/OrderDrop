@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter/material.dart';
@@ -100,21 +100,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
   String _tr(String text) {
     const localTranslations = <String, String>{
-      'Live Rider Tracker': 'لائیو رائیڈر ٹریکر',
+      'Live Rider Tracker': 'Ù„Ø§Ø¦ÛŒÙˆ Ø±Ø§Ø¦ÛŒÚˆØ± Ù¹Ø±ÛŒÚ©Ø±',
       'Auto-refreshing rider positions for active deliveries':
-          'فعال ڈلیوریوں کے لیے رائیڈر کی پوزیشن خودکار طور پر تازہ ہو رہی ہے',
-      'Select Rider': 'رائیڈر منتخب کریں',
-      'All riders': 'تمام رائیڈرز',
-      'Back to all riders': 'تمام رائیڈرز پر واپس',
-      'Routes': 'روٹس',
-      'Assigned Order': 'تعین شدہ آرڈر',
-      'Trail Points': 'ٹریل پوائنٹس',
-      'Distance': 'فاصلہ',
-      'ETA': 'متوقع وقت',
-      'Location': 'موقع',
-      'Coordinates': 'کوآرڈینیٹس',
+          'ÙØ¹Ø§Ù„ ÚˆÙ„ÛŒÙˆØ±ÛŒÙˆÚº Ú©Û’ Ù„ÛŒÛ’ Ø±Ø§Ø¦ÛŒÚˆØ± Ú©ÛŒ Ù¾ÙˆØ²ÛŒØ´Ù† Ø®ÙˆØ¯Ú©Ø§Ø± Ø·ÙˆØ± Ù¾Ø± ØªØ§Ø²Û ÛÙˆ Ø±ÛÛŒ ÛÛ’',
+      'Select Rider': 'Ø±Ø§Ø¦ÛŒÚˆØ± Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚº',
+      'All riders': 'ØªÙ…Ø§Ù… Ø±Ø§Ø¦ÛŒÚˆØ±Ø²',
+      'Back to all riders': 'ØªÙ…Ø§Ù… Ø±Ø§Ø¦ÛŒÚˆØ±Ø² Ù¾Ø± ÙˆØ§Ù¾Ø³',
+      'Routes': 'Ø±ÙˆÙ¹Ø³',
+      'Assigned Order': 'ØªØ¹ÛŒÙ† Ø´Ø¯Û Ø¢Ø±ÚˆØ±',
+      'Trail Points': 'Ù¹Ø±ÛŒÙ„ Ù¾ÙˆØ§Ø¦Ù†Ù¹Ø³',
+      'Distance': 'ÙØ§ØµÙ„Û',
+      'ETA': 'Ù…ØªÙˆÙ‚Ø¹ ÙˆÙ‚Øª',
+      'Location': 'Ù…ÙˆÙ‚Ø¹',
+      'Coordinates': 'Ú©ÙˆØ¢Ø±ÚˆÛŒÙ†ÛŒÙ¹Ø³',
       'No riders are currently sharing live locations':
-          'اس وقت کوئی رائیڈر اپنی لائیو لوکیشن شیئر نہیں کر رہا',
+          'Ø§Ø³ ÙˆÙ‚Øª Ú©ÙˆØ¦ÛŒ Ø±Ø§Ø¦ÛŒÚˆØ± Ø§Ù¾Ù†ÛŒ Ù„Ø§Ø¦ÛŒÙˆ Ù„ÙˆÚ©ÛŒØ´Ù† Ø´ÛŒØ¦Ø± Ù†ÛÛŒÚº Ú©Ø± Ø±ÛØ§',
     };
     if (_isUrdu && localTranslations.containsKey(text)) {
       return localTranslations[text]!;
@@ -1640,7 +1640,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.onenetsol.servenow',
+                  userAgentPackageName: 'com.onenetsol.orderdrop',
                   maxZoom: 19,
                 ),
                 MarkerLayer(
@@ -3844,3 +3844,4 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 }
+

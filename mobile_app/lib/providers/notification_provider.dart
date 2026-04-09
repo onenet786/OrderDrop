@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -733,7 +733,7 @@ class NotificationProvider with ChangeNotifier {
     if (type != 'app_update_available') return;
 
     final packageId =
-        (data['android_package'] ?? 'com.onenetsol.servenow').toString().trim();
+        (data['android_package'] ?? 'com.onenetsol.orderdrop').toString().trim();
     final playStoreUrl =
         (data['play_store_url'] ??
                 'https://play.google.com/store/apps/details?id=$packageId')
@@ -769,3 +769,4 @@ class NotificationProvider with ChangeNotifier {
     super.dispose();
   }
 }
+

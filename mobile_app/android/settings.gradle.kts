@@ -1,4 +1,4 @@
-pluginManagement {
+﻿pluginManagement {
     val flutterSdkPath =
         run {
             val properties = java.util.Properties()
@@ -25,4 +25,5 @@ plugins {
 }
 
 include(":app")
-rootProject.name = "servenow_android"
+rootProject.name = "orderdrop_android"
+

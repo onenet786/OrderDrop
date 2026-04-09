@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:servenow/services/notifier.dart';
+import 'package:orderdrop/services/notifier.dart';
 
 import '../models/cart_item.dart';
 import '../models/product.dart';
@@ -780,4 +780,5 @@ class _EmptyStoreCard extends StatelessWidget {
     );
   }
 }
+
 
